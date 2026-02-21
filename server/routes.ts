@@ -122,7 +122,8 @@ export async function registerRoutes(
     "/api/tasks/:id",
     authMiddleware,
     async (req: Request, res: Response) => {
-      const task = await storage.getTaskById(req.params.id);
+      const taskId = req.params.id as string;
+      const task = await storage.getTaskById(taskId);
       if (!task) {
         return res.status(404).json({ message: "Task not found" });
       }
@@ -141,7 +142,7 @@ export async function registerRoutes(
     authMiddleware,
     async (req: Request, res: Response) => {
       const user = req.user!;
-      const task = await storage.getTaskById(req.params.id);
+      const task = await storage.getTaskById(req.params.id as string);
       if (!task) {
         return res.status(404).json({ message: "Task not found" });
       }
@@ -210,7 +211,7 @@ export async function registerRoutes(
     "/api/tasks/:id/logs",
     authMiddleware,
     async (req: Request, res: Response) => {
-      const logs = await storage.getLogsForTask(req.params.id);
+      const logs = await storage.getLogsForTask(req.params.id as string);
       return res.json(logs);
     }
   );

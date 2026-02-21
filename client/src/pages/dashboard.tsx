@@ -15,7 +15,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { LogOut, Lock, Save, ExternalLink } from "lucide-react";
+import { LogOut, Lock, Save, ExternalLink, RefreshCw } from "lucide-react";
+import { Link } from "wouter";
 
 type AssigneeMap = Record<string, User[]>;
 interface TasksResponse {
@@ -530,6 +531,14 @@ export default function Dashboard() {
       <header className="sticky top-0 z-50 flex items-center justify-between gap-4 px-4 py-3 border-b bg-background" data-testid="header">
         <h1 className="text-lg font-bold tracking-tight">德湃任务中心</h1>
         <div className="flex items-center gap-3">
+          {user.role === "ceo" && (
+            <Link href="/sync">
+              <Button variant="ghost" size="sm" data-testid="link-sync">
+                <RefreshCw className="w-4 h-4 mr-1" />
+                同步
+              </Button>
+            </Link>
+          )}
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: user.color ?? "#888" }} />
             <span className="text-sm font-medium" data-testid="text-username">{user.name}</span>
