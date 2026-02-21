@@ -10,6 +10,11 @@ export const departments = pgTable("departments", {
   parent_id: text("parent_id"),
   head_id: text("head_id"),
   sort_order: integer("sort_order").default(0),
+  description: text("description"),
+  kpi_description: text("kpi_description"),
+  compensation_note: text("compensation_note"),
+  budget_note: text("budget_note"),
+  is_planned: boolean("is_planned").default(false),
   created_at: timestamp("created_at").defaultNow(),
 });
 

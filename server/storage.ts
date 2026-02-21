@@ -77,12 +77,12 @@ export class DatabaseStorage {
     return result;
   }
 
-  async createDepartment(dept: { id: string; name: string; color?: string; parent_id?: string; head_id?: string; sort_order?: number; }): Promise<Department> {
+  async createDepartment(dept: { id: string; name: string; color?: string; parent_id?: string; head_id?: string; sort_order?: number; description?: string; kpi_description?: string; compensation_note?: string; budget_note?: string; is_planned?: boolean; }): Promise<Department> {
     const [result] = await db.insert(departments).values(dept).returning();
     return result;
   }
 
-  async updateDepartment(id: string, updates: Partial<{ name: string; color: string; parent_id: string; head_id: string; sort_order: number; }>): Promise<Department | undefined> {
+  async updateDepartment(id: string, updates: Partial<{ name: string; color: string; parent_id: string; head_id: string; sort_order: number; description: string; kpi_description: string; compensation_note: string; budget_note: string; is_planned: boolean; }>): Promise<Department | undefined> {
     const [result] = await db.update(departments).set(updates).where(eq(departments.id, id)).returning();
     return result;
   }

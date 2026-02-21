@@ -773,6 +773,39 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     return res.json(depts);
   });
 
+  app.get("/api/departments/stats", authMiddleware, async (_req, res) => {
+    const allTasks = await storage.getAllTasks();
+    const mainTasks = allTasks.filter((t) => !t.parent_id);
+    const allUsers = await storage.getAllUsers();
+    const allAssignees = await storage.getAllTaskAssignees();
+    const today = new Date().toISOString().split("T")[0];
+
+    const userDeptMap = new Map(allUsers.map((u) => [u.id, u.dept_id]));
+    const tasksByDept: Record<string, { total: number; active: number; done: number; overdue: number; dueSoon: number }> = {};
+
+    for (const task of mainTasks) {
+      const assigneeIds = allAssignees.filter((a) => a.task_id === task.id).map((a) => a.user_id);
+      const deptIds = new Set(assigneeIds.map((uid) => userDeptMap.get(uid)).filter(Boolean) as string[]);
+
+      for (const deptId of deptIds) {
+        if (!tasksByDept[deptId]) tasksByDept[deptId] = { total: 0, active: 0, done: 0, overdue: 0, dueSoon: 0 };
+        const s = tasksByDept[deptId];
+        s.total++;
+        if (task.status === "done") s.done++;
+        else if (task.status === "active" || task.status === "review") s.active++;
+        if (task.status !== "done" && task.deadline && task.deadline < today) s.overdue++;
+        if (task.status !== "done" && task.deadline) {
+          const dl = new Date(task.deadline);
+          const now = new Date();
+          const diffDays = Math.ceil((dl.getTime() - now.getTime()) / 86400000);
+          if (diffDays >= 0 && diffDays <= 3) s.dueSoon++;
+        }
+      }
+    }
+
+    return res.json(tasksByDept);
+  });
+
   app.post("/api/departments", authMiddleware, async (req, res) => {
     const user = req.user!;
     if (user.role !== "ceo" && user.role !== "admin") return res.status(403).json({ message: "Forbidden" });
@@ -1270,23 +1303,27 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     ];
 
     const DEPARTMENTS = [
-      { id: "ceo_office", name: "CEO办公室", color: "#C0392B", head_id: "alex", sort_order: 1 },
-      { id: "admin_dept", name: "综合部", color: "#2E86AB", head_id: "tina", sort_order: 2 },
-      { id: "sales_dept", name: "销售部", color: "#7B1FA2", head_id: "anzhou", sort_order: 3 },
-      { id: "bd_dept", name: "业务拓展部", color: "#9C27B0", head_id: "anzhou", sort_order: 4 },
-      { id: "ip_center", name: "IP内容中心", color: "#E65100", head_id: "alex", sort_order: 5 },
-      { id: "edu_dept", name: "教研部", color: "#1565C0", head_id: "alex", sort_order: 6 },
+      { id: "ceo_office", name: "决策中心", color: "#C0392B", head_id: "alex", sort_order: 1, description: "战略/风控/核心IP/关键人考核", kpi_description: "公司整体营收与利润", compensation_note: "100%利润+65%个人留存目标" },
+      { id: "admin_dept", name: "综合部", color: "#2E86AB", head_id: "tina", sort_order: 2, description: "招聘汰换/KPI考核/行政杂事", kpi_description: "招聘达成率/人效比", compensation_note: "底薪+招聘伯乐奖" },
+      { id: "operations", name: "运营总部", color: "#7B1FA2", parent_id: undefined, head_id: "anzhou", sort_order: 3, description: "销售+BD+渠道运营管理", kpi_description: "总营收/渠道拓展数/BD签约数", compensation_note: "合伙人对赌: 70万业绩起分线/30%分红" },
+      { id: "sales_dept", name: "销售部", color: "#9C27B0", parent_id: "operations", head_id: "anzhou", sort_order: 4, description: "私域加粉/引导成交", kpi_description: "首单转化率/成交额", compensation_note: "底薪+5%销售提成" },
+      { id: "bd_dept", name: "业务拓展部", color: "#AB47BC", parent_id: "operations", head_id: "anzhou", sort_order: 5, description: "渠道拓展/IP合作/团长分销", kpi_description: "新签渠道数/BD营收", compensation_note: "底薪+BD提成" },
+      { id: "marketing_dept", name: "市场部", color: "#CE93D8", parent_id: "operations", head_id: undefined, sort_order: 6, is_planned: true, description: "品牌推广/市场活动/投放" },
+      { id: "ip_center", name: "IP内容中心", color: "#E65100", head_id: "alex", sort_order: 7, description: "短视频生产/直播导流/深度内容", kpi_description: "加粉数/直播进场率/内容产出量", compensation_note: "底薪+阶梯获客奖励/总营收分红" },
+      { id: "edu_dept", name: "教研部", color: "#1565C0", head_id: "alex", sort_order: 8, description: "实盘展示/周末直播大课/日常答疑", kpi_description: "实盘收益/课程口碑/完课率/满意度", compensation_note: "固定薪资/底薪+增值引流奖励" },
+      { id: "pr_dept", name: "品宣部", color: "#00897B", head_id: undefined, sort_order: 9, is_planned: true, description: "品牌形象/公关/舆情管理" },
     ];
 
     for (const d of DEPARTMENTS) {
       await storage.createDepartment(d).catch(async () => {
-        await storage.updateDepartment(d.id, { name: d.name, color: d.color, head_id: d.head_id, sort_order: d.sort_order });
+        await storage.updateDepartment(d.id, { name: d.name, color: d.color, head_id: d.head_id, sort_order: d.sort_order, description: d.description, kpi_description: (d as any).kpi_description, compensation_note: (d as any).compensation_note, is_planned: (d as any).is_planned });
       });
     }
 
     const DEPT_MAP: Record<string, string> = {
       "CEO办公室": "ceo_office", "综合部": "admin_dept", "销售部": "sales_dept",
       "销售部+BD部": "sales_dept", "IP内容中心": "ip_center", "教研部": "edu_dept",
+      "业务拓展部": "bd_dept",
     };
 
     for (const u of USERS) await storage.upsertUser({ ...u, dept_id: DEPT_MAP[u.dept] || undefined });
