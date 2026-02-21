@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import {
   ArrowLeft, Building2, Users, Edit2, Check, X, Plus, Trash2,
   Clock, CheckCircle, XCircle, ChevronRight, ChevronDown, UserPlus, Network
@@ -26,6 +27,8 @@ interface DeptTreeNode {
   members: SafeUser[];
   children: DeptTreeNode[];
 }
+
+type DeptStats = Record<string, { total: number; active: number; done: number; overdue: number; dueSoon: number }>;
 
 const CHANGE_TYPE_LABELS: Record<string, string> = {
   dept_create: "新建部门",
@@ -50,68 +53,495 @@ function LoadingSkeleton() {
   );
 }
 
-function DeptCard({ node, users, currentUser, onEditDept, onEditUser, onMoveUser }: {
-  node: DeptTreeNode; users: SafeUser[]; currentUser: SafeUser;
-  onEditDept: (d: Department) => void; onEditUser: (u: SafeUser) => void; onMoveUser: (u: SafeUser) => void;
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return isMobile;
+}
+
+function PersonPopover({ person, stats, isCeoOrAdmin, onEditUser }: {
+  person: SafeUser;
+  stats: DeptStats;
+  isCeoOrAdmin: boolean;
+  onEditUser: (u: SafeUser) => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
-  const head = users.find((u) => u.id === node.dept.head_id);
-  const canEdit = currentUser.role === "ceo" || currentUser.role === "admin";
+  const [, navigate] = useLocation();
+  const deptStat = person.dept_id ? stats[person.dept_id] : null;
+  const active = deptStat?.active ?? 0;
+  const done = deptStat?.done ?? 0;
+  const total = active + done || 1;
 
   return (
-    <div className="mb-3" data-testid={`dept-card-${node.dept.id}`}>
-      <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden" style={{ borderLeft: `4px solid ${node.dept.color || "#888"}` }}>
-        <div className="flex items-center gap-3 p-3 cursor-pointer" onClick={() => setExpanded(!expanded)} data-testid={`dept-toggle-${node.dept.id}`}>
-          {expanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-sm">{node.dept.name}</span>
-              <Badge variant="outline" className="rounded-full text-xs font-medium border-0">{node.members.length}人</Badge>
+    <div className="space-y-3" data-testid={`person-popover-${person.id}`}>
+      <div>
+        <p className="text-sm font-medium">{person.name}</p>
+        <p className="text-xs text-muted-foreground">{person.title || "无职位"}</p>
+      </div>
+      <div className="space-y-1">
+        <p className="text-[10px] text-muted-foreground">所属部门任务概况</p>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>进行中 {active}</span>
+          <span>·</span>
+          <span>已完成 {done}</span>
+        </div>
+        <div className="flex h-1.5 w-full rounded-full bg-muted overflow-hidden">
+          <div className="bg-blue-500 transition-all duration-200" style={{ width: `${(active / total) * 100}%` }} />
+          <div className="bg-emerald-500 transition-all duration-200" style={{ width: `${(done / total) * 100}%` }} />
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-xs"
+          onClick={() => navigate(`/dashboard?user=${person.id}`)}
+          data-testid={`person-tasks-link-${person.id}`}
+        >
+          查看任务
+        </Button>
+        {isCeoOrAdmin && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs"
+            onClick={() => onEditUser(person)}
+            data-testid={`person-edit-btn-${person.id}`}
+          >
+            编辑
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PersonRow({ person, isHead, stats, isCeoOrAdmin, onEditUser }: {
+  person: SafeUser;
+  isHead: boolean;
+  stats: DeptStats;
+  isCeoOrAdmin: boolean;
+  onEditUser: (u: SafeUser) => void;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <div
+          className="flex items-center gap-2 py-1.5 px-2 rounded-md cursor-pointer hover-elevate transition-all duration-200"
+          data-testid={`person-row-${person.id}`}
+        >
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: person.color ?? "#888" }} />
+          <span className="text-[13px] font-medium flex-1 min-w-0 truncate">{person.name}</span>
+          <span className="text-xs text-muted-foreground truncate max-w-[120px]">{person.title}</span>
+          {isHead && (
+            <Badge variant="secondary" className="rounded-full text-xs font-medium border-0">负责人</Badge>
+          )}
+          {person.role === "ceo" && (
+            <Badge className="rounded-full text-xs font-medium border-0 bg-blue-500/10 text-blue-600">CEO</Badge>
+          )}
+          {person.role === "admin" && (
+            <Badge className="rounded-full text-xs font-medium border-0 bg-purple-500/10 text-purple-600">管理员</Badge>
+          )}
+        </div>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64">
+        <PersonPopover person={person} stats={stats} isCeoOrAdmin={isCeoOrAdmin} onEditUser={onEditUser} />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function TreeNode({ node, users, stats, currentUser, isMobile, onEditDept, onEditUser, onMoveUser, isFirst, isLast, depth }: {
+  node: DeptTreeNode;
+  users: SafeUser[];
+  stats: DeptStats;
+  currentUser: SafeUser;
+  isMobile: boolean;
+  onEditDept: (d: Department) => void;
+  onEditUser: (u: SafeUser) => void;
+  onMoveUser: (u: SafeUser) => void;
+  isFirst: boolean;
+  isLast: boolean;
+  depth: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<"members" | "kpi" | "benefits">("members");
+  const canEdit = currentUser.role === "ceo" || currentUser.role === "admin";
+  const isCeo = currentUser.role === "ceo";
+  const head = users.find((u) => u.id === node.dept.head_id);
+  const deptStat = stats[node.dept.id];
+  const hasOverdue = deptStat?.overdue && deptStat.overdue > 0;
+  const hasDueSoon = deptStat?.dueSoon && deptStat.dueSoon > 0;
+  const statusColor = hasOverdue ? "bg-red-500" : hasDueSoon ? "bg-amber-500" : "bg-emerald-500";
+
+  const tabs: { key: "members" | "kpi" | "benefits"; label: string }[] = [
+    { key: "members", label: "人员" },
+    { key: "kpi", label: "职能&KPI" },
+  ];
+  if (isCeo) {
+    tabs.push({ key: "benefits", label: "利益" });
+  }
+
+  if (isMobile) {
+    return (
+      <div className="relative" data-testid={`tree-node-${node.dept.id}`}>
+        {depth > 0 && (
+          <div className="absolute left-0 top-0 bottom-0 w-px border-l border-dashed border-border" />
+        )}
+        <div className={`${depth > 0 ? "ml-4" : ""}`}>
+          <div
+            className={`bg-card border rounded-lg shadow-sm mb-2 transition-all duration-200 ${node.dept.is_planned ? "border-dashed border-amber-400" : "border-border"}`}
+            style={{ borderLeftWidth: "3px", borderLeftColor: node.dept.color || "#888", borderLeftStyle: node.dept.is_planned ? "dashed" : "solid" }}
+          >
+            <div
+              className="flex items-center gap-2 p-3 cursor-pointer"
+              onClick={() => setExpanded(!expanded)}
+              data-testid={`tree-node-toggle-${node.dept.id}`}
+            >
+              <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor}`} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium">{node.dept.name}</span>
+                  <Badge variant="outline" className="rounded-full text-xs font-medium border-0">{node.members.length}人</Badge>
+                  {node.dept.is_planned && (
+                    <Badge className="rounded-full text-xs font-medium border-0 bg-amber-500/10 text-amber-600">待招</Badge>
+                  )}
+                </div>
+                {head && <p className="text-xs text-muted-foreground mt-0.5">{head.name}</p>}
+              </div>
+              {canEdit && (
+                <Button size="icon" variant="ghost" onClick={(e) => { e.stopPropagation(); onEditDept(node.dept); }} data-testid={`button-edit-dept-${node.dept.id}`}>
+                  <Edit2 className="w-3.5 h-3.5" />
+                </Button>
+              )}
+              {expanded ? <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
             </div>
-            {head && <p className="text-xs text-muted-foreground mt-0.5">负责人: {head.name}</p>}
+
+            {expanded && (
+              <div className="border-t px-3 pb-3 pt-2">
+                <div className="flex items-center gap-0 border-b border-border mb-2">
+                  {tabs.map((tab) => (
+                    <button
+                      key={tab.key}
+                      className={`px-3 py-1.5 text-xs transition-all duration-200 border-b-2 ${activeTab === tab.key ? "border-foreground text-foreground font-medium" : "border-transparent text-muted-foreground"}`}
+                      onClick={(e) => { e.stopPropagation(); setActiveTab(tab.key); }}
+                      data-testid={`tree-tab-${tab.key}-${node.dept.id}`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {activeTab === "members" && (
+                  <div className="space-y-0.5">
+                    {node.members.length === 0 ? (
+                      <p className="text-xs text-muted-foreground py-2">暂无成员</p>
+                    ) : (
+                      node.members.map((m) => (
+                        <PersonRow
+                          key={m.id}
+                          person={m}
+                          isHead={m.id === node.dept.head_id}
+                          stats={stats}
+                          isCeoOrAdmin={canEdit}
+                          onEditUser={onEditUser}
+                        />
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {activeTab === "kpi" && (
+                  <div className="space-y-2 text-xs text-muted-foreground">
+                    {node.dept.description && (
+                      <div>
+                        <p className="font-medium text-foreground mb-0.5">职能描述</p>
+                        <p>{node.dept.description}</p>
+                      </div>
+                    )}
+                    {node.dept.kpi_description && (
+                      <div>
+                        <p className="font-medium text-foreground mb-0.5">KPI</p>
+                        <p>{node.dept.kpi_description}</p>
+                      </div>
+                    )}
+                    {!node.dept.description && !node.dept.kpi_description && (
+                      <p>暂无职能与KPI信息</p>
+                    )}
+                  </div>
+                )}
+
+                {activeTab === "benefits" && isCeo && (
+                  <div className="space-y-2 text-xs text-muted-foreground">
+                    {node.dept.compensation_note && (
+                      <div>
+                        <p className="font-medium text-foreground mb-0.5">薪酬说明</p>
+                        <p>{node.dept.compensation_note}</p>
+                      </div>
+                    )}
+                    {node.dept.budget_note && (
+                      <div>
+                        <p className="font-medium text-foreground mb-0.5">预算说明</p>
+                        <p>{node.dept.budget_note}</p>
+                      </div>
+                    )}
+                    {!node.dept.compensation_note && !node.dept.budget_note && (
+                      <p>暂无利益信息</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {node.children.length > 0 && (
+            <div className="relative">
+              {node.children.map((child, idx) => (
+                <TreeNode
+                  key={child.dept.id}
+                  node={child}
+                  users={users}
+                  stats={stats}
+                  currentUser={currentUser}
+                  isMobile={isMobile}
+                  onEditDept={onEditDept}
+                  onEditUser={onEditUser}
+                  onMoveUser={onMoveUser}
+                  isFirst={idx === 0}
+                  isLast={idx === node.children.length - 1}
+                  depth={depth + 1}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center relative" data-testid={`tree-node-${node.dept.id}`}>
+      <div
+        className={`bg-card border rounded-lg shadow-sm transition-all duration-200 ${expanded ? "w-[280px]" : "w-[200px]"} ${node.dept.is_planned ? "border-dashed border-amber-400" : "border-border"}`}
+        style={{ borderLeftWidth: "3px", borderLeftColor: node.dept.color || "#888", borderLeftStyle: node.dept.is_planned ? "dashed" : "solid" }}
+      >
+        <div
+          className="flex items-center gap-2 p-2.5 cursor-pointer"
+          onClick={() => setExpanded(!expanded)}
+          data-testid={`tree-node-toggle-${node.dept.id}`}
+        >
+          <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor}`} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[13px] font-medium">{node.dept.name}</span>
+              <Badge variant="outline" className="rounded-full text-[10px] font-medium border-0 px-1.5">{node.members.length}人</Badge>
+              {node.dept.is_planned && (
+                <Badge className="rounded-full text-[10px] font-medium border-0 bg-amber-500/10 text-amber-600 px-1.5">待招</Badge>
+              )}
+            </div>
+            {head && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{head.name}</p>}
           </div>
           {canEdit && (
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); onEditDept(node.dept); }} data-testid={`button-edit-dept-${node.dept.id}`}>
-              <Edit2 className="w-3.5 h-3.5" />
-            </Button>
+            <button
+              className="p-1 rounded hover-elevate text-muted-foreground"
+              onClick={(e) => { e.stopPropagation(); onEditDept(node.dept); }}
+              data-testid={`button-edit-dept-${node.dept.id}`}
+            >
+              <Edit2 className="w-3 h-3" />
+            </button>
           )}
         </div>
 
         {expanded && (
-          <div className="border-t px-3 pb-3 pt-2">
-            {node.members.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-2">暂无成员</p>
-            ) : (
-              <div className="space-y-1.5">
-                {node.members.map((m) => (
-                  <div key={m.id} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-muted/50 group" data-testid={`user-row-${m.id}`}>
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color ?? "#888" }} />
-                    <span className="text-[13px] font-medium flex-1 min-w-0 truncate">{m.name}</span>
-                    <span className="text-xs text-muted-foreground truncate max-w-[120px]">{m.title}</span>
-                    {m.id === node.dept.head_id && <Badge variant="secondary" className="rounded-full text-xs font-medium border-0">负责人</Badge>}
-                    {canEdit && (
-                      <div className="hidden group-hover:flex items-center gap-1">
-                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onEditUser(m)} data-testid={`button-edit-user-${m.id}`}>
-                          <Edit2 className="w-3 h-3" />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onMoveUser(m)} data-testid={`button-move-user-${m.id}`}>
-                          <UserPlus className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    )}
+          <div className="border-t px-2.5 pb-2.5 pt-1.5">
+            <div className="flex items-center gap-0 border-b border-border mb-2">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  className={`px-2 py-1 text-[11px] transition-all duration-200 border-b-2 ${activeTab === tab.key ? "border-foreground text-foreground font-medium" : "border-transparent text-muted-foreground"}`}
+                  onClick={(e) => { e.stopPropagation(); setActiveTab(tab.key); }}
+                  data-testid={`tree-tab-${tab.key}-${node.dept.id}`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {activeTab === "members" && (
+              <div className="space-y-0.5">
+                {node.members.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground py-1">暂无成员</p>
+                ) : (
+                  node.members.map((m) => (
+                    <PersonRow
+                      key={m.id}
+                      person={m}
+                      isHead={m.id === node.dept.head_id}
+                      stats={stats}
+                      isCeoOrAdmin={canEdit}
+                      onEditUser={onEditUser}
+                    />
+                  ))
+                )}
+              </div>
+            )}
+
+            {activeTab === "kpi" && (
+              <div className="space-y-1.5 text-[11px] text-muted-foreground">
+                {node.dept.description && (
+                  <div>
+                    <p className="font-medium text-foreground mb-0.5">职能描述</p>
+                    <p>{node.dept.description}</p>
                   </div>
-                ))}
+                )}
+                {node.dept.kpi_description && (
+                  <div>
+                    <p className="font-medium text-foreground mb-0.5">KPI</p>
+                    <p>{node.dept.kpi_description}</p>
+                  </div>
+                )}
+                {!node.dept.description && !node.dept.kpi_description && (
+                  <p>暂无职能与KPI信息</p>
+                )}
+              </div>
+            )}
+
+            {activeTab === "benefits" && isCeo && (
+              <div className="space-y-1.5 text-[11px] text-muted-foreground">
+                {node.dept.compensation_note && (
+                  <div>
+                    <p className="font-medium text-foreground mb-0.5">薪酬说明</p>
+                    <p>{node.dept.compensation_note}</p>
+                  </div>
+                )}
+                {node.dept.budget_note && (
+                  <div>
+                    <p className="font-medium text-foreground mb-0.5">预算说明</p>
+                    <p>{node.dept.budget_note}</p>
+                  </div>
+                )}
+                {!node.dept.compensation_note && !node.dept.budget_note && (
+                  <p>暂无利益信息</p>
+                )}
               </div>
             )}
           </div>
         )}
       </div>
 
-      {node.children.length > 0 && expanded && (
-        <div className="ml-6 mt-2">
-          {node.children.map((child) => (
-            <DeptCard key={child.dept.id} node={child} users={users} currentUser={currentUser}
-              onEditDept={onEditDept} onEditUser={onEditUser} onMoveUser={onMoveUser} />
+      {node.children.length > 0 && (
+        <>
+          <div className="w-px h-6 border-l border-border" />
+          <div className="relative flex gap-6">
+            {node.children.length > 1 && (
+              <div
+                className="absolute top-0 border-t border-border"
+                style={{
+                  left: `calc(${(100 / node.children.length) * 0.5}%)`,
+                  right: `calc(${(100 / node.children.length) * 0.5}%)`,
+                }}
+              />
+            )}
+            {node.children.map((child, idx) => (
+              <div key={child.dept.id} className="flex flex-col items-center relative">
+                <div className="w-px h-6 border-l border-border" />
+                <TreeNode
+                  node={child}
+                  users={users}
+                  stats={stats}
+                  currentUser={currentUser}
+                  isMobile={false}
+                  onEditDept={onEditDept}
+                  onEditUser={onEditUser}
+                  onMoveUser={onMoveUser}
+                  isFirst={idx === 0}
+                  isLast={idx === node.children.length - 1}
+                  depth={depth + 1}
+                />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// TODO: Future DnD - add drag-and-drop for person moves between departments
+function OrgTree({ deptTree, users, stats, currentUser, onEditDept, onEditUser, onMoveUser }: {
+  deptTree: DeptTreeNode[];
+  users: SafeUser[];
+  stats: DeptStats;
+  currentUser: SafeUser;
+  onEditDept: (d: Department) => void;
+  onEditUser: (u: SafeUser) => void;
+  onMoveUser: (u: SafeUser) => void;
+}) {
+  const isMobile = useIsMobile();
+
+  if (deptTree.length === 0) {
+    return <p className="text-center text-muted-foreground py-12">暂无部门数据</p>;
+  }
+
+  if (isMobile) {
+    return (
+      <div className="space-y-2" data-testid="org-tree-mobile">
+        {deptTree.map((node, idx) => (
+          <TreeNode
+            key={node.dept.id}
+            node={node}
+            users={users}
+            stats={stats}
+            currentUser={currentUser}
+            isMobile={true}
+            onEditDept={onEditDept}
+            onEditUser={onEditUser}
+            onMoveUser={onMoveUser}
+            isFirst={idx === 0}
+            isLast={idx === deptTree.length - 1}
+            depth={0}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center py-4" data-testid="org-tree-desktop">
+      {deptTree.length === 1 ? (
+        <TreeNode
+          node={deptTree[0]}
+          users={users}
+          stats={stats}
+          currentUser={currentUser}
+          isMobile={false}
+          onEditDept={onEditDept}
+          onEditUser={onEditUser}
+          onMoveUser={onMoveUser}
+          isFirst={true}
+          isLast={true}
+          depth={0}
+        />
+      ) : (
+        <div className="flex gap-8 items-start">
+          {deptTree.map((node, idx) => (
+            <TreeNode
+              key={node.dept.id}
+              node={node}
+              users={users}
+              stats={stats}
+              currentUser={currentUser}
+              isMobile={false}
+              onEditDept={onEditDept}
+              onEditUser={onEditUser}
+              onMoveUser={onMoveUser}
+              isFirst={idx === 0}
+              isLast={idx === deptTree.length - 1}
+              depth={0}
+            />
           ))}
         </div>
       )}
@@ -381,6 +811,7 @@ export default function Organization() {
   const { data: departments, isLoading: deptsLoading } = useQuery<Department[]>({ queryKey: ["/api/departments"] });
   const { data: usersData } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
   const { data: orgChanges, isLoading: changesLoading } = useQuery<OrgChange[]>({ queryKey: ["/api/org-changes"] });
+  const { data: deptStats } = useQuery<DeptStats>({ queryKey: ["/api/departments/stats"] });
 
   if (authLoading) return <LoadingSkeleton />;
   if (!user) { navigate("/"); return null; }
@@ -391,6 +822,7 @@ export default function Organization() {
   const allUsers = usersData || [];
   const allDepts = departments || [];
   const allChanges = orgChanges || [];
+  const stats: DeptStats = deptStats || {};
 
   const deptTree = useMemo(() => {
     const nodes: DeptTreeNode[] = allDepts.map((d) => ({
@@ -406,6 +838,12 @@ export default function Organization() {
       }
       rootNodes.push(node);
     }
+    const ceoNode = rootNodes.find((n) => n.dept.id === "ceo_office");
+    if (ceoNode) {
+      const otherRoots = rootNodes.filter((n) => n.dept.id !== "ceo_office");
+      ceoNode.children = [...otherRoots, ...ceoNode.children];
+      return [ceoNode];
+    }
     return rootNodes;
   }, [allDepts, allUsers]);
 
@@ -415,7 +853,7 @@ export default function Organization() {
     <div className="flex flex-col h-screen bg-background">
       <header className="sticky top-0 z-50 flex items-center gap-2 px-3 md:px-4 py-2 md:py-3 border-b bg-background" data-testid="org-header">
         <Link href="/dashboard">
-          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" data-testid="button-back">
+          <Button variant="ghost" size="icon" className="shrink-0" data-testid="button-back">
             <ArrowLeft className="w-4 h-4" />
           </Button>
         </Link>
@@ -424,13 +862,13 @@ export default function Organization() {
         <div className="flex-1" />
         {isCeoOrAdmin && (
           <Link href="/collaboration">
-            <Button variant="outline" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-collaboration">
+            <Button variant="outline" size="sm" className="shrink-0" data-testid="link-collaboration">
               <Network className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">协作图谱</span>
             </Button>
           </Link>
         )}
         {isCeoOrAdmin && (
-          <Button size="sm" className="h-8 px-2 md:px-3 shrink-0" onClick={() => setShowNewDept(true)} data-testid="button-new-dept">
+          <Button size="sm" className="shrink-0" onClick={() => setShowNewDept(true)} data-testid="button-new-dept">
             <Plus className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">新建部门</span>
           </Button>
         )}
@@ -457,14 +895,17 @@ export default function Organization() {
 
           <TabsContent value="tree" className="flex-1 min-h-0">
             <ScrollArea className="h-full">
-              <div className="p-4 max-w-3xl mx-auto">
-                {deptsLoading ? <LoadingSkeleton /> : deptTree.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-12">暂无部门数据</p>
-                ) : (
-                  deptTree.map((node) => (
-                    <DeptCard key={node.dept.id} node={node} users={allUsers} currentUser={user}
-                      onEditDept={(d) => setEditDept(d)} onEditUser={(u) => setEditUser(u)} onMoveUser={(u) => setMoveUser(u)} />
-                  ))
+              <div className="p-4 overflow-x-auto">
+                {deptsLoading ? <LoadingSkeleton /> : (
+                  <OrgTree
+                    deptTree={deptTree}
+                    users={allUsers}
+                    stats={stats}
+                    currentUser={user}
+                    onEditDept={(d) => setEditDept(d)}
+                    onEditUser={(u) => setEditUser(u)}
+                    onMoveUser={(u) => setMoveUser(u)}
+                  />
                 )}
               </div>
             </ScrollArea>
