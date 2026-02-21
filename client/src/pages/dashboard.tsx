@@ -633,30 +633,92 @@ function TaskDetailDialog({
 }
 
 function PhaseSection({
-  phase, tasks, assigneeMap, allTasks, allUsers, selectedTask, onSelectTask,
+  phase, tasks, assigneeMap, allTasks, allUsers, selectedTask, onSelectTask, defaultCollapsed = false,
 }: {
-  phase: Phase; tasks: Task[]; assigneeMap: AssigneeMap; allTasks: Task[]; allUsers: User[]; selectedTask: Task | null; onSelectTask: (task: Task | null) => void;
+  phase: Phase; tasks: Task[]; assigneeMap: AssigneeMap; allTasks: Task[]; allUsers: User[]; selectedTask: Task | null; onSelectTask: (task: Task | null) => void; defaultCollapsed?: boolean;
 }) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const parentTasks = tasks.filter((t) => !t.parent_id);
   const subtasks = tasks.filter((t) => t.parent_id);
 
   return (
     <div className="mb-6">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-md mb-2 flex-wrap" style={{ backgroundColor: phase.color ? `${phase.color}20` : undefined, borderLeft: `3px solid ${phase.color ?? "hsl(var(--primary))"}` }}>
-        <span className="font-medium text-sm">{phase.label}</span>
+      <div
+        className="flex items-center justify-between gap-2 px-3 py-2 rounded-md mb-2 flex-wrap cursor-pointer select-none"
+        style={{ backgroundColor: phase.color ? `${phase.color}20` : undefined, borderLeft: `3px solid ${phase.color ?? "hsl(var(--primary))"}` }}
+        onClick={() => setCollapsed(!collapsed)}
+        data-testid={`toggle-phase-${phase.id}`}
+      >
+        <div className="flex items-center gap-1.5">
+          {collapsed ? <ChevronRight className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+          <span className="font-medium text-sm">{phase.label}</span>
+          <span className="text-xs text-muted-foreground">({tasks.length})</span>
+        </div>
         {phase.date_range && <span className="text-xs text-muted-foreground">{phase.date_range}</span>}
       </div>
-      <div className="space-y-2">
-        {parentTasks.map((task) => (
-          <div key={task.id}>
-            <TaskCard task={task} assignees={assigneeMap[task.id] ?? []} allTasks={allTasks} onClick={() => onSelectTask(task)} />
-            {subtasks.filter((st) => st.parent_id === task.id).map((st) => (
-              <TaskCard key={st.id} task={st} assignees={assigneeMap[st.id] ?? []} allTasks={allTasks} onClick={() => onSelectTask(st)} />
-            ))}
-          </div>
-        ))}
-        {parentTasks.length === 0 && subtasks.length === 0 && <p className="text-sm text-muted-foreground py-2 px-3">暂无任务</p>}
+      {!collapsed && (
+        <div className="space-y-2">
+          {parentTasks.map((task) => (
+            <div key={task.id}>
+              <TaskCard task={task} assignees={assigneeMap[task.id] ?? []} allTasks={allTasks} onClick={() => onSelectTask(task)} />
+              {subtasks.filter((st) => st.parent_id === task.id).map((st) => (
+                <TaskCard key={st.id} task={st} assignees={assigneeMap[st.id] ?? []} allTasks={allTasks} onClick={() => onSelectTask(st)} />
+              ))}
+            </div>
+          ))}
+          {parentTasks.length === 0 && subtasks.length === 0 && <p className="text-sm text-muted-foreground py-2 px-3">暂无任务</p>}
+        </div>
+      )}
+      {selectedTask && tasks.some((t) => t.id === selectedTask.id) && (
+        <TaskDetailDialog task={selectedTask} assignees={assigneeMap[selectedTask.id] ?? []} allTasks={allTasks} allUsers={allUsers} open={true} onOpenChange={(o) => { if (!o) onSelectTask(null); }} />
+      )}
+    </div>
+  );
+}
+
+function PersonSectionList({
+  users, grouped, assigneeMap, allTasks, allUsers, selectedTask, onSelectTask,
+}: {
+  users: User[]; grouped: Record<string, Task[]>; assigneeMap: AssigneeMap; allTasks: Task[]; allUsers: User[]; selectedTask: Task | null; onSelectTask: (task: Task | null) => void;
+}) {
+  return (
+    <>
+      {users.map((u) => {
+        const userTasks = grouped[u.id] ?? [];
+        if (userTasks.length === 0) return null;
+        return <PersonSection key={u.id} user={u} tasks={userTasks} assigneeMap={assigneeMap} allTasks={allTasks} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={onSelectTask} />;
+      })}
+    </>
+  );
+}
+
+function PersonSection({
+  user, tasks, assigneeMap, allTasks, allUsers, selectedTask, onSelectTask,
+}: {
+  user: User; tasks: Task[]; assigneeMap: AssigneeMap; allTasks: Task[]; allUsers: User[]; selectedTask: Task | null; onSelectTask: (task: Task | null) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(true);
+
+  return (
+    <div className="mb-6">
+      <div
+        className="flex items-center gap-2 px-3 py-2 rounded-md mb-2 bg-muted/50 cursor-pointer select-none"
+        onClick={() => setCollapsed(!collapsed)}
+        data-testid={`toggle-person-${user.id}`}
+      >
+        {collapsed ? <ChevronRight className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: user.color ?? "#888" }} />
+        <span className="font-medium text-sm">{user.name}</span>
+        {user.title && <span className="text-xs text-muted-foreground">{user.title}</span>}
+        <span className="text-xs text-muted-foreground">({tasks.length})</span>
       </div>
+      {!collapsed && (
+        <div className="space-y-2">
+          {tasks.map((task) => (
+            <TaskCard key={task.id} task={task} assignees={assigneeMap[task.id] ?? []} allTasks={allTasks} onClick={() => onSelectTask(task)} />
+          ))}
+        </div>
+      )}
       {selectedTask && tasks.some((t) => t.id === selectedTask.id) && (
         <TaskDetailDialog task={selectedTask} assignees={assigneeMap[selectedTask.id] ?? []} allTasks={allTasks} allUsers={allUsers} open={true} onOpenChange={(o) => { if (!o) onSelectTask(null); }} />
       )}
@@ -833,10 +895,10 @@ export default function Dashboard() {
                 return (
                   <>
                     {phases.map((phase) => grouped[phase.id]?.length ? (
-                      <PhaseSection key={phase.id} phase={phase} tasks={grouped[phase.id]} assigneeMap={aMap} allTasks={allTasksList} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} />
+                      <PhaseSection key={phase.id} phase={phase} tasks={grouped[phase.id]} assigneeMap={aMap} allTasks={allTasksList} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} defaultCollapsed={true} />
                     ) : null)}
                     {grouped["_none"]?.length > 0 && (
-                      <PhaseSection phase={{ id: "_none", label: "未分类", date_range: null, color: "#888", sort_order: 999 }} tasks={grouped["_none"]} assigneeMap={aMap} allTasks={allTasksList} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} />
+                      <PhaseSection phase={{ id: "_none", label: "未分类", date_range: null, color: "#888", sort_order: 999 }} tasks={grouped["_none"]} assigneeMap={aMap} allTasks={allTasksList} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} defaultCollapsed={true} />
                     )}
                   </>
                 );
@@ -855,39 +917,17 @@ export default function Dashboard() {
                   const grouped = groupByPerson(peopleData.tasks, peopleData.assigneeMap);
                   return (
                     <>
-                      {allUsers.map((u) => {
-                        const userTasks = grouped[u.id] ?? [];
-                        if (userTasks.length === 0) return null;
-                        return (
-                          <div key={u.id} className="mb-6">
-                            <div className="flex items-center gap-2 px-3 py-2 rounded-md mb-2 bg-muted/50">
-                              <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: u.color ?? "#888" }} />
-                              <span className="font-medium text-sm">{u.name}</span>
-                              {u.title && <span className="text-xs text-muted-foreground">{u.title}</span>}
-                            </div>
-                            <div className="space-y-2">
-                              {userTasks.map((task) => (
-                                <TaskCard key={task.id} task={task} assignees={peopleData.assigneeMap[task.id] ?? []} allTasks={peopleData.tasks} onClick={() => setSelectedTask(task)} />
-                              ))}
-                            </div>
-                            {selectedTask && userTasks.some((t) => t.id === selectedTask.id) && (
-                              <TaskDetailDialog task={selectedTask} assignees={peopleData.assigneeMap[selectedTask.id] ?? []} allTasks={peopleData.tasks} allUsers={allUsers} open={true} onOpenChange={(o) => { if (!o) setSelectedTask(null); }} />
-                            )}
-                          </div>
-                        );
-                      })}
+                      <PersonSectionList users={allUsers} grouped={grouped} assigneeMap={peopleData.assigneeMap} allTasks={peopleData.tasks} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} />
                       {grouped["_unassigned"]?.length > 0 && (
-                        <div className="mb-6">
-                          <div className="flex items-center gap-2 px-3 py-2 rounded-md mb-2 bg-muted/50">
-                            <span className="w-3 h-3 rounded-full bg-muted-foreground shrink-0" />
-                            <span className="font-medium text-sm">未分配</span>
-                          </div>
-                          <div className="space-y-2">
-                            {grouped["_unassigned"].map((task) => (
-                              <TaskCard key={task.id} task={task} assignees={[]} allTasks={peopleData.tasks} onClick={() => setSelectedTask(task)} />
-                            ))}
-                          </div>
-                        </div>
+                        <PersonSection
+                          user={{ id: "_unassigned", name: "未分配", role: "staff", invite_code: "", title: null, department: null, color: "#888" } as User}
+                          tasks={grouped["_unassigned"]}
+                          assigneeMap={peopleData.assigneeMap}
+                          allTasks={peopleData.tasks}
+                          allUsers={allUsers}
+                          selectedTask={selectedTask}
+                          onSelectTask={setSelectedTask}
+                        />
                       )}
                     </>
                   );
