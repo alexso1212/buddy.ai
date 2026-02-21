@@ -118,19 +118,20 @@ export default function Overview() {
   return (
     <div className="flex flex-col h-screen bg-background" data-testid="page-overview">
       <header
-        className="sticky top-0 z-50 flex items-center justify-between gap-4 px-4 py-3 border-b bg-background"
+        className="sticky top-0 z-50 flex items-center justify-between gap-2 px-3 md:px-4 py-2 md:py-3 border-b bg-background"
         data-testid="header-overview"
       >
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
           <Button
             size="icon"
             variant="ghost"
+            className="h-8 w-8 shrink-0"
             onClick={() => setLocation("/dashboard")}
             data-testid="button-back"
           >
-            <ArrowLeft />
+            <ArrowLeft className="w-4 h-4" />
           </Button>
-          <h1 className="text-lg font-bold tracking-tight" data-testid="text-page-title">全局概览</h1>
+          <h1 className="text-sm md:text-lg font-bold tracking-tight" data-testid="text-page-title">全局概览</h1>
         </div>
       </header>
 

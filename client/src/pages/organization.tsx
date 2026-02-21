@@ -415,25 +415,25 @@ export default function Organization() {
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      <header className="sticky top-0 z-50 flex items-center gap-3 px-4 py-3 border-b bg-background" data-testid="org-header">
+      <header className="sticky top-0 z-50 flex items-center gap-2 px-3 md:px-4 py-2 md:py-3 border-b bg-background" data-testid="org-header">
         <Link href="/dashboard">
-          <Button variant="ghost" size="icon" className="h-8 w-8" data-testid="button-back">
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" data-testid="button-back">
             <ArrowLeft className="w-4 h-4" />
           </Button>
         </Link>
-        <Building2 className="w-5 h-5 text-primary" />
-        <h1 className="text-lg font-bold">组织架构</h1>
+        <Building2 className="w-4 h-4 md:w-5 md:h-5 text-primary shrink-0" />
+        <h1 className="text-sm md:text-lg font-bold shrink-0">组织架构</h1>
         <div className="flex-1" />
         {isCeoOrAdmin && (
           <Link href="/collaboration">
-            <Button variant="outline" size="sm" data-testid="link-collaboration">
-              <Network className="w-4 h-4 mr-1" /> 协作图谱
+            <Button variant="outline" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-collaboration">
+              <Network className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">协作图谱</span>
             </Button>
           </Link>
         )}
         {isCeoOrAdmin && (
-          <Button size="sm" onClick={() => setShowNewDept(true)} data-testid="button-new-dept">
-            <Plus className="w-4 h-4 mr-1" /> 新建部门
+          <Button size="sm" className="h-8 px-2 md:px-3 shrink-0" onClick={() => setShowNewDept(true)} data-testid="button-new-dept">
+            <Plus className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">新建部门</span>
           </Button>
         )}
       </header>

@@ -342,19 +342,19 @@ export default function Collaboration() {
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      <header className="sticky top-0 z-50 flex items-center gap-3 px-4 py-3 border-b bg-background" data-testid="collab-header">
+      <header className="sticky top-0 z-50 flex items-center gap-2 px-3 md:px-4 py-2 md:py-3 border-b bg-background" data-testid="collab-header">
         <Link href="/organization">
-          <Button variant="ghost" size="icon" className="h-8 w-8" data-testid="button-back">
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" data-testid="button-back">
             <ArrowLeft className="w-4 h-4" />
           </Button>
         </Link>
-        <Network className="w-5 h-5 text-primary" />
-        <h1 className="text-lg font-bold">协作图谱</h1>
+        <Network className="w-4 h-4 md:w-5 md:h-5 text-primary shrink-0" />
+        <h1 className="text-sm md:text-lg font-bold shrink-0">协作图谱</h1>
 
         <div className="flex-1" />
 
         <Select value={filter} onValueChange={setFilter}>
-          <SelectTrigger className="w-[140px] h-8 text-sm" data-testid="select-filter">
+          <SelectTrigger className="w-[110px] md:w-[140px] h-8 text-xs md:text-sm" data-testid="select-filter">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

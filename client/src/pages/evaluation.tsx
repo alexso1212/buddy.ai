@@ -994,14 +994,14 @@ export default function Evaluation() {
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      <header className="sticky top-0 z-50 flex items-center justify-between gap-4 px-4 py-3 border-b bg-background" data-testid="header-evaluation">
-        <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-50 flex items-center justify-between gap-2 px-3 md:px-4 py-2 md:py-3 border-b bg-background" data-testid="header-evaluation">
+        <div className="flex items-center gap-2">
           <Link href="/dashboard">
-            <Button size="icon" variant="ghost" data-testid="button-back">
-              <ArrowLeft />
+            <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" data-testid="button-back">
+              <ArrowLeft className="w-4 h-4" />
             </Button>
           </Link>
-          <h1 className="text-lg font-bold tracking-tight" data-testid="text-page-title">绩效考核</h1>
+          <h1 className="text-sm md:text-lg font-bold tracking-tight" data-testid="text-page-title">绩效考核</h1>
         </div>
         <div className="flex items-center gap-2">
           <span

@@ -217,15 +217,15 @@ export default function SyncPage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
           <Link href="/dashboard">
-            <Button variant="ghost" size="icon" data-testid="button-back">
-              <ArrowLeft />
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" data-testid="button-back">
+              <ArrowLeft className="w-4 h-4" />
             </Button>
           </Link>
           <div className="flex items-center gap-2">
-            <RefreshCw className="h-5 w-5 text-muted-foreground" />
-            <h1 className="text-xl font-semibold" data-testid="text-page-title">
+            <RefreshCw className="h-4 w-4 md:h-5 md:w-5 text-muted-foreground shrink-0" />
+            <h1 className="text-sm md:text-xl font-semibold" data-testid="text-page-title">
               JSON 同步
             </h1>
           </div>
