@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, CalendarDays } from "lucide-react";
+import { ChevronDown, ChevronRight, CalendarDays, List, BarChart3 } from "lucide-react";
 
 type AssigneeMap = Record<string, User[]>;
 interface TasksResponse { tasks: Task[]; assigneeMap: AssigneeMap; }
@@ -71,6 +71,7 @@ export default function GanttChart() {
   const [filterAssignee, setFilterAssignee] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [collapsedPhases, setCollapsedPhases] = useState<Record<string, boolean>>({});
+  const [mobileView, setMobileView] = useState<"list" | "timeline">("list");
 
   const isCeoOrAdmin = user?.role === "ceo" || user?.role === "admin";
 
@@ -387,14 +388,18 @@ export default function GanttChart() {
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      <div className="flex items-center gap-3 p-3 border-b flex-wrap">
+      <style>{`
+        .gantt-left-panel { width: 100%; min-width: 0; }
+        @media (min-width: 768px) { .gantt-left-panel { width: ${LEFT_PANEL_WIDTH}px; min-width: ${LEFT_PANEL_WIDTH}px; } }
+      `}</style>
+      <div className="flex items-center gap-2 md:gap-3 p-2 md:p-3 border-b flex-wrap">
         <div className="flex items-center gap-1.5 mr-2">
           <CalendarDays className="w-5 h-5 text-muted-foreground" />
           <span className="text-sm font-semibold">甘特图</span>
         </div>
 
         <Select value={filterPhase} onValueChange={setFilterPhase}>
-          <SelectTrigger className="w-[130px]" data-testid="gantt-filter-phase">
+          <SelectTrigger className="w-[100px] md:w-[130px]" data-testid="gantt-filter-phase">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -406,7 +411,7 @@ export default function GanttChart() {
         </Select>
 
         <Select value={filterDept} onValueChange={setFilterDept}>
-          <SelectTrigger className="w-[130px]" data-testid="gantt-filter-dept">
+          <SelectTrigger className="w-[100px] md:w-[130px]" data-testid="gantt-filter-dept">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -418,7 +423,7 @@ export default function GanttChart() {
         </Select>
 
         <Select value={filterAssignee} onValueChange={setFilterAssignee}>
-          <SelectTrigger className="w-[130px]" data-testid="gantt-filter-assignee">
+          <SelectTrigger className="w-[100px] md:w-[130px]" data-testid="gantt-filter-assignee">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -430,7 +435,7 @@ export default function GanttChart() {
         </Select>
 
         <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className="w-[130px]" data-testid="gantt-filter-status">
+          <SelectTrigger className="w-[100px] md:w-[130px]" data-testid="gantt-filter-status">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -446,7 +451,30 @@ export default function GanttChart() {
           今天
         </Button>
 
-        <div className="flex items-center border rounded-md">
+        <div className="flex items-center border rounded-md md:hidden">
+          <Button
+            variant={mobileView === "list" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setMobileView("list")}
+            data-testid="gantt-mobile-list"
+            className="rounded-r-none gap-1"
+          >
+            <List className="w-3.5 h-3.5" />
+            列表
+          </Button>
+          <Button
+            variant={mobileView === "timeline" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setMobileView("timeline")}
+            data-testid="gantt-mobile-timeline"
+            className="rounded-l-none gap-1"
+          >
+            <BarChart3 className="w-3.5 h-3.5" />
+            时间轴
+          </Button>
+        </div>
+
+        <div className="hidden md:flex items-center border rounded-md">
           <Button
             variant={granularity === "day" ? "default" : "ghost"}
             size="sm"
@@ -474,7 +502,12 @@ export default function GanttChart() {
         </div>
       ) : (
         <div className="flex-1 flex overflow-hidden">
-          <div className="flex flex-col" style={{ width: LEFT_PANEL_WIDTH, minWidth: LEFT_PANEL_WIDTH }}>
+          <div
+            className={cn(
+              "flex flex-col gantt-left-panel",
+              mobileView === "timeline" ? "hidden md:flex" : "flex"
+            )}
+          >
             <div
               className="border-b border-r bg-muted/30 flex items-center px-3 text-xs font-medium text-muted-foreground shrink-0"
               style={{ height: HEADER_HEIGHT }}
@@ -529,7 +562,13 @@ export default function GanttChart() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-auto" ref={timelineRef}>
+          <div
+            className={cn(
+              "flex-1 overflow-auto",
+              mobileView === "list" ? "hidden md:block" : "block"
+            )}
+            ref={timelineRef}
+          >
             <div style={{ minWidth: totalWidth, position: "relative" }}>
               <div
                 className="flex border-b bg-muted/30 sticky top-0"
