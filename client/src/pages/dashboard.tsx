@@ -21,7 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   LogOut, Lock, Save, ExternalLink, RefreshCw, Bell, MessageSquare, Paperclip,
   Plus, Trash2, BarChart3, Award, Zap, Download, X, ChevronDown, ChevronRight,
-  CheckSquare, Send
+  CheckSquare, Send, Building2
 } from "lucide-react";
 
 type AssigneeMap = Record<string, User[]>;
@@ -813,6 +813,13 @@ export default function Dashboard() {
             <Link href="/evaluation">
               <Button variant="ghost" size="sm" data-testid="link-evaluation">
                 <Award className="w-4 h-4 mr-1" /> 考核
+              </Button>
+            </Link>
+          )}
+          {isCeoOrAdmin && (
+            <Link href="/organization">
+              <Button variant="ghost" size="sm" data-testid="link-organization">
+                <Building2 className="w-4 h-4 mr-1" /> 组织
               </Button>
             </Link>
           )}

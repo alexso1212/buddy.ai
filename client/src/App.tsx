@@ -10,6 +10,8 @@ import Dashboard from "@/pages/dashboard";
 import SyncPage from "@/pages/sync";
 import Overview from "@/pages/overview";
 import Evaluation from "@/pages/evaluation";
+import Organization from "@/pages/organization";
+import Collaboration from "@/pages/collaboration";
 
 function Router() {
   return (
@@ -19,6 +21,8 @@ function Router() {
       <Route path="/overview" component={Overview} />
       <Route path="/evaluation" component={Evaluation} />
       <Route path="/sync" component={SyncPage} />
+      <Route path="/organization" component={Organization} />
+      <Route path="/collaboration" component={Collaboration} />
       <Route component={NotFound} />
     </Switch>
   );

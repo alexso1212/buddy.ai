@@ -766,6 +766,242 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ---- Seed ----
+  // ---- Departments ----
+  app.get("/api/departments", authMiddleware, async (_req, res) => {
+    const depts = await storage.getAllDepartments();
+    return res.json(depts);
+  });
+
+  app.post("/api/departments", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "ceo" && user.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+
+    const { id, name, color, parent_id, head_id, sort_order } = req.body;
+    if (!id || !name) return res.status(400).json({ message: "id and name required" });
+
+    if (user.role === "ceo") {
+      const dept = await storage.createDepartment({ id, name, color, parent_id, head_id, sort_order });
+      await storage.createOrgChange({ requested_by: user.id, change_type: "dept_create", target_type: "department", target_id: id, new_value: { id, name, color, head_id }, status: "approved" });
+      return res.json(dept);
+    } else {
+      const change = await storage.createOrgChange({ requested_by: user.id, change_type: "dept_create", target_type: "department", target_id: id, new_value: { id, name, color, head_id, sort_order }, status: "pending" });
+      return res.json({ pending: true, change });
+    }
+  });
+
+  app.patch("/api/departments/:id", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "ceo" && user.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+
+    const deptId = req.params.id as string;
+    const dept = await storage.getDepartmentById(deptId);
+    if (!dept) return res.status(404).json({ message: "Department not found" });
+
+    const updates = req.body;
+
+    if (user.role === "ceo") {
+      const changeType = updates.head_id !== undefined && updates.head_id !== dept.head_id ? "head_change" : "dept_edit";
+      const updated = await storage.updateDepartment(deptId, updates);
+      await storage.createOrgChange({ requested_by: user.id, change_type: changeType, target_type: "department", target_id: deptId, old_value: dept, new_value: updates, status: "approved" });
+      return res.json(updated);
+    } else {
+      const change = await storage.createOrgChange({ requested_by: user.id, change_type: "dept_edit", target_type: "department", target_id: deptId, old_value: dept, new_value: updates, status: "pending" });
+      return res.json({ pending: true, change });
+    }
+  });
+
+  app.delete("/api/departments/:id", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "ceo") return res.status(403).json({ message: "Only CEO can delete departments" });
+
+    const deptId = req.params.id as string;
+    const dept = await storage.getDepartmentById(deptId);
+    if (!dept) return res.status(404).json({ message: "Department not found" });
+
+    const members = await storage.getUsersByDeptId(deptId);
+    if (members.length > 0) return res.status(400).json({ message: "部门下还有成员，请先移走所有成员" });
+
+    await storage.deleteDepartment(deptId);
+    await storage.createOrgChange({ requested_by: user.id, change_type: "dept_delete", target_type: "department", target_id: deptId, old_value: dept, status: "approved" });
+    return res.json({ ok: true });
+  });
+
+  // ---- User management (org) ----
+  app.patch("/api/users/:id", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "ceo" && user.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+
+    const targetId = req.params.id as string;
+    const target = await storage.getUserById(targetId);
+    if (!target) return res.status(404).json({ message: "User not found" });
+
+    const updates = req.body;
+
+    if (user.role === "ceo") {
+      const changeType = updates.dept_id !== undefined && updates.dept_id !== target.dept_id ? "user_move" : "user_edit";
+      const updated = await storage.updateUser(targetId, updates);
+      await storage.createOrgChange({ requested_by: user.id, change_type: changeType, target_type: "user", target_id: targetId, old_value: { name: target.name, title: target.title, dept_id: target.dept_id, role: target.role, color: target.color }, new_value: updates, status: "approved" });
+      return res.json(stripInviteCode(updated!));
+    } else {
+      const change = await storage.createOrgChange({ requested_by: user.id, change_type: "user_edit", target_type: "user", target_id: targetId, old_value: { name: target.name, title: target.title, dept_id: target.dept_id, role: target.role, color: target.color }, new_value: updates, status: "pending" });
+      return res.json({ pending: true, change });
+    }
+  });
+
+  // ---- Org Changes (approval) ----
+  app.get("/api/org-changes", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "ceo" && user.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+
+    const status = req.query.status as string | undefined;
+    if (status === "pending") {
+      const changes = await storage.getPendingOrgChanges();
+      return res.json(changes);
+    }
+    const changes = await storage.getAllOrgChanges();
+    return res.json(changes);
+  });
+
+  app.patch("/api/org-changes/:id", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "ceo") return res.status(403).json({ message: "Only CEO can approve/reject changes" });
+
+    const changeId = parseInt(req.params.id as string);
+    const change = await storage.getOrgChangeById(changeId);
+    if (!change) return res.status(404).json({ message: "Change not found" });
+    if (change.status !== "pending") return res.status(400).json({ message: "Change is not pending" });
+
+    const { status, review_note } = req.body;
+    if (status !== "approved" && status !== "rejected") return res.status(400).json({ message: "Invalid status" });
+
+    if (status === "approved") {
+      const newVal = change.new_value as any;
+      if (change.change_type === "dept_create") {
+        await storage.createDepartment({ id: newVal.id, name: newVal.name, color: newVal.color, head_id: newVal.head_id, sort_order: newVal.sort_order });
+      } else if (change.change_type === "dept_edit" || change.change_type === "head_change") {
+        await storage.updateDepartment(change.target_id, newVal);
+      } else if (change.change_type === "dept_delete") {
+        await storage.deleteDepartment(change.target_id);
+      } else if (change.change_type === "user_move" || change.change_type === "user_edit") {
+        await storage.updateUser(change.target_id, newVal);
+      }
+    }
+
+    const updated = await storage.updateOrgChange(changeId, { status, reviewed_by: user.id, review_note, reviewed_at: new Date() });
+
+    await notifyUsers([change.requested_by], {
+      type: "org",
+      title: status === "approved" ? `架构变更已通过` : `架构变更被驳回`,
+      content: review_note || (status === "approved" ? "您的架构变更申请已通过" : "您的架构变更申请被驳回"),
+    });
+
+    return res.json(updated);
+  });
+
+  // ---- Collaboration Graph ----
+  app.get("/api/collaboration", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "ceo" && user.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+
+    const allUsers = await storage.getActiveUsers();
+    const allDepts = await storage.getAllDepartments();
+    const allTasks = await storage.getAllTasks();
+    const allAssignees = await storage.getAllTaskAssignees();
+    const now = new Date();
+    const today = now.toISOString().split("T")[0];
+
+    const taskAssigneeMap: Record<string, string[]> = {};
+    for (const a of allAssignees) {
+      if (!taskAssigneeMap[a.task_id]) taskAssigneeMap[a.task_id] = [];
+      taskAssigneeMap[a.task_id].push(a.user_id);
+    }
+
+    const userTaskMap: Record<string, string[]> = {};
+    for (const a of allAssignees) {
+      if (!userTaskMap[a.user_id]) userTaskMap[a.user_id] = [];
+      userTaskMap[a.user_id].push(a.task_id);
+    }
+
+    const nodes: any[] = [];
+    for (const u of allUsers) {
+      const userTasks = (userTaskMap[u.id] || []).map((tid) => allTasks.find((t) => t.id === tid)).filter(Boolean) as typeof allTasks;
+      const mainTasks = userTasks.filter((t) => !t.parent_id);
+      const overdueCount = mainTasks.filter((t) => t.status !== "done" && t.deadline < today).length;
+      const nearDeadline = mainTasks.some((t) => {
+        if (t.status === "done") return false;
+        const dl = new Date(t.deadline + "T23:59:59");
+        const diff = (dl.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+        return diff >= 0 && diff <= 2;
+      });
+      let status = "healthy";
+      if (overdueCount > 0) status = "danger";
+      else if (nearDeadline) status = "warning";
+
+      nodes.push({ id: u.id, type: "person", name: u.name, dept_id: u.dept_id, color: u.color, task_count: mainTasks.length, overdue_count: overdueCount, status, title: u.title });
+    }
+
+    for (const d of allDepts) {
+      const memberCount = allUsers.filter((u) => u.dept_id === d.id).length;
+      nodes.push({ id: d.id, type: "dept", name: d.name, color: d.color, member_count: memberCount, head_id: d.head_id });
+    }
+
+    const linkMap: Record<string, { source: string; target: string; taskIds: Set<string> }> = {};
+    const addLink = (a: string, b: string, taskId: string) => {
+      const key = [a, b].sort().join("--");
+      if (!linkMap[key]) linkMap[key] = { source: a, target: b, taskIds: new Set() };
+      linkMap[key].taskIds.add(taskId);
+    };
+
+    for (const task of allTasks) {
+      const assignees = taskAssigneeMap[task.id] || [];
+      for (let i = 0; i < assignees.length; i++) {
+        for (let j = i + 1; j < assignees.length; j++) {
+          addLink(assignees[i], assignees[j], task.id);
+        }
+      }
+
+      if (task.reviewer_id) {
+        for (const uid of assignees) {
+          if (uid !== task.reviewer_id) addLink(uid, task.reviewer_id, task.id);
+        }
+      }
+
+      if (task.depends_on) {
+        const depIds = task.depends_on.split(",").map((s) => s.trim()).filter(Boolean);
+        for (const depId of depIds) {
+          const depTask = allTasks.find((t) => t.id === depId);
+          if (!depTask) continue;
+          const depAssignees = taskAssigneeMap[depId] || [];
+          for (const a1 of assignees) {
+            for (const a2 of depAssignees) {
+              if (a1 !== a2) addLink(a1, a2, task.id);
+            }
+          }
+        }
+      }
+    }
+
+    const links = Object.values(linkMap).map((l) => {
+      const taskIds = Array.from(l.taskIds);
+      const linkedTasks = taskIds.map((tid) => allTasks.find((t) => t.id === tid)).filter(Boolean) as typeof allTasks;
+      let linkStatus = "healthy";
+      const hasOverdue = linkedTasks.some((t) => t.status !== "done" && t.deadline < today);
+      const hasWarning = linkedTasks.some((t) => {
+        if (t.status === "done") return false;
+        const dl = new Date(t.deadline + "T23:59:59");
+        const diff = (dl.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+        return diff >= 0 && diff <= 2;
+      });
+      if (hasOverdue) linkStatus = "danger";
+      else if (hasWarning) linkStatus = "warning";
+
+      return { source: l.source, target: l.target, weight: taskIds.length, task_ids: taskIds, status: linkStatus };
+    });
+
+    return res.json({ nodes, links });
+  });
+
+  // ---- Seed ----
   app.post("/api/seed", async (_req, res) => {
     const USERS = [
       { id: "alex", name: "Alex", title: "CEO / 首席讲师", dept: "CEO办公室", role: "ceo", invite_code: "DP-ALEX-9k2m", color: "#C0392B" },
@@ -836,7 +1072,27 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       { id: "t40", title: "三方对账—建档完成检查", desc: "逐项核查建档清单", assignees: ["alex", "tina", "anzhou"], reviewer: "alex", deadline: "2026-03-13", grace: "2026-03-13", phase: "p2w23", deliverable: "《建档完成确认书》", priority: 1, depends_on: "t36,t37,t38,t39", subtasks: ["P0文件到位确认", "P1文件到位确认", "P2进度跟踪", "安洲BD文件归档确认", "双主体分账文件确认", "缺失项清单"] },
     ];
 
-    for (const u of USERS) await storage.upsertUser(u);
+    const DEPARTMENTS = [
+      { id: "ceo_office", name: "CEO办公室", color: "#C0392B", head_id: "alex", sort_order: 1 },
+      { id: "admin_dept", name: "综合部", color: "#2E86AB", head_id: "tina", sort_order: 2 },
+      { id: "sales_dept", name: "销售部", color: "#7B1FA2", head_id: "anzhou", sort_order: 3 },
+      { id: "bd_dept", name: "业务拓展部", color: "#9C27B0", head_id: "anzhou", sort_order: 4 },
+      { id: "ip_center", name: "IP内容中心", color: "#E65100", head_id: "alex", sort_order: 5 },
+      { id: "edu_dept", name: "教研部", color: "#1565C0", head_id: "alex", sort_order: 6 },
+    ];
+
+    for (const d of DEPARTMENTS) {
+      await storage.createDepartment(d).catch(async () => {
+        await storage.updateDepartment(d.id, { name: d.name, color: d.color, head_id: d.head_id, sort_order: d.sort_order });
+      });
+    }
+
+    const DEPT_MAP: Record<string, string> = {
+      "CEO办公室": "ceo_office", "综合部": "admin_dept", "销售部": "sales_dept",
+      "销售部+BD部": "sales_dept", "IP内容中心": "ip_center", "教研部": "edu_dept",
+    };
+
+    for (const u of USERS) await storage.upsertUser({ ...u, dept_id: DEPT_MAP[u.dept] || undefined });
     for (const p of PHASES) await storage.upsertPhase(p);
 
     for (const t of TASKS) {

@@ -9,6 +9,8 @@ import {
   type EvalScore,
   type EvalRule,
   type Attachment,
+  type Department,
+  type OrgChange,
   users,
   phases,
   tasks,
@@ -20,8 +22,10 @@ import {
   eval_scores,
   eval_rules,
   attachments,
+  departments,
+  org_changes,
 } from "@shared/schema";
-import { eq, inArray, and, desc, sql, like, gte, lte, ne, count, asc } from "drizzle-orm";
+import { eq, inArray, and, desc, sql, like, gte, lte, ne, count, asc, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import Pool from "pg";
 
@@ -29,6 +33,7 @@ const pool = new Pool.Pool({ connectionString: process.env.DATABASE_URL });
 const db = drizzle(pool);
 
 export class DatabaseStorage {
+  // ---- Users ----
   async getUserById(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
@@ -43,15 +48,80 @@ export class DatabaseStorage {
     return db.select().from(users);
   }
 
+  async getActiveUsers(): Promise<User[]> {
+    return db.select().from(users).where(ne(users.is_active, false));
+  }
+
   async upsertUser(user: {
-    id: string; name: string; title?: string; dept?: string; role: string; invite_code: string; color?: string;
+    id: string; name: string; title?: string; dept?: string; dept_id?: string; role: string; invite_code: string; color?: string; is_active?: boolean;
   }): Promise<User> {
     const [result] = await db.insert(users).values(user)
-      .onConflictDoUpdate({ target: users.id, set: { name: user.name, title: user.title, dept: user.dept, role: user.role, invite_code: user.invite_code, color: user.color } })
+      .onConflictDoUpdate({ target: users.id, set: { name: user.name, title: user.title, dept: user.dept, dept_id: user.dept_id, role: user.role, invite_code: user.invite_code, color: user.color, is_active: user.is_active } })
       .returning();
     return result;
   }
 
+  async updateUser(id: string, updates: Partial<{ name: string; title: string; dept_id: string; role: string; color: string; is_active: boolean; }>): Promise<User | undefined> {
+    const [result] = await db.update(users).set(updates).where(eq(users.id, id)).returning();
+    return result;
+  }
+
+  // ---- Departments ----
+  async getAllDepartments(): Promise<Department[]> {
+    return db.select().from(departments).orderBy(asc(departments.sort_order));
+  }
+
+  async getDepartmentById(id: string): Promise<Department | undefined> {
+    const [result] = await db.select().from(departments).where(eq(departments.id, id));
+    return result;
+  }
+
+  async createDepartment(dept: { id: string; name: string; color?: string; parent_id?: string; head_id?: string; sort_order?: number; }): Promise<Department> {
+    const [result] = await db.insert(departments).values(dept).returning();
+    return result;
+  }
+
+  async updateDepartment(id: string, updates: Partial<{ name: string; color: string; parent_id: string; head_id: string; sort_order: number; }>): Promise<Department | undefined> {
+    const [result] = await db.update(departments).set(updates).where(eq(departments.id, id)).returning();
+    return result;
+  }
+
+  async deleteDepartment(id: string): Promise<void> {
+    await db.delete(departments).where(eq(departments.id, id));
+  }
+
+  async getUsersByDeptId(deptId: string): Promise<User[]> {
+    return db.select().from(users).where(eq(users.dept_id, deptId));
+  }
+
+  // ---- Org Changes ----
+  async createOrgChange(change: {
+    requested_by: string; change_type: string; target_type: string; target_id: string;
+    old_value?: any; new_value?: any; status?: string;
+  }): Promise<OrgChange> {
+    const [result] = await db.insert(org_changes).values(change).returning();
+    return result;
+  }
+
+  async getAllOrgChanges(): Promise<OrgChange[]> {
+    return db.select().from(org_changes).orderBy(desc(org_changes.created_at));
+  }
+
+  async getPendingOrgChanges(): Promise<OrgChange[]> {
+    return db.select().from(org_changes).where(eq(org_changes.status, "pending")).orderBy(desc(org_changes.created_at));
+  }
+
+  async getOrgChangeById(id: number): Promise<OrgChange | undefined> {
+    const [result] = await db.select().from(org_changes).where(eq(org_changes.id, id));
+    return result;
+  }
+
+  async updateOrgChange(id: number, updates: { status: string; reviewed_by?: string; review_note?: string; reviewed_at?: Date; }): Promise<OrgChange | undefined> {
+    const [result] = await db.update(org_changes).set(updates).where(eq(org_changes.id, id)).returning();
+    return result;
+  }
+
+  // ---- Phases ----
   async getAllPhases(): Promise<Phase[]> {
     return db.select().from(phases);
   }
@@ -65,6 +135,7 @@ export class DatabaseStorage {
     return result;
   }
 
+  // ---- Tasks ----
   async getTaskById(id: string): Promise<Task | undefined> {
     const [task] = await db.select().from(tasks).where(eq(tasks.id, id));
     return task;
@@ -151,6 +222,11 @@ export class DatabaseStorage {
     await db.delete(task_assignees).where(eq(task_assignees.task_id, taskId));
   }
 
+  async getAllTaskAssignees(): Promise<{ task_id: string; user_id: string }[]> {
+    return db.select({ task_id: task_assignees.task_id, user_id: task_assignees.user_id }).from(task_assignees);
+  }
+
+  // ---- Task Logs ----
   async addLog(log: { task_id?: string; user_id?: string; action: string; old_value?: string; new_value?: string; }): Promise<TaskLog> {
     const [result] = await db.insert(task_logs).values(log).returning();
     return result;

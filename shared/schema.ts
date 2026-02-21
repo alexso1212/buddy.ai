@@ -1,16 +1,28 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, integer, timestamp, serial, primaryKey, boolean, numeric, date } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, serial, primaryKey, boolean, numeric, date, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+export const departments = pgTable("departments", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  color: text("color").default("#888"),
+  parent_id: text("parent_id"),
+  head_id: text("head_id"),
+  sort_order: integer("sort_order").default(0),
+  created_at: timestamp("created_at").defaultNow(),
+});
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   title: text("title"),
   dept: text("dept"),
+  dept_id: text("dept_id").references(() => departments.id),
   role: text("role").notNull().default("staff"),
   invite_code: text("invite_code").notNull().unique(),
   color: text("color").default("#888"),
+  is_active: boolean("is_active").default(true),
   created_at: timestamp("created_at").defaultNow(),
 });
 
@@ -127,6 +139,25 @@ export const attachments = pgTable("attachments", {
   created_at: timestamp("created_at").defaultNow(),
 });
 
+export const org_changes = pgTable("org_changes", {
+  id: serial("id").primaryKey(),
+  requested_by: text("requested_by").notNull().references(() => users.id),
+  change_type: text("change_type").notNull(),
+  target_type: text("target_type").notNull(),
+  target_id: text("target_id").notNull(),
+  old_value: jsonb("old_value"),
+  new_value: jsonb("new_value"),
+  status: text("status").default("pending"),
+  reviewed_by: text("reviewed_by").references(() => users.id),
+  review_note: text("review_note"),
+  created_at: timestamp("created_at").defaultNow(),
+  reviewed_at: timestamp("reviewed_at"),
+});
+
+export const insertDepartmentSchema = createInsertSchema(departments).omit({
+  created_at: true,
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   created_at: true,
@@ -179,6 +210,15 @@ export const insertAttachmentSchema = createInsertSchema(attachments).omit({
   created_at: true,
 });
 
+export const insertOrgChangeSchema = createInsertSchema(org_changes).omit({
+  id: true,
+  created_at: true,
+  reviewed_at: true,
+});
+
+export type InsertDepartment = z.infer<typeof insertDepartmentSchema>;
+export type Department = typeof departments.$inferSelect;
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
@@ -211,3 +251,6 @@ export type EvalRule = typeof eval_rules.$inferSelect;
 
 export type InsertAttachment = z.infer<typeof insertAttachmentSchema>;
 export type Attachment = typeof attachments.$inferSelect;
+
+export type InsertOrgChange = z.infer<typeof insertOrgChangeSchema>;
+export type OrgChange = typeof org_changes.$inferSelect;

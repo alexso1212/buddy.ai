@@ -1,7 +1,7 @@
 # 德湃任务中心 (Depai Task Center)
 
 ## Overview
-Team task management board for a 16-person financial education company. V1: Login + Dashboard + Status management + JSON sync. V2: Notifications, Comments, Subtasks, Attachments, Automation Engine, KPI Evaluation, Overview Analytics.
+Team task management board for a 16-person financial education company. V1: Login + Dashboard + Status management + JSON sync. V2: Notifications, Comments, Subtasks, Attachments, Automation Engine, KPI Evaluation, Overview Analytics. V3: Organization management, approval workflow, D3.js collaboration graph.
 
 ## Tech Stack
 - Express.js + Vite + React (TypeScript)
@@ -10,9 +10,10 @@ Team task management board for a 16-person financial education company. V1: Logi
 - Tailwind CSS + shadcn/ui components
 - wouter for frontend routing
 - multer for file uploads
+- D3.js for force-directed collaboration graph
 
 ## Project Structure
-- `shared/schema.ts` - Database schema (users, phases, tasks, task_assignees, task_logs, notifications, comments, eval_periods, eval_scores, eval_rules, attachments)
+- `shared/schema.ts` - Database schema (users, phases, tasks, task_assignees, task_logs, notifications, comments, eval_periods, eval_scores, eval_rules, attachments, departments, org_changes)
 - `server/storage.ts` - DatabaseStorage class with Drizzle ORM
 - `server/routes.ts` - API routes with JWT auth middleware
 - `client/src/lib/auth.tsx` - AuthProvider context
@@ -22,6 +23,8 @@ Team task management board for a 16-person financial education company. V1: Logi
 - `client/src/pages/sync.tsx` - JSON sync page (CEO only)
 - `client/src/pages/overview.tsx` - Overview analytics (stats, phase progress, risk board, activity)
 - `client/src/pages/evaluation.tsx` - KPI evaluation (period management, scoring, rules)
+- `client/src/pages/organization.tsx` - Organization management (dept tree, edit, approval workflow, history)
+- `client/src/pages/collaboration.tsx` - D3.js force-directed collaboration graph
 
 ## Key Features
 1. Invite code login (format: DP-XXXX-XXXX)
@@ -37,6 +40,8 @@ Team task management board for a 16-person financial education company. V1: Logi
 11. Deadline escalation: 1-day warning, 3-day system urge, 7-day CEO escalation
 12. Overview page: stats cards, phase progress bars, risk board (overdue tasks), recent activity
 13. KPI Evaluation: period lifecycle (draft→scoring→review→published), auto-scoring (5 dimensions), manual quality rating, role hierarchy override
+14. Organization management: department tree, edit/create/delete departments, user edit/move, CEO/Admin approval workflow
+15. Collaboration graph: D3.js force-directed graph showing task-based relationships, status-colored links/nodes, department filtering, side panel details
 
 ## Roles
 - CEO (alex): Full access, evaluation override, urge capability
@@ -57,6 +62,10 @@ Team task management board for a 16-person financial education company. V1: Logi
 - GET /api/overview/stats
 - POST /api/attachments/:taskId, GET /api/attachments/:taskId, GET /api/attachments/:id/download, DELETE /api/attachments/:id
 - GET/POST /api/eval/periods, PATCH /api/eval/periods/:id, GET /api/eval/scores/:periodId, PATCH /api/eval/scores/:id, GET /api/eval/rules, POST /api/eval/rules
+- GET/POST /api/departments, PATCH /api/departments/:id, DELETE /api/departments/:id
+- PATCH /api/users/:id (org management)
+- GET /api/org-changes, PATCH /api/org-changes/:id (approval workflow)
+- GET /api/collaboration (force-directed graph data)
 
 ## Automation Engine
 - Runs passively on GET /api/tasks (no cron needed)
@@ -77,3 +86,4 @@ Team task management board for a 16-person financial education company. V1: Logi
 ## Recent Changes
 - 2026-02-21: Initial build - all Round 1 features complete
 - 2026-02-21: V2 complete - notifications, comments, subtasks, attachments, automation, evaluation, overview analytics
+- 2026-02-21: V3 complete - organization management, approval workflow, D3.js collaboration graph
