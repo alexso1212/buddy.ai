@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   ChevronDown, ChevronRight, CalendarDays, ZoomIn, ZoomOut, Maximize2,
-  RefreshCw, AlertTriangle, Clock, Users, Link2, ChevronLeft, BarChart3
+  RefreshCw, AlertTriangle, Clock, Users, Link2, ChevronLeft, BarChart3, ArrowLeft
 } from "lucide-react";
 
 type AssigneeMap = Record<string, User[]>;
@@ -682,6 +682,14 @@ export default function GanttChart() {
     return (
       <div className="flex flex-col h-screen bg-background">
         <div className="flex items-center gap-2 p-2 border-b">
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => navigate("/dashboard")}
+            data-testid="button-back"
+          >
+            <ArrowLeft />
+          </Button>
           <CalendarDays className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm font-semibold flex-1">甘特图</span>
           <Button
@@ -1001,6 +1009,14 @@ export default function GanttChart() {
   return (
     <div className="flex flex-col h-screen bg-background">
       <div className="flex items-center gap-2 md:gap-3 p-2 md:p-3 border-b flex-wrap">
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={() => navigate("/dashboard")}
+          data-testid="button-back"
+        >
+          <ArrowLeft />
+        </Button>
         <div className="flex items-center gap-1.5 mr-2">
           <CalendarDays className="w-5 h-5 text-muted-foreground" />
           <span className="text-sm font-semibold">甘特图</span>
