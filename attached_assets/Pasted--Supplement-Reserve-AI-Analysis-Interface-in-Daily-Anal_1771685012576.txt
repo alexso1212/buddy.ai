@@ -1,0 +1,101 @@
+# Supplement: Reserve AI Analysis Interface in Daily Analysis Panel
+
+> Add this on top of the Gantt Patch you are currently implementing. Do NOT implement the actual AI call yet — just build the structure so we can plug it in later.
+
+-----
+
+## What to add
+
+### 1. New section at the TOP of the analysis panel
+
+Above the existing 4 sections (阻塞预警/本周到期/人员负荷/下周关注), reserve a section:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ 🤖 AI 分析建议                                          │
+│                                                         │
+│ (placeholder text: "AI 分析功能即将上线，敬请期待")        │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+Style it with a subtle gradient background or light blue border to distinguish it from the rule-based sections below.
+
+### 2. Backend: analysis pipeline structure
+
+In the `/api/analysis/refresh` endpoint, structure the code in **two stages**:
+
+```javascript
+// Stage 1: Rule engine (implement now)
+const ruleAnalysis = {
+  blockers: await computeBlockers(),
+  dueThisWeek: await computeDueThisWeek(),
+  workload: await computeWorkload(),
+  nextWeekLookahead: await computeNextWeek(),
+};
+
+// Stage 2: AI analysis (placeholder, implement later)
+let aiAnalysis = null;
+// TODO: When ready, uncomment below:
+// aiAnalysis = await generateAIAnalysis(ruleAnalysis);
+
+// Store both in cache
+await storeAnalysisCache({
+  rule: ruleAnalysis,
+  ai: aiAnalysis,
+  computed_at: new Date(),
+});
+```
+
+### 3. Create a placeholder function for AI analysis
+
+```javascript
+/**
+ * Placeholder for AI-powered analysis.
+ * Will call external LLM API to generate natural language insights
+ * based on rule engine output.
+ * 
+ * Input: ruleAnalysis object (blockers, dueThisWeek, workload, nextWeek)
+ * Output: { summary: string, suggestions: string[] }
+ * 
+ * Future implementation will:
+ * 1. Convert ruleAnalysis to a prompt
+ * 2. Call AI API (e.g. POST https://api.anthropic.com/v1/messages)
+ * 3. Parse response into summary + action suggestions
+ * 4. Return structured result
+ */
+async function generateAIAnalysis(ruleAnalysis) {
+  // TODO: Implement when AI API key is configured
+  return null;
+}
+```
+
+### 4. Update the analysis_cache table
+
+```sql
+-- Modify the data column to store both rule and AI results
+-- (No schema change needed if using JSONB, just ensure the stored JSON has this shape:)
+-- { "rule": {...}, "ai": null | { "summary": "...", "suggestions": [...] }, "computed_at": "..." }
+```
+
+### 5. Frontend: render AI section conditionally
+
+```javascript
+// In the analysis panel component:
+if (analysisData.ai) {
+  // Render AI analysis section with actual content
+  // Show summary paragraph + bullet-point suggestions
+} else {
+  // Show placeholder: "AI 分析功能即将上线"
+}
+```
+
+-----
+
+## Do NOT do
+
+- Do NOT add any actual API keys or AI API calls
+- Do NOT install any AI/LLM SDKs
+- Do NOT make the placeholder section take up too much visual space — keep it compact (max 2 lines when showing placeholder text)
+
+The goal is: when we’re ready, we only need to implement the `generateAIAnalysis` function and set an API key. Everything else is already wired up.
