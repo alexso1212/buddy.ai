@@ -12,7 +12,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   ChevronDown, ChevronRight, CalendarDays, ZoomIn, ZoomOut, Maximize2,
-  RefreshCw, AlertTriangle, Clock, Users, Link2, ChevronLeft, BarChart3, ArrowLeft
+  RefreshCw, AlertTriangle, Clock, Users, Link2, ChevronLeft, BarChart3, ArrowLeft,
+  X, CheckCircle2, ArrowRightCircle
 } from "lucide-react";
 
 type AssigneeMap = Record<string, User[]>;
@@ -96,6 +97,7 @@ export default function GanttChart() {
   const pinchRef = useRef<{ startDist: number; startScale: number } | null>(null);
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [showCriticalPath, setShowCriticalPath] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(true);
   const [mobileView, setMobileView] = useState<"analysis" | "gantt">("analysis");
@@ -384,7 +386,7 @@ export default function GanttChart() {
     return { deps, reverseDeps };
   }, [allTasks]);
 
-  const activeTaskId = isMobile ? selectedTaskId : hoveredTaskId;
+  const activeTaskId = isMobile ? (detailTaskId || selectedTaskId) : (detailTaskId || hoveredTaskId);
 
   const hoveredRelatedIds = useMemo(() => {
     if (!activeTaskId) return new Set<string>();
@@ -471,6 +473,152 @@ export default function GanttChart() {
   }
 
   const totalContentHeight = visibleRows.length * ROW_HEIGHT;
+
+  const detailTask = detailTaskId ? allTasks.find((t) => t.id === detailTaskId) : null;
+
+  const TaskDetailPanel = () => {
+    if (!detailTask) return null;
+    const taskAssignees = assigneeMap[detailTask.id] ?? [];
+    const phase = detailTask.phase ? phaseMap.get(detailTask.phase) : null;
+    const overdueDays = getOverdueDays(detailTask);
+    const upstreamIds = (detailTask.depends_on ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    const upstreamTasks = upstreamIds.map((id) => allTasks.find((t) => t.id === id)).filter(Boolean) as Task[];
+    const downstreamIds = taskDependencyMap.reverseDeps.get(detailTask.id) ?? [];
+    const downstreamTasks = downstreamIds.map((id) => allTasks.find((t) => t.id === id)).filter(Boolean) as Task[];
+    const hasNoDeps = upstreamTasks.length === 0 && downstreamTasks.length === 0;
+
+    const renderDepTask = (t: Task, direction: "upstream" | "downstream") => {
+      const depAssignees = assigneeMap[t.id] ?? [];
+      const isDone = t.status === "done";
+      return (
+        <div key={t.id} className="border rounded-md p-2 space-y-1" data-testid={`detail-dep-${direction}-${t.id}`}>
+          <div className="flex items-center gap-1.5">
+            {direction === "upstream" ? (
+              isDone ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+            ) : (
+              <ArrowRightCircle className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+            )}
+            <span className="text-[11px] font-medium truncate flex-1 min-w-0">{t.title}</span>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Badge className={cn("text-[10px]", getStatusColor(t.status ?? "pending"))} variant="secondary">
+              {getStatusLabel(t.status ?? "pending")}
+            </Badge>
+            {direction === "upstream" && !isDone && (
+              <span className="text-[10px] text-red-500 font-medium">阻塞中</span>
+            )}
+          </div>
+          {depAssignees.length > 0 && (
+            <p className="text-[10px] text-muted-foreground">负责人: {depAssignees.map((u) => u.name).join(", ")}</p>
+          )}
+          {t.deadline && (
+            <p className="text-[10px] text-muted-foreground">截止: {t.deadline}</p>
+          )}
+        </div>
+      );
+    };
+
+    return (
+      <div className="h-full overflow-y-auto bg-background border-l" style={{ width: isMobile ? "100%" : ANALYSIS_WIDTH }} data-testid="task-detail-panel">
+        <div className="p-3 border-b flex items-start justify-between gap-2 sticky top-0 bg-background z-10">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold break-words" data-testid="detail-task-title">{detailTask.title}</p>
+            <Badge className={cn("text-[10px] mt-1", getStatusColor(detailTask.status ?? "pending"))} variant="secondary" data-testid="detail-task-status">
+              {getStatusLabel(detailTask.status ?? "pending")}
+            </Badge>
+          </div>
+          <Button variant="ghost" size="icon" onClick={() => setDetailTaskId(null)} data-testid="detail-close">
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+
+        <div className="p-3 space-y-4">
+          <section data-testid="detail-task-info">
+            <p className="text-xs font-semibold mb-2">任务信息</p>
+            <div className="space-y-1.5 text-[11px]">
+              {detailTask.deadline && (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground shrink-0">截止日期:</span>
+                  <span data-testid="detail-deadline">{detailTask.deadline}</span>
+                </div>
+              )}
+              {detailTask.grace_deadline && (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground shrink-0">宽限期:</span>
+                  <span data-testid="detail-grace-deadline">{detailTask.grace_deadline}</span>
+                </div>
+              )}
+              {overdueDays > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground shrink-0">逾期天数:</span>
+                  <span className="text-red-500 font-medium" data-testid="detail-overdue">{overdueDays} 天</span>
+                </div>
+              )}
+              {taskAssignees.length > 0 && (
+                <div className="flex items-start gap-2">
+                  <span className="text-muted-foreground shrink-0">负责人:</span>
+                  <span data-testid="detail-assignees">{taskAssignees.map((u) => u.name).join(", ")}</span>
+                </div>
+              )}
+              {phase && (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground shrink-0">阶段:</span>
+                  <span className="flex items-center gap-1" data-testid="detail-phase">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: phase.color ?? "#888" }} />
+                    {phase.label}
+                  </span>
+                </div>
+              )}
+              {detailTask.priority != null && detailTask.priority > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground shrink-0">优先级:</span>
+                  <Badge variant="secondary" className={cn("text-[10px]", detailTask.priority === 2 ? "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300" : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300")} data-testid="detail-priority">
+                    {detailTask.priority === 2 ? "紧急" : "重要"}
+                  </Badge>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section data-testid="detail-dependencies">
+            <p className="text-xs font-semibold mb-2">依赖关系</p>
+
+            {hasNoDeps ? (
+              <p className="text-[11px] text-muted-foreground" data-testid="detail-no-deps">无依赖关系</p>
+            ) : (
+              <div className="space-y-3">
+                {upstreamTasks.length > 0 && (
+                  <div data-testid="detail-upstream-section">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <ArrowRightCircle className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="text-[11px] font-medium">上游依赖 (前置任务)</span>
+                      <Badge variant="secondary" className="text-[10px] h-4 px-1">{upstreamTasks.length}</Badge>
+                    </div>
+                    <div className="space-y-1.5 pl-5">
+                      {upstreamTasks.map((t) => renderDepTask(t, "upstream"))}
+                    </div>
+                  </div>
+                )}
+
+                {downstreamTasks.length > 0 && (
+                  <div data-testid="detail-downstream-section">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <ArrowRightCircle className="w-3.5 h-3.5 text-muted-foreground rotate-180" />
+                      <span className="text-[11px] font-medium">下游任务 (被阻塞)</span>
+                      <Badge variant="secondary" className="text-[10px] h-4 px-1">{downstreamTasks.length}</Badge>
+                    </div>
+                    <div className="space-y-1.5 pl-5">
+                      {downstreamTasks.map((t) => renderDepTask(t, "downstream"))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    );
+  };
 
   const AnalysisPanel = () => (
     <div className="h-full overflow-y-auto bg-background border-l" style={{ width: isMobile ? "100%" : ANALYSIS_WIDTH }} data-testid="analysis-panel">
@@ -744,7 +892,7 @@ export default function GanttChart() {
                 <Maximize2 className="w-3 h-3" />
               </Button>
             </div>
-            <div className="flex-1 overflow-auto" ref={zoomContainerRef}>
+            <div className={cn("overflow-auto", detailTaskId ? "h-[45vh]" : "flex-1")} ref={zoomContainerRef}>
               <div
                 style={{
                   transform: `scale(${scale})`,
@@ -756,6 +904,11 @@ export default function GanttChart() {
                 {renderGanttContent()}
               </div>
             </div>
+            {detailTaskId && (
+              <div className="border-t overflow-auto" style={{ height: "55vh" }} data-testid="mobile-detail-container">
+                <TaskDetailPanel />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -795,7 +948,7 @@ export default function GanttChart() {
                 <div
                   key={`task-${row.task.id}`}
                   className={cn(
-                    "flex items-center gap-2 px-3 pl-8 transition-colors",
+                    "flex items-center gap-2 px-3 pl-8 transition-colors cursor-pointer",
                     isActive && "bg-blue-50 dark:bg-blue-950/20",
                     !isActive && isRelated && "bg-blue-50/50 dark:bg-blue-950/10",
                     isCritical && "bg-purple-50/50 dark:bg-purple-950/10",
@@ -804,7 +957,12 @@ export default function GanttChart() {
                   style={{ height: ROW_HEIGHT }}
                   onMouseEnter={isMobile ? undefined : () => setHoveredTaskId(row.task.id)}
                   onMouseLeave={isMobile ? undefined : () => setHoveredTaskId(null)}
-                  onClick={isMobile ? () => setSelectedTaskId(selectedTaskId === row.task.id ? null : row.task.id) : undefined}
+                  onClick={isMobile ? () => {
+                    setSelectedTaskId(selectedTaskId === row.task.id ? null : row.task.id);
+                    setDetailTaskId(detailTaskId === row.task.id ? null : row.task.id);
+                  } : () => {
+                    setDetailTaskId(detailTaskId === row.task.id ? null : row.task.id);
+                  }}
                   data-testid={`gantt-task-${row.task.id}`}
                 >
                   <span className="text-xs truncate flex-1 min-w-0">{row.task.title}</span>
@@ -886,7 +1044,12 @@ export default function GanttChart() {
                         className="flex items-center"
                         onMouseEnter={isMobile ? undefined : () => setHoveredTaskId(task.id)}
                         onMouseLeave={isMobile ? undefined : () => setHoveredTaskId(null)}
-                        onClick={isMobile ? () => setSelectedTaskId(selectedTaskId === task.id ? null : task.id) : undefined}
+                        onClick={() => {
+                          if (isMobile) {
+                            setSelectedTaskId(selectedTaskId === task.id ? null : task.id);
+                          }
+                          setDetailTaskId(detailTaskId === task.id ? null : task.id);
+                        }}
                         data-testid={`gantt-bar-${task.id}`}
                       >
                         <div
@@ -901,7 +1064,6 @@ export default function GanttChart() {
                             backgroundColor: getBarHexColor(task.status),
                             opacity: (activeTaskId && !isActive && !isRelated && !isCritical) ? 0.3 : 1,
                           }}
-                          onClick={isMobile ? undefined : () => navigate("/dashboard")}
                         />
                         {graceBar && (
                           <div
@@ -1102,7 +1264,7 @@ export default function GanttChart() {
         <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-sm bg-green-500" /> 已完成</span>
         <span className="flex items-center gap-1"><span className="w-3 h-1 border border-dashed border-red-400 rounded-sm" /> 逾期</span>
         <span className="text-muted-foreground/50">|</span>
-        <span>悬浮任务查看依赖</span>
+        <span>悬浮/点击任务查看依赖详情</span>
       </div>
 
       {filteredTasks.length === 0 ? (
@@ -1124,7 +1286,7 @@ export default function GanttChart() {
             </div>
           </div>
 
-          {showAnalysis && <AnalysisPanel />}
+          {detailTaskId ? <TaskDetailPanel /> : showAnalysis && <AnalysisPanel />}
         </div>
       )}
     </div>
