@@ -747,7 +747,7 @@ export function OrgMindmapSvg({
   }
 
   return (
-    <div className="relative h-full w-full" style={{ touchAction: "none" }}>
+    <div className="relative flex-1 h-full w-full" style={{ touchAction: "none" }}>
       {focusNodeId && (
         <div className="absolute top-3 right-3 z-30">
           <button

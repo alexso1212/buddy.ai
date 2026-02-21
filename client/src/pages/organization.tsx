@@ -383,7 +383,7 @@ export default function Organization() {
             </TabsList>
           </div>
 
-          <TabsContent value="outline" className="flex-1 min-h-0 flex flex-col">
+          <TabsContent value="outline" className="flex-1 min-h-0 mt-0 data-[state=active]:flex data-[state=active]:flex-col">
             {deptsLoading ? <LoadingSkeleton /> : (
               <ScrollArea className="flex-1">
                 <OrgOutline
@@ -400,7 +400,7 @@ export default function Organization() {
             )}
           </TabsContent>
 
-          <TabsContent value="mindmap" className="flex-1 min-h-0">
+          <TabsContent value="mindmap" className="flex-1 min-h-0 mt-0 data-[state=active]:flex data-[state=active]:flex-col">
             {deptsLoading ? <LoadingSkeleton /> : (
               <OrgMindmapSvg
                 tree={deptTree}
@@ -414,7 +414,7 @@ export default function Organization() {
             )}
           </TabsContent>
 
-          <TabsContent value="approvals" className="flex-1 min-h-0">
+          <TabsContent value="approvals" className="flex-1 min-h-0 mt-0 data-[state=active]:flex data-[state=active]:flex-col">
             <ScrollArea className="h-full">
               <div className="p-4 max-w-3xl mx-auto space-y-3">
                 {changesLoading ? <LoadingSkeleton /> : sortedChanges.length === 0 ? (
