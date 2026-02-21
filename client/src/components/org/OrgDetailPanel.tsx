@@ -202,6 +202,7 @@ export function OrgDetailPanel({
             visible ? "opacity-100" : "opacity-0"
           }`}
           onClick={onClose}
+          data-testid="detail-overlay-mobile"
         />
         <div
           className={`fixed bottom-0 left-0 right-0 z-50 bg-background rounded-t-xl border-t shadow-lg transition-transform duration-300 ease-out ${
@@ -225,6 +226,7 @@ export function OrgDetailPanel({
           visible ? "opacity-100 bg-black/20" : "opacity-0 pointer-events-none"
         }`}
         onClick={onClose}
+        data-testid="detail-overlay-desktop"
       />
       <div
         className={`fixed top-0 right-0 h-full w-[400px] z-50 bg-background border-l shadow-lg transition-transform duration-300 ease-out ${

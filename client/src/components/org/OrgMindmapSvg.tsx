@@ -6,9 +6,8 @@ import {
   getCompletionRate,
   getUrgency,
   getLineColor,
-  getLineStyle,
 } from "./types";
-import type { Department } from "@shared/schema";
+
 
 interface OrgMindmapSvgProps {
   tree: DeptTreeNode[];

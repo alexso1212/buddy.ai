@@ -101,6 +101,7 @@ export function OrgOutline({
               {i > 0 && <span className="select-none">&gt;</span>}
               <button
                 className="hover-elevate active-elevate-2 rounded px-1 py-0.5"
+                data-testid={`outline-breadcrumb-${node.dept.id}`}
                 onClick={() => {
                   if (i === 0 && breadcrumb.length === 1) {
                     setFocusId(null);
@@ -116,6 +117,7 @@ export function OrgOutline({
           {breadcrumb.length === 1 && (
             <button
               className="ml-2 text-xs hover-elevate active-elevate-2 rounded px-1 py-0.5"
+              data-testid="outline-exit-focus"
               onClick={() => setFocusId(null)}
             >
               (退出聚焦)
