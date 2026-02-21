@@ -95,6 +95,7 @@ export default function GanttChart() {
   const zoomContainerRef = useRef<HTMLDivElement>(null);
   const pinchRef = useRef<{ startDist: number; startScale: number } | null>(null);
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [showCriticalPath, setShowCriticalPath] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(true);
   const [mobileView, setMobileView] = useState<"analysis" | "gantt">("analysis");
@@ -383,16 +384,18 @@ export default function GanttChart() {
     return { deps, reverseDeps };
   }, [allTasks]);
 
+  const activeTaskId = isMobile ? selectedTaskId : hoveredTaskId;
+
   const hoveredRelatedIds = useMemo(() => {
-    if (!hoveredTaskId) return new Set<string>();
+    if (!activeTaskId) return new Set<string>();
     const related = new Set<string>();
-    related.add(hoveredTaskId);
-    const upstream = taskDependencyMap.deps.get(hoveredTaskId) ?? [];
+    related.add(activeTaskId);
+    const upstream = taskDependencyMap.deps.get(activeTaskId) ?? [];
     for (const id of upstream) related.add(id);
-    const downstream = taskDependencyMap.reverseDeps.get(hoveredTaskId) ?? [];
+    const downstream = taskDependencyMap.reverseDeps.get(activeTaskId) ?? [];
     for (const id of downstream) related.add(id);
     return related;
-  }, [hoveredTaskId, taskDependencyMap]);
+  }, [activeTaskId, taskDependencyMap]);
 
   const criticalPathIds = useMemo(() => {
     if (!analysisData?.criticalPath?.path) return new Set<string>();
@@ -419,7 +422,7 @@ export default function GanttChart() {
         if (!depTask) continue;
         const fromBar = getTaskBarPosition(depTask);
         const isDone = depTask.status === "done";
-        const isHoverVisible = hoveredTaskId && (hoveredRelatedIds.has(task.id) || hoveredRelatedIds.has(depId));
+        const isActiveVisible = activeTaskId && (hoveredRelatedIds.has(task.id) || hoveredRelatedIds.has(depId));
         const isCriticalVisible = showCriticalPath && criticalPathIds.has(task.id) && criticalPathIds.has(depId);
         arrows.push({
           fromX: fromBar.left + fromBar.width,
@@ -428,12 +431,12 @@ export default function GanttChart() {
           toY: toIdx * ROW_HEIGHT + ROW_HEIGHT / 2,
           color: isCriticalVisible ? "#8B5CF6" : isDone ? "#9CA3AF" : "#EF4444",
           key: `${depId}-${task.id}`,
-          visible: !!(isHoverVisible || isCriticalVisible),
+          visible: !!(isActiveVisible || isCriticalVisible),
         });
       }
     }
     return arrows;
-  }, [visibleRows, taskRowIndexMap, getTaskBarPosition, allTasks, hoveredTaskId, hoveredRelatedIds, showCriticalPath, criticalPathIds]);
+  }, [visibleRows, taskRowIndexMap, getTaskBarPosition, allTasks, activeTaskId, hoveredRelatedIds, showCriticalPath, criticalPathIds]);
 
   const getOverdueDays = (task: Task): number => {
     if (task.status === "done" || !task.deadline) return 0;
@@ -777,7 +780,7 @@ export default function GanttChart() {
                   </div>
                 );
               }
-              const isHovered = hoveredTaskId === row.task.id;
+              const isActive = activeTaskId === row.task.id;
               const isRelated = hoveredRelatedIds.has(row.task.id);
               const isCritical = showCriticalPath && criticalPathIds.has(row.task.id);
               return (
@@ -785,14 +788,15 @@ export default function GanttChart() {
                   key={`task-${row.task.id}`}
                   className={cn(
                     "flex items-center gap-2 px-3 pl-8 transition-colors",
-                    isHovered && "bg-blue-50 dark:bg-blue-950/20",
-                    !isHovered && isRelated && "bg-blue-50/50 dark:bg-blue-950/10",
+                    isActive && "bg-blue-50 dark:bg-blue-950/20",
+                    !isActive && isRelated && "bg-blue-50/50 dark:bg-blue-950/10",
                     isCritical && "bg-purple-50/50 dark:bg-purple-950/10",
-                    !isHovered && !isRelated && !isCritical && "hover:bg-muted/30"
+                    !isActive && !isRelated && !isCritical && "hover:bg-muted/30"
                   )}
                   style={{ height: ROW_HEIGHT }}
-                  onMouseEnter={() => setHoveredTaskId(row.task.id)}
-                  onMouseLeave={() => setHoveredTaskId(null)}
+                  onMouseEnter={isMobile ? undefined : () => setHoveredTaskId(row.task.id)}
+                  onMouseLeave={isMobile ? undefined : () => setHoveredTaskId(null)}
+                  onClick={isMobile ? () => setSelectedTaskId(selectedTaskId === row.task.id ? null : row.task.id) : undefined}
                   data-testid={`gantt-task-${row.task.id}`}
                 >
                   <span className="text-xs truncate flex-1 min-w-0">{row.task.title}</span>
@@ -857,7 +861,7 @@ export default function GanttChart() {
                 const overdueBar = getOverdueBarPosition(task);
                 const taskAssignees = assigneeMap[task.id] ?? [];
                 const overdueDays = getOverdueDays(task);
-                const isHovered = hoveredTaskId === task.id;
+                const isActive = activeTaskId === task.id;
                 const isRelated = hoveredRelatedIds.has(task.id);
                 const isCritical = showCriticalPath && criticalPathIds.has(task.id);
 
@@ -872,23 +876,24 @@ export default function GanttChart() {
                           height: ROW_HEIGHT - 12,
                         }}
                         className="flex items-center"
-                        onMouseEnter={() => setHoveredTaskId(task.id)}
-                        onMouseLeave={() => setHoveredTaskId(null)}
+                        onMouseEnter={isMobile ? undefined : () => setHoveredTaskId(task.id)}
+                        onMouseLeave={isMobile ? undefined : () => setHoveredTaskId(null)}
+                        onClick={isMobile ? () => setSelectedTaskId(selectedTaskId === task.id ? null : task.id) : undefined}
                         data-testid={`gantt-bar-${task.id}`}
                       >
                         <div
                           className={cn(
                             "rounded-sm cursor-pointer transition-all",
-                            isHovered && "ring-2 ring-blue-400 ring-offset-1",
-                            isCritical && !isHovered && "ring-2 ring-purple-400 ring-offset-1",
+                            isActive && "ring-2 ring-blue-400 ring-offset-1",
+                            isCritical && !isActive && "ring-2 ring-purple-400 ring-offset-1",
                           )}
                           style={{
                             width: Math.max(bar.width, 4),
                             height: "100%",
                             backgroundColor: getBarHexColor(task.status),
-                            opacity: (hoveredTaskId && !isHovered && !isRelated && !isCritical) ? 0.3 : 1,
+                            opacity: (activeTaskId && !isActive && !isRelated && !isCritical) ? 0.3 : 1,
                           }}
-                          onClick={() => navigate("/dashboard")}
+                          onClick={isMobile ? undefined : () => navigate("/dashboard")}
                         />
                         {graceBar && (
                           <div
