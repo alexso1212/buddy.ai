@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, CalendarDays, List, BarChart3 } from "lucide-react";
+import { ChevronDown, ChevronRight, CalendarDays, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 
 type AssigneeMap = Record<string, User[]>;
 interface TasksResponse { tasks: Task[]; assigneeMap: AssigneeMap; }
@@ -71,7 +71,10 @@ export default function GanttChart() {
   const [filterAssignee, setFilterAssignee] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [collapsedPhases, setCollapsedPhases] = useState<Record<string, boolean>>({});
-  const [mobileView, setMobileView] = useState<"list" | "timeline">("list");
+  const [scale, setScale] = useState(1);
+  const [autoFitDone, setAutoFitDone] = useState(false);
+  const zoomContainerRef = useRef<HTMLDivElement>(null);
+  const pinchRef = useRef<{ startDist: number; startScale: number } | null>(null);
 
   const isCeoOrAdmin = user?.role === "ceo" || user?.role === "admin";
 
@@ -295,6 +298,64 @@ export default function GanttChart() {
     }
   }, [todayOffset]);
 
+  const ganttContentWidth = LEFT_PANEL_WIDTH + totalWidth;
+
+  const fitToScreen = useCallback(() => {
+    if (zoomContainerRef.current) {
+      const containerWidth = zoomContainerRef.current.clientWidth;
+      if (ganttContentWidth > containerWidth) {
+        setScale(Math.max(containerWidth / ganttContentWidth, 0.2));
+      } else {
+        setScale(1);
+      }
+    }
+  }, [ganttContentWidth]);
+
+  useEffect(() => {
+    if (!isLoading && !autoFitDone && zoomContainerRef.current) {
+      const containerWidth = zoomContainerRef.current.clientWidth;
+      if (containerWidth < 768 && ganttContentWidth > containerWidth) {
+        setScale(Math.max(containerWidth / ganttContentWidth, 0.2));
+      }
+      setAutoFitDone(true);
+    }
+  }, [isLoading, autoFitDone, ganttContentWidth]);
+
+  useEffect(() => {
+    const el = zoomContainerRef.current;
+    if (!el) return;
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        pinchRef.current = { startDist: Math.hypot(dx, dy), startScale: scale };
+        el.style.touchAction = "none";
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && pinchRef.current) {
+        e.preventDefault();
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.hypot(dx, dy);
+        const newScale = pinchRef.current.startScale * (dist / pinchRef.current.startDist);
+        setScale(Math.min(Math.max(newScale, 0.2), 2));
+      }
+    };
+    const onTouchEnd = () => {
+      pinchRef.current = null;
+      el.style.touchAction = "auto";
+    };
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd);
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [scale]);
+
   const togglePhase = (phaseId: string) => {
     setCollapsedPhases((prev) => ({ ...prev, [phaseId]: !prev[phaseId] }));
   };
@@ -388,10 +449,6 @@ export default function GanttChart() {
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      <style>{`
-        .gantt-left-panel { width: 100%; min-width: 0; }
-        @media (min-width: 768px) { .gantt-left-panel { width: ${LEFT_PANEL_WIDTH}px; min-width: ${LEFT_PANEL_WIDTH}px; } }
-      `}</style>
       <div className="flex items-center gap-2 md:gap-3 p-2 md:p-3 border-b flex-wrap">
         <div className="flex items-center gap-1.5 mr-2">
           <CalendarDays className="w-5 h-5 text-muted-foreground" />
@@ -451,30 +508,7 @@ export default function GanttChart() {
           今天
         </Button>
 
-        <div className="flex items-center border rounded-md md:hidden">
-          <Button
-            variant={mobileView === "list" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setMobileView("list")}
-            data-testid="gantt-mobile-list"
-            className="rounded-r-none gap-1"
-          >
-            <List className="w-3.5 h-3.5" />
-            列表
-          </Button>
-          <Button
-            variant={mobileView === "timeline" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setMobileView("timeline")}
-            data-testid="gantt-mobile-timeline"
-            className="rounded-l-none gap-1"
-          >
-            <BarChart3 className="w-3.5 h-3.5" />
-            时间轴
-          </Button>
-        </div>
-
-        <div className="hidden md:flex items-center border rounded-md">
+        <div className="flex items-center border rounded-md">
           <Button
             variant={granularity === "day" ? "default" : "ghost"}
             size="sm"
@@ -494,6 +528,39 @@ export default function GanttChart() {
             周
           </Button>
         </div>
+
+        <div className="flex items-center gap-1 border rounded-md">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setScale((s) => Math.min(s + 0.1, 2))}
+            data-testid="gantt-zoom-in"
+            className="px-2"
+          >
+            <ZoomIn className="w-3.5 h-3.5" />
+          </Button>
+          <span className="text-[10px] text-muted-foreground w-9 text-center" data-testid="gantt-zoom-level">
+            {Math.round(scale * 100)}%
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setScale((s) => Math.max(s - 0.1, 0.2))}
+            data-testid="gantt-zoom-out"
+            className="px-2"
+          >
+            <ZoomOut className="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={fitToScreen}
+            data-testid="gantt-zoom-fit"
+            className="px-2"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </Button>
+        </div>
       </div>
 
       {filteredTasks.length === 0 ? (
@@ -501,277 +568,262 @@ export default function GanttChart() {
           <p className="text-sm text-muted-foreground">暂无任务数据</p>
         </div>
       ) : (
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 overflow-auto" ref={zoomContainerRef}>
           <div
-            className={cn(
-              "flex flex-col gantt-left-panel",
-              mobileView === "timeline" ? "hidden md:flex" : "flex"
-            )}
+            style={{
+              transform: `scale(${scale})`,
+              transformOrigin: "top left",
+              width: ganttContentWidth,
+              minHeight: HEADER_HEIGHT + totalContentHeight,
+            }}
           >
-            <div
-              className="border-b border-r bg-muted/30 flex items-center px-3 text-xs font-medium text-muted-foreground shrink-0"
-              style={{ height: HEADER_HEIGHT }}
-            >
-              任务
-            </div>
-            <div className="flex-1 overflow-y-auto overflow-x-hidden border-r">
-              {visibleRows.map((row, idx) => {
-                if (row.type === "phase") {
-                  const isCollapsed = collapsedPhases[row.phase.id];
-                  return (
-                    <div
-                      key={`phase-${row.phase.id}`}
-                      className="flex items-center gap-2 px-3 cursor-pointer hover-elevate bg-muted/20"
-                      style={{ height: ROW_HEIGHT }}
-                      onClick={() => togglePhase(row.phase.id)}
-                      data-testid={`gantt-phase-${row.phase.id}`}
-                    >
-                      {isCollapsed ? (
-                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      ) : (
-                        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      )}
-                      <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: row.phase.color ?? "#888" }}
-                      />
-                      <span className="text-xs font-medium truncate">{row.phase.label}</span>
-                      <span className="text-[10px] text-muted-foreground ml-auto shrink-0">
-                        {row.taskCount}
-                      </span>
-                    </div>
-                  );
-                }
-                return (
-                  <div
-                    key={`task-${row.task.id}`}
-                    className="flex items-center gap-2 px-3 pl-8 hover-elevate"
-                    style={{ height: ROW_HEIGHT }}
-                    data-testid={`gantt-task-${row.task.id}`}
-                  >
-                    <span className="text-xs truncate flex-1 min-w-0">{row.task.title}</span>
-                    <Badge
-                      className={cn("no-default-active-elevate text-[10px] shrink-0", getStatusColor(row.task.status ?? "pending"))}
-                      variant="secondary"
-                    >
-                      {getStatusLabel(row.task.status ?? "pending")}
-                    </Badge>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div
-            className={cn(
-              "flex-1 overflow-auto",
-              mobileView === "list" ? "hidden md:block" : "block"
-            )}
-            ref={timelineRef}
-          >
-            <div style={{ minWidth: totalWidth, position: "relative" }}>
-              <div
-                className="flex border-b bg-muted/30 sticky top-0"
-                style={{ height: HEADER_HEIGHT, zIndex: 20 }}
-              >
-                {dateColumns.map((col, i) => {
-                  const isToday = (() => {
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    const colDate = new Date(col.date);
-                    colDate.setHours(0, 0, 0, 0);
-                    return colDate.getTime() === today.getTime();
-                  })();
-                  const isWeekend = col.date.getDay() === 0 || col.date.getDay() === 6;
-                  return (
-                    <div
-                      key={i}
-                      className={cn(
-                        "flex items-center justify-center text-[10px] text-muted-foreground border-r shrink-0",
-                        isToday && "bg-red-50 dark:bg-red-950/30 font-medium text-red-600 dark:text-red-400",
-                        isWeekend && !isToday && "bg-muted/50"
-                      )}
-                      style={{ width: colWidth, minWidth: colWidth }}
-                    >
-                      {col.label}
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div style={{ position: "relative", height: totalContentHeight }}>
-                {visibleRows.map((row, idx) => {
-                  if (row.type === "phase") {
+            <div className="flex" style={{ width: ganttContentWidth }}>
+              {/* Left panel - task list */}
+              <div className="flex flex-col shrink-0" style={{ width: LEFT_PANEL_WIDTH }}>
+                <div
+                  className="border-b border-r bg-muted/30 flex items-center px-3 text-xs font-medium text-muted-foreground"
+                  style={{ height: HEADER_HEIGHT }}
+                >
+                  任务
+                </div>
+                <div className="border-r">
+                  {visibleRows.map((row, idx) => {
+                    if (row.type === "phase") {
+                      const isCollapsed = collapsedPhases[row.phase.id];
+                      return (
+                        <div
+                          key={`phase-${row.phase.id}`}
+                          className="flex items-center gap-2 px-3 cursor-pointer hover-elevate bg-muted/20"
+                          style={{ height: ROW_HEIGHT }}
+                          onClick={() => togglePhase(row.phase.id)}
+                          data-testid={`gantt-phase-${row.phase.id}`}
+                        >
+                          {isCollapsed ? (
+                            <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                          ) : (
+                            <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                          )}
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: row.phase.color ?? "#888" }}
+                          />
+                          <span className="text-xs font-medium truncate">{row.phase.label}</span>
+                          <span className="text-[10px] text-muted-foreground ml-auto shrink-0">
+                            {row.taskCount}
+                          </span>
+                        </div>
+                      );
+                    }
                     return (
                       <div
-                        key={`timeline-phase-${row.phase.id}`}
-                        className="bg-muted/10"
-                        style={{ height: ROW_HEIGHT, position: "absolute", top: idx * ROW_HEIGHT, width: totalWidth }}
-                      />
-                    );
-                  }
-                  return null;
-                })}
-
-                {dateColumns.map((col, i) => {
-                  const isWeekend = col.date.getDay() === 0 || col.date.getDay() === 6;
-                  return (
-                    <div
-                      key={`grid-${i}`}
-                      className={cn("border-r absolute top-0", isWeekend ? "bg-muted/20" : "")}
-                      style={{ left: i * colWidth, width: colWidth, height: totalContentHeight }}
-                    />
-                  );
-                })}
-
-                {visibleRows.map((row, idx) => {
-                  if (row.type !== "task") return null;
-                  const task = row.task;
-                  const bar = getTaskBarPosition(task);
-                  const graceBar = getGraceBarPosition(task);
-                  const overdueBar = getOverdueBarPosition(task);
-                  const taskAssignees = assigneeMap[task.id] ?? [];
-                  const overdueDays = getOverdueDays(task);
-
-                  return (
-                    <Tooltip key={`bar-${task.id}`}>
-                      <TooltipTrigger asChild>
-                        <div
-                          style={{
-                            position: "absolute",
-                            top: idx * ROW_HEIGHT + 6,
-                            left: bar.left,
-                            height: ROW_HEIGHT - 12,
-                          }}
-                          className="flex items-center"
-                          data-testid={`gantt-bar-${task.id}`}
+                        key={`task-${row.task.id}`}
+                        className="flex items-center gap-2 px-3 pl-8 hover-elevate"
+                        style={{ height: ROW_HEIGHT }}
+                        data-testid={`gantt-task-${row.task.id}`}
+                      >
+                        <span className="text-xs truncate flex-1 min-w-0">{row.task.title}</span>
+                        <Badge
+                          className={cn("no-default-active-elevate text-[10px] shrink-0", getStatusColor(row.task.status ?? "pending"))}
+                          variant="secondary"
                         >
-                          <div
-                            className={cn(
-                              "rounded-sm cursor-pointer transition-opacity hover:opacity-80",
-                              getBarColor(task.status)
-                            )}
-                            style={{
-                              width: Math.max(bar.width, 4),
-                              height: "100%",
-                            }}
-                            onClick={() => navigate("/dashboard")}
-                          />
-                          {graceBar && (
-                            <div
-                              className="rounded-sm"
-                              style={{
-                                position: "absolute",
-                                left: graceBar.left - bar.left,
-                                width: Math.max(graceBar.width, 4),
-                                height: "100%",
-                                backgroundColor: getBarHexColor(task.status),
-                                opacity: 0.3,
-                              }}
-                            />
-                          )}
-                          {overdueBar && (
-                            <div
-                              className="rounded-sm"
-                              style={{
-                                position: "absolute",
-                                left: overdueBar.left - bar.left,
-                                width: Math.max(overdueBar.width, 4),
-                                height: "100%",
-                                border: "2px dashed #EF4444",
-                                backgroundColor: "transparent",
-                              }}
-                            />
-                          )}
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-xs">
-                        <div className="space-y-1">
-                          <p className="text-xs font-medium">{task.title}</p>
-                          {taskAssignees.length > 0 && (
-                            <p className="text-[10px] text-muted-foreground">
-                              负责人: {taskAssignees.map((u) => u.name).join(", ")}
-                            </p>
-                          )}
-                          <p className="text-[10px] text-muted-foreground">
-                            截止: {task.deadline}
-                          </p>
-                          <p className="text-[10px]">
-                            状态: {getStatusLabel(task.status ?? "pending")}
-                          </p>
-                          {overdueDays > 0 && (
-                            <p className="text-[10px] text-red-500 font-medium">
-                              逾期 {overdueDays} 天
-                            </p>
-                          )}
-                        </div>
-                      </TooltipContent>
-                    </Tooltip>
-                  );
-                })}
-
-                <div
-                  data-testid="gantt-today-line"
-                  style={{
-                    position: "absolute",
-                    left: todayOffset,
-                    top: 0,
-                    height: totalContentHeight,
-                    width: 0,
-                    borderLeft: "2px dashed #EF4444",
-                    zIndex: 10,
-                    pointerEvents: "none",
-                  }}
-                />
-
-                <svg
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: totalWidth,
-                    height: totalContentHeight,
-                    pointerEvents: "none",
-                    zIndex: 5,
-                  }}
-                >
-                  <defs>
-                    <marker
-                      id="arrowhead-gray"
-                      markerWidth="8"
-                      markerHeight="6"
-                      refX="8"
-                      refY="3"
-                      orient="auto"
-                    >
-                      <polygon points="0 0, 8 3, 0 6" fill="#9CA3AF" />
-                    </marker>
-                    <marker
-                      id="arrowhead-red"
-                      markerWidth="8"
-                      markerHeight="6"
-                      refX="8"
-                      refY="3"
-                      orient="auto"
-                    >
-                      <polygon points="0 0, 8 3, 0 6" fill="#EF4444" />
-                    </marker>
-                  </defs>
-                  {dependencyArrows.map((arrow) => {
-                    const midX = (arrow.fromX + arrow.toX) / 2;
-                    const markerId = arrow.color === "#9CA3AF" ? "arrowhead-gray" : "arrowhead-red";
-                    return (
-                      <path
-                        key={arrow.key}
-                        d={`M ${arrow.fromX} ${arrow.fromY} C ${midX} ${arrow.fromY}, ${midX} ${arrow.toY}, ${arrow.toX} ${arrow.toY}`}
-                        fill="none"
-                        stroke={arrow.color}
-                        strokeWidth={1.5}
-                        markerEnd={`url(#${markerId})`}
-                      />
+                          {getStatusLabel(row.task.status ?? "pending")}
+                        </Badge>
+                      </div>
                     );
                   })}
-                </svg>
+                </div>
+              </div>
+
+              {/* Right panel - timeline */}
+              <div style={{ width: totalWidth }} ref={timelineRef}>
+                <div style={{ width: totalWidth, position: "relative" }}>
+                  <div className="flex border-b bg-muted/30" style={{ height: HEADER_HEIGHT }}>
+                    {dateColumns.map((col, i) => {
+                      const isToday = (() => {
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const colDate = new Date(col.date);
+                        colDate.setHours(0, 0, 0, 0);
+                        return colDate.getTime() === today.getTime();
+                      })();
+                      const isWeekend = col.date.getDay() === 0 || col.date.getDay() === 6;
+                      return (
+                        <div
+                          key={i}
+                          className={cn(
+                            "flex items-center justify-center text-[10px] text-muted-foreground border-r shrink-0",
+                            isToday && "bg-red-50 dark:bg-red-950/30 font-medium text-red-600 dark:text-red-400",
+                            isWeekend && !isToday && "bg-muted/50"
+                          )}
+                          style={{ width: colWidth, minWidth: colWidth }}
+                        >
+                          {col.label}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ position: "relative", height: totalContentHeight }}>
+                    {visibleRows.map((row, idx) => {
+                      if (row.type === "phase") {
+                        return (
+                          <div
+                            key={`timeline-phase-${row.phase.id}`}
+                            className="bg-muted/10"
+                            style={{ height: ROW_HEIGHT, position: "absolute", top: idx * ROW_HEIGHT, width: totalWidth }}
+                          />
+                        );
+                      }
+                      return null;
+                    })}
+
+                    {dateColumns.map((col, i) => {
+                      const isWeekend = col.date.getDay() === 0 || col.date.getDay() === 6;
+                      return (
+                        <div
+                          key={`grid-${i}`}
+                          className={cn("border-r absolute top-0", isWeekend ? "bg-muted/20" : "")}
+                          style={{ left: i * colWidth, width: colWidth, height: totalContentHeight }}
+                        />
+                      );
+                    })}
+
+                    {visibleRows.map((row, idx) => {
+                      if (row.type !== "task") return null;
+                      const task = row.task;
+                      const bar = getTaskBarPosition(task);
+                      const graceBar = getGraceBarPosition(task);
+                      const overdueBar = getOverdueBarPosition(task);
+                      const taskAssignees = assigneeMap[task.id] ?? [];
+                      const overdueDays = getOverdueDays(task);
+
+                      return (
+                        <Tooltip key={`bar-${task.id}`}>
+                          <TooltipTrigger asChild>
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: idx * ROW_HEIGHT + 6,
+                                left: bar.left,
+                                height: ROW_HEIGHT - 12,
+                              }}
+                              className="flex items-center"
+                              data-testid={`gantt-bar-${task.id}`}
+                            >
+                              <div
+                                className={cn(
+                                  "rounded-sm cursor-pointer transition-opacity hover:opacity-80",
+                                  getBarColor(task.status)
+                                )}
+                                style={{
+                                  width: Math.max(bar.width, 4),
+                                  height: "100%",
+                                }}
+                                onClick={() => navigate("/dashboard")}
+                              />
+                              {graceBar && (
+                                <div
+                                  className="rounded-sm"
+                                  style={{
+                                    position: "absolute",
+                                    left: graceBar.left - bar.left,
+                                    width: Math.max(graceBar.width, 4),
+                                    height: "100%",
+                                    backgroundColor: getBarHexColor(task.status),
+                                    opacity: 0.3,
+                                  }}
+                                />
+                              )}
+                              {overdueBar && (
+                                <div
+                                  className="rounded-sm"
+                                  style={{
+                                    position: "absolute",
+                                    left: overdueBar.left - bar.left,
+                                    width: Math.max(overdueBar.width, 4),
+                                    height: "100%",
+                                    border: "2px dashed #EF4444",
+                                    backgroundColor: "transparent",
+                                  }}
+                                />
+                              )}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            <div className="space-y-1">
+                              <p className="text-xs font-medium">{task.title}</p>
+                              {taskAssignees.length > 0 && (
+                                <p className="text-[10px] text-muted-foreground">
+                                  负责人: {taskAssignees.map((u) => u.name).join(", ")}
+                                </p>
+                              )}
+                              <p className="text-[10px] text-muted-foreground">
+                                截止: {task.deadline}
+                              </p>
+                              <p className="text-[10px]">
+                                状态: {getStatusLabel(task.status ?? "pending")}
+                              </p>
+                              {overdueDays > 0 && (
+                                <p className="text-[10px] text-red-500 font-medium">
+                                  逾期 {overdueDays} 天
+                                </p>
+                              )}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      );
+                    })}
+
+                    <div
+                      data-testid="gantt-today-line"
+                      style={{
+                        position: "absolute",
+                        left: todayOffset,
+                        top: 0,
+                        height: totalContentHeight,
+                        width: 0,
+                        borderLeft: "2px dashed #EF4444",
+                        zIndex: 10,
+                        pointerEvents: "none",
+                      }}
+                    />
+
+                    <svg
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: totalWidth,
+                        height: totalContentHeight,
+                        pointerEvents: "none",
+                        zIndex: 5,
+                      }}
+                    >
+                      <defs>
+                        <marker id="arrowhead-gray" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                          <polygon points="0 0, 8 3, 0 6" fill="#9CA3AF" />
+                        </marker>
+                        <marker id="arrowhead-red" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                          <polygon points="0 0, 8 3, 0 6" fill="#EF4444" />
+                        </marker>
+                      </defs>
+                      {dependencyArrows.map((arrow) => {
+                        const midX = (arrow.fromX + arrow.toX) / 2;
+                        const markerId = arrow.color === "#9CA3AF" ? "arrowhead-gray" : "arrowhead-red";
+                        return (
+                          <path
+                            key={arrow.key}
+                            d={`M ${arrow.fromX} ${arrow.fromY} C ${midX} ${arrow.fromY}, ${midX} ${arrow.toY}, ${arrow.toX} ${arrow.toY}`}
+                            fill="none"
+                            stroke={arrow.color}
+                            strokeWidth={1.5}
+                            markerEnd={`url(#${markerId})`}
+                          />
+                        );
+                      })}
+                    </svg>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
