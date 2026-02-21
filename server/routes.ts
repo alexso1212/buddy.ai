@@ -778,17 +778,20 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const mainTasks = allTasks.filter((t) => !t.parent_id);
     const allUsers = await storage.getAllUsers();
     const allAssignees = await storage.getAllTaskAssignees();
+    const allLogs = await storage.getAllTaskLogs();
     const today = new Date().toISOString().split("T")[0];
 
     const userDeptMap = new Map(allUsers.map((u) => [u.id, u.dept_id]));
-    const tasksByDept: Record<string, { total: number; active: number; done: number; overdue: number; dueSoon: number }> = {};
+    const tasksByDept: Record<string, { total: number; active: number; done: number; overdue: number; dueSoon: number; blocked: number; urged: number }> = {};
 
     for (const task of mainTasks) {
       const assigneeIds = allAssignees.filter((a) => a.task_id === task.id).map((a) => a.user_id);
       const deptIds = new Set(assigneeIds.map((uid) => userDeptMap.get(uid)).filter(Boolean) as string[]);
+      const isBlocked = task.status === "pending" && task.depends_on;
+      const urgeCount = allLogs.filter((l) => l.task_id === task.id && (l.action === "urge" || l.action === "system_urge")).length;
 
       for (const deptId of deptIds) {
-        if (!tasksByDept[deptId]) tasksByDept[deptId] = { total: 0, active: 0, done: 0, overdue: 0, dueSoon: 0 };
+        if (!tasksByDept[deptId]) tasksByDept[deptId] = { total: 0, active: 0, done: 0, overdue: 0, dueSoon: 0, blocked: 0, urged: 0 };
         const s = tasksByDept[deptId];
         s.total++;
         if (task.status === "done") s.done++;
@@ -800,10 +803,47 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           const diffDays = Math.ceil((dl.getTime() - now.getTime()) / 86400000);
           if (diffDays >= 0 && diffDays <= 3) s.dueSoon++;
         }
+        if (isBlocked) s.blocked++;
+        s.urged += urgeCount;
       }
     }
 
     return res.json(tasksByDept);
+  });
+
+  app.get("/api/users/stats", authMiddleware, async (_req, res) => {
+    const allTasks = await storage.getAllTasks();
+    const mainTasks = allTasks.filter((t) => !t.parent_id);
+    const allAssignees = await storage.getAllTaskAssignees();
+    const allLogs = await storage.getAllTaskLogs();
+    const today = new Date().toISOString().split("T")[0];
+
+    const userStats: Record<string, { total: number; active: number; done: number; overdue: number; dueSoon: number; blocked: number; urged: number }> = {};
+
+    for (const task of mainTasks) {
+      const assigneeIds = allAssignees.filter((a) => a.task_id === task.id).map((a) => a.user_id);
+      const isBlocked = task.status === "pending" && task.depends_on;
+      const urgeCount = allLogs.filter((l) => l.task_id === task.id && (l.action === "urge" || l.action === "system_urge")).length;
+
+      for (const uid of assigneeIds) {
+        if (!userStats[uid]) userStats[uid] = { total: 0, active: 0, done: 0, overdue: 0, dueSoon: 0, blocked: 0, urged: 0 };
+        const s = userStats[uid];
+        s.total++;
+        if (task.status === "done") s.done++;
+        else if (task.status === "active" || task.status === "review") s.active++;
+        if (task.status !== "done" && task.deadline && task.deadline < today) s.overdue++;
+        if (task.status !== "done" && task.deadline) {
+          const dl = new Date(task.deadline);
+          const now = new Date();
+          const diffDays = Math.ceil((dl.getTime() - now.getTime()) / 86400000);
+          if (diffDays >= 0 && diffDays <= 2) s.dueSoon++;
+        }
+        if (isBlocked) s.blocked++;
+        s.urged += urgeCount;
+      }
+    }
+
+    return res.json(userStats);
   });
 
   app.post("/api/departments", authMiddleware, async (req, res) => {
