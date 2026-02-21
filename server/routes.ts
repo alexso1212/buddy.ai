@@ -3,6 +3,9 @@ import { type Server } from "http";
 import { storage } from "./storage";
 import { SignJWT, jwtVerify } from "jose";
 import cookieParser from "cookie-parser";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 import type { User } from "@shared/schema";
 
 declare global {
@@ -21,16 +24,11 @@ const stripInviteCode = ({ invite_code, ...rest }: User) => rest;
 
 async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   const token = req.cookies?.token;
-  if (!token) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
+  if (!token) return res.status(401).json({ message: "Unauthorized" });
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET);
-    const userId = payload.userId as string;
-    const user = await storage.getUserById(userId);
-    if (!user) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+    const user = await storage.getUserById(payload.userId as string);
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
     req.user = user;
     next();
   } catch {
@@ -38,44 +36,127 @@ async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   }
 }
 
-export async function registerRoutes(
-  httpServer: Server,
-  app: Express
-): Promise<Server> {
+const uploadDir = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadDir),
+    filename: (_req, file, cb) => {
+      const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${file.originalname}`;
+      cb(null, uniqueName);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+});
+
+async function notifyUsers(userIds: string[], data: { task_id?: string; type: string; title: string; content?: string }) {
+  const unique = [...new Set(userIds)];
+  for (const uid of unique) {
+    try {
+      await storage.createNotification({ user_id: uid, ...data });
+    } catch {}
+  }
+}
+
+async function autoUnblockCheck(completedTaskId: string) {
+  const dependents = await storage.getTasksDependingOn(completedTaskId);
+  for (const dep of dependents) {
+    if (!dep.depends_on) continue;
+    const depIds = dep.depends_on.split(",").map((s) => s.trim()).filter(Boolean);
+    let allDone = true;
+    for (const did of depIds) {
+      const t = await storage.getTaskById(did);
+      if (!t || t.status !== "done") { allDone = false; break; }
+    }
+    if (allDone && dep.status === "pending") {
+      const assignees = await storage.getAssigneesForTask(dep.id);
+      await storage.addLog({ task_id: dep.id, action: "auto_unblock", new_value: `前置任务 ${completedTaskId} 完成，已解锁` });
+      await notifyUsers(
+        assignees.map((a) => a.id),
+        { task_id: dep.id, type: "unblock", title: `任务"${dep.title}"已解锁`, content: "所有前置任务已完成，可以开始了" }
+      );
+    }
+  }
+}
+
+async function checkDeadlines() {
+  const allTasks = await storage.getAllTasks();
+  const now = new Date();
+  const today = now.toISOString().split("T")[0];
+
+  for (const task of allTasks) {
+    if (task.status === "done" || task.parent_id) continue;
+    const dl = new Date(task.deadline + "T23:59:59");
+    const diffMs = dl.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+    const assignees = await storage.getAssigneesForTask(task.id);
+    const assigneeIds = assignees.map((a) => a.id);
+
+    if (diffDays === 1 || diffDays === 0) {
+      for (const uid of assigneeIds) {
+        const exists = await storage.hasNotificationToday(uid, task.id, "deadline");
+        if (!exists) {
+          await storage.createNotification({ user_id: uid, task_id: task.id, type: "deadline", title: `任务"${task.title}"明天到期`, content: `截止日期: ${task.deadline}` });
+        }
+      }
+    } else if (diffDays < 0) {
+      const overdueDays = Math.abs(diffDays);
+      const reviewerIds = task.reviewer_id ? [task.reviewer_id] : [];
+      const allNotifyIds = [...assigneeIds, ...reviewerIds];
+
+      for (const uid of allNotifyIds) {
+        const exists = await storage.hasNotificationToday(uid, task.id, "overdue");
+        if (!exists) {
+          let title = `任务"${task.title}"已逾期${overdueDays}天`;
+          if (overdueDays >= 7) title = `[严重] 任务"${task.title}"严重逾期${overdueDays}天`;
+          else if (overdueDays >= 3) title = `[警告] 任务"${task.title}"逾期${overdueDays}天（系统催办）`;
+          await storage.createNotification({ user_id: uid, task_id: task.id, type: "overdue", title, content: `截止日期: ${task.deadline}` });
+        }
+      }
+
+      if (overdueDays >= 3) {
+        await storage.addLog({ task_id: task.id, action: "system_urge", new_value: `逾期${overdueDays}天，系统自动催办` }).catch(() => {});
+      }
+
+      if (overdueDays >= 7) {
+        const ceoUsers = (await storage.getAllUsers()).filter((u) => u.role === "ceo");
+        for (const ceo of ceoUsers) {
+          const exists = await storage.hasNotificationToday(ceo.id, task.id, "overdue");
+          if (!exists) {
+            await storage.createNotification({ user_id: ceo.id, task_id: task.id, type: "overdue", title: `[严重逾期] "${task.title}" (${overdueDays}天)`, content: `负责人: ${assignees.map((a) => a.name).join(", ")}` });
+          }
+        }
+      }
+    }
+  }
+}
+
+export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   app.use(cookieParser());
 
+  // ---- Auth ----
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     const { invite_code } = req.body;
-    if (!invite_code) {
-      return res.status(401).json({ message: "Invalid invite code" });
-    }
+    if (!invite_code) return res.status(401).json({ message: "Invalid invite code" });
     const user = await storage.getUserByInviteCode(invite_code);
-    if (!user) {
-      return res.status(401).json({ message: "Invalid invite code" });
-    }
+    if (!user) return res.status(401).json({ message: "Invalid invite code" });
     const token = await new SignJWT({ userId: user.id })
-      .setProtectedHeader({ alg: "HS256" })
-      .setExpirationTime("7d")
-      .sign(JWT_SECRET);
-    res.cookie("token", token, {
-      httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      sameSite: "lax",
-      path: "/",
-    });
+      .setProtectedHeader({ alg: "HS256" }).setExpirationTime("7d").sign(JWT_SECRET);
+    res.cookie("token", token, { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000, sameSite: "lax", path: "/" });
     return res.json(stripInviteCode(user));
   });
 
-  app.post("/api/auth/logout", (_req: Request, res: Response) => {
+  app.post("/api/auth/logout", (_req, res) => {
     res.clearCookie("token", { path: "/" });
     return res.json({ ok: true });
   });
 
-  app.get("/api/auth/me", authMiddleware, (req: Request, res: Response) => {
-    return res.json(stripInviteCode(req.user!));
-  });
+  app.get("/api/auth/me", authMiddleware, (req, res) => res.json(stripInviteCode(req.user!)));
 
-  app.get("/api/tasks", authMiddleware, async (req: Request, res: Response) => {
+  // ---- Tasks ----
+  app.get("/api/tasks", authMiddleware, async (req, res) => {
     const view = (req.query.view as string) || "mine";
     const user = req.user!;
     let taskList: any[] = [];
@@ -87,11 +168,7 @@ export async function registerRoutes(
         taskList = await storage.getAllTasks();
       } else if (user.role === "head") {
         const myTasks = await storage.getTasksByUserId(user.id);
-        const deptTasks = await storage.getTasksByDept([
-          "销售部",
-          "BD部",
-          "销售部+BD部",
-        ]);
+        const deptTasks = await storage.getTasksByDept(["销售部", "BD部", "销售部+BD部"]);
         const merged = new Map<string, any>();
         for (const t of myTasks) merged.set(t.id, t);
         for (const t of deptTasks) merged.set(t.id, t);
@@ -100,9 +177,10 @@ export async function registerRoutes(
         taskList = await storage.getTasksByUserId(user.id);
       }
     } else if (view === "people") {
-      if (user.role !== "ceo" && user.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden" });
-      }
+      if (user.role !== "ceo" && user.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+      taskList = await storage.getAllTasks();
+    } else if (view === "overview") {
+      if (user.role !== "ceo" && user.role !== "admin") return res.status(403).json({ message: "Forbidden" });
       taskList = await storage.getAllTasks();
     } else {
       taskList = await storage.getTasksByUserId(user.id);
@@ -115,241 +193,570 @@ export async function registerRoutes(
       strippedMap[tid] = assignees.map(stripInviteCode);
     }
 
+    checkDeadlines().catch(() => {});
+
     return res.json({ tasks: taskList, assigneeMap: strippedMap });
   });
 
-  app.get(
-    "/api/tasks/:id",
-    authMiddleware,
-    async (req: Request, res: Response) => {
-      const taskId = req.params.id as string;
-      const task = await storage.getTaskById(taskId);
-      if (!task) {
-        return res.status(404).json({ message: "Task not found" });
-      }
-      const assignees = await storage.getAssigneesForTask(task.id);
-      const logs = await storage.getLogsForTask(task.id);
-      return res.json({
-        task,
-        assignees: assignees.map(stripInviteCode),
-        logs,
-      });
+  app.get("/api/tasks/:id", authMiddleware, async (req, res) => {
+    const task = await storage.getTaskById(req.params.id as string);
+    if (!task) return res.status(404).json({ message: "Task not found" });
+    const assignees = await storage.getAssigneesForTask(task.id);
+    const logs = await storage.getLogsForTask(task.id);
+    return res.json({ task, assignees: assignees.map(stripInviteCode), logs });
+  });
+
+  app.patch("/api/tasks/:id", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    const task = await storage.getTaskById(req.params.id as string);
+    if (!task) return res.status(404).json({ message: "Task not found" });
+
+    const assignees = await storage.getAssigneesForTask(task.id);
+    const assigneeIds = assignees.map((a) => a.id);
+    const isAssigned = assigneeIds.includes(user.id);
+
+    if (user.role === "staff") {
+      if (!isAssigned) return res.status(403).json({ message: "Forbidden" });
+      const allowedKeys = ["status"];
+      if (Object.keys(req.body).some((k) => !allowedKeys.includes(k))) return res.status(403).json({ message: "Forbidden" });
+    } else if (user.role === "head") {
+      const deptTasks = await storage.getTasksByDept(["销售部", "BD部", "销售部+BD部"]);
+      if (!isAssigned && !deptTasks.some((t) => t.id === task.id)) return res.status(403).json({ message: "Forbidden" });
     }
-  );
 
-  app.patch(
-    "/api/tasks/:id",
-    authMiddleware,
-    async (req: Request, res: Response) => {
-      const user = req.user!;
-      const task = await storage.getTaskById(req.params.id as string);
-      if (!task) {
-        return res.status(404).json({ message: "Task not found" });
-      }
+    const updates: any = { ...req.body, updated_at: new Date() };
 
-      const assignees = await storage.getAssigneesForTask(task.id);
-      const assigneeIds = assignees.map((a) => a.id);
-      const isAssigned = assigneeIds.includes(user.id);
-
-      if (user.role === "staff") {
-        if (!isAssigned) {
-          return res.status(403).json({ message: "Forbidden" });
-        }
-        const allowedKeys = ["status"];
-        const bodyKeys = Object.keys(req.body);
-        if (bodyKeys.some((k) => !allowedKeys.includes(k))) {
-          return res.status(403).json({ message: "Forbidden" });
-        }
-      } else if (user.role === "head") {
-        const deptUsers = await storage.getTasksByDept([
-          "销售部",
-          "BD部",
-          "销售部+BD部",
-        ]);
-        const deptTaskIds = deptUsers.map((t) => t.id);
-        if (!isAssigned && !deptTaskIds.includes(task.id)) {
-          return res.status(403).json({ message: "Forbidden" });
-        }
-      }
-
-      const updates: any = { ...req.body, updated_at: new Date() };
-
-      if (updates.status && updates.status !== task.status) {
-        if (updates.status === "active" && task.depends_on) {
-          const depIds = task.depends_on.split(",").map((s: string) => s.trim());
-          for (const depId of depIds) {
-            const depTask = await storage.getTaskById(depId);
-            if (!depTask || depTask.status !== "done") {
-              return res.status(400).json({
-                message: `Dependency task ${depId} is not done yet`,
-              });
-            }
+    if (updates.status && updates.status !== task.status) {
+      if (updates.status === "active" && task.depends_on) {
+        const depIds = task.depends_on.split(",").map((s: string) => s.trim());
+        for (const depId of depIds) {
+          const depTask = await storage.getTaskById(depId);
+          if (!depTask || depTask.status !== "done") {
+            return res.status(400).json({ message: `前置任务 ${depId} 尚未完成` });
           }
         }
-
-        if (updates.status === "done") {
-          updates.completed_at = new Date();
-        } else if (task.status === "done") {
-          updates.completed_at = null;
-        }
-
-        await storage.addLog({
-          task_id: task.id,
-          user_id: user.id,
-          action: "status_change",
-          old_value: task.status || undefined,
-          new_value: updates.status,
-        });
       }
 
-      const updated = await storage.updateTask(task.id, updates);
-      return res.json(updated);
-    }
-  );
+      if (updates.status === "done") {
+        if (!task.parent_id) {
+          const subtasks = await storage.getSubtasks(task.id);
+          const incomplete = subtasks.filter((st) => st.status !== "done");
+          if (incomplete.length > 0) {
+            return res.status(400).json({ message: `还有 ${incomplete.length} 个子任务未完成，无法标记为已完成` });
+          }
+        }
+        updates.completed_at = new Date();
+      } else if (task.status === "done") {
+        updates.completed_at = null;
+      }
 
-  app.get(
-    "/api/tasks/:id/logs",
-    authMiddleware,
-    async (req: Request, res: Response) => {
-      const logs = await storage.getLogsForTask(req.params.id as string);
-      return res.json(logs);
-    }
-  );
+      await storage.addLog({
+        task_id: task.id, user_id: user.id, action: "status_change",
+        old_value: task.status || undefined, new_value: updates.status,
+      });
 
-  app.get("/api/users", authMiddleware, async (_req: Request, res: Response) => {
+      if (task.reviewer_id && task.reviewer_id !== user.id) {
+        await notifyUsers([task.reviewer_id], {
+          task_id: task.id, type: "status",
+          title: `任务"${task.title}"状态变更`,
+          content: `${task.status} → ${updates.status}`,
+        });
+      }
+    }
+
+    const updated = await storage.updateTask(task.id, updates);
+
+    if (updates.status === "done") {
+      autoUnblockCheck(task.id).catch(() => {});
+    }
+
+    return res.json(updated);
+  });
+
+  app.get("/api/tasks/:id/logs", authMiddleware, async (req, res) => {
+    const logs = await storage.getLogsForTask(req.params.id as string);
+    return res.json(logs);
+  });
+
+  // ---- Subtasks ----
+  app.get("/api/tasks/:id/subtasks", authMiddleware, async (req, res) => {
+    const subtasks = await storage.getSubtasks(req.params.id as string);
+    return res.json(subtasks);
+  });
+
+  app.post("/api/tasks/:id/subtasks", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    const parentId = req.params.id as string;
+    const parent = await storage.getTaskById(parentId);
+    if (!parent) return res.status(404).json({ message: "Parent task not found" });
+
+    if (user.role === "staff") return res.status(403).json({ message: "Forbidden" });
+    if (user.role === "head") {
+      const deptTasks = await storage.getTasksByDept(["销售部", "BD部", "销售部+BD部"]);
+      const assignees = await storage.getAssigneesForTask(parentId);
+      if (!assignees.some((a) => a.id === user.id) && !deptTasks.some((t) => t.id === parentId)) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+    }
+
+    const { title } = req.body;
+    if (!title) return res.status(400).json({ message: "Title required" });
+    const subId = `${parentId}-s${Date.now().toString(36)}`;
+    const subtask = await storage.createTask({
+      id: subId, title, parent_id: parentId, deadline: parent.deadline,
+      phase: parent.phase || undefined, status: "pending",
+    });
+
+    const parentAssignees = await storage.getAssigneesForTask(parentId);
+    for (const a of parentAssignees) {
+      await storage.addAssignee(subId, a.id);
+    }
+
+    return res.json(subtask);
+  });
+
+  app.patch("/api/tasks/:parentId/subtasks/:subId", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    const subtask = await storage.getTaskById(req.params.subId as string);
+    if (!subtask) return res.status(404).json({ message: "Subtask not found" });
+
+    if (user.role === "staff") {
+      const assignees = await storage.getAssigneesForTask(subtask.parent_id || subtask.id);
+      if (!assignees.some((a) => a.id === user.id)) return res.status(403).json({ message: "Forbidden" });
+      const allowedKeys = ["status"];
+      if (Object.keys(req.body).some((k) => !allowedKeys.includes(k))) return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const updates: any = { ...req.body, updated_at: new Date() };
+    if (updates.status === "done") updates.completed_at = new Date();
+    else if (updates.status && subtask.status === "done") updates.completed_at = null;
+
+    const updated = await storage.updateTask(subtask.id, updates);
+    return res.json(updated);
+  });
+
+  app.delete("/api/tasks/:parentId/subtasks/:subId", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    if (user.role === "staff") return res.status(403).json({ message: "Forbidden" });
+    const subtask = await storage.getTaskById(req.params.subId as string);
+    if (!subtask) return res.status(404).json({ message: "Subtask not found" });
+    await storage.removeAssignees(subtask.id);
+    await storage.deleteTask(subtask.id);
+    return res.json({ ok: true });
+  });
+
+  // ---- Comments ----
+  app.get("/api/tasks/:id/comments", authMiddleware, async (req, res) => {
+    const cmts = await storage.getCommentsForTask(req.params.id as string);
+    return res.json(cmts);
+  });
+
+  app.post("/api/tasks/:id/comments", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    const taskId = req.params.id as string;
+    const task = await storage.getTaskById(taskId);
+    if (!task) return res.status(404).json({ message: "Task not found" });
+
+    const assignees = await storage.getAssigneesForTask(taskId);
+    const canComment = user.role === "ceo" || user.role === "admin" ||
+      assignees.some((a) => a.id === user.id) || task.reviewer_id === user.id;
+    if (!canComment) return res.status(403).json({ message: "Forbidden" });
+
+    const { content } = req.body;
+    if (!content?.trim()) return res.status(400).json({ message: "Content required" });
+    const comment = await storage.createComment({ task_id: taskId, user_id: user.id, content: content.trim() });
+
+    const notifyIds = [...assignees.map((a) => a.id)];
+    if (task.reviewer_id) notifyIds.push(task.reviewer_id);
+    const filtered = [...new Set(notifyIds)].filter((id) => id !== user.id);
+    await notifyUsers(filtered, {
+      task_id: taskId, type: "comment",
+      title: `${user.name}评论了"${task.title}"`,
+      content: content.trim().slice(0, 100),
+    });
+
+    return res.json(comment);
+  });
+
+  // ---- Notifications ----
+  app.get("/api/notifications", authMiddleware, async (req, res) => {
+    const notifs = await storage.getNotificationsForUser(req.user!.id);
+    const unreadCount = await storage.getUnreadCountForUser(req.user!.id);
+    return res.json({ notifications: notifs, unreadCount });
+  });
+
+  app.patch("/api/notifications/:id/read", authMiddleware, async (req, res) => {
+    await storage.markNotificationRead(parseInt(req.params.id as string));
+    return res.json({ ok: true });
+  });
+
+  app.post("/api/notifications/read-all", authMiddleware, async (req, res) => {
+    await storage.markAllNotificationsRead(req.user!.id);
+    return res.json({ ok: true });
+  });
+
+  // ---- Urge (manual) ----
+  app.post("/api/tasks/:id/urge", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "ceo" && user.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+
+    const taskId = req.params.id as string;
+    const task = await storage.getTaskById(taskId);
+    if (!task) return res.status(404).json({ message: "Task not found" });
+
+    const lastUrge = await storage.getLastUrgeForTask(taskId);
+    if (lastUrge?.created_at) {
+      const hoursSince = (Date.now() - new Date(lastUrge.created_at).getTime()) / (1000 * 60 * 60);
+      if (hoursSince < 24) return res.status(429).json({ message: "24小时内已催办，请稍后再试" });
+    }
+
+    await storage.addLog({ task_id: taskId, user_id: user.id, action: "urge", new_value: `${user.name}催办` });
+    const assignees = await storage.getAssigneesForTask(taskId);
+    await notifyUsers(assignees.map((a) => a.id), {
+      task_id: taskId, type: "urge",
+      title: `[催办] ${user.name}催办了"${task.title}"`,
+      content: "请尽快处理",
+    });
+
+    const urgeCount = await storage.getUrgeCountForTask(taskId);
+    return res.json({ ok: true, urgeCount });
+  });
+
+  // ---- Overview stats ----
+  app.get("/api/overview", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "ceo" && user.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+
+    const allTasks = await storage.getAllTasks();
+    const mainTasks = allTasks.filter((t) => !t.parent_id);
+    const now = new Date();
+    const today = now.toISOString().split("T")[0];
+    const yesterday = new Date(now.getTime() - 86400000).toISOString().split("T")[0];
+
+    const totalTasks = mainTasks.length;
+    const doneTasks = mainTasks.filter((t) => t.status === "done").length;
+    const dueTodayTasks = mainTasks.filter((t) => t.deadline === today && t.status !== "done").length;
+    const overdueTasks = mainTasks.filter((t) => {
+      if (t.status === "done") return false;
+      return t.deadline < today;
+    }).length;
+    const doneYesterday = mainTasks.filter((t) => {
+      if (t.status !== "done" || !t.completed_at) return false;
+      const d = new Date(t.completed_at).toISOString().split("T")[0];
+      return d === yesterday;
+    }).length;
+
+    const phases = await storage.getAllPhases();
+    phases.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    const phaseProgress = phases.map((p) => {
+      const pTasks = mainTasks.filter((t) => t.phase === p.id);
+      const done = pTasks.filter((t) => t.status === "done").length;
+      return { id: p.id, label: p.label, color: p.color, total: pTasks.length, done, pct: pTasks.length > 0 ? Math.round((done / pTasks.length) * 100) : 0 };
+    });
+
+    const riskTasks = mainTasks
+      .filter((t) => t.status !== "done" && t.deadline < today)
+      .map((t) => {
+        const dl = new Date(t.deadline + "T23:59:59");
+        const overdueDays = Math.ceil((now.getTime() - dl.getTime()) / (1000 * 60 * 60 * 24));
+        return { ...t, overdueDays };
+      })
+      .sort((a, b) => b.overdueDays - a.overdueDays);
+
+    const taskIds = riskTasks.map((t) => t.id);
+    const assigneeMap = await storage.getAssigneesForTasks(taskIds);
+    const riskWithAssignees = riskTasks.map((t) => ({
+      ...t,
+      assignees: (assigneeMap[t.id] || []).map(stripInviteCode),
+    }));
+
+    const recentLogs = await storage.getRecentLogs(20);
+
+    return res.json({
+      stats: { totalTasks, doneTasks, dueTodayTasks, overdueTasks, doneYesterday },
+      phaseProgress,
+      riskTasks: riskWithAssignees,
+      recentLogs,
+    });
+  });
+
+  app.get("/api/users", authMiddleware, async (_req, res) => {
     const allUsers = await storage.getAllUsers();
     return res.json(allUsers.map(stripInviteCode));
   });
 
-  app.get(
-    "/api/phases",
-    authMiddleware,
-    async (_req: Request, res: Response) => {
-      const allPhases = await storage.getAllPhases();
-      allPhases.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-      return res.json(allPhases);
-    }
-  );
+  app.get("/api/phases", authMiddleware, async (_req, res) => {
+    const allPhases = await storage.getAllPhases();
+    allPhases.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    return res.json(allPhases);
+  });
 
-  app.post("/api/sync", authMiddleware, async (req: Request, res: Response) => {
+  // ---- Eval Periods ----
+  app.get("/api/eval/periods", authMiddleware, async (req, res) => {
+    const periods = await storage.getAllEvalPeriods();
+    return res.json(periods);
+  });
+
+  app.post("/api/eval/periods", authMiddleware, async (req, res) => {
     const user = req.user!;
-    if (user.role !== "ceo") {
+    if (user.role !== "ceo") return res.status(403).json({ message: "Forbidden" });
+    const { title, type, start_date, end_date, scoring_deadline } = req.body;
+    if (!title || !start_date || !end_date) return res.status(400).json({ message: "Missing required fields" });
+    const id = `ep-${Date.now().toString(36)}`;
+    const period = await storage.createEvalPeriod({
+      id, title, type: type || "monthly", start_date, end_date,
+      scoring_deadline, status: "draft", created_by: user.id,
+    });
+    return res.json(period);
+  });
+
+  app.get("/api/eval/periods/:id", authMiddleware, async (req, res) => {
+    const period = await storage.getEvalPeriodById(req.params.id as string);
+    if (!period) return res.status(404).json({ message: "Period not found" });
+    const scores = await storage.getEvalScoresForPeriod(period.id);
+    const rules = await storage.getAllEvalRules();
+    return res.json({ period, scores, rules });
+  });
+
+  app.patch("/api/eval/periods/:id", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "ceo") return res.status(403).json({ message: "Forbidden" });
+    const periodId = req.params.id as string;
+    const period = await storage.getEvalPeriodById(periodId);
+    if (!period) return res.status(404).json({ message: "Period not found" });
+
+    const { status } = req.body;
+
+    if (status === "scoring" && period.status === "draft") {
+      await storage.updateEvalPeriod(periodId, { status: "scoring" });
+      await generateAutoScores(periodId);
+      const allUsers = await storage.getAllUsers();
+      const scorerIds = allUsers.filter((u) => u.role === "ceo" || u.role === "admin" || u.role === "head").map((u) => u.id);
+      await notifyUsers(scorerIds, { type: "eval", title: `考核周期"${period.title}"已启动打分`, content: "请及时完成交付质量评分" });
+      return res.json(await storage.getEvalPeriodById(periodId));
+    }
+
+    if (status === "review" && period.status === "scoring") {
+      await storage.updateEvalPeriod(periodId, { status: "review" });
+      return res.json(await storage.getEvalPeriodById(periodId));
+    }
+
+    if (status === "published" && (period.status === "review" || period.status === "scoring")) {
+      await storage.updateEvalPeriod(periodId, { status: "published" });
+      const allUsers = await storage.getAllUsers();
+      await notifyUsers(allUsers.map((u) => u.id), {
+        type: "eval", title: `考核结果已发布: ${period.title}`, content: "可以查看个人考核结果",
+      });
+      return res.json(await storage.getEvalPeriodById(periodId));
+    }
+
+    const updates: any = {};
+    if (req.body.title) updates.title = req.body.title;
+    if (req.body.scoring_deadline) updates.scoring_deadline = req.body.scoring_deadline;
+    if (Object.keys(updates).length > 0) {
+      await storage.updateEvalPeriod(periodId, updates);
+    }
+    return res.json(await storage.getEvalPeriodById(periodId));
+  });
+
+  // ---- Eval Scores ----
+  app.post("/api/eval/scores", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    const { period_id, user_id, dimension, score, comment } = req.body;
+    if (!period_id || !user_id || !dimension || score === undefined) {
+      return res.status(400).json({ message: "Missing fields" });
+    }
+
+    const period = await storage.getEvalPeriodById(period_id);
+    if (!period || (period.status !== "scoring" && period.status !== "review")) {
+      return res.status(400).json({ message: "Period not in scoring/review state" });
+    }
+
+    const targetUser = await storage.getUserById(user_id);
+    if (!targetUser) return res.status(404).json({ message: "User not found" });
+
+    if (user.role === "staff") return res.status(403).json({ message: "Forbidden" });
+    if (user.role === "head") {
+      if (targetUser.dept !== user.dept && !["销售部", "BD部"].includes(targetUser.dept || "")) {
+        return res.status(403).json({ message: "只能给部门下属打分" });
+      }
+    }
+
+    const existingScores = await storage.getEvalScoresForUserInPeriod(period_id, user_id);
+    const existingForDim = existingScores.filter((s) => s.dimension === dimension);
+
+    let overridden_by: string | undefined;
+    if (existingForDim.length > 0) {
+      const roleHierarchy: Record<string, number> = { ceo: 4, admin: 3, head: 2, staff: 1 };
+      const myLevel = roleHierarchy[user.role] || 0;
+      const existingHighest = Math.max(...existingForDim.map((s) => roleHierarchy[s.scorer_role] || 0));
+      if (myLevel < existingHighest) return res.status(403).json({ message: "无权覆盖更高级别的评分" });
+      if (myLevel > existingHighest || myLevel === existingHighest) overridden_by = user.id;
+    }
+
+    const result = await storage.upsertEvalScore({
+      period_id, user_id, scorer_id: user.id, scorer_role: user.role,
+      dimension, score: String(score), comment, overridden_by,
+    });
+
+    return res.json(result);
+  });
+
+  app.get("/api/eval/periods/:id/user/:userId", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    const periodId = req.params.id as string;
+    const targetUserId = req.params.userId as string;
+
+    if (user.role === "staff" && user.id !== targetUserId) return res.status(403).json({ message: "Forbidden" });
+    if (user.role === "head") {
+      const target = await storage.getUserById(targetUserId);
+      if (target && target.id !== user.id && target.dept !== user.dept && !["销售部", "BD部"].includes(target.dept || "")) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+    }
+
+    const scores = await storage.getEvalScoresForUserInPeriod(periodId, targetUserId);
+    const rules = await storage.getAllEvalRules();
+    return res.json({ scores, rules });
+  });
+
+  // ---- Eval Rules ----
+  app.get("/api/eval/rules", authMiddleware, async (_req, res) => {
+    const rules = await storage.getAllEvalRules();
+    return res.json(rules);
+  });
+
+  app.put("/api/eval/rules", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "ceo") return res.status(403).json({ message: "Forbidden" });
+    const { rules } = req.body;
+    if (!Array.isArray(rules)) return res.status(400).json({ message: "rules array required" });
+
+    const totalWeight = rules.reduce((sum: number, r: any) => sum + Number(r.weight), 0);
+    if (totalWeight !== 100) return res.status(400).json({ message: `权重总和必须为100%，当前为${totalWeight}%` });
+
+    const results = [];
+    for (const rule of rules) {
+      const r = await storage.upsertEvalRule({
+        dimension: rule.dimension, label: rule.label, weight: String(rule.weight),
+        formula: rule.formula, updated_by: user.id,
+      });
+      results.push(r);
+    }
+
+    await storage.addLog({ user_id: user.id, action: "eval_rules_update", new_value: JSON.stringify(rules) });
+    return res.json(results);
+  });
+
+  // ---- Attachments ----
+  app.get("/api/tasks/:id/attachments", authMiddleware, async (req, res) => {
+    const atts = await storage.getAttachmentsForTask(req.params.id as string);
+    return res.json(atts);
+  });
+
+  app.post("/api/tasks/:id/attachments", authMiddleware, upload.single("file"), async (req, res) => {
+    const user = req.user!;
+    const taskId = req.params.id as string;
+    const task = await storage.getTaskById(taskId);
+    if (!task) return res.status(404).json({ message: "Task not found" });
+    if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+    const att = await storage.createAttachment({
+      task_id: taskId, user_id: user.id,
+      filename: req.file.originalname, filepath: req.file.filename,
+      filesize: req.file.size, mime_type: req.file.mimetype,
+    });
+    return res.json(att);
+  });
+
+  app.get("/api/attachments/:id/download", authMiddleware, async (req, res) => {
+    const att = await storage.getAttachmentById(parseInt(req.params.id as string));
+    if (!att) return res.status(404).json({ message: "Attachment not found" });
+    const filePath = path.join(uploadDir, att.filepath);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ message: "File not found" });
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(att.filename)}"`);
+    if (att.mime_type) res.setHeader("Content-Type", att.mime_type);
+    return res.sendFile(filePath);
+  });
+
+  app.delete("/api/attachments/:id", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    const att = await storage.getAttachmentById(parseInt(req.params.id as string));
+    if (!att) return res.status(404).json({ message: "Attachment not found" });
+    if (att.user_id !== user.id && user.role !== "ceo" && user.role !== "admin") {
       return res.status(403).json({ message: "Forbidden" });
     }
+    const filePath = path.join(uploadDir, att.filepath);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    await storage.deleteAttachment(att.id);
+    return res.json({ ok: true });
+  });
 
+  // ---- Sync ----
+  app.post("/api/sync", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "ceo") return res.status(403).json({ message: "Forbidden" });
     const { updates = [], new_tasks = [], new_comments = [] } = req.body;
-    let updated = 0;
-    let created = 0;
-    let commented = 0;
-    let skipped = 0;
+    let updated = 0, created = 0, commented = 0, skipped = 0;
     const errors: string[] = [];
 
     for (const upd of updates) {
       try {
         const existing = await storage.getTaskById(upd.id);
-        if (!existing) {
-          skipped++;
-          continue;
-        }
+        if (!existing) { skipped++; continue; }
         const { id, ...fields } = upd;
         await storage.updateTask(id, { ...fields, updated_at: new Date() });
-        await storage.addLog({
-          task_id: id,
-          user_id: user.id,
-          action: "sync_update",
-          new_value: JSON.stringify(fields),
-        });
+        await storage.addLog({ task_id: id, user_id: user.id, action: "sync_update", new_value: JSON.stringify(fields) });
+        if (fields.status === "done") autoUnblockCheck(id).catch(() => {});
         updated++;
-      } catch (e: any) {
-        errors.push(`update ${upd.id}: ${e.message}`);
-      }
+      } catch (e: any) { errors.push(`update ${upd.id}: ${e.message}`); }
     }
 
     for (const nt of new_tasks) {
       try {
         const taskId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        const newTask = await storage.createTask({
-          id: taskId,
-          title: nt.title,
-          description: nt.desc || nt.description,
-          phase: nt.phase,
-          deadline: nt.deadline,
-          grace_deadline: nt.grace,
-          deliverable: nt.deliverable,
-          reviewer_id: nt.reviewer,
-          priority: nt.priority || 0,
-          depends_on: nt.depends_on,
-          parent_id: nt.parent_id,
-          created_by: user.id,
+        await storage.createTask({
+          id: taskId, title: nt.title, description: nt.desc || nt.description, phase: nt.phase,
+          deadline: nt.deadline, grace_deadline: nt.grace, deliverable: nt.deliverable,
+          reviewer_id: nt.reviewer, priority: nt.priority || 0, depends_on: nt.depends_on,
+          parent_id: nt.parent_id, created_by: user.id,
         });
         if (nt.assignees && Array.isArray(nt.assignees)) {
-          for (const uid of nt.assignees) {
-            await storage.addAssignee(newTask.id, uid);
-          }
+          for (const uid of nt.assignees) await storage.addAssignee(taskId, uid);
         }
         if (nt.subtasks && Array.isArray(nt.subtasks)) {
           for (let i = 0; i < nt.subtasks.length; i++) {
             const subId = `${taskId}-s${i + 1}`;
-            await storage.createTask({
-              id: subId,
-              title: nt.subtasks[i],
-              parent_id: taskId,
-              deadline: nt.deadline,
-              phase: nt.phase,
-              status: "pending",
-            });
-            if (nt.assignees && Array.isArray(nt.assignees)) {
-              for (const uid of nt.assignees) {
-                await storage.addAssignee(subId, uid);
-              }
-            }
+            await storage.createTask({ id: subId, title: nt.subtasks[i], parent_id: taskId, deadline: nt.deadline, phase: nt.phase, status: "pending" });
+            if (nt.assignees) for (const uid of nt.assignees) await storage.addAssignee(subId, uid);
           }
         }
         created++;
-      } catch (e: any) {
-        errors.push(`create: ${e.message}`);
-      }
+      } catch (e: any) { errors.push(`create: ${e.message}`); }
     }
 
     for (const cm of new_comments) {
       try {
-        await storage.addLog({
-          task_id: cm.task_id,
-          user_id: cm.user_id || user.id,
-          action: "comment",
-          new_value: cm.content || cm.text,
-        });
+        await storage.addLog({ task_id: cm.task_id, user_id: cm.user_id || user.id, action: "comment", new_value: cm.content || cm.text });
         commented++;
-      } catch (e: any) {
-        errors.push(`comment ${cm.task_id}: ${e.message}`);
-      }
+      } catch (e: any) { errors.push(`comment ${cm.task_id}: ${e.message}`); }
     }
 
     try {
-      await storage.addLog({
-        user_id: user.id,
-        action: "sync",
-        new_value: JSON.stringify({ updated, created, commented, skipped, errors }),
-      });
+      await storage.addLog({ user_id: user.id, action: "sync", new_value: JSON.stringify({ updated, created, commented, skipped, errors }) });
     } catch {}
 
     return res.json({ updated, created, commented, skipped, errors });
   });
 
-  app.get(
-    "/api/sync/history",
-    authMiddleware,
-    async (req: Request, res: Response) => {
-      const user = req.user!;
-      if (user.role !== "ceo") {
-        return res.status(403).json({ message: "Forbidden" });
-      }
-      const logs = await storage.getRecentSyncLogs(10);
-      return res.json(logs);
-    }
-  );
+  app.get("/api/sync/history", authMiddleware, async (req, res) => {
+    if (req.user!.role !== "ceo") return res.status(403).json({ message: "Forbidden" });
+    const logs = await storage.getRecentSyncLogs(10);
+    return res.json(logs);
+  });
 
-  app.post("/api/seed", async (_req: Request, res: Response) => {
+  // ---- Seed ----
+  app.post("/api/seed", async (_req, res) => {
     const USERS = [
       { id: "alex", name: "Alex", title: "CEO / 首席讲师", dept: "CEO办公室", role: "ceo", invite_code: "DP-ALEX-9k2m", color: "#C0392B" },
       { id: "tina", name: "Tina", title: "行政人事 / 考核专员", dept: "综合部", role: "admin", invite_code: "DP-TINA-8x3k", color: "#2E86AB" },
@@ -376,7 +783,7 @@ export async function registerRoutes(
       { id: "p2w23", label: "P2 节后2-3周", date_range: "3/2-3/13", color: "#27AE60", sort_order: 4 },
     ];
 
-    const TASKS = [
+    const TASKS: any[] = [
       { id: "t01", title: "全员合同档案盘点", desc: "逐人核查16人合同签署状态", assignees: ["tina"], reviewer: "alex", deadline: "2026-02-10", grace: "2026-02-11", phase: "p0pre", deliverable: "《合同状态一览表》" },
       { id: "t02", title: "联系法务加急出协议模板(4份)", desc: "竞业禁止、知识产权归属、个人劳务合作、KPI绩效对赌", assignees: ["tina"], reviewer: "alex", deadline: "2026-02-10", grace: "2026-02-11", phase: "p0pre", deliverable: "4份协议模板(Word)" },
       { id: "t03", title: "启动史莱姆背景调查", desc: "核实学历、工作经历、前公司离职原因", assignees: ["tina"], reviewer: "alex", deadline: "2026-02-10", grace: "2026-02-13", phase: "p0pre", deliverable: "背调报告" },
@@ -419,69 +826,156 @@ export async function registerRoutes(
       { id: "t40", title: "三方对账—建档完成检查", desc: "逐项核查建档清单", assignees: ["alex", "tina", "anzhou"], reviewer: "alex", deadline: "2026-03-13", grace: "2026-03-13", phase: "p2w23", deliverable: "《建档完成确认书》", priority: 1, depends_on: "t36,t37,t38,t39", subtasks: ["P0文件到位确认", "P1文件到位确认", "P2进度跟踪", "安洲BD文件归档确认", "双主体分账文件确认", "缺失项清单"] },
     ];
 
-    for (const u of USERS) {
-      await storage.upsertUser(u);
-    }
-
-    for (const p of PHASES) {
-      await storage.upsertPhase(p);
-    }
+    for (const u of USERS) await storage.upsertUser(u);
+    for (const p of PHASES) await storage.upsertPhase(p);
 
     for (const t of TASKS) {
       await storage.createTask({
-        id: t.id,
-        title: t.title,
-        description: t.desc,
-        phase: t.phase,
-        deadline: t.deadline,
-        grace_deadline: t.grace,
-        deliverable: t.deliverable,
-        reviewer_id: t.reviewer,
-        priority: (t as any).priority || 0,
-        depends_on: (t as any).depends_on,
-        status: "pending",
+        id: t.id, title: t.title, description: t.desc, phase: t.phase,
+        deadline: t.deadline, grace_deadline: t.grace, deliverable: t.deliverable,
+        reviewer_id: t.reviewer, priority: t.priority || 0, depends_on: t.depends_on, status: "pending",
       }).catch(async () => {
-        await storage.updateTask(t.id, {
-          title: t.title,
-          description: t.desc,
-          deliverable: t.deliverable,
-          updated_at: new Date(),
-        });
+        await storage.updateTask(t.id, { title: t.title, description: t.desc, deliverable: t.deliverable, updated_at: new Date() });
       });
-
       await storage.removeAssignees(t.id);
-      for (const uid of t.assignees) {
-        await storage.addAssignee(t.id, uid);
-      }
-
-      if ((t as any).subtasks) {
-        const subtasks: string[] = (t as any).subtasks;
-        for (let i = 0; i < subtasks.length; i++) {
+      for (const uid of t.assignees) await storage.addAssignee(t.id, uid);
+      if (t.subtasks) {
+        for (let i = 0; i < t.subtasks.length; i++) {
           const subId = `${t.id}-s${i + 1}`;
-          await storage.createTask({
-            id: subId,
-            title: subtasks[i],
-            parent_id: t.id,
-            deadline: t.deadline,
-            phase: t.phase,
-            status: "pending",
-          }).catch(async () => {
-            await storage.updateTask(subId, {
-              title: subtasks[i],
-              updated_at: new Date(),
-            });
-          });
-
+          await storage.createTask({ id: subId, title: t.subtasks[i], parent_id: t.id, deadline: t.deadline, phase: t.phase, status: "pending" })
+            .catch(async () => { await storage.updateTask(subId, { title: t.subtasks[i], updated_at: new Date() }); });
           await storage.removeAssignees(subId);
-          for (const uid of t.assignees) {
-            await storage.addAssignee(subId, uid);
-          }
+          for (const uid of t.assignees) await storage.addAssignee(subId, uid);
         }
       }
     }
+
+    const EVAL_RULES = [
+      { dimension: 'timeliness', label: '按时完成率', weight: '30', formula: '(按时完成任务数 / 总完成任务数) × 100' },
+      { dimension: 'overdue', label: '逾期严重度', weight: '20', formula: '100 - Σ(逾期天数×权重系数)，1天扣3分，3天扣10分，7天+扣25分' },
+      { dimension: 'quality', label: '交付质量', weight: '25', formula: '考核人主观打分 0-100' },
+      { dimension: 'response', label: '响应速度', weight: '10', formula: '100 - (平均接单耗时小时数×2)' },
+      { dimension: 'collaboration', label: '协作表现', weight: '10', formula: '100 - (被催办次数×15)' },
+      { dimension: 'subtask', label: '子任务完成率', weight: '5', formula: '(已完成子任务数 / 总子任务数) × 100' },
+    ];
+    for (const rule of EVAL_RULES) await storage.upsertEvalRule(rule);
 
     return res.json({ ok: true });
   });
 
   return httpServer;
+}
+
+async function generateAutoScores(periodId: string) {
+  const period = await storage.getEvalPeriodById(periodId);
+  if (!period) return;
+
+  const allUsers = (await storage.getAllUsers()).filter((u) => u.role !== "ceo");
+  const allTasks = await storage.getAllTasks();
+  const allLogs = await storage.getRecentLogs(10000);
+
+  for (const targetUser of allUsers) {
+    const userTasks = await storage.getTasksByUserId(targetUser.id);
+    const mainTasks = userTasks.filter((t) => !t.parent_id);
+    const periodStart = period.start_date;
+    const periodEnd = period.end_date;
+
+    const relevantTasks = mainTasks.filter((t) => {
+      return t.deadline >= periodStart && t.deadline <= periodEnd;
+    });
+
+    const doneTasks = relevantTasks.filter((t) => t.status === "done");
+    const totalDone = doneTasks.length;
+
+    let timelinessScore = 100;
+    if (totalDone > 0) {
+      let onTime = 0;
+      for (const t of doneTasks) {
+        if (!t.completed_at) { onTime++; continue; }
+        const completedDate = new Date(t.completed_at).toISOString().split("T")[0];
+        const dlDate = t.deadline;
+        if (completedDate <= dlDate) {
+          onTime++;
+        } else if (t.grace_deadline && completedDate <= t.grace_deadline) {
+          onTime += 0.95;
+        }
+      }
+      timelinessScore = Math.round((onTime / totalDone) * 100);
+    }
+
+    let overdueScore = 100;
+    for (const t of relevantTasks) {
+      if (t.status === "done" && t.completed_at) {
+        const completedDate = new Date(t.completed_at);
+        const dlDate = new Date(t.deadline + "T23:59:59");
+        if (completedDate > dlDate) {
+          const diffDays = Math.ceil((completedDate.getTime() - dlDate.getTime()) / (1000 * 60 * 60 * 24));
+          if (diffDays <= 1) overdueScore -= 3;
+          else if (diffDays <= 3) overdueScore -= 5 * diffDays;
+          else if (diffDays <= 7) overdueScore -= 8 * diffDays;
+          else overdueScore -= 10 * diffDays;
+        }
+      } else if (t.status !== "done") {
+        const now = new Date();
+        const dlDate = new Date(t.deadline + "T23:59:59");
+        if (now > dlDate) {
+          const diffDays = Math.ceil((now.getTime() - dlDate.getTime()) / (1000 * 60 * 60 * 24));
+          if (diffDays <= 1) overdueScore -= 3;
+          else if (diffDays <= 3) overdueScore -= 5 * diffDays;
+          else if (diffDays <= 7) overdueScore -= 8 * diffDays;
+          else overdueScore -= 10 * diffDays;
+        }
+      }
+    }
+    overdueScore = Math.max(0, overdueScore);
+
+    let responseScore = 100;
+    const statusLogs = allLogs.filter((l) => l.action === "status_change" && l.old_value === "pending" && l.new_value === "active");
+    const userStatusLogs = statusLogs.filter((l) => {
+      const task = relevantTasks.find((t) => t.id === l.task_id);
+      return task !== undefined;
+    });
+    if (userStatusLogs.length > 0) {
+      let totalHours = 0;
+      let count = 0;
+      for (const log of userStatusLogs) {
+        const task = allTasks.find((t) => t.id === log.task_id);
+        if (task?.created_at && log.created_at) {
+          const diff = new Date(log.created_at).getTime() - new Date(task.created_at).getTime();
+          totalHours += diff / (1000 * 60 * 60);
+          count++;
+        }
+      }
+      if (count > 0) {
+        const avgHours = totalHours / count;
+        responseScore = Math.max(0, Math.round(100 - avgHours * 2));
+      }
+    }
+
+    const urgeLogs = allLogs.filter((l) => l.action === "urge" && relevantTasks.some((t) => t.id === l.task_id));
+    const collaborationScore = Math.max(0, 100 - urgeLogs.length * 15);
+
+    const allSubtasks = userTasks.filter((t) => t.parent_id);
+    let subtaskScore = 100;
+    if (allSubtasks.length > 0) {
+      const doneSubtasks = allSubtasks.filter((t) => t.status === "done").length;
+      subtaskScore = Math.round((doneSubtasks / allSubtasks.length) * 100);
+    }
+
+    const autoScores = [
+      { dimension: "timeliness", score: timelinessScore },
+      { dimension: "overdue", score: overdueScore },
+      { dimension: "response", score: responseScore },
+      { dimension: "collaboration", score: collaborationScore },
+      { dimension: "subtask", score: subtaskScore },
+    ];
+
+    for (const s of autoScores) {
+      await storage.upsertEvalScore({
+        period_id: periodId, user_id: targetUser.id, scorer_id: "system",
+        scorer_role: "system", dimension: s.dimension, score: String(s.score),
+        auto_calculated: true,
+      });
+    }
+  }
 }

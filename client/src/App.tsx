@@ -8,12 +8,16 @@ import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import SyncPage from "@/pages/sync";
+import Overview from "@/pages/overview";
+import Evaluation from "@/pages/evaluation";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={LoginPage} />
       <Route path="/dashboard" component={Dashboard} />
+      <Route path="/overview" component={Overview} />
+      <Route path="/evaluation" component={Evaluation} />
       <Route path="/sync" component={SyncPage} />
       <Route component={NotFound} />
     </Switch>

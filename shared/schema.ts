@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, integer, timestamp, serial, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, serial, primaryKey, boolean, numeric, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -60,6 +60,73 @@ export const task_logs = pgTable("task_logs", {
   created_at: timestamp("created_at").defaultNow(),
 });
 
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  user_id: text("user_id").notNull().references(() => users.id),
+  task_id: text("task_id").references(() => tasks.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  content: text("content"),
+  is_read: boolean("is_read").default(false),
+  created_at: timestamp("created_at").defaultNow(),
+});
+
+export const comments = pgTable("comments", {
+  id: serial("id").primaryKey(),
+  task_id: text("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  user_id: text("user_id").notNull().references(() => users.id),
+  content: text("content").notNull(),
+  created_at: timestamp("created_at").defaultNow(),
+});
+
+export const eval_periods = pgTable("eval_periods", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  type: text("type").notNull().default("monthly"),
+  start_date: text("start_date").notNull(),
+  end_date: text("end_date").notNull(),
+  scoring_deadline: text("scoring_deadline"),
+  status: text("status").default("draft"),
+  created_by: text("created_by").references(() => users.id),
+  created_at: timestamp("created_at").defaultNow(),
+});
+
+export const eval_scores = pgTable("eval_scores", {
+  id: serial("id").primaryKey(),
+  period_id: text("period_id").notNull().references(() => eval_periods.id),
+  user_id: text("user_id").notNull().references(() => users.id),
+  scorer_id: text("scorer_id").notNull().references(() => users.id),
+  scorer_role: text("scorer_role").notNull(),
+  dimension: text("dimension").notNull(),
+  score: numeric("score").notNull(),
+  auto_calculated: boolean("auto_calculated").default(false),
+  comment: text("comment"),
+  overridden_by: text("overridden_by").references(() => users.id),
+  overridden_at: timestamp("overridden_at"),
+  created_at: timestamp("created_at").defaultNow(),
+});
+
+export const eval_rules = pgTable("eval_rules", {
+  id: serial("id").primaryKey(),
+  dimension: text("dimension").notNull().unique(),
+  label: text("label").notNull(),
+  weight: numeric("weight").notNull(),
+  formula: text("formula"),
+  updated_by: text("updated_by").references(() => users.id),
+  updated_at: timestamp("updated_at").defaultNow(),
+});
+
+export const attachments = pgTable("attachments", {
+  id: serial("id").primaryKey(),
+  task_id: text("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  user_id: text("user_id").notNull().references(() => users.id),
+  filename: text("filename").notNull(),
+  filepath: text("filepath").notNull(),
+  filesize: integer("filesize"),
+  mime_type: text("mime_type"),
+  created_at: timestamp("created_at").defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   created_at: true,
@@ -83,6 +150,35 @@ export const insertTaskLogSchema = createInsertSchema(task_logs).omit({
   created_at: true,
 });
 
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  created_at: true,
+});
+
+export const insertCommentSchema = createInsertSchema(comments).omit({
+  id: true,
+  created_at: true,
+});
+
+export const insertEvalPeriodSchema = createInsertSchema(eval_periods).omit({
+  created_at: true,
+});
+
+export const insertEvalScoreSchema = createInsertSchema(eval_scores).omit({
+  id: true,
+  created_at: true,
+});
+
+export const insertEvalRuleSchema = createInsertSchema(eval_rules).omit({
+  id: true,
+  updated_at: true,
+});
+
+export const insertAttachmentSchema = createInsertSchema(attachments).omit({
+  id: true,
+  created_at: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
@@ -97,3 +193,21 @@ export type TaskAssignee = typeof task_assignees.$inferSelect;
 
 export type InsertTaskLog = z.infer<typeof insertTaskLogSchema>;
 export type TaskLog = typeof task_logs.$inferSelect;
+
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
+
+export type InsertComment = z.infer<typeof insertCommentSchema>;
+export type Comment = typeof comments.$inferSelect;
+
+export type InsertEvalPeriod = z.infer<typeof insertEvalPeriodSchema>;
+export type EvalPeriod = typeof eval_periods.$inferSelect;
+
+export type InsertEvalScore = z.infer<typeof insertEvalScoreSchema>;
+export type EvalScore = typeof eval_scores.$inferSelect;
+
+export type InsertEvalRule = z.infer<typeof insertEvalRuleSchema>;
+export type EvalRule = typeof eval_rules.$inferSelect;
+
+export type InsertAttachment = z.infer<typeof insertAttachmentSchema>;
+export type Attachment = typeof attachments.$inferSelect;
