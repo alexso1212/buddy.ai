@@ -95,3 +95,4 @@ Team task management board for a 16-person financial education company. V1: Logi
 - 2026-02-21: V2 complete - notifications, comments, subtasks, attachments, automation, evaluation, overview analytics
 - 2026-02-21: V3 complete - organization management, approval workflow, D3.js collaboration graph
 - 2026-02-21: V4 complete - evaluation dashboard (radar/bar charts), Gantt chart, Excel export
+- 2026-02-21: V4.1 Gantt redesign - Daily Analysis Panel (server-side: blockers, critical path, workload, due dates, next week lookahead with analysis_cache table), hover-based dependency highlighting, critical path toggle, clean default view (no arrows), legend bar, mobile responsive (tab toggle), analysis panel sidebar with refresh
