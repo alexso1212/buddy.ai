@@ -12,6 +12,7 @@ import Overview from "@/pages/overview";
 import Evaluation from "@/pages/evaluation";
 import Organization from "@/pages/organization";
 import Collaboration from "@/pages/collaboration";
+import GanttChart from "@/pages/gantt";
 
 function Router() {
   return (
@@ -23,6 +24,7 @@ function Router() {
       <Route path="/sync" component={SyncPage} />
       <Route path="/organization" component={Organization} />
       <Route path="/collaboration" component={Collaboration} />
+      <Route path="/gantt" component={GanttChart} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -21,7 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   LogOut, Lock, Save, ExternalLink, RefreshCw, Bell, MessageSquare, Paperclip,
   Plus, Trash2, BarChart3, Award, Zap, Download, X, ChevronDown, ChevronRight,
-  CheckSquare, Send, Building2
+  CheckSquare, Send, Building2, GanttChart
 } from "lucide-react";
 
 type AssigneeMap = Record<string, User[]>;
@@ -823,12 +823,42 @@ export default function Dashboard() {
               </Button>
             </Link>
           )}
+          {isCeoOrAdmin && (
+            <Link href="/gantt">
+              <Button variant="ghost" size="sm" data-testid="link-gantt">
+                <GanttChart className="w-4 h-4 mr-1" /> 甘特图
+              </Button>
+            </Link>
+          )}
           {user.role === "ceo" && (
             <Link href="/sync">
               <Button variant="ghost" size="sm" data-testid="link-sync">
                 <RefreshCw className="w-4 h-4 mr-1" /> 同步
               </Button>
             </Link>
+          )}
+          {isCeoOrAdmin && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                try {
+                  const res = await fetch("/api/export/excel", { credentials: "include" });
+                  if (!res.ok) throw new Error("Export failed");
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `德湃任务中心_导出_${new Date().toISOString().split("T")[0]}.xlsx`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                } catch (err) {
+                }
+              }}
+              data-testid="button-export-excel"
+            >
+              <Download className="w-4 h-4 mr-1" /> 导出
+            </Button>
           )}
           <NotificationBell />
           <div className="flex items-center gap-1.5">

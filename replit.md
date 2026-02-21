@@ -1,7 +1,7 @@
 # 德湃任务中心 (Depai Task Center)
 
 ## Overview
-Team task management board for a 16-person financial education company. V1: Login + Dashboard + Status management + JSON sync. V2: Notifications, Comments, Subtasks, Attachments, Automation Engine, KPI Evaluation, Overview Analytics. V3: Organization management, approval workflow, D3.js collaboration graph.
+Team task management board for a 16-person financial education company. V1: Login + Dashboard + Status management + JSON sync. V2: Notifications, Comments, Subtasks, Attachments, Automation Engine, KPI Evaluation, Overview Analytics. V3: Organization management, approval workflow, D3.js collaboration graph. V4: Evaluation dashboard analytics (radar/bar charts), Gantt chart, Excel export.
 
 ## Tech Stack
 - Express.js + Vite + React (TypeScript)
@@ -11,6 +11,8 @@ Team task management board for a 16-person financial education company. V1: Logi
 - wouter for frontend routing
 - multer for file uploads
 - D3.js for force-directed collaboration graph
+- Recharts for radar/bar chart analytics
+- SheetJS (xlsx) for Excel export
 
 ## Project Structure
 - `shared/schema.ts` - Database schema (users, phases, tasks, task_assignees, task_logs, notifications, comments, eval_periods, eval_scores, eval_rules, attachments, departments, org_changes)
@@ -25,6 +27,7 @@ Team task management board for a 16-person financial education company. V1: Logi
 - `client/src/pages/evaluation.tsx` - KPI evaluation (period management, scoring, rules)
 - `client/src/pages/organization.tsx` - Organization management (dept tree, edit, approval workflow, history)
 - `client/src/pages/collaboration.tsx` - D3.js force-directed collaboration graph
+- `client/src/pages/gantt.tsx` - Gantt chart (CEO/Admin only, pure CSS+JS)
 
 ## Key Features
 1. Invite code login (format: DP-XXXX-XXXX)
@@ -42,6 +45,9 @@ Team task management board for a 16-person financial education company. V1: Logi
 13. KPI Evaluation: period lifecycle (draft→scoring→review→published), auto-scoring (5 dimensions), manual quality rating, role hierarchy override
 14. Organization management: department tree, edit/create/delete departments, user edit/move, CEO/Admin approval workflow
 15. Collaboration graph: D3.js force-directed graph showing task-based relationships, status-colored links/nodes, department filtering, side panel details
+16. Evaluation Dashboard: radar chart (6-axis, current vs previous period), team ranking table (sortable, trend arrows), department comparison stacked bar chart
+17. Gantt Chart: pure CSS+JS timeline with status-colored bars, grace period extensions, dependency arrows (SVG), overdue indicators, phase collapse, day/week toggle, filters
+18. Excel Export: 3-sheet .xlsx download (任务明细, 人员统计, 考核报告) with SheetJS
 
 ## Roles
 - CEO (alex): Full access, evaluation override, urge capability
@@ -66,6 +72,7 @@ Team task management board for a 16-person financial education company. V1: Logi
 - PATCH /api/users/:id (org management)
 - GET /api/org-changes, PATCH /api/org-changes/:id (approval workflow)
 - GET /api/collaboration (force-directed graph data)
+- GET /api/export/excel (3-sheet .xlsx download, CEO/Admin only)
 
 ## Automation Engine
 - Runs passively on GET /api/tasks (no cron needed)
@@ -87,3 +94,4 @@ Team task management board for a 16-person financial education company. V1: Logi
 - 2026-02-21: Initial build - all Round 1 features complete
 - 2026-02-21: V2 complete - notifications, comments, subtasks, attachments, automation, evaluation, overview analytics
 - 2026-02-21: V3 complete - organization management, approval workflow, D3.js collaboration graph
+- 2026-02-21: V4 complete - evaluation dashboard (radar/bar charts), Gantt chart, Excel export

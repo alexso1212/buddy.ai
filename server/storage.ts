@@ -236,6 +236,10 @@ export class DatabaseStorage {
     return db.select().from(task_logs).where(eq(task_logs.task_id, taskId)).orderBy(desc(task_logs.created_at));
   }
 
+  async getAllTaskLogs(): Promise<TaskLog[]> {
+    return db.select().from(task_logs);
+  }
+
   async getRecentLogs(limit: number): Promise<TaskLog[]> {
     return db.select().from(task_logs).orderBy(desc(task_logs.created_at)).limit(limit);
   }

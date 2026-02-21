@@ -1,11 +1,13 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import type { EvalPeriod, EvalScore, EvalRule, User } from "@shared/schema";
+import type { EvalPeriod, EvalScore, EvalRule, User, Department } from "@shared/schema";
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend as BarLegend, ResponsiveContainer as BarContainer } from 'recharts';
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -618,6 +620,330 @@ function RulesSettings() {
   );
 }
 
+const DIMENSION_COLORS: Record<string, string> = {
+  timeliness: "#3B82F6",
+  overdue: "#EF4444",
+  quality: "#10B981",
+  response: "#F59E0B",
+  collaboration: "#8B5CF6",
+  subtask: "#EC4899",
+};
+
+function EvalDashboard({
+  periods,
+  allUsers,
+  currentUser,
+  isCeo,
+}: {
+  periods: EvalPeriod[];
+  allUsers: User[];
+  currentUser: { id: string; role: string; dept: string | null; dept_id: string | null };
+  isCeo: boolean;
+}) {
+  const publishedPeriods = useMemo(
+    () => periods.filter((p) => p.status === "published").sort((a, b) => b.end_date.localeCompare(a.end_date)),
+    [periods]
+  );
+
+  const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null);
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [sortCol, setSortCol] = useState<string>("total");
+  const [sortAsc, setSortAsc] = useState(false);
+
+  useEffect(() => {
+    if (publishedPeriods.length > 0 && !selectedPeriodId) {
+      setSelectedPeriodId(publishedPeriods[0].id);
+    }
+  }, [publishedPeriods, selectedPeriodId]);
+
+  const prevPeriodId = useMemo(() => {
+    if (!selectedPeriodId) return null;
+    const idx = publishedPeriods.findIndex((p) => p.id === selectedPeriodId);
+    if (idx < 0 || idx >= publishedPeriods.length - 1) return null;
+    return publishedPeriods[idx + 1].id;
+  }, [selectedPeriodId, publishedPeriods]);
+
+  const { data: periodDetail } = useQuery<PeriodDetailData>({
+    queryKey: ["/api/eval/periods", selectedPeriodId],
+    enabled: !!selectedPeriodId,
+  });
+
+  const { data: prevPeriodDetail } = useQuery<PeriodDetailData>({
+    queryKey: ["/api/eval/periods", prevPeriodId],
+    enabled: !!prevPeriodId,
+  });
+
+  const { data: departments } = useQuery<Department[]>({
+    queryKey: ["/api/departments"],
+  });
+
+  const rules = periodDetail?.rules ?? [];
+  const scores = periodDetail?.scores ?? [];
+  const prevScores = prevPeriodDetail?.scores ?? [];
+
+  const getWeight = (dimension: string) => {
+    const rule = rules.find((r) => r.dimension === dimension);
+    if (rule) return parseFloat(rule.weight);
+    const dim = DIMENSIONS.find((d) => d.dimension === dimension);
+    return dim ? dim.weight : 0;
+  };
+
+  const getDimScore = (userId: string, dimension: string, scoreList: EvalScore[]) => {
+    const entry = scoreList.find((s) => s.user_id === userId && s.dimension === dimension);
+    return entry ? parseFloat(entry.score) : 0;
+  };
+
+  const getWeightedTotal = (userId: string, scoreList: EvalScore[]) => {
+    return DIMENSIONS.reduce((sum, dim) => {
+      const s = getDimScore(userId, dim.dimension, scoreList);
+      const w = getWeight(dim.dimension);
+      return sum + (s * w) / 100;
+    }, 0);
+  };
+
+  const visibleUsers = useMemo(() => {
+    if (isCeo || currentUser.role === "admin") return allUsers;
+    if (currentUser.role === "head") return allUsers.filter((u) => (u.dept_id && u.dept_id === currentUser.dept_id) || u.dept === currentUser.dept);
+    return [];
+  }, [allUsers, currentUser, isCeo]);
+
+  const rankedUsers = useMemo(() => {
+    const withTotals = visibleUsers.map((u) => ({
+      user: u,
+      total: getWeightedTotal(u.id, scores),
+      prevTotal: prevPeriodId ? getWeightedTotal(u.id, prevScores) : null,
+      dims: DIMENSIONS.map((dim) => ({
+        dimension: dim.dimension,
+        label: dim.label,
+        score: getDimScore(u.id, dim.dimension, scores),
+        prevScore: prevPeriodId ? getDimScore(u.id, dim.dimension, prevScores) : null,
+      })),
+    }));
+
+    withTotals.sort((a, b) => b.total - a.total);
+    const ranked = withTotals.map((item, idx) => ({ ...item, rank: idx + 1 }));
+
+    if (sortCol !== "total" && sortCol !== "rank") {
+      ranked.sort((a, b) => {
+        const dimA = a.dims.find((d) => d.dimension === sortCol);
+        const dimB = b.dims.find((d) => d.dimension === sortCol);
+        const valA = dimA?.score ?? 0;
+        const valB = dimB?.score ?? 0;
+        return sortAsc ? valA - valB : valB - valA;
+      });
+    } else {
+      if (sortAsc) ranked.reverse();
+    }
+
+    return ranked;
+  }, [visibleUsers, scores, prevScores, prevPeriodId, sortCol, sortAsc, rules]);
+
+  const handleSort = (col: string) => {
+    if (sortCol === col) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortCol(col);
+      setSortAsc(false);
+    }
+  };
+
+  const getTrend = (current: number, prev: number | null) => {
+    if (prev === null) return "—";
+    if (current > prev + 0.5) return "↑";
+    if (current < prev - 0.5) return "↓";
+    return "→";
+  };
+
+  const getTrendColor = (trend: string) => {
+    if (trend === "↑") return "text-green-600 dark:text-green-400";
+    if (trend === "↓") return "text-red-600 dark:text-red-400";
+    return "text-muted-foreground";
+  };
+
+  const deptChartData = useMemo(() => {
+    if (!departments || departments.length === 0) return [];
+    return departments.map((dept) => {
+      const deptUsers = allUsers.filter((u) => u.dept === dept.name || u.dept_id === dept.id);
+      if (deptUsers.length === 0) return null;
+      const entry: Record<string, any> = { name: dept.name };
+      for (const dim of DIMENSIONS) {
+        const avg =
+          deptUsers.reduce((sum, u) => sum + (getDimScore(u.id, dim.dimension, scores) * getWeight(dim.dimension)) / 100, 0) /
+          deptUsers.length;
+        entry[dim.dimension] = parseFloat(avg.toFixed(1));
+      }
+      entry.userCount = deptUsers.length;
+      return entry;
+    }).filter(Boolean);
+  }, [departments, allUsers, scores, rules]);
+
+  if (publishedPeriods.length === 0) {
+    return (
+      <p className="text-center text-muted-foreground py-12" data-testid="text-no-published">
+        暂无已发布的考核数据
+      </p>
+    );
+  }
+
+  const sortIndicator = (col: string) => {
+    if (sortCol !== col) return "";
+    return sortAsc ? " ▲" : " ▼";
+  };
+
+  const columns = [
+    { key: "rank", label: "排名" },
+    { key: "name", label: "姓名" },
+    { key: "dept", label: "部门" },
+    { key: "total", label: "加权总分" },
+    { key: "timeliness", label: "按时率" },
+    { key: "overdue", label: "逾期" },
+    { key: "quality", label: "质量" },
+    { key: "response", label: "响应" },
+    { key: "collaboration", label: "协作" },
+    { key: "subtask", label: "子任务" },
+    { key: "trend", label: "趋势" },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-sm text-muted-foreground shrink-0">选择周期:</span>
+        <Select value={selectedPeriodId ?? ""} onValueChange={setSelectedPeriodId}>
+          <SelectTrigger className="w-64" data-testid="select-dashboard-period">
+            <SelectValue placeholder="选择考核周期" />
+          </SelectTrigger>
+          <SelectContent>
+            {publishedPeriods.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <Card className="p-0 overflow-visible">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b">
+                {columns.map((col) => (
+                  <th
+                    key={col.key}
+                    className="text-left p-3 text-muted-foreground font-medium cursor-pointer select-none whitespace-nowrap"
+                    onClick={() => col.key !== "name" && col.key !== "dept" && col.key !== "trend" && handleSort(col.key)}
+                    data-testid={`th-${col.key}`}
+                  >
+                    {col.label}{col.key !== "name" && col.key !== "dept" && col.key !== "trend" ? sortIndicator(col.key) : ""}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rankedUsers.map((item) => {
+                const isExpanded = expandedUserId === item.user.id;
+                const trend = getTrend(item.total, item.prevTotal);
+                return (
+                  <Fragment key={item.user.id}>
+                    <tr
+                      className="border-b last:border-b-0 hover-elevate cursor-pointer"
+                      onClick={() => setExpandedUserId(isExpanded ? null : item.user.id)}
+                      data-testid={`row-eval-rank-${item.user.id}`}
+                    >
+                      <td className="p-3 font-medium">{item.rank}</td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: item.user.color ?? "#888" }}
+                          />
+                          {item.user.name}
+                        </div>
+                      </td>
+                      <td className="p-3 text-muted-foreground">{item.user.dept ?? "-"}</td>
+                      <td className="p-3">
+                        <span className={cn("font-bold", getScoreColor(item.total))} data-testid={`text-eval-total-${item.user.id}`}>
+                          {item.total.toFixed(1)}
+                        </span>
+                      </td>
+                      {DIMENSIONS.map((dim) => {
+                        const d = item.dims.find((x) => x.dimension === dim.dimension);
+                        return (
+                          <td key={dim.dimension} className="p-3">
+                            <span className={cn("text-xs", getScoreColor(d?.score ?? 0))}>
+                              {d && d.score > 0 ? d.score.toFixed(0) : "-"}
+                            </span>
+                          </td>
+                        );
+                      })}
+                      <td className="p-3">
+                        <span className={cn("font-medium", getTrendColor(trend))}>{trend}</span>
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan={columns.length} className="p-4 bg-muted/30">
+                          <div className="flex flex-col items-center gap-2">
+                            <ResponsiveContainer width="100%" height={300}>
+                              <RadarChart data={item.dims.map((d) => ({
+                                subject: d.label,
+                                current: d.score,
+                                previous: d.prevScore ?? undefined,
+                              }))}>
+                                <PolarGrid />
+                                <PolarAngleAxis dataKey="subject" tick={{ fontSize: 12 }} />
+                                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} />
+                                <Radar name="当前周期" dataKey="current" stroke="#3B82F6" fill="#3B82F6" fillOpacity={0.3} />
+                                {prevPeriodId && (
+                                  <Radar name="上一周期" dataKey="previous" stroke="#9CA3AF" fill="none" strokeDasharray="5 5" />
+                                )}
+                                <Legend />
+                              </RadarChart>
+                            </ResponsiveContainer>
+                            <p className="text-sm text-muted-foreground">
+                              综合 <span className={cn("font-bold", getScoreColor(item.total))}>{item.total.toFixed(1)}</span> 分，排名 {item.rank}/{rankedUsers.length}
+                            </p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {deptChartData.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium" data-testid="text-dept-comparison-title">部门对比</h3>
+          <Card className="p-4 overflow-visible">
+            <BarContainer width="100%" height={350}>
+              <BarChart data={deptChartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip />
+                <BarLegend />
+                {DIMENSIONS.map((dim) => (
+                  <Bar
+                    key={dim.dimension}
+                    dataKey={dim.dimension}
+                    name={dim.label}
+                    stackId="a"
+                    fill={DIMENSION_COLORS[dim.dimension]}
+                  />
+                ))}
+              </BarChart>
+            </BarContainer>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Evaluation() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -691,6 +1017,7 @@ export default function Evaluation() {
           <TabsList data-testid="tabs-eval">
             <TabsTrigger value="periods" data-testid="tab-periods">考核周期</TabsTrigger>
             {isCeo && <TabsTrigger value="rules" data-testid="tab-rules">规则设置</TabsTrigger>}
+            <TabsTrigger value="dashboard" data-testid="tab-eval-dashboard">数据看板</TabsTrigger>
           </TabsList>
         </div>
 
@@ -805,6 +1132,24 @@ export default function Evaluation() {
             </div>
           </TabsContent>
         )}
+
+        <TabsContent value="dashboard" className="flex-1 min-h-0 overflow-y-auto">
+          <div className="p-4">
+            {periodsLoading ? (
+              <div className="space-y-3">
+                <Skeleton className="h-10 w-64" />
+                <Skeleton className="h-60 w-full" />
+              </div>
+            ) : (
+              <EvalDashboard
+                periods={periods ?? []}
+                allUsers={users}
+                currentUser={{ id: user.id, role: user.role, dept: user.dept ?? null, dept_id: user.dept_id ?? null }}
+                isCeo={isCeo}
+              />
+            )}
+          </div>
+        </TabsContent>
       </Tabs>
 
       <CreatePeriodDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />

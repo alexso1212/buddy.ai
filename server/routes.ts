@@ -7,6 +7,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import type { User } from "@shared/schema";
+import * as XLSX from "xlsx";
 
 declare global {
   namespace Express {
@@ -1000,6 +1001,201 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     });
 
     return res.json({ nodes, links });
+  });
+
+  // ---- Excel Export ----
+  app.get("/api/export/excel", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "ceo" && user.role !== "admin") {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const allTasks = await storage.getAllTasks();
+    const allUsers = await storage.getAllUsers();
+    const allPhases = await storage.getAllPhases();
+    const allDepartments = await storage.getAllDepartments();
+    const taskAssigneesList = await storage.getAllTaskAssignees();
+    const taskLogsList = await storage.getAllTaskLogs();
+
+    const today = new Date().toISOString().split("T")[0];
+    const phaseMap = new Map(allPhases.map((p) => [p.id, p]));
+    const userMap = new Map(allUsers.map((u) => [u.id, u]));
+    const deptMap = new Map(allDepartments.map((d) => [d.id, d]));
+
+    const taskAssigneeMap: Record<string, string[]> = {};
+    for (const ta of taskAssigneesList) {
+      if (!taskAssigneeMap[ta.task_id]) taskAssigneeMap[ta.task_id] = [];
+      taskAssigneeMap[ta.task_id].push(ta.user_id);
+    }
+
+    const statusMap: Record<string, string> = { pending: "待处理", active: "进行中", review: "待审核", done: "已完成" };
+    const priorityMap: Record<number, string> = { 0: "普通", 1: "重要", 2: "紧急" };
+
+    const mainTasks = allTasks.filter((t) => !t.parent_id);
+    allPhases.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+
+    const sortedTasks = [...mainTasks].sort((a, b) => {
+      const pa = phaseMap.get(a.phase || "");
+      const pb = phaseMap.get(b.phase || "");
+      const sa = pa?.sort_order ?? 999;
+      const sb = pb?.sort_order ?? 999;
+      if (sa !== sb) return sa - sb;
+      return (a.deadline || "").localeCompare(b.deadline || "");
+    });
+
+    const sheet1Data = sortedTasks.map((t) => {
+      const phase = phaseMap.get(t.phase || "");
+      const assigneeIds = taskAssigneeMap[t.id] || [];
+      const assigneeNames = assigneeIds.map((id) => userMap.get(id)?.name || id).join(", ");
+      const reviewer = t.reviewer_id ? userMap.get(t.reviewer_id)?.name || "" : "";
+
+      let overdueDays = 0;
+      if (t.deadline) {
+        const dl = new Date(t.deadline + "T23:59:59");
+        const compareDate = t.completed_at ? new Date(t.completed_at) : new Date();
+        if (compareDate > dl) {
+          overdueDays = Math.ceil((compareDate.getTime() - dl.getTime()) / (1000 * 60 * 60 * 24));
+        }
+      }
+
+      const urgeCount = taskLogsList.filter((l) => l.task_id === t.id && l.action === "urge").length;
+
+      return {
+        "任务ID": t.id,
+        "标题": t.title,
+        "阶段": phase?.label || "",
+        "负责人": assigneeNames,
+        "考核人": reviewer,
+        "状态": statusMap[t.status || "pending"] || t.status || "",
+        "优先级": priorityMap[t.priority ?? 0] || "普通",
+        "截止日期": t.deadline || "",
+        "宽限期": t.grace_deadline || "",
+        "完成时间": t.completed_at ? new Date(t.completed_at).toISOString().split("T")[0] : "",
+        "逾期天数": overdueDays > 0 ? overdueDays : 0,
+        "交付物": t.deliverable || "",
+        "催办次数": urgeCount,
+      };
+    });
+
+    const sheet2Data = allUsers.map((u) => {
+      const dept = u.dept_id ? deptMap.get(u.dept_id)?.name || u.dept || "" : u.dept || "";
+      const userTaskIds: string[] = Object.entries(taskAssigneeMap)
+        .filter(([, uids]) => uids.includes(u.id))
+        .map(([tid]) => tid);
+      const userTasks = userTaskIds.map((tid) => allTasks.find((t) => t.id === tid)).filter((t): t is NonNullable<typeof t> => !!t && !t.parent_id);
+
+      const totalTasks = userTasks.length;
+      const doneTasks = userTasks.filter((t) => t.status === "done");
+      const doneCount = doneTasks.length;
+      const activeCount = userTasks.filter((t) => t.status === "active").length;
+      const overdueCount = userTasks.filter((t) => t.deadline < today && t.status !== "done").length;
+
+      let onTimeRate = "-";
+      if (doneCount > 0) {
+        const onTime = doneTasks.filter((t) => {
+          if (!t.completed_at) return true;
+          const completedDate = new Date(t.completed_at).toISOString().split("T")[0];
+          return completedDate <= t.deadline;
+        }).length;
+        onTimeRate = Math.round((onTime / doneCount) * 100) + "%";
+      }
+
+      const statusChangeLogs = taskLogsList.filter(
+        (l) => l.action === "status_change" && l.old_value === "pending" && l.new_value === "active" && userTaskIds.includes(l.task_id || "")
+      );
+      let avgResponse = "-";
+      if (statusChangeLogs.length > 0) {
+        let totalHours = 0;
+        let cnt = 0;
+        for (const log of statusChangeLogs) {
+          const task = allTasks.find((t) => t.id === log.task_id);
+          if (task?.created_at && log.created_at) {
+            const diff = new Date(log.created_at).getTime() - new Date(task.created_at).getTime();
+            totalHours += diff / (1000 * 60 * 60);
+            cnt++;
+          }
+        }
+        if (cnt > 0) avgResponse = (totalHours / cnt).toFixed(1) + "h";
+      }
+
+      const urgeCount = taskLogsList.filter((l) => l.action === "urge" && userTaskIds.includes(l.task_id || "")).length;
+
+      return {
+        "姓名": u.name,
+        "部门": dept,
+        "总任务数": totalTasks,
+        "已完成": doneCount,
+        "进行中": activeCount,
+        "逾期数": overdueCount,
+        "按时完成率": onTimeRate,
+        "平均响应时间": avgResponse,
+        "被催办次数": urgeCount,
+      };
+    });
+
+    const allPeriods = await storage.getAllEvalPeriods();
+    const publishedPeriod = allPeriods.find((p) => p.status === "published");
+
+    let sheet3Data: any[];
+    if (publishedPeriod) {
+      const scores = await storage.getEvalScoresForPeriod(publishedPeriod.id);
+      const rules = await storage.getAllEvalRules();
+      const ruleMap = new Map(rules.map((r) => [r.dimension, r]));
+
+      const userScoreMap: Record<string, Record<string, number>> = {};
+      for (const s of scores) {
+        if (!userScoreMap[s.user_id]) userScoreMap[s.user_id] = {};
+        userScoreMap[s.user_id][s.dimension] = Number(s.score);
+      }
+
+      const evalRows = Object.entries(userScoreMap).map(([userId, dims]) => {
+        const u = userMap.get(userId);
+        const dept = u?.dept_id ? deptMap.get(u.dept_id)?.name || u?.dept || "" : u?.dept || "";
+
+        let weightedTotal = 0;
+        for (const [dim, score] of Object.entries(dims)) {
+          const rule = ruleMap.get(dim);
+          if (rule) {
+            weightedTotal += score * Number(rule.weight) / 100;
+          }
+        }
+
+        return {
+          userId,
+          "姓名": u?.name || userId,
+          "部门": dept,
+          "按时率": dims["timeliness"] ?? "-",
+          "逾期分": dims["overdue"] ?? "-",
+          "质量分": dims["quality"] ?? "-",
+          "响应分": dims["response"] ?? "-",
+          "协作分": dims["collaboration"] ?? "-",
+          "子任务分": dims["subtask"] ?? "-",
+          "加权总分": Math.round(weightedTotal * 10) / 10,
+        };
+      });
+
+      evalRows.sort((a, b) => (b["加权总分"] as number) - (a["加权总分"] as number));
+      sheet3Data = evalRows.map((r, i) => {
+        const { userId, ...rest } = r;
+        return { ...rest, "排名": i + 1 };
+      });
+    } else {
+      sheet3Data = [{ "考核报告": "暂无考核数据" }];
+    }
+
+    const wb = XLSX.utils.book_new();
+    const ws1 = XLSX.utils.json_to_sheet(sheet1Data);
+    XLSX.utils.book_append_sheet(wb, ws1, "任务明细");
+    const ws2 = XLSX.utils.json_to_sheet(sheet2Data);
+    XLSX.utils.book_append_sheet(wb, ws2, "人员统计");
+    const ws3 = XLSX.utils.json_to_sheet(sheet3Data);
+    XLSX.utils.book_append_sheet(wb, ws3, "考核报告");
+
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    const todayStr = new Date().toISOString().split("T")[0];
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.xml");
+    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(`德湃任务中心_导出_${todayStr}.xlsx`)}`);
+    res.send(Buffer.from(buf));
   });
 
   // ---- Seed ----
