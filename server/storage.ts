@@ -24,6 +24,7 @@ import {
   attachments,
   departments,
   org_changes,
+  analysis_cache,
 } from "@shared/schema";
 import { eq, inArray, and, desc, sql, like, gte, lte, ne, count, asc, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -405,6 +406,16 @@ export class DatabaseStorage {
 
   async getOldAttachments(beforeDate: Date): Promise<Attachment[]> {
     return db.select().from(attachments).where(lte(attachments.created_at, beforeDate));
+  }
+  // ---- Analysis Cache ----
+  async getAnalysisCache(id: string = "daily"): Promise<{ id: string; data: any; computed_at: Date | null } | undefined> {
+    const [result] = await db.select().from(analysis_cache).where(eq(analysis_cache.id, id));
+    return result;
+  }
+
+  async upsertAnalysisCache(id: string, data: any): Promise<void> {
+    await db.insert(analysis_cache).values({ id, data, computed_at: new Date() })
+      .onConflictDoUpdate({ target: analysis_cache.id, set: { data, computed_at: new Date() } });
   }
 }
 

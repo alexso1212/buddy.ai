@@ -210,6 +210,12 @@ export const insertAttachmentSchema = createInsertSchema(attachments).omit({
   created_at: true,
 });
 
+export const analysis_cache = pgTable("analysis_cache", {
+  id: text("id").primaryKey().default("daily"),
+  data: jsonb("data").notNull(),
+  computed_at: timestamp("computed_at").defaultNow(),
+});
+
 export const insertOrgChangeSchema = createInsertSchema(org_changes).omit({
   id: true,
   created_at: true,

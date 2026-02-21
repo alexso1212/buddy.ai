@@ -1326,6 +1326,259 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     return res.json({ ok: true });
   });
 
+  // ---- Analysis ----
+  async function computeAnalysis() {
+    const allTasks = await storage.getAllTasks();
+    const mainTasks = allTasks.filter((t) => !t.parent_id);
+    const allUsers = await storage.getAllUsers();
+    const allPhases = await storage.getAllPhases();
+    const allAssignees = await storage.getAllTaskAssignees();
+    const now = new Date();
+    const today = now.toISOString().split("T")[0];
+    const todayDate = new Date(today + "T00:00:00");
+
+    const userMap = new Map(allUsers.map((u) => [u.id, u]));
+    const taskMap = new Map(mainTasks.map((t) => [t.id, t]));
+    const assigneesByTask: Record<string, string[]> = {};
+    for (const a of allAssignees) {
+      if (!assigneesByTask[a.task_id]) assigneesByTask[a.task_id] = [];
+      assigneesByTask[a.task_id].push(a.user_id);
+    }
+
+    const blockers: any[] = [];
+    const blockedTasks: any[] = [];
+    for (const task of mainTasks) {
+      if (task.status === "done" || !task.depends_on) continue;
+      const depIds = task.depends_on.split(",").map((s) => s.trim()).filter(Boolean);
+      for (const depId of depIds) {
+        const depTask = taskMap.get(depId);
+        if (!depTask || depTask.status === "done") continue;
+        const depDl = depTask.deadline ? new Date(depTask.deadline + "T23:59:59") : null;
+        const overdueDays = depDl ? Math.max(0, Math.ceil((now.getTime() - depDl.getTime()) / 86400000)) : 0;
+        let suggestion = "";
+        if (overdueDays > 3) suggestion = "建议: 确认是否需要重新分配或移除依赖";
+        else if (depTask.status === "pending") suggestion = "建议: 督促负责人尽快启动";
+        else if (depTask.status === "active") suggestion = "建议: 跟进进度，确认交付时间";
+        else suggestion = "建议: 跟进审核进度";
+
+        const depAssignees = (assigneesByTask[depId] || []).map((uid) => userMap.get(uid)?.name || uid);
+        const taskAssignees = (assigneesByTask[task.id] || []).map((uid) => userMap.get(uid)?.name || uid);
+
+        blockers.push({
+          taskId: task.id, taskTitle: task.title, taskAssignees,
+          blockerId: depId, blockerTitle: depTask.title, blockerStatus: depTask.status,
+          blockerAssignees: depAssignees, overdueDays, suggestion,
+        });
+        blockedTasks.push(task.id);
+      }
+    }
+
+    const dependentsMap: Record<string, string[]> = {};
+    for (const task of mainTasks) {
+      if (!task.depends_on) continue;
+      const depIds = task.depends_on.split(",").map((s) => s.trim()).filter(Boolean);
+      for (const depId of depIds) {
+        if (!dependentsMap[depId]) dependentsMap[depId] = [];
+        dependentsMap[depId].push(task.id);
+      }
+    }
+
+    function findCriticalPath(): { path: string[]; risk: string } {
+      const memo: Record<string, string[]> = {};
+      function longestPath(taskId: string, visited: Set<string>): string[] {
+        if (visited.has(taskId)) return [];
+        if (memo[taskId]) return memo[taskId];
+        visited.add(taskId);
+        const deps = dependentsMap[taskId] || [];
+        let best: string[] = [];
+        for (const depId of deps) {
+          const p = longestPath(depId, visited);
+          if (p.length > best.length) best = p;
+        }
+        visited.delete(taskId);
+        memo[taskId] = [taskId, ...best];
+        return memo[taskId];
+      }
+      let longest: string[] = [];
+      for (const task of mainTasks) {
+        const depsOf = task.depends_on?.split(",").map((s) => s.trim()).filter(Boolean) || [];
+        const isRoot = depsOf.length === 0 || depsOf.every((d) => !taskMap.has(d));
+        if (isRoot || !task.depends_on) {
+          const p = longestPath(task.id, new Set());
+          if (p.length > longest.length) longest = p;
+        }
+      }
+      const pathDetails = longest.map((id) => {
+        const t = taskMap.get(id);
+        return { id, title: t?.title || id, status: t?.status || "unknown" };
+      });
+      const doneCount = pathDetails.filter((p) => p.status === "done").length;
+      const notDone = pathDetails.filter((p) => p.status !== "done");
+      const lastTask = longest.length > 0 ? taskMap.get(longest[longest.length - 1]) : null;
+      let risk = "";
+      if (notDone.length > 0) {
+        const blockedOnPath = notDone.filter((p) => {
+          const t = taskMap.get(p.id);
+          if (!t?.depends_on) return false;
+          const deps = t.depends_on.split(",").map((s) => s.trim());
+          return deps.some((d) => { const dt = taskMap.get(d); return dt && dt.status !== "done"; });
+        });
+        if (blockedOnPath.length > 0) {
+          risk = `链上${longest.length}个任务，${doneCount}个已完成，${blockedOnPath.length}个被阻塞`;
+        }
+        if (lastTask) {
+          risk += risk ? `。影响: ${lastTask.title}(${lastTask.deadline})可能推迟` : `最终任务: ${lastTask.title}(${lastTask.deadline})`;
+        }
+      }
+      return { path: longest, risk };
+    }
+    const criticalPath = findCriticalPath();
+
+    const dayOfWeek = todayDate.getDay();
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const weekStart = new Date(todayDate);
+    weekStart.setDate(weekStart.getDate() + mondayOffset);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    const weekStartStr = weekStart.toISOString().split("T")[0];
+    const weekEndStr = weekEnd.toISOString().split("T")[0];
+
+    const dueThisWeek: any[] = [];
+    for (const task of mainTasks) {
+      if (task.status === "done") continue;
+      if (task.deadline >= weekStartStr && task.deadline <= weekEndStr) {
+        const dl = new Date(task.deadline + "T00:00:00");
+        const diffDays = Math.round((dl.getTime() - todayDate.getTime()) / 86400000);
+        let dayLabel = task.deadline;
+        if (diffDays === 0) dayLabel = "今天";
+        else if (diffDays === 1) dayLabel = "明天";
+        else if (diffDays === 2) dayLabel = "后天";
+        else {
+          const dayNames = ["日", "一", "二", "三", "四", "五", "六"];
+          dayLabel = `${dl.getMonth() + 1}/${dl.getDate()}(${dayNames[dl.getDay()]})`;
+        }
+        const isOverdue = task.deadline < today;
+        const taskAssignees = (assigneesByTask[task.id] || []).map((uid) => userMap.get(uid)?.name || uid);
+        dueThisWeek.push({
+          taskId: task.id, title: task.title, deadline: task.deadline,
+          dayLabel, isOverdue, assignees: taskAssignees, diffDays,
+        });
+      }
+    }
+    dueThisWeek.sort((a, b) => a.diffDays - b.diffDays);
+
+    const workload: any[] = [];
+    for (const u of allUsers) {
+      const userTaskIds = Object.entries(assigneesByTask)
+        .filter(([, uids]) => uids.includes(u.id))
+        .map(([tid]) => tid);
+      const activeTasks = userTaskIds
+        .map((tid) => taskMap.get(tid))
+        .filter((t): t is NonNullable<typeof t> => !!t && t.status !== "done" && !t.parent_id);
+      const dueNextWeekCount = activeTasks.filter((t) => {
+        return t.deadline >= weekStartStr && t.deadline <= weekEndStr;
+      }).length;
+      workload.push({
+        userId: u.id, name: u.name, dept: u.dept,
+        activeCount: activeTasks.length, dueThisWeekCount: dueNextWeekCount,
+        level: activeTasks.length >= 5 ? "overloaded" : activeTasks.length >= 3 ? "busy" : "available",
+        taskTypes: activeTasks.length > 0 ? [...new Set(activeTasks.map((t) => {
+          if (t.title.includes("审") || t.title.includes("决策") || t.title.includes("确定")) return "决策类";
+          if (t.title.includes("方案") || t.title.includes("草案") || t.title.includes("初稿")) return "方案类";
+          return "执行类";
+        }))] : [],
+      });
+    }
+    workload.sort((a, b) => b.activeCount - a.activeCount);
+
+    const nextWeekStart = new Date(weekEnd);
+    nextWeekStart.setDate(nextWeekStart.getDate() + 1);
+    const nextWeekEnd = new Date(nextWeekStart);
+    nextWeekEnd.setDate(nextWeekEnd.getDate() + 6);
+    const nextWeekStartStr = nextWeekStart.toISOString().split("T")[0];
+    const nextWeekEndStr = nextWeekEnd.toISOString().split("T")[0];
+
+    const nextWeekTasks = mainTasks.filter((t) => t.status !== "done" && t.deadline >= nextWeekStartStr && t.deadline <= nextWeekEndStr);
+    const thisWeekTaskCount = dueThisWeek.length;
+    const nextWeekTaskCount = nextWeekTasks.length;
+    const ratio = thisWeekTaskCount > 0 ? (nextWeekTaskCount / thisWeekTaskCount).toFixed(1) : "N/A";
+
+    const dayCountMap: Record<string, number> = {};
+    for (const t of nextWeekTasks) {
+      dayCountMap[t.deadline] = (dayCountMap[t.deadline] || 0) + 1;
+    }
+    let busiestDay = "";
+    let busiestCount = 0;
+    for (const [day, cnt] of Object.entries(dayCountMap)) {
+      if (cnt > busiestCount) { busiestDay = day; busiestCount = cnt; }
+    }
+
+    const gateTasks: any[] = [];
+    for (const task of mainTasks) {
+      const downstream = dependentsMap[task.id] || [];
+      if (downstream.length >= 2 && task.status !== "done") {
+        const dl = task.deadline ? new Date(task.deadline + "T23:59:59") : null;
+        const isOverdue = dl ? now > dl : false;
+        const taskAssignees = (assigneesByTask[task.id] || []).map((uid) => userMap.get(uid)?.name || uid);
+        gateTasks.push({
+          taskId: task.id, title: task.title, deadline: task.deadline,
+          downstreamCount: downstream.length, isOverdue, assignees: taskAssignees,
+        });
+      }
+    }
+
+    const nextWeekLookahead = {
+      thisWeekCount: thisWeekTaskCount,
+      nextWeekCount: nextWeekTaskCount,
+      ratio,
+      busiestDay,
+      busiestDayCount: busiestCount,
+      gateTasks,
+      dateRange: `${nextWeekStart.getMonth() + 1}/${nextWeekStart.getDate()}-${nextWeekEnd.getMonth() + 1}/${nextWeekEnd.getDate()}`,
+    };
+
+    return {
+      blockers,
+      criticalPath: {
+        path: criticalPath.path.map((id) => {
+          const t = taskMap.get(id);
+          return { id, title: t?.title || id, status: t?.status || "unknown" };
+        }),
+        risk: criticalPath.risk,
+      },
+      dueThisWeek,
+      workload,
+      nextWeekLookahead,
+      computedAt: now.toISOString(),
+    };
+  }
+
+  app.get("/api/analysis", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "ceo" && user.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+
+    const cached = await storage.getAnalysisCache("daily");
+    if (cached) {
+      const age = Date.now() - new Date(cached.computed_at!).getTime();
+      if (age < 24 * 60 * 60 * 1000) {
+        return res.json(cached.data);
+      }
+    }
+
+    const data = await computeAnalysis();
+    await storage.upsertAnalysisCache("daily", data);
+    return res.json(data);
+  });
+
+  app.post("/api/analysis/refresh", authMiddleware, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "ceo" && user.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+
+    const data = await computeAnalysis();
+    await storage.upsertAnalysisCache("daily", data);
+    return res.json(data);
+  });
+
   return httpServer;
 }
 
