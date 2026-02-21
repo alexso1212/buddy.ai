@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, Link } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -18,9 +18,12 @@ import {
   ArrowLeft, Building2, Users, Edit2, Check, X, Plus, Trash2,
   Clock, CheckCircle, XCircle, ChevronRight, ChevronDown, UserPlus, Network
 } from "lucide-react";
-import { OrgMindmap } from "@/components/org/OrgMindmap";
-import { OrgMobileTree } from "@/components/org/OrgMobileTree";
-import type { DeptTreeNode, SafeUser, DeptStatsMap, UserStatsMap } from "@/components/org/types";
+import { OrgOutline } from "@/components/org/OrgOutline";
+import { OrgMindmapSvg } from "@/components/org/OrgMindmapSvg";
+import { OrgDetailPanel } from "@/components/org/OrgDetailPanel";
+import { OrgColorLegend } from "@/components/org/OrgColorLegend";
+import { useOrgData, useIsMobile } from "@/components/org/useOrgData";
+import type { DeptTreeNode, SafeUser } from "@/components/org/types";
 
 const CHANGE_TYPE_LABELS: Record<string, string> = {
   dept_create: "新建部门",
@@ -303,19 +306,20 @@ export default function Organization() {
   const [showNewDept, setShowNewDept] = useState(false);
   const [editUser, setEditUser] = useState<SafeUser | null>(null);
   const [moveUser, setMoveUser] = useState<SafeUser | null>(null);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [detailNode, setDetailNode] = useState<DeptTreeNode | null>(null);
 
-  useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener("resize", handler);
-    return () => window.removeEventListener("resize", handler);
-  }, []);
-
-  const { data: departments, isLoading: deptsLoading } = useQuery<Department[]>({ queryKey: ["/api/departments"] });
-  const { data: usersData } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
-  const { data: orgChanges, isLoading: changesLoading } = useQuery<OrgChange[]>({ queryKey: ["/api/org-changes"] });
-  const { data: deptStatsData } = useQuery<DeptStatsMap>({ queryKey: ["/api/departments/stats"] });
-  const { data: userStatsData } = useQuery<UserStatsMap>({ queryKey: ["/api/users/stats"] });
+  const isMobile = useIsMobile();
+  const {
+    deptTree,
+    allUsers,
+    allDepts,
+    allChanges,
+    pendingChanges,
+    deptStats,
+    userStats,
+    deptsLoading,
+    changesLoading,
+  } = useOrgData();
 
   if (authLoading) return <LoadingSkeleton />;
   if (!user) { navigate("/"); return null; }
@@ -323,34 +327,17 @@ export default function Organization() {
   const isCeoOrAdmin = isCeo || user.role === "admin";
   if (!isCeoOrAdmin) { navigate("/dashboard"); return null; }
 
-  const allUsers = usersData || [];
-  const allDepts = departments || [];
-  const allChanges = orgChanges || [];
+  const [activeTab, setActiveTab] = useState(isMobile ? "outline" : "mindmap");
 
-  const deptTree = useMemo(() => {
-    const nodes: DeptTreeNode[] = allDepts.map((d) => ({
-      dept: d,
-      members: allUsers.filter((u) => u.dept_id === d.id),
-      children: [],
-    }));
-    const rootNodes: DeptTreeNode[] = [];
-    for (const node of nodes) {
-      if (node.dept.parent_id) {
-        const parent = nodes.find((n) => n.dept.id === node.dept.parent_id);
-        if (parent) { parent.children.push(node); continue; }
-      }
-      rootNodes.push(node);
-    }
-    const ceoNode = rootNodes.find((n) => n.dept.id === "ceo_office");
-    if (ceoNode) {
-      const otherRoots = rootNodes.filter((n) => n.dept.id !== "ceo_office");
-      ceoNode.children = [...otherRoots, ...ceoNode.children];
-      return [ceoNode];
-    }
-    return rootNodes;
-  }, [allDepts, allUsers]);
+  const sortedChanges = [...allChanges].sort((a, b) => {
+    if (a.status === "pending" && b.status !== "pending") return -1;
+    if (a.status !== "pending" && b.status === "pending") return 1;
+    const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return dateB - dateA;
+  });
 
-  const pendingChanges = allChanges.filter((c) => c.status === "pending");
+  const tabTriggerClass = "bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent";
 
   return (
     <div className="flex flex-col h-screen bg-background">
@@ -378,77 +365,81 @@ export default function Organization() {
       </header>
 
       <div className="flex-1 min-h-0 overflow-hidden">
-        <Tabs defaultValue="tree" className="flex flex-col h-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
           <div className="px-4 pt-3">
             <TabsList className="bg-transparent h-auto p-0 gap-0 rounded-none" data-testid="org-tabs">
-              <TabsTrigger value="tree" className="bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent" data-testid="tab-tree">
-                <Building2 className="w-4 h-4 mr-1" /> 组织图
+              <TabsTrigger value="outline" className={tabTriggerClass} data-testid="tab-outline">
+                大纲
               </TabsTrigger>
-              <TabsTrigger value="approvals" className="bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent" data-testid="tab-approvals">
+              <TabsTrigger value="mindmap" className={tabTriggerClass} data-testid="tab-mindmap">
+                导图
+              </TabsTrigger>
+              <TabsTrigger value="approvals" className={tabTriggerClass} data-testid="tab-approvals">
                 <Clock className="w-4 h-4 mr-1" /> 审批
                 {pendingChanges.length > 0 && (
                   <Badge variant="destructive" className="ml-1 rounded-full text-[10px] px-1 py-0 h-4">{pendingChanges.length}</Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="history" className="bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent" data-testid="tab-history">
-                <CheckCircle className="w-4 h-4 mr-1" /> 变更历史
-              </TabsTrigger>
             </TabsList>
           </div>
 
-          <TabsContent value="tree" className="flex-1 min-h-0">
+          <TabsContent value="outline" className="flex-1 min-h-0 flex flex-col">
             {deptsLoading ? <LoadingSkeleton /> : (
-              isMobile ? (
-                <ScrollArea className="h-full">
-                  <OrgMobileTree
-                    tree={deptTree}
-                    users={allUsers}
-                    deptStats={deptStatsData || {}}
-                    userStats={userStatsData || {}}
-                    currentUser={user}
-                    onEditDept={(d) => setEditDept(d)}
-                    onEditUser={(u) => setEditUser(u)}
-                  />
-                </ScrollArea>
-              ) : (
-                <OrgMindmap
+              <ScrollArea className="flex-1">
+                <OrgOutline
                   tree={deptTree}
                   users={allUsers}
-                  deptStats={deptStatsData || {}}
-                  userStats={userStatsData || {}}
-                  currentUser={user}
-                  onEditDept={(d) => setEditDept(d)}
+                  deptStats={deptStats}
+                  userStats={userStats}
+                  currentUser={user as SafeUser}
+                  isMobile={isMobile}
+                  onOpenDetail={setDetailNode}
                   onEditUser={(u) => setEditUser(u)}
                 />
-              )
+              </ScrollArea>
+            )}
+          </TabsContent>
+
+          <TabsContent value="mindmap" className="flex-1 min-h-0">
+            {deptsLoading ? <LoadingSkeleton /> : (
+              <OrgMindmapSvg
+                tree={deptTree}
+                users={allUsers}
+                deptStats={deptStats}
+                userStats={userStats}
+                currentUser={user as SafeUser}
+                isMobile={isMobile}
+                onOpenDetail={setDetailNode}
+              />
             )}
           </TabsContent>
 
           <TabsContent value="approvals" className="flex-1 min-h-0">
             <ScrollArea className="h-full">
               <div className="p-4 max-w-3xl mx-auto space-y-3">
-                {changesLoading ? <LoadingSkeleton /> : pendingChanges.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-12">暂无待审批变更</p>
-                ) : (
-                  pendingChanges.map((c) => <ApprovalCard key={c.id} change={c} users={allUsers} isCeo={isCeo} />)
-                )}
-              </div>
-            </ScrollArea>
-          </TabsContent>
-
-          <TabsContent value="history" className="flex-1 min-h-0">
-            <ScrollArea className="h-full">
-              <div className="p-4 max-w-3xl mx-auto space-y-3">
-                {changesLoading ? <LoadingSkeleton /> : allChanges.length === 0 ? (
+                {changesLoading ? <LoadingSkeleton /> : sortedChanges.length === 0 ? (
                   <p className="text-center text-muted-foreground py-12">暂无变更记录</p>
                 ) : (
-                  allChanges.filter((c) => c.status !== "pending").map((c) => <ApprovalCard key={c.id} change={c} users={allUsers} isCeo={isCeo} />)
+                  sortedChanges.map((c) => <ApprovalCard key={c.id} change={c} users={allUsers} isCeo={isCeo} />)
                 )}
               </div>
             </ScrollArea>
           </TabsContent>
         </Tabs>
       </div>
+
+      {(activeTab === "outline" || activeTab === "mindmap") && <OrgColorLegend />}
+
+      <OrgDetailPanel
+        node={detailNode}
+        users={allUsers}
+        deptStats={deptStats}
+        userStats={userStats}
+        currentUser={user as SafeUser}
+        onClose={() => setDetailNode(null)}
+        onEditUser={(u) => setEditUser(u)}
+        onEditDept={(d) => setEditDept(d)}
+      />
 
       <EditDeptDialog dept={editDept} users={allUsers} open={!!editDept} onOpenChange={(v) => { if (!v) setEditDept(null); }} />
       <EditDeptDialog dept={null} users={allUsers} open={showNewDept} onOpenChange={setShowNewDept} />
