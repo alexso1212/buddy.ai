@@ -1,0 +1,431 @@
+# Organization Page v3 — Mubu-Style Dual View (Outline + Mindmap)
+
+> This patch REPLACES all previous org-tree patches. Read this carefully.
+> 
+> Reference app: **幕布 (Mubu)** — an outline note app where you write content as a nested bullet list, and with ONE BUTTON you switch the same content into a visual mindmap. Both views are fully interactive. Both views work on mobile AND desktop. This is exactly what we want.
+
+-----
+
+## Core Concept: ONE Data, TWO Renderers
+
+Think of it like this:
+
+```
+Same data (departments + people + tasks)
+        │
+        ├──→ Renderer A: Outline List (text-based, vertical, editable)
+        │
+        └──→ Renderer B: Mindmap Tree (visual, spatial, read + drill-down)
+```
+
+The user sees a toggle button at the top. Tapping it switches between the two renderers INSTANTLY. No page reload. No route change. Same URL. The data doesn’t change — only how it’s drawn on screen.
+
+**Both renderers must work on ALL screen sizes: phone, tablet, desktop.**
+
+-----
+
+## The Toggle
+
+At the very top of the /organization page, place this toggle:
+
+```
+┌──────────────────────────────────────────────┐
+│  📋 大纲          🧠 导图         ⏳ 审批(2)  │
+│  ━━━━                                        │
+└──────────────────────────────────────────────┘
+```
+
+- These are tab-style toggles (underline active tab)
+- Tapping “大纲” renders the Outline view
+- Tapping “导图” renders the Mindmap view
+- Tapping “审批” renders the approval panel (already exists)
+- Default view: “导图” (mindmap) on desktop, “大纲” (outline) on mobile
+- Switching is instant (no loading spinner, no animation delay >0.2s)
+- The toggle looks and behaves identically on mobile and desktop
+
+-----
+
+## View A: 📋 大纲 (Outline View)
+
+This is similar to what currently exists, but enhanced with Mubu-style interactions.
+
+### How it looks (desktop):
+
+```
+▾ ● 决策中心  Alex · CEO/首席讲师  1人  ██████████ 92%  🟢
+    ▾ ● 运营总部  安洲 · VP/合伙人  7人  ██████░░░░ 62%  🟡  🔴
+        ▸ ● 市场部  待招  0人  ░░░░░░░░░░  ┈┈
+        ▾ ● 销售部  安洲  4人  ██████░░░░ 65%  🔵
+            • 安洲    销售+BD负责人    4任务 · 1逾期  🟡
+            • Anna   销售代表         1任务          🟢
+            • Sera   高级销售代表     2任务          🟢
+            • 小罗   销售代表         0任务          ⚪
+        ▸ ● BD部  安洲  0人  ░░░░░░░░░░  ⚪
+    ▾ ● 综合部  Tina · 行政人事  1人  ████████░░ 80%  🟢
+        • Tina   行政人事/考核专员   7任务 · 0逾期  🟢
+    ▸ ● 品宣部  待招  0人  ┈┈
+    ▸ ● IP内容中心  Alex  7人  ██████░░░░ 60%  🔵  🟡
+    ▸ ● 教研部  Alex  2人  ████████░░ 78%  🟢
+```
+
+### How it looks (mobile) — SAME layout, just full width:
+
+```
+▾ ● 决策中心                         🟢
+    Alex · CEO · 1人 · 92%
+    ▾ ● 运营总部                     🟡 🔴
+        安洲 · VP · 7人 · 62%
+        ▸ ● 市场部 (待招)            ┈┈
+        ▾ ● 销售部                   🔵
+            安洲 · 4人 · 65%
+            • 安洲   4任务 1逾期     🟡
+            • Anna  1任务            🟢
+            • Sera  2任务            🟢
+            • 小罗  0任务            ⚪
+```
+
+On mobile, the info wraps to two lines per row instead of one, but the STRUCTURE (indentation + expand/collapse) is identical.
+
+### Outline interactions:
+
+|Action                |What happens                                                                                                                                                                 |
+|----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|Tap ▸/▾ arrow         |Expand or collapse that branch                                                                                                                                               |
+|Tap department name   |Expand inline detail card (same as mindmap detail card, see below)                                                                                                           |
+|Tap person name       |Show mini profile popover                                                                                                                                                    |
+|Tap ● dot (the bullet)|Enter “focus mode”: only this branch visible, everything else hidden. Show breadcrumb at top: “决策中心 > 运营总部 > 销售部”. Tap breadcrumb to go back up. This is Mubu’s core feature.|
+|Long press any row    |Drag to reorder or move to different parent (CEO only, future feature — reserve with comment)                                                                                |
+
+### Outline row anatomy:
+
+```
+[▾] [●] [Department Name]  [Head · Role]  [Count]  [████░░ %]  [status dots]
+ │   │        │                  │            │          │            │
+ │   │        │                  │            │     progress bar   urgency
+ │   │        │                  │         headcount    (completion)  dots
+ │   │        │              secondary info
+ │   │     primary text (font-weight 500)
+ │   bullet dot (colored = completion rate color)
+ expand/collapse arrow
+```
+
+-----
+
+## View B: 🧠 导图 (Mindmap View)
+
+A visual tree diagram. This is the spatial/graphical rendering of the SAME data shown in the outline.
+
+### How it looks (desktop) — horizontal tree, left-to-right layout:
+
+```
+                                    ┌───────────────┐
+                              ┌────│ 市场部 (待招)   │
+                              │    └───────────────┘
+┌──────────┐    ┌──────────┐  │    ┌───────────────┐
+│ 决策中心  │───│ 运营总部  │──┼────│ 销售部  4人    │
+│ Alex     │  │ │ 安洲 7人  │  │    │ ██████░ 65%   │
+│ ████ 92% │  │ │ ██████ 62%│  │    └───────────────┘
+└──────────┘  │ └──────────┘  │    ┌───────────────┐
+              │               └────│ BD部  (待招)    │
+              │                    └───────────────┘
+              │  ┌──────────┐
+              ├──│ 综合部    │
+              │  │ Tina 1人  │
+              │  │ ████ 80%  │
+              │  └──────────┘
+              │  ┌──────────┐
+              ├──│ 品宣部    │
+              │  │ 待招      │
+              │  └──┈┈┈┈┈┈──┘
+              │  ┌──────────┐
+              ├──│ IP内容中心 │
+              │  │ Alex 7人  │
+              │  │ ██████ 60%│
+              │  └──────────┘
+              │  ┌──────────┐
+              └──│ 教研部    │
+                 │ Alex 2人  │
+                 │ ████ 78%  │
+                 └──────────┘
+```
+
+### How it looks (MOBILE) — SAME mindmap, not a list!
+
+On mobile, the mindmap renders in **top-down vertical layout** (not left-to-right, because phone screens are narrow and tall):
+
+```
+        ┌──────────┐
+        │ 决策中心   │
+        │ Alex 92% │
+        └────┬─────┘
+    ┌────┬───┼───┬────┬────┐
+    │    │   │   │    │    │
+  ┌─┴─┐┌┴──┐┌┴─┐┌┴──┐┌┴──┐┌┴─┐
+  │运营││综合││品宣││IP ││教研│...
+  │7人 ││1人 ││待招││7人││2人│
+  └─┬──┘└───┘└┈┈┈┘└───┘└───┘
+  ┌─┼──┐
+ ┌┴┐┌┴┐┌┴┐
+ │市││销││BD│
+ └─┘└─┘└─┘
+```
+
+The phone user can:
+
+- **Pinch to zoom** in/out on this tree
+- **Drag** to pan around
+- **Tap a node** to expand its detail card
+- **Double-tap empty space** to zoom-fit the whole tree
+
+This is critical: **the mobile mindmap is a real mindmap, not a list.** It is a zoomable, pannable canvas with nodes and connecting lines. The user sees the spatial relationships. They zoom in to see details, zoom out to see the big picture.
+
+### Implementation approach for mindmap canvas:
+
+Use **SVG** or **Canvas** for rendering the mindmap. Recommended approach:
+
+```
+Option A (recommended): React + SVG
+- Each node is an SVG <g> group with <rect> + <text>
+- Connection lines are SVG <path> elements with rounded corners
+- Use CSS transform for zoom/pan
+- Touch events: onTouchStart/Move/End for pinch-zoom and pan
+- This works identically on mobile and desktop
+
+Option B: Use a lightweight library
+- react-flow (https://reactflow.dev) — supports nodes, edges, zoom, pan out of box
+- OR use d3-hierarchy for tree layout calculation + SVG for rendering
+```
+
+DO NOT use HTML div-based layout for the mindmap. It won’t support proper zoom/pan on mobile. SVG or Canvas is required.
+
+### Mindmap node design:
+
+**Collapsed node (default):**
+
+```
+┌─ completion-color left border (4px) ──────┐
+│                                      🔴   │  ← urgency dot (if any)
+│  运营总部                                  │
+│  安洲 · 7人                               │
+│  ██████░░░░ 62%                           │  ← mini progress bar
+└───────────────────────────────────────────┘
+```
+
+- White card, subtle shadow, 8px border-radius
+- Left border 4px colored by completion rate (green/blue/amber/red/gray)
+- Very subtle background tint by workload level (see color system below)
+- Node size: approximately 160px wide × 70px tall (scales with zoom)
+
+**Planned/empty department:**
+
+- Dashed border, gray text, no progress bar
+
+### Mindmap interactions:
+
+|Action                                          |What happens                                                                    |
+|------------------------------------------------|--------------------------------------------------------------------------------|
+|Tap node                                        |Expand detail card (overlay panel on right side desktop, bottom sheet on mobile)|
+|Long press node                                 |Focus mode — this branch highlighted, everything else dims to 15% opacity       |
+|Tap fold button (small ◉ at node edge)          |Collapse/expand children. When collapsed, show badge “3” for child count        |
+|Pinch (mobile) or scroll-wheel (desktop)        |Zoom in/out (50% to 200%)                                                       |
+|Two-finger drag (mobile) or click-drag (desktop)|Pan the canvas                                                                  |
+|Double-tap empty area                           |Zoom to fit entire tree                                                         |
+
+### Detail card (shared by both views):
+
+When you tap a department in either view, the same detail card appears:
+
+**Desktop:** slides in from the right as a 400px side panel
+**Mobile:** slides up from the bottom as a sheet (70% screen height)
+
+```
+┌──────────────────────────────────────────────────┐
+│ 运营总部                                   [✕]    │
+│ 负责人: 安洲 (VP/合伙人)                           │
+│ 任务: 12个 · 完成率: 62% · 逾期: 2个              │
+│ 负荷: 🟡 较重 (人均4.0个任务)                      │
+├──────────────────────────────────────────────────┤
+│ [👥 人员]  [📋 职能&KPI]  [💰 利益]                │
+├──────────────────────────────────────────────────┤
+│                                                  │
+│  🟡 安洲    VP/合伙人      4任务 1逾期  ██░ 60%   │
+│  🟢 Anna   销售代表        1任务       ███ 100%   │
+│  🟢 Sera   高级销售代表    2任务       ██░ 75%    │
+│  ⚪ 小罗   销售代表        0任务       空闲        │
+│                                                  │
+└──────────────────────────────────────────────────┘
+```
+
+Tabs:
+
+- **👥 人员** — member list, each row has name + role + task count + completion bar
+- **📋 职能&KPI** — department description, KPI metrics (editable by CEO/Admin)
+- **💰 利益** — compensation info (only visible when logged in as CEO)
+
+Tap a person row → mini profile popover with task stats + links to their tasks/evaluation.
+
+-----
+
+## Semantic Color System
+
+Every color means something. No decorative colors.
+
+### Node border color = Completion Rate
+
+|Rate    |Color|Hex    |
+|--------|-----|-------|
+|≥ 80%   |Green|#10B981|
+|60-79%  |Blue |#3B82F6|
+|40-59%  |Amber|#F59E0B|
+|< 40%   |Red  |#EF4444|
+|No tasks|Gray |#9CA3AF|
+
+### Node background tint = Workload (very subtle)
+
+|Level     |Tasks per person|Tint                  |
+|----------|----------------|----------------------|
+|Overloaded|≥ 6 per person  |rgba(239,68,68,0.05)  |
+|Heavy     |4-5 per person  |rgba(249,115,22,0.05) |
+|Normal    |2-3 per person  |transparent           |
+|Light     |0-1 per person  |rgba(156,163,175,0.05)|
+
+### Urgency dot (top-right corner of node)
+
+|Condition        |Dot        |
+|-----------------|-----------|
+|Has overdue tasks|🔴 red      |
+|Due within 2 days|🟡 yellow   |
+|Has blocked tasks|🔒 lock icon|
+|All clear        |No dot     |
+
+### Connecting lines
+
+|Condition                  |Color  |Style |
+|---------------------------|-------|------|
+|Normal                     |#D1D5DB|Solid |
+|Has tasks due within 2 days|#F59E0B|Solid |
+|Has overdue tasks          |#EF4444|Solid |
+|Planned department         |#D1D5DB|Dashed|
+
+### Color Legend Bar (always visible at bottom)
+
+```
+边框: 🟢≥80% 🔵60-79% 🟡40-59% 🔴<40% ⚪无任务 | 标记: 🔴逾期 🟡临期 🔒阻塞 | 线: ━正常 ━临期 ━逾期 ┈待招
+```
+
+-----
+
+## Database Changes
+
+```sql
+ALTER TABLE departments ADD COLUMN description TEXT;
+ALTER TABLE departments ADD COLUMN kpi_description TEXT;
+ALTER TABLE departments ADD COLUMN compensation_note TEXT;   -- CEO only
+ALTER TABLE departments ADD COLUMN budget_note TEXT;          -- CEO only
+ALTER TABLE departments ADD COLUMN is_planned BOOLEAN DEFAULT FALSE;
+```
+
+Seed data:
+
+```js
+const DEPT_SEED = [
+  {id:'ceo_office', description:'战略/风控/核心IP/关键人考核', kpi_description:'公司整体营收与利润', compensation_note:'100%利润+65%个人留存目标'},
+  {id:'admin_dept', description:'招聘汰换/KPI考核/行政杂事', kpi_description:'招聘达成率/人效比', compensation_note:'底薪+招聘伯乐奖'},
+  {id:'sales_dept', description:'私域加粉/引导成交', kpi_description:'首单转化率/成交额', compensation_note:'底薪+5%销售提成'},
+  {id:'bd_dept', description:'渠道拓展/IP合作', kpi_description:'新签渠道数/BD营收', compensation_note:'底薪+BD提成'},
+  {id:'ip_center', description:'短视频/直播导流/深度内容', kpi_description:'加粉数/进场率/产出量', compensation_note:'底薪+阶梯获客奖励'},
+  {id:'edu_dept', description:'实盘展示/直播大课/答疑', kpi_description:'实盘收益/完课率/满意度', compensation_note:'固定薪资/底薪+引流奖励'},
+];
+```
+
+-----
+
+## Component Architecture
+
+```
+components/org/
+  OrgPage.tsx               ← page container, holds the view toggle
+  OrgViewToggle.tsx         ← "大纲 | 导图 | 审批" tab bar
+  
+  // Shared (used by both views)
+  OrgDetailPanel.tsx        ← side panel / bottom sheet detail card
+  OrgPersonPopover.tsx      ← mini profile on tap person
+  OrgColorLegend.tsx        ← bottom legend bar
+  useOrgData.ts             ← shared data hook (fetch once, feed both views)
+  
+  // Outline view
+  OrgOutline.tsx            ← the outline/list renderer
+  OrgOutlineRow.tsx         ← single row (department or person)
+  
+  // Mindmap view  
+  OrgMindmap.tsx            ← SVG canvas with zoom/pan
+  OrgMindmapNode.tsx        ← single SVG node card
+  OrgMindmapEdge.tsx        ← SVG connector line between nodes
+  OrgMindmapControls.tsx    ← zoom buttons + fit button overlay
+```
+
+Key architecture rule: **`useOrgData.ts` fetches data ONCE. Both `OrgOutline` and `OrgMindmap` receive the same data as props. Switching views does NOT re-fetch data.**
+
+-----
+
+## Summary for Replit
+
+To be absolutely clear, here is what you need to build:
+
+1. **One page** at /organization
+1. **One data source** (departments + users + their task stats)
+1. **Two rendering modes** toggled by tabs at the top:
+- **大纲 mode**: a nested bullet list with indentation, expand/collapse arrows, and inline stats. Works on mobile and desktop with the same layout (just different sizing).
+- **导图 mode**: a visual tree diagram rendered in SVG on a zoomable/pannable canvas. Works on mobile (top-down vertical layout + pinch zoom) and desktop (left-to-right horizontal layout + scroll zoom). This is NOT an HTML div layout. It MUST be SVG or Canvas to support proper zoom/pan touch gestures.
+1. **Tapping any department** in EITHER view opens the SAME detail panel (side panel on desktop, bottom sheet on mobile)
+1. **Both views** show the same color coding: border = completion rate, background tint = workload, dot = urgency
+1. The app called **幕布 (Mubu, mubu.com)** does exactly this for notes — outline list ↔ mindmap with one tap. Use it as your primary UI reference.
+
+-----
+
+## Acceptance Checklist
+
+**Toggle:**
+
+- [ ] Tab bar shows “大纲 | 导图 | 审批”
+- [ ] Switching is instant, no page reload
+- [ ] Works on mobile and desktop identically
+
+**Outline View:**
+
+- [ ] Nested indented list with expand/collapse arrows
+- [ ] Each row shows: name, head, headcount, progress bar, status dots
+- [ ] Tap bullet dot → focus mode (show only that branch + breadcrumb)
+- [ ] Tap department name → open detail panel
+- [ ] Works on mobile with same structure (not a degraded version)
+
+**Mindmap View:**
+
+- [ ] SVG-based tree diagram with nodes and connecting lines
+- [ ] Desktop: left-to-right horizontal layout
+- [ ] Mobile: top-down vertical layout
+- [ ] Pinch-to-zoom works on mobile (50%-200%)
+- [ ] Drag-to-pan works on mobile
+- [ ] Scroll-to-zoom works on desktop
+- [ ] Double-tap empty area → zoom to fit
+- [ ] Tap node → fold/unfold children (with count badge when folded)
+- [ ] Tap node → open detail panel
+- [ ] Long press node → focus mode (dim everything else)
+- [ ] Connecting lines use rounded corners (radius 8px)
+- [ ] Planned departments have dashed borders
+
+**Detail Panel (shared):**
+
+- [ ] Desktop: 400px side panel from right
+- [ ] Mobile: bottom sheet (70% height)
+- [ ] Three tabs: 人员 / 职能&KPI / 利益
+- [ ] 利益 tab only visible to CEO
+- [ ] Tap person row → mini profile popover
+
+**Colors:**
+
+- [ ] Node border = completion rate (green/blue/amber/red/gray)
+- [ ] Background tint = workload (very subtle)
+- [ ] Urgency dots correct (red=overdue, yellow=due soon, lock=blocked)
+- [ ] Connecting line colors reflect health
+- [ ] Legend bar visible and accurate
