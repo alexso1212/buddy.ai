@@ -26,16 +26,6 @@ interface NodePosition {
   height: number;
 }
 
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener("resize", handler);
-    return () => window.removeEventListener("resize", handler);
-  }, []);
-  return isMobile;
-}
-
 export function OrgMindmap({ tree, users, deptStats, userStats, currentUser, onEditDept, onEditUser }: OrgMindmapProps) {
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
   const [foldedNodes, setFoldedNodes] = useState<Set<string>>(new Set());
@@ -48,7 +38,6 @@ export function OrgMindmap({ tree, users, deptStats, userStats, currentUser, onE
   const treeRef = useRef<HTMLDivElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTarget = useRef<string | null>(null);
-  const isMobile = useIsMobile();
   const nodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [nodePositions, setNodePositions] = useState<NodePosition[]>([]);
 
@@ -224,6 +213,8 @@ export function OrgMindmap({ tree, users, deptStats, userStats, currentUser, onE
         ].join(" ");
       }
 
+      const connectorDimmed = focusBranch && (!focusBranch.has(parentId!) || !focusBranch.has(node.dept.id));
+
       lines.push(
         <path
           key={`${parentId}-${node.dept.id}`}
@@ -233,6 +224,7 @@ export function OrgMindmap({ tree, users, deptStats, userStats, currentUser, onE
           strokeWidth={1.5}
           strokeDasharray={lineStyle === "dashed" ? "4 3" : undefined}
           className="transition-all duration-300"
+          style={{ opacity: connectorDimmed ? 0.15 : 1 }}
         />
       );
     }
@@ -241,15 +233,10 @@ export function OrgMindmap({ tree, users, deptStats, userStats, currentUser, onE
   }
 
   function renderTreeLevel(nodes: DeptTreeNode[], depth: number, parentId?: string) {
-    const visibleNodes = nodes.filter((n) => {
-      if (focusBranch && !focusBranch.has(n.dept.id)) return true;
-      return true;
-    });
-
     return (
       <div className="flex flex-col items-center">
         <div className="flex items-start gap-6 justify-center">
-          {visibleNodes.map((node) => {
+          {nodes.map((node) => {
             const isFolded = foldedNodes.has(node.dept.id);
             const hasChildren = node.children.length > 0;
             const dimmed = focusBranch && !focusBranch.has(node.dept.id);
@@ -371,7 +358,6 @@ export function OrgMindmap({ tree, users, deptStats, userStats, currentUser, onE
             {tree.map((rootNode) => {
               const allConnectors: JSX.Element[] = [];
               function collectConnectors(nodes: DeptTreeNode[], parentId: string) {
-                const visibleChildren = nodes.filter((n) => !foldedNodes.has(parentId));
                 if (foldedNodes.has(parentId)) return;
                 allConnectors.push(...renderConnectors(nodes, parentId));
                 for (const child of nodes) {

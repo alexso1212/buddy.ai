@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Edit2, Lock, X } from "lucide-react";
@@ -46,25 +46,11 @@ export function OrgNode({
   const shadowClass = depth === 0 ? "shadow-md" : depth === 1 ? "shadow-sm" : "shadow-sm";
   const borderOpacity = depth >= 2 ? 0.8 : 1;
 
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handlePointerDown = useCallback(() => {
-    longPressTimer.current = setTimeout(() => {
-    }, 400);
-  }, []);
-
-  const handlePointerUp = useCallback(() => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  }, []);
-
   const tabs: { key: "members" | "kpi" | "benefits"; label: string }[] = [
-    { key: "members", label: "👥 人员" },
-    { key: "kpi", label: "📋 职能&KPI" },
+    { key: "members", label: "人员" },
+    { key: "kpi", label: "职能&KPI" },
   ];
-  if (isCeo) tabs.push({ key: "benefits", label: "💰 利益" });
+  if (isCeo) tabs.push({ key: "benefits", label: "利益" });
 
   return (
     <div
@@ -79,9 +65,6 @@ export function OrgNode({
         minWidth: isExpanded ? 320 : 200,
       }}
       data-testid={`org-node-${node.dept.id}`}
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerUp}
     >
       {urgency !== "none" && !isPlanned && (
         <div className="absolute -top-1 -right-1 z-10" data-testid={`urgency-dot-${node.dept.id}`}>

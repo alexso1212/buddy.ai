@@ -70,10 +70,10 @@ function MobileNode({ node, users, deptStats, userStats, currentUser, depth, exp
   }, []);
 
   const tabs: { key: "members" | "kpi" | "benefits"; label: string }[] = [
-    { key: "members", label: "👥 人员" },
-    { key: "kpi", label: "📋 职能&KPI" },
+    { key: "members", label: "人员" },
+    { key: "kpi", label: "职能&KPI" },
   ];
-  if (isCeo) tabs.push({ key: "benefits", label: "💰 利益" });
+  if (isCeo) tabs.push({ key: "benefits", label: "利益" });
 
   return (
     <div
@@ -164,6 +164,7 @@ function MobileNode({ node, users, deptStats, userStats, currentUser, depth, exp
               <button
                 className="p-0.5 rounded hover:bg-muted text-muted-foreground ml-1"
                 onClick={(e) => { e.stopPropagation(); onExpand(null); }}
+                data-testid={`mobile-close-${node.dept.id}`}
               >
                 <X className="w-3 h-3" />
               </button>
