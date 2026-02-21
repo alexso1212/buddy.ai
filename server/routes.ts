@@ -1482,11 +1482,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         userId: u.id, name: u.name, dept: u.dept,
         activeCount: activeTasks.length, dueThisWeekCount: dueNextWeekCount,
         level: activeTasks.length >= 5 ? "overloaded" : activeTasks.length >= 3 ? "busy" : "available",
-        taskTypes: activeTasks.length > 0 ? [...new Set(activeTasks.map((t) => {
+        taskTypes: activeTasks.length > 0 ? Array.from(new Set(activeTasks.map((t) => {
           if (t.title.includes("审") || t.title.includes("决策") || t.title.includes("确定")) return "决策类";
           if (t.title.includes("方案") || t.title.includes("草案") || t.title.includes("初稿")) return "方案类";
           return "执行类";
-        }))] : [],
+        }))) : [],
       });
     }
     workload.sort((a, b) => b.activeCount - a.activeCount);
