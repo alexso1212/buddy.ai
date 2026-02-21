@@ -7,19 +7,19 @@ export function cn(...inputs: ClassValue[]) {
 
 export function getStatusColor(status: string) {
   switch (status) {
-    case 'pending': return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
-    case 'active': return 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300';
-    case 'review': return 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300';
-    case 'done': return 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300';
-    default: return 'bg-gray-100 text-gray-600';
+    case 'pending': return 'bg-gray-500/10 text-gray-500';
+    case 'active': return 'bg-blue-500/10 text-blue-600';
+    case 'review': return 'bg-amber-500/10 text-amber-600';
+    case 'done': return 'bg-emerald-500/10 text-emerald-600';
+    default: return 'bg-gray-500/10 text-gray-500';
   }
 }
 
 export function getStatusLabel(status: string) {
   switch (status) {
-    case 'pending': return '待开始';
+    case 'pending': return '待处理';
     case 'active': return '进行中';
-    case 'review': return '审核中';
+    case 'review': return '待审核';
     case 'done': return '已完成';
     default: return status;
   }
@@ -27,8 +27,8 @@ export function getStatusLabel(status: string) {
 
 export function getPriorityLabel(priority: number) {
   switch (priority) {
-    case 2: return { label: '紧急', color: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' };
-    case 1: return { label: '重要', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300' };
+    case 2: return { label: '紧急', color: 'bg-red-500/10 text-red-600' };
+    case 1: return { label: '重要', color: 'bg-amber-500/10 text-amber-600' };
     default: return null;
   }
 }
@@ -50,5 +50,5 @@ export function getDeadlineInfo(deadline: string, graceDeadline?: string | null)
     if (graceDiffDays >= 0) return { text: `宽限期(${graceDiffDays}天)`, color: 'text-orange-500' };
   }
   
-  return { text: `逾期${Math.abs(diffDays)}天`, color: 'text-red-600 font-bold' };
+  return { text: `逾期${Math.abs(diffDays)}天`, color: 'text-red-500 font-medium' };
 }

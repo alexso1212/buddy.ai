@@ -68,9 +68,9 @@ function getBarHexColor(status: string | null): string {
 
 function getWorkloadColor(level: string): string {
   switch (level) {
-    case "overloaded": return "text-red-600 bg-red-50 dark:bg-red-950/30";
-    case "busy": return "text-orange-600 bg-orange-50 dark:bg-orange-950/30";
-    default: return "text-green-600 bg-green-50 dark:bg-green-950/30";
+    case "overloaded": return "text-red-500 bg-red-500/10";
+    case "busy": return "text-orange-500 bg-orange-500/10";
+    default: return "text-emerald-500 bg-emerald-500/10";
   }
 }
 
@@ -502,7 +502,7 @@ export default function GanttChart() {
             <span className="text-[11px] font-medium truncate flex-1 min-w-0">{t.title}</span>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
-            <Badge className={cn("text-[10px]", getStatusColor(t.status ?? "pending"))} variant="secondary">
+            <Badge className={cn("text-[10px] rounded-full border-0", getStatusColor(t.status ?? "pending"))} variant="secondary">
               {getStatusLabel(t.status ?? "pending")}
             </Badge>
             {direction === "upstream" && !isDone && (
@@ -523,8 +523,8 @@ export default function GanttChart() {
       <div className="h-full overflow-y-auto bg-background border-l" style={{ width: isMobile ? "100%" : ANALYSIS_WIDTH }} data-testid="task-detail-panel">
         <div className="p-3 border-b flex items-start justify-between gap-2 sticky top-0 bg-background z-10">
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold break-words" data-testid="detail-task-title">{detailTask.title}</p>
-            <Badge className={cn("text-[10px] mt-1", getStatusColor(detailTask.status ?? "pending"))} variant="secondary" data-testid="detail-task-status">
+            <p className="text-sm font-medium break-words" data-testid="detail-task-title">{detailTask.title}</p>
+            <Badge className={cn("text-[10px] mt-1 rounded-full border-0", getStatusColor(detailTask.status ?? "pending"))} variant="secondary" data-testid="detail-task-status">
               {getStatusLabel(detailTask.status ?? "pending")}
             </Badge>
           </div>
@@ -535,7 +535,7 @@ export default function GanttChart() {
 
         <div className="p-3 space-y-4">
           <section data-testid="detail-task-info">
-            <p className="text-xs font-semibold mb-2">任务信息</p>
+            <p className="text-xs font-medium mb-2">任务信息</p>
             <div className="space-y-1.5 text-[11px]">
               {detailTask.deadline && (
                 <div className="flex items-center gap-2">
@@ -573,7 +573,7 @@ export default function GanttChart() {
               {detailTask.priority != null && detailTask.priority > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="text-muted-foreground shrink-0">优先级:</span>
-                  <Badge variant="secondary" className={cn("text-[10px]", detailTask.priority === 2 ? "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300" : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300")} data-testid="detail-priority">
+                  <Badge variant="secondary" className={cn("text-[10px] rounded-full border-0", detailTask.priority === 2 ? "bg-red-500/10 text-red-600" : "bg-amber-500/10 text-amber-600")} data-testid="detail-priority">
                     {detailTask.priority === 2 ? "紧急" : "重要"}
                   </Badge>
                 </div>
@@ -582,7 +582,7 @@ export default function GanttChart() {
           </section>
 
           <section data-testid="detail-dependencies">
-            <p className="text-xs font-semibold mb-2">依赖关系</p>
+            <p className="text-xs font-medium mb-2">依赖关系</p>
 
             {hasNoDeps ? (
               <p className="text-[11px] text-muted-foreground" data-testid="detail-no-deps">无依赖关系</p>
@@ -593,7 +593,7 @@ export default function GanttChart() {
                     <div className="flex items-center gap-1.5 mb-1.5">
                       <ArrowRightCircle className="w-3.5 h-3.5 text-muted-foreground" />
                       <span className="text-[11px] font-medium">上游依赖 (前置任务)</span>
-                      <Badge variant="secondary" className="text-[10px] h-4 px-1">{upstreamTasks.length}</Badge>
+                      <Badge variant="secondary" className="text-[10px] h-4 px-1 rounded-full border-0">{upstreamTasks.length}</Badge>
                     </div>
                     <div className="space-y-1.5 pl-5">
                       {upstreamTasks.map((t) => renderDepTask(t, "upstream"))}
@@ -606,7 +606,7 @@ export default function GanttChart() {
                     <div className="flex items-center gap-1.5 mb-1.5">
                       <ArrowRightCircle className="w-3.5 h-3.5 text-muted-foreground rotate-180" />
                       <span className="text-[11px] font-medium">下游任务 (被阻塞)</span>
-                      <Badge variant="secondary" className="text-[10px] h-4 px-1">{downstreamTasks.length}</Badge>
+                      <Badge variant="secondary" className="text-[10px] h-4 px-1 rounded-full border-0">{downstreamTasks.length}</Badge>
                     </div>
                     <div className="space-y-1.5 pl-5">
                       {downstreamTasks.map((t) => renderDepTask(t, "downstream"))}
@@ -626,7 +626,7 @@ export default function GanttChart() {
       <div className="p-3 border-b flex items-center justify-between sticky top-0 bg-background z-10">
         <div className="flex items-center gap-2">
           <BarChart3 className="w-4 h-4 text-primary" />
-          <span className="text-sm font-semibold">每日分析</span>
+          <span className="text-sm font-medium">每日分析</span>
         </div>
         <div className="flex items-center gap-1">
           <Button
@@ -662,7 +662,7 @@ export default function GanttChart() {
           <section data-testid="analysis-ai" className="rounded-lg border border-blue-200 dark:border-blue-800 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-blue-950/20 dark:to-indigo-950/20 p-3">
             <div className="flex items-center gap-1.5 mb-1.5">
               <Bot className="w-3.5 h-3.5 text-blue-500" />
-              <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">AI 分析建议</span>
+              <span className="text-xs font-medium text-blue-700 dark:text-blue-300">AI 分析建议</span>
             </div>
             {analysisData.ai ? (
               <div className="space-y-1.5">
@@ -683,8 +683,8 @@ export default function GanttChart() {
           <section data-testid="analysis-blockers">
             <div className="flex items-center gap-1.5 mb-2">
               <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
-              <span className="text-xs font-semibold">阻塞项</span>
-              <Badge variant="secondary" className="text-[10px] h-4 px-1">{analysisData.blockers.length}</Badge>
+              <span className="text-xs font-medium">阻塞项</span>
+              <Badge variant="secondary" className="text-[10px] h-4 px-1 rounded-full border-0">{analysisData.blockers.length}</Badge>
             </div>
             {analysisData.blockers.length === 0 ? (
               <p className="text-[10px] text-muted-foreground pl-5">无阻塞任务</p>
@@ -716,7 +716,7 @@ export default function GanttChart() {
           <section data-testid="analysis-critical-path">
             <div className="flex items-center gap-1.5 mb-2">
               <Link2 className="w-3.5 h-3.5 text-purple-500" />
-              <span className="text-xs font-semibold">关键链</span>
+              <span className="text-xs font-medium">关键链</span>
               <Button
                 variant={showCriticalPath ? "default" : "outline"}
                 size="sm"
@@ -736,8 +736,8 @@ export default function GanttChart() {
                     <span key={i} className="inline-flex items-center gap-0.5">
                       <span className={cn(
                         "text-[10px] px-1.5 py-0.5 rounded",
-                        p.status === "done" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
-                        showCriticalPath ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" :
+                        p.status === "done" ? "bg-emerald-500/10 text-emerald-600" :
+                        showCriticalPath ? "bg-purple-500/10 text-purple-600" :
                         "bg-muted text-muted-foreground"
                       )}>
                         {p.title.length > 8 ? p.title.slice(0, 8) + "..." : p.title}
@@ -758,8 +758,8 @@ export default function GanttChart() {
           <section data-testid="analysis-due-this-week">
             <div className="flex items-center gap-1.5 mb-2">
               <Clock className="w-3.5 h-3.5 text-orange-500" />
-              <span className="text-xs font-semibold">本周截止</span>
-              <Badge variant="secondary" className="text-[10px] h-4 px-1">{analysisData.dueThisWeek.length}</Badge>
+              <span className="text-xs font-medium">本周截止</span>
+              <Badge variant="secondary" className="text-[10px] h-4 px-1 rounded-full border-0">{analysisData.dueThisWeek.length}</Badge>
             </div>
             {analysisData.dueThisWeek.length === 0 ? (
               <p className="text-[10px] text-muted-foreground pl-5">本周无截止任务</p>
@@ -769,8 +769,8 @@ export default function GanttChart() {
                   <div key={i} className="flex items-center gap-2 text-[11px]">
                     <span className={cn(
                       "shrink-0 text-[10px] px-1.5 py-0.5 rounded",
-                      d.isOverdue ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
-                      d.diffDays <= 1 ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400" :
+                      d.isOverdue ? "bg-red-500/10 text-red-500" :
+                      d.diffDays <= 1 ? "bg-orange-500/10 text-orange-600" :
                       "bg-muted text-muted-foreground"
                     )}>
                       {d.dayLabel}
@@ -785,7 +785,7 @@ export default function GanttChart() {
           <section data-testid="analysis-workload">
             <div className="flex items-center gap-1.5 mb-2">
               <Users className="w-3.5 h-3.5 text-blue-500" />
-              <span className="text-xs font-semibold">工作量</span>
+              <span className="text-xs font-medium">工作量</span>
             </div>
             <div className="space-y-1 pl-5">
               {analysisData.workload.filter((w: any) => w.activeCount > 0).slice(0, 8).map((w: any, i: number) => (
@@ -812,7 +812,7 @@ export default function GanttChart() {
             <section data-testid="analysis-next-week">
               <div className="flex items-center gap-1.5 mb-2">
                 <CalendarDays className="w-3.5 h-3.5 text-indigo-500" />
-                <span className="text-xs font-semibold">下周预览</span>
+                <span className="text-xs font-medium">下周预览</span>
                 <span className="text-[10px] text-muted-foreground">{analysisData.nextWeekLookahead.dateRange}</span>
               </div>
               <div className="pl-5 space-y-1">
@@ -861,7 +861,7 @@ export default function GanttChart() {
             <ArrowLeft />
           </Button>
           <CalendarDays className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm font-semibold flex-1">甘特图</span>
+          <span className="text-sm font-medium flex-1">甘特图</span>
           <Button
             variant={mobileView === "analysis" ? "default" : "outline"}
             size="sm"
@@ -941,7 +941,7 @@ export default function GanttChart() {
     return (
       <div className="flex" style={{ width: ganttContentWidth }}>
         <div className="flex flex-col shrink-0" style={{ width: LEFT_PANEL_WIDTH }}>
-          <div className="border-b border-r bg-muted/30 flex items-center px-3 text-xs font-medium text-muted-foreground" style={{ height: HEADER_HEIGHT }}>
+          <div className="border-b border-r bg-card flex items-center px-3 text-xs font-medium text-muted-foreground" style={{ height: HEADER_HEIGHT }}>
             任务
           </div>
           <div className="border-r">
@@ -951,7 +951,7 @@ export default function GanttChart() {
                 return (
                   <div
                     key={`phase-${row.phase.id}`}
-                    className="flex items-center gap-2 px-3 cursor-pointer hover:bg-muted/40 bg-muted/20"
+                    className="flex items-center gap-2 px-3 cursor-pointer hover:bg-muted/30 border-b border-border/40"
                     style={{ height: ROW_HEIGHT }}
                     onClick={() => togglePhase(row.phase.id)}
                     data-testid={`gantt-phase-${row.phase.id}`}
@@ -989,7 +989,7 @@ export default function GanttChart() {
                 >
                   <span className="text-xs truncate flex-1 min-w-0">{row.task.title}</span>
                   <Badge
-                    className={cn("text-[10px] shrink-0", getStatusColor(row.task.status ?? "pending"))}
+                    className={cn("text-[10px] shrink-0 rounded-full border-0", getStatusColor(row.task.status ?? "pending"))}
                     variant="secondary"
                   >
                     {getStatusLabel(row.task.status ?? "pending")}
@@ -1002,7 +1002,7 @@ export default function GanttChart() {
 
         <div style={{ width: totalWidth }} ref={timelineRef}>
           <div style={{ width: totalWidth, position: "relative" }}>
-            <div className="flex border-b bg-muted/30" style={{ height: HEADER_HEIGHT }}>
+            <div className="flex border-b bg-card" style={{ height: HEADER_HEIGHT }}>
               {dateColumns.map((col, i) => {
                 const isToday = (() => { const t = new Date(); t.setHours(0, 0, 0, 0); const c = new Date(col.date); c.setHours(0, 0, 0, 0); return c.getTime() === t.getTime(); })();
                 const isWeekend = col.date.getDay() === 0 || col.date.getDay() === 6;
@@ -1035,7 +1035,7 @@ export default function GanttChart() {
                 return (
                   <div
                     key={`grid-${i}`}
-                    className={cn("border-r absolute top-0", isWeekend ? "bg-muted/20" : "")}
+                    className={cn("border-r absolute top-0", isWeekend ? "bg-[#F5F5F4] dark:bg-muted/10" : "")}
                     style={{ left: i * colWidth, width: colWidth, height: totalContentHeight }}
                   />
                 );
@@ -1203,11 +1203,11 @@ export default function GanttChart() {
         </Button>
         <div className="flex items-center gap-1.5 mr-2">
           <CalendarDays className="w-5 h-5 text-muted-foreground" />
-          <span className="text-sm font-semibold">甘特图</span>
+          <span className="text-sm font-medium">甘特图</span>
         </div>
 
         <Select value={filterPhase} onValueChange={setFilterPhase}>
-          <SelectTrigger className="w-[100px] md:w-[130px]" data-testid="gantt-filter-phase">
+          <SelectTrigger className="w-[100px] md:w-[130px] h-8 text-[13px]" data-testid="gantt-filter-phase">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -1217,7 +1217,7 @@ export default function GanttChart() {
         </Select>
 
         <Select value={filterDept} onValueChange={setFilterDept}>
-          <SelectTrigger className="w-[100px] md:w-[130px]" data-testid="gantt-filter-dept">
+          <SelectTrigger className="w-[100px] md:w-[130px] h-8 text-[13px]" data-testid="gantt-filter-dept">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -1227,7 +1227,7 @@ export default function GanttChart() {
         </Select>
 
         <Select value={filterAssignee} onValueChange={setFilterAssignee}>
-          <SelectTrigger className="w-[100px] md:w-[130px]" data-testid="gantt-filter-assignee">
+          <SelectTrigger className="w-[100px] md:w-[130px] h-8 text-[13px]" data-testid="gantt-filter-assignee">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -1237,7 +1237,7 @@ export default function GanttChart() {
         </Select>
 
         <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className="w-[100px] md:w-[130px]" data-testid="gantt-filter-status">
+          <SelectTrigger className="w-[100px] md:w-[130px] h-8 text-[13px]" data-testid="gantt-filter-status">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -1280,11 +1280,11 @@ export default function GanttChart() {
       </div>
 
       <div className="flex items-center gap-3 px-3 py-1 border-b bg-muted/10 text-[10px] text-muted-foreground">
-        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-sm bg-gray-400" /> 待开始</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-sm bg-blue-500" /> 进行中</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-sm bg-orange-500" /> 审核中</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-sm bg-green-500" /> 已完成</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-1 border border-dashed border-red-400 rounded-sm" /> 逾期</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-gray-400" /> 待开始</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-500" /> 进行中</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-orange-500" /> 审核中</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500" /> 已完成</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 border border-dashed border-red-400" /> 逾期</span>
         <span className="text-muted-foreground/50">|</span>
         <span>悬浮/点击任务查看依赖详情</span>
       </div>

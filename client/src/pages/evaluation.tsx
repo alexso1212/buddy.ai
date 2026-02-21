@@ -39,11 +39,11 @@ function getEvalStatusLabel(status: string | null) {
 
 function getEvalStatusColor(status: string | null) {
   switch (status) {
-    case "draft": return "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
-    case "scoring": return "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300";
-    case "review": return "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300";
-    case "published": return "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300";
-    default: return "bg-gray-100 text-gray-600";
+    case "draft": return "bg-gray-500/10 text-gray-500";
+    case "scoring": return "bg-blue-500/10 text-blue-600";
+    case "review": return "bg-amber-500/10 text-amber-600";
+    case "published": return "bg-emerald-500/10 text-emerald-600";
+    default: return "bg-gray-500/10 text-gray-500";
   }
 }
 
@@ -63,14 +63,14 @@ function getNextStatusLabel(status: string | null): string | null {
 }
 
 function getScoreColor(score: number) {
-  if (score >= 90) return "text-green-600 dark:text-green-400";
-  if (score >= 70) return "text-yellow-600 dark:text-yellow-400";
-  return "text-red-600 dark:text-red-400";
+  if (score >= 90) return "text-emerald-600";
+  if (score >= 70) return "text-amber-600";
+  return "text-red-500";
 }
 
 function getScoreBarColor(score: number) {
-  if (score >= 90) return "bg-green-500";
-  if (score >= 70) return "bg-yellow-500";
+  if (score >= 90) return "bg-emerald-500";
+  if (score >= 70) return "bg-amber-500";
   return "bg-red-500";
 }
 
@@ -123,7 +123,7 @@ function CreatePeriodDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>创建考核周期</DialogTitle>
+          <DialogTitle className="text-base font-medium">创建考核周期</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div>
@@ -230,7 +230,7 @@ function UserDetailDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2" data-testid={`text-detail-user-${targetUser.id}`}>
+          <DialogTitle className="flex items-center gap-2 text-base font-medium" data-testid={`text-detail-user-${targetUser.id}`}>
             <span
               className="w-3 h-3 rounded-full shrink-0"
               style={{ backgroundColor: targetUser.color ?? "#888" }}
@@ -242,7 +242,7 @@ function UserDetailDialog({
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <span className="text-sm text-muted-foreground">加权总分</span>
-            <span className={cn("text-2xl font-bold", getScoreColor(weightedTotal))} data-testid={`text-total-score-${targetUser.id}`}>
+            <span className={cn("text-2xl font-semibold", getScoreColor(weightedTotal))} data-testid={`text-total-score-${targetUser.id}`}>
               {weightedTotal.toFixed(1)}
             </span>
           </div>
@@ -255,7 +255,7 @@ function UserDetailDialog({
                     <span className="text-sm font-medium">{dim.label}</span>
                     <span className="text-xs text-muted-foreground">权重 {dim.weight}%</span>
                   </div>
-                  <span className={cn("text-sm font-bold", getScoreColor(dim.score))}>
+                  <span className={cn("text-sm font-semibold", getScoreColor(dim.score))}>
                     {dim.score.toFixed(1)}
                   </span>
                 </div>
@@ -367,7 +367,7 @@ function ScoringTable({
               </div>
               <div className="flex items-center gap-3">
                 <span
-                  className={cn("text-lg font-bold", getScoreColor(total))}
+                  className={cn("text-lg font-semibold", getScoreColor(total))}
                   data-testid={`text-weighted-total-${u.id}`}
                 >
                   {total.toFixed(1)}
@@ -541,20 +541,20 @@ function RulesSettings() {
         )}
       </div>
 
-      <Card className="p-0 overflow-visible">
+      <Card className="p-0 overflow-visible shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-[13px]">
             <thead>
               <tr className="border-b">
-                <th className="text-left p-3 text-muted-foreground font-medium">维度</th>
-                <th className="text-left p-3 text-muted-foreground font-medium">标签</th>
-                <th className="text-left p-3 text-muted-foreground font-medium">权重(%)</th>
-                <th className="text-left p-3 text-muted-foreground font-medium">公式</th>
+                <th className="text-left p-3 text-xs font-medium text-muted-foreground">维度</th>
+                <th className="text-left p-3 text-xs font-medium text-muted-foreground">标签</th>
+                <th className="text-left p-3 text-xs font-medium text-muted-foreground">权重(%)</th>
+                <th className="text-left p-3 text-xs font-medium text-muted-foreground">公式</th>
               </tr>
             </thead>
             <tbody>
               {displayRules.map((rule, idx) => (
-                <tr key={rule.dimension} className="border-b last:border-b-0" data-testid={`row-rule-${rule.dimension}`}>
+                <tr key={rule.dimension} className="hover:bg-muted/50" data-testid={`row-rule-${rule.dimension}`}>
                   <td className="p-3 font-medium">{rule.dimension}</td>
                   <td className="p-3">
                     {editing ? (
@@ -612,7 +612,7 @@ function RulesSettings() {
       </Card>
 
       {editing && (
-        <div className={cn("text-sm", totalWeight === 100 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400")}>
+        <div className={cn("text-sm", totalWeight === 100 ? "text-emerald-600" : "text-red-500")}>
           权重合计: {totalWeight}%{totalWeight !== 100 && " (需等于100%)"}
         </div>
       )}
@@ -755,8 +755,8 @@ function EvalDashboard({
   };
 
   const getTrendColor = (trend: string) => {
-    if (trend === "↑") return "text-green-600 dark:text-green-400";
-    if (trend === "↓") return "text-red-600 dark:text-red-400";
+    if (trend === "↑") return "text-emerald-600";
+    if (trend === "↓") return "text-red-500";
     return "text-muted-foreground";
   };
 
@@ -822,15 +822,15 @@ function EvalDashboard({
         </Select>
       </div>
 
-      <Card className="p-0 overflow-visible">
+      <Card className="p-0 overflow-visible shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-[13px]">
             <thead>
               <tr className="border-b">
                 {columns.map((col) => (
                   <th
                     key={col.key}
-                    className="text-left p-3 text-muted-foreground font-medium cursor-pointer select-none whitespace-nowrap"
+                    className="text-left p-3 text-xs font-medium text-muted-foreground cursor-pointer select-none whitespace-nowrap"
                     onClick={() => col.key !== "name" && col.key !== "dept" && col.key !== "trend" && handleSort(col.key)}
                     data-testid={`th-${col.key}`}
                   >
@@ -846,7 +846,7 @@ function EvalDashboard({
                 return (
                   <Fragment key={item.user.id}>
                     <tr
-                      className="border-b last:border-b-0 hover-elevate cursor-pointer"
+                      className="hover:bg-muted/50 cursor-pointer"
                       onClick={() => setExpandedUserId(isExpanded ? null : item.user.id)}
                       data-testid={`row-eval-rank-${item.user.id}`}
                     >
@@ -862,7 +862,7 @@ function EvalDashboard({
                       </td>
                       <td className="p-3 text-muted-foreground">{item.user.dept ?? "-"}</td>
                       <td className="p-3">
-                        <span className={cn("font-bold", getScoreColor(item.total))} data-testid={`text-eval-total-${item.user.id}`}>
+                        <span className={cn("font-semibold", getScoreColor(item.total))} data-testid={`text-eval-total-${item.user.id}`}>
                           {item.total.toFixed(1)}
                         </span>
                       </td>
@@ -893,15 +893,15 @@ function EvalDashboard({
                                 <PolarGrid />
                                 <PolarAngleAxis dataKey="subject" tick={{ fontSize: 12 }} />
                                 <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} />
-                                <Radar name="当前周期" dataKey="current" stroke="#3B82F6" fill="#3B82F6" fillOpacity={0.3} />
+                                <Radar name="当前周期" dataKey="current" stroke="#3B82F6" fill="#3B82F6" fillOpacity={0.1} />
                                 {prevPeriodId && (
-                                  <Radar name="上一周期" dataKey="previous" stroke="#9CA3AF" fill="none" strokeDasharray="5 5" />
+                                  <Radar name="上一周期" dataKey="previous" stroke="#9CA3AF" fill="#9CA3AF" fillOpacity={0.1} strokeDasharray="5 5" />
                                 )}
                                 <Legend />
                               </RadarChart>
                             </ResponsiveContainer>
                             <p className="text-sm text-muted-foreground">
-                              综合 <span className={cn("font-bold", getScoreColor(item.total))}>{item.total.toFixed(1)}</span> 分，排名 {item.rank}/{rankedUsers.length}
+                              综合 <span className={cn("font-semibold", getScoreColor(item.total))}>{item.total.toFixed(1)}</span> 分，排名 {item.rank}/{rankedUsers.length}
                             </p>
                           </div>
                         </td>
@@ -993,7 +993,7 @@ export default function Evaluation() {
   const users = allUsers ?? [];
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-screen bg-neutral-50 dark:bg-background">
       <header className="sticky top-0 z-50 flex items-center justify-between gap-2 px-3 md:px-4 py-2 md:py-3 border-b bg-background" data-testid="header-evaluation">
         <div className="flex items-center gap-2">
           <Link href="/dashboard">
@@ -1001,7 +1001,7 @@ export default function Evaluation() {
               <ArrowLeft className="w-4 h-4" />
             </Button>
           </Link>
-          <h1 className="text-sm md:text-lg font-bold tracking-tight" data-testid="text-page-title">绩效考核</h1>
+          <h1 className="text-[13px] md:text-lg font-medium tracking-tight" data-testid="text-page-title">绩效考核</h1>
         </div>
         <div className="flex items-center gap-2">
           <span
@@ -1014,10 +1014,10 @@ export default function Evaluation() {
 
       <Tabs defaultValue="periods" className="flex flex-col flex-1 min-h-0">
         <div className="px-4 pt-3">
-          <TabsList data-testid="tabs-eval">
-            <TabsTrigger value="periods" data-testid="tab-periods">考核周期</TabsTrigger>
-            {isCeo && <TabsTrigger value="rules" data-testid="tab-rules">规则设置</TabsTrigger>}
-            <TabsTrigger value="dashboard" data-testid="tab-eval-dashboard">数据看板</TabsTrigger>
+          <TabsList className="bg-transparent h-auto p-0 gap-0 rounded-none border-b w-full justify-start" data-testid="tabs-eval">
+            <TabsTrigger className="bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent" value="periods" data-testid="tab-periods">考核周期</TabsTrigger>
+            {isCeo && <TabsTrigger className="bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent" value="rules" data-testid="tab-rules">规则设置</TabsTrigger>}
+            <TabsTrigger className="bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent" value="dashboard" data-testid="tab-eval-dashboard">数据看板</TabsTrigger>
           </TabsList>
         </div>
 
@@ -1052,7 +1052,7 @@ export default function Evaluation() {
                   return (
                     <div key={period.id}>
                       <Card
-                        className={cn("p-3 hover-elevate cursor-pointer", isSelected && "ring-2 ring-primary")}
+                        className={cn("p-3 hover-elevate cursor-pointer shadow-sm", isSelected && "ring-2 ring-primary")}
                         onClick={() => setSelectedPeriodId(isSelected ? null : period.id)}
                         data-testid={`card-period-${period.id}`}
                       >
@@ -1062,7 +1062,7 @@ export default function Evaluation() {
                               {period.title}
                             </span>
                             <Badge
-                              className={cn("no-default-active-elevate text-xs", getEvalStatusColor(period.status))}
+                              className={cn("no-default-active-elevate rounded-full text-xs font-medium border-0", getEvalStatusColor(period.status))}
                               variant="secondary"
                               data-testid={`badge-period-status-${period.id}`}
                             >

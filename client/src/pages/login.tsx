@@ -4,9 +4,6 @@ import { Loader2 } from 'lucide-react';
 import logoImg from '@assets/AD5CCB66-F553-4B90-AFBC-EEA51B534333_1771683834711.png';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/hooks/use-toast';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 
 export default function LoginPage() {
   const [, navigate] = useLocation();
@@ -56,39 +53,30 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-primary/3 rounded-full blur-3xl"></div>
-      </div>
-
-      <Card className="w-full max-w-sm relative z-10">
-        <CardHeader className="space-y-2 text-center">
-          <div className="flex justify-center mb-2">
-            <img src={logoImg} alt="Deltapex" className="h-8 object-contain dark:invert" />
+      <div className="w-full max-w-[360px]">
+        <div className="bg-card border border-border rounded-lg shadow-sm p-8">
+          <div className="flex flex-col items-center mb-8">
+            <img src={logoImg} alt="Deltapex" className="h-7 object-contain dark:invert mb-3" />
+            <h1 className="text-base font-medium text-foreground">任务中心</h1>
+            <p className="text-xs text-muted-foreground mt-1">团队任务看板</p>
           </div>
-          <CardTitle className="text-lg font-bold">任务中心</CardTitle>
-          <CardDescription className="text-base">团队任务看板</CardDescription>
-        </CardHeader>
 
-        <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Input
-                data-testid="input-invite-code"
-                type="text"
-                placeholder="请输入邀请码 (DP-XXXX-XXXX)"
-                value={inviteCode}
-                onChange={(e) => setInviteCode(e.target.value)}
-                disabled={isLoading}
-                className="uppercase"
-              />
-            </div>
+            <input
+              data-testid="input-invite-code"
+              type="text"
+              placeholder="请输入邀请码 (DP-XXXX-XXXX)"
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value)}
+              disabled={isLoading}
+              className="w-full h-10 px-3 text-sm bg-background border border-border rounded-md outline-none focus:ring-2 focus:ring-ring/20 focus:border-foreground/30 transition-colors uppercase placeholder:text-muted-foreground placeholder:normal-case"
+            />
 
-            <Button
+            <button
               data-testid="button-login"
               type="submit"
-              className="w-full"
               disabled={isLoading || !inviteCode.trim()}
+              className="w-full h-10 bg-foreground text-background text-[13px] font-medium rounded-md hover:bg-foreground/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
             >
               {isLoading ? (
                 <>
@@ -98,14 +86,14 @@ export default function LoginPage() {
               ) : (
                 '登录'
               )}
-            </Button>
+            </button>
           </form>
-        </CardContent>
-
-        <div className="px-6 py-4 text-center text-xs text-muted-foreground border-t border-card-border">
-          © 2026 德湃教育科技
         </div>
-      </Card>
+
+        <p className="text-center text-[11px] text-muted-foreground mt-6">
+          © 2026 德湃教育科技
+        </p>
+      </div>
     </div>
   );
 }

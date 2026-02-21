@@ -87,7 +87,7 @@ function SidePanel({ node, links, allNodes }: { node: GraphNode | null; links: G
         <div className="flex items-center gap-3">
           <div className="w-4 h-4 rounded-full" style={{ backgroundColor: node.color || "#888" }} />
           <div>
-            <h3 className="font-semibold text-sm">{node.name}</h3>
+            <h3 className="font-medium text-sm">{node.name}</h3>
             {isPerson && <p className="text-xs text-muted-foreground">{node.title}</p>}
             {!isPerson && <p className="text-xs text-muted-foreground">{node.member_count}人</p>}
           </div>
@@ -95,31 +95,31 @@ function SidePanel({ node, links, allNodes }: { node: GraphNode | null; links: G
 
         {isPerson && (
           <div className="grid grid-cols-2 gap-2">
-            <Card className="p-2 text-center">
-              <p className="text-lg font-bold">{node.task_count ?? 0}</p>
+            <div className="rounded-lg border bg-white dark:bg-card p-2 text-center shadow-sm">
+              <p className="text-lg font-semibold">{node.task_count ?? 0}</p>
               <p className="text-[10px] text-muted-foreground">任务数</p>
-            </Card>
-            <Card className="p-2 text-center">
-              <p className="text-lg font-bold" style={{ color: (node.overdue_count ?? 0) > 0 ? "#ef4444" : undefined }}>{node.overdue_count ?? 0}</p>
+            </div>
+            <div className="rounded-lg border bg-white dark:bg-card p-2 text-center shadow-sm">
+              <p className="text-lg font-semibold" style={{ color: (node.overdue_count ?? 0) > 0 ? "#ef4444" : undefined }}>{node.overdue_count ?? 0}</p>
               <p className="text-[10px] text-muted-foreground">逾期</p>
-            </Card>
+            </div>
           </div>
         )}
 
         {isPerson && node.status && (
-          <Badge className="text-xs" style={{ backgroundColor: STATUS_COLORS[node.status] + "20", color: STATUS_COLORS[node.status] }}>
+          <Badge className="rounded-full text-xs font-medium border-0" style={{ backgroundColor: STATUS_COLORS[node.status] + "1a", color: STATUS_COLORS[node.status] }}>
             {node.status === "healthy" ? "正常" : node.status === "warning" ? "临期" : "逾期"}
           </Badge>
         )}
 
         <div>
-          <h4 className="text-xs font-semibold mb-2 text-muted-foreground">协作关系 ({connections.length})</h4>
+          <h4 className="text-xs font-medium mb-2 text-muted-foreground">协作关系 ({connections.length})</h4>
           <div className="space-y-2">
             {connections.map((c, i) => (
               <div key={i} className="flex items-center gap-2 text-sm p-1.5 rounded hover:bg-muted/50">
                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_COLORS[c.status] || "#888" }} />
                 <span className="flex-1 truncate">{c.other?.name || c.otherId}</span>
-                <Badge variant="outline" className="text-[10px]">{c.weight}个任务</Badge>
+                <Badge variant="outline" className="rounded-full text-[10px] font-medium border-0">{c.weight}个任务</Badge>
               </div>
             ))}
             {connections.length === 0 && <p className="text-xs text-muted-foreground">暂无协作关系</p>}
@@ -258,7 +258,7 @@ function ForceGraph({ data, filter, onSelectNode, selectedNode }: {
       .attr("text-anchor", "middle")
       .attr("dy", (d) => d.type === "dept" ? -28 : -22)
       .attr("font-size", (d) => d.type === "dept" ? 11 : 10)
-      .attr("font-weight", (d) => d.type === "dept" ? 600 : 500)
+      .attr("font-weight", 500)
       .attr("fill", "currentColor")
       .attr("opacity", 0.8);
 
@@ -293,15 +293,15 @@ function ForceGraph({ data, filter, onSelectNode, selectedNode }: {
 
   return (
     <div className="relative w-full h-full" ref={containerRef} data-testid="graph-container">
-      <svg ref={svgRef} className="w-full h-full bg-muted/20 rounded-lg" />
+      <svg ref={svgRef} className="w-full h-full rounded-lg border bg-white dark:bg-card" />
       <div className="absolute bottom-3 right-3 flex gap-1">
-        <Button size="icon" variant="secondary" className="h-8 w-8" onClick={() => handleZoom(1.3)} data-testid="button-zoom-in">
+        <Button size="icon" variant="secondary" onClick={() => handleZoom(1.3)} data-testid="button-zoom-in">
           <ZoomIn className="w-4 h-4" />
         </Button>
-        <Button size="icon" variant="secondary" className="h-8 w-8" onClick={() => handleZoom(0.7)} data-testid="button-zoom-out">
+        <Button size="icon" variant="secondary" onClick={() => handleZoom(0.7)} data-testid="button-zoom-out">
           <ZoomOut className="w-4 h-4" />
         </Button>
-        <Button size="icon" variant="secondary" className="h-8 w-8" onClick={handleReset} data-testid="button-zoom-reset">
+        <Button size="icon" variant="secondary" onClick={handleReset} data-testid="button-zoom-reset">
           <Maximize2 className="w-4 h-4" />
         </Button>
       </div>
@@ -344,17 +344,17 @@ export default function Collaboration() {
     <div className="flex flex-col h-screen bg-background">
       <header className="sticky top-0 z-50 flex items-center gap-2 px-3 md:px-4 py-2 md:py-3 border-b bg-background" data-testid="collab-header">
         <Link href="/organization">
-          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" data-testid="button-back">
+          <Button variant="ghost" size="icon" className="shrink-0" data-testid="button-back">
             <ArrowLeft className="w-4 h-4" />
           </Button>
         </Link>
-        <Network className="w-4 h-4 md:w-5 md:h-5 text-primary shrink-0" />
-        <h1 className="text-sm md:text-lg font-bold shrink-0">协作图谱</h1>
+        <Network className="w-4 h-4 text-muted-foreground shrink-0" />
+        <h1 className="text-[13px] md:text-base font-medium shrink-0">协作图谱</h1>
 
         <div className="flex-1" />
 
         <Select value={filter} onValueChange={setFilter}>
-          <SelectTrigger className="w-[110px] md:w-[140px] h-8 text-xs md:text-sm" data-testid="select-filter">
+          <SelectTrigger className="w-[110px] md:w-[140px] h-8 text-[13px]" data-testid="select-filter">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -366,23 +366,23 @@ export default function Collaboration() {
       </header>
 
       <div className="grid grid-cols-1 gap-2 px-4 py-2 lg:grid-cols-4">
-        <Card className="flex items-center gap-2 p-2">
-          <Users className="w-4 h-4 text-blue-500" />
+        <div className="flex items-center gap-2 rounded-lg border bg-white dark:bg-card p-2 shadow-sm">
+          <Users className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm font-medium">{stats.totalPeople}人</span>
           <span className="text-xs text-muted-foreground">· {stats.totalLinks}条协作</span>
-        </Card>
-        <Card className="flex items-center gap-2 p-2">
+        </div>
+        <div className="flex items-center gap-2 rounded-lg border bg-white dark:bg-card p-2 shadow-sm">
           <AlertTriangle className="w-4 h-4 text-red-500" />
-          <span className="text-sm font-medium text-red-600">{stats.dangerId}人逾期</span>
-        </Card>
-        <Card className="flex items-center gap-2 p-2">
+          <span className="text-sm font-medium">{stats.dangerId}人逾期</span>
+        </div>
+        <div className="flex items-center gap-2 rounded-lg border bg-white dark:bg-card p-2 shadow-sm">
           <Clock className="w-4 h-4 text-yellow-500" />
-          <span className="text-sm font-medium text-yellow-600">{stats.warningId}人临期</span>
-        </Card>
-        <Card className="flex items-center gap-2 p-2">
+          <span className="text-sm font-medium">{stats.warningId}人临期</span>
+        </div>
+        <div className="flex items-center gap-2 rounded-lg border bg-white dark:bg-card p-2 shadow-sm">
           <AlertTriangle className="w-4 h-4 text-orange-500" />
-          <span className="text-sm font-medium text-orange-600">{stats.dangerLinks}条风险链</span>
-        </Card>
+          <span className="text-sm font-medium">{stats.dangerLinks}条风险链</span>
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 flex">
@@ -393,7 +393,7 @@ export default function Collaboration() {
             <div className="flex-1 min-w-0 p-2">
               <ForceGraph data={graphData} filter={filter} onSelectNode={setSelectedNode} selectedNode={selectedNode} />
             </div>
-            <div className="w-72 border-l shrink-0 hidden lg:block" data-testid="side-panel">
+            <div className="w-72 border-l bg-white dark:bg-card shadow-sm shrink-0 hidden lg:block" data-testid="side-panel">
               <SidePanel node={selectedNode} links={graphData.links} allNodes={graphData.nodes} />
             </div>
           </>

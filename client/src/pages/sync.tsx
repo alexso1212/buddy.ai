@@ -219,21 +219,21 @@ export default function SyncPage() {
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         <div className="flex items-center gap-2">
           <Link href="/dashboard">
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" data-testid="button-back">
+            <Button variant="ghost" size="icon" className="shrink-0" data-testid="button-back">
               <ArrowLeft className="w-4 h-4" />
             </Button>
           </Link>
           <div className="flex items-center gap-2">
-            <RefreshCw className="h-4 w-4 md:h-5 md:w-5 text-muted-foreground shrink-0" />
-            <h1 className="text-sm md:text-xl font-semibold" data-testid="text-page-title">
+            <RefreshCw className="h-4 w-4 text-muted-foreground shrink-0" />
+            <h1 className="text-[13px] md:text-base font-medium" data-testid="text-page-title">
               JSON 同步
             </h1>
           </div>
         </div>
 
-        <Card>
+        <Card className="rounded-lg border shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg">输入 JSON 数据</CardTitle>
+            <CardTitle className="text-base font-medium">输入 JSON 数据</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <Textarea
@@ -249,6 +249,7 @@ export default function SyncPage() {
                 variant="outline"
                 onClick={handlePasteExample}
                 data-testid="button-paste-example"
+                className="bg-white dark:bg-card border-gray-300 dark:border-border"
               >
                 <ClipboardPaste />
                 粘贴示例
@@ -257,6 +258,7 @@ export default function SyncPage() {
                 onClick={handleParsePreview}
                 disabled={!jsonText.trim()}
                 data-testid="button-parse"
+                className="bg-[#1C1C1C] text-white dark:bg-white dark:text-black"
               >
                 <Eye />
                 解析预览
@@ -268,11 +270,11 @@ export default function SyncPage() {
         {parsed && (
           <div className="space-y-4" data-testid="section-preview">
             {parsed.updates.length > 0 && (
-              <Card>
+              <Card className="rounded-lg border shadow-sm">
                 <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2 flex-wrap">
                     更新任务
-                    <Badge variant="secondary">{parsed.updates.length}</Badge>
+                    <Badge variant="secondary" className="rounded-full text-xs font-medium border-0">{parsed.updates.length}</Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -294,7 +296,7 @@ export default function SyncPage() {
                           <TableCell className="font-mono">{u.id || "-"}</TableCell>
                           <TableCell>
                             {u.status ? (
-                              <Badge variant="outline">{u.status}</Badge>
+                              <Badge variant="outline" className="rounded-full text-xs font-medium border-0">{u.status}</Badge>
                             ) : (
                               "-"
                             )}
@@ -311,11 +313,11 @@ export default function SyncPage() {
             )}
 
             {parsed.new_tasks.length > 0 && (
-              <Card>
+              <Card className="rounded-lg border shadow-sm">
                 <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2 flex-wrap">
                     新建任务
-                    <Badge variant="secondary">{parsed.new_tasks.length}</Badge>
+                    <Badge variant="secondary" className="rounded-full text-xs font-medium border-0">{parsed.new_tasks.length}</Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -344,7 +346,7 @@ export default function SyncPage() {
                           <TableCell>{t.deadline || "-"}</TableCell>
                           <TableCell>
                             {t.phase ? (
-                              <Badge variant="outline">{t.phase as string}</Badge>
+                              <Badge variant="outline" className="rounded-full text-xs font-medium border-0">{t.phase as string}</Badge>
                             ) : (
                               "-"
                             )}
@@ -358,11 +360,11 @@ export default function SyncPage() {
             )}
 
             {parsed.new_comments.length > 0 && (
-              <Card>
+              <Card className="rounded-lg border shadow-sm">
                 <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2 flex-wrap">
                     新建评论
-                    <Badge variant="secondary">{parsed.new_comments.length}</Badge>
+                    <Badge variant="secondary" className="rounded-full text-xs font-medium border-0">{parsed.new_comments.length}</Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -398,7 +400,7 @@ export default function SyncPage() {
               onClick={handleSync}
               disabled={processing}
               data-testid="button-sync"
-              className="w-full"
+              className="w-full bg-[#1C1C1C] text-white dark:bg-white dark:text-black"
             >
               <Upload />
               {processing ? "同步中..." : "确认同步"}
@@ -407,74 +409,72 @@ export default function SyncPage() {
         )}
 
         {results && (
-          <Card data-testid="section-results">
+          <Card className="rounded-lg border shadow-sm" data-testid="section-results">
             <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2 flex-wrap">
-                <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+              <CardTitle className="text-sm font-medium flex items-center gap-2 flex-wrap">
+                <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                 同步结果
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div className="text-center" data-testid="result-updated">
-                  <div className="text-2xl font-bold">{results.updated}</div>
-                  <div className="text-sm text-muted-foreground">已更新</div>
+                  <div className="text-2xl font-semibold">{results.updated}</div>
+                  <div className="text-xs text-muted-foreground">已更新</div>
                 </div>
                 <div className="text-center" data-testid="result-created">
-                  <div className="text-2xl font-bold">{results.created}</div>
-                  <div className="text-sm text-muted-foreground">已创建</div>
+                  <div className="text-2xl font-semibold">{results.created}</div>
+                  <div className="text-xs text-muted-foreground">已创建</div>
                 </div>
                 <div className="text-center" data-testid="result-commented">
-                  <div className="text-2xl font-bold">{results.commented}</div>
-                  <div className="text-sm text-muted-foreground">已评论</div>
+                  <div className="text-2xl font-semibold">{results.commented}</div>
+                  <div className="text-xs text-muted-foreground">已评论</div>
                 </div>
                 <div className="text-center" data-testid="result-skipped">
-                  <div className="text-2xl font-bold">{results.skipped}</div>
-                  <div className="text-sm text-muted-foreground">已跳过</div>
+                  <div className="text-2xl font-semibold">{results.skipped}</div>
+                  <div className="text-xs text-muted-foreground">已跳过</div>
                 </div>
               </div>
             </CardContent>
           </Card>
         )}
 
-        <Card>
+        <Card className="rounded-lg border shadow-sm">
           <CardHeader>
-            <CardTitle className="text-base">同步历史</CardTitle>
+            <CardTitle className="text-sm font-medium">同步历史</CardTitle>
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-64">
               {history && history.length > 0 ? (
-                <div className="space-y-3">
+                <div className="divide-y">
                   {history.slice(0, 10).map((entry) => (
-                    <Card key={entry.id} data-testid={`card-history-${entry.id}`}>
-                      <CardContent className="p-4 space-y-1">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <span className="text-sm font-medium">
-                            {entry.summary || "同步操作"}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {entry.created_at
-                              ? new Date(entry.created_at).toLocaleString("zh-CN")
-                              : entry.sync_date || "-"}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
-                          {entry.sync_by && <span>操作人: {entry.sync_by}</span>}
-                          {entry.updated !== undefined && (
-                            <span>更新: {entry.updated}</span>
-                          )}
-                          {entry.created !== undefined && (
-                            <span>创建: {entry.created}</span>
-                          )}
-                          {entry.commented !== undefined && (
-                            <span>评论: {entry.commented}</span>
-                          )}
-                          {entry.skipped !== undefined && (
-                            <span>跳过: {entry.skipped}</span>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <div key={entry.id} className="py-3 first:pt-0 last:pb-0" data-testid={`card-history-${entry.id}`}>
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-sm font-medium">
+                          {entry.summary || "同步操作"}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {entry.created_at
+                            ? new Date(entry.created_at).toLocaleString("zh-CN")
+                            : entry.sync_date || "-"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground mt-1">
+                        {entry.sync_by && <span>操作人: {entry.sync_by}</span>}
+                        {entry.updated !== undefined && (
+                          <span>更新: {entry.updated}</span>
+                        )}
+                        {entry.created !== undefined && (
+                          <span>创建: {entry.created}</span>
+                        )}
+                        {entry.commented !== undefined && (
+                          <span>评论: {entry.commented}</span>
+                        )}
+                        {entry.skipped !== undefined && (
+                          <span>跳过: {entry.skipped}</span>
+                        )}
+                      </div>
+                    </div>
                   ))}
                 </div>
               ) : (

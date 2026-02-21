@@ -7,7 +7,6 @@ import { useToast } from "@/hooks/use-toast";
 import { cn, getStatusColor, getStatusLabel, getPriorityLabel, getDeadlineInfo } from "@/lib/utils";
 import type { Task, Phase, User } from "@shared/schema";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -75,7 +74,7 @@ function NotificationBell() {
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="end">
+      <PopoverContent className="w-[360px] p-0" align="end">
         <div className="flex items-center justify-between px-3 py-2 border-b">
           <span className="text-sm font-medium">通知</span>
           {unread > 0 && (
@@ -86,7 +85,7 @@ function NotificationBell() {
         </div>
         <ScrollArea className="max-h-80">
           {notifs.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">暂无通知</p>
+            <p className="text-[13px] text-muted-foreground text-center py-8">暂无数据</p>
           ) : (
             <div className="divide-y">
               {notifs.map((n) => (
@@ -376,14 +375,22 @@ function TaskCard({
   }, [task.depends_on, allTasks]);
 
   return (
-    <Card className={cn("p-3 cursor-pointer hover-elevate", task.parent_id && "ml-6")} onClick={onClick} data-testid={`card-task-${task.id}`}>
+    <div
+      className={cn(
+        "bg-card border border-border rounded-lg p-3 cursor-pointer transition-shadow duration-150 hover:shadow-md",
+        task.parent_id && "ml-6"
+      )}
+      style={{ borderLeft: `3px solid ${task.status === 'done' ? '#10B981' : task.status === 'active' ? '#3B82F6' : task.status === 'review' ? '#F59E0B' : '#9CA3AF'}` }}
+      onClick={onClick}
+      data-testid={`card-task-${task.id}`}
+    >
       <div className="flex items-start justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
           {isBlocked && <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
           <span className="text-sm font-medium truncate" data-testid={`text-title-${task.id}`}>{task.title}</span>
-          {priority && <Badge className={cn("no-default-active-elevate text-xs", priority.color)} variant="secondary">{priority.label}</Badge>}
+          {priority && <Badge className={cn("text-xs px-2 py-0.5 rounded-full font-medium border-0", priority.color)} variant="secondary">{priority.label}</Badge>}
         </div>
-        <Badge className={cn("no-default-active-elevate shrink-0", getStatusColor(task.status ?? "pending"))} variant="secondary">{getStatusLabel(task.status ?? "pending")}</Badge>
+        <Badge className={cn("text-xs px-2 py-0.5 rounded-full font-medium border-0 shrink-0", getStatusColor(task.status ?? "pending"))} variant="secondary">{getStatusLabel(task.status ?? "pending")}</Badge>
       </div>
       <div className="flex items-center justify-between gap-2 mt-2 flex-wrap">
         <div className="flex items-center gap-1 flex-wrap">
@@ -399,7 +406,7 @@ function TaskCard({
           {deadlineInfo && <span className={cn("text-xs", deadlineInfo.color)}>{deadlineInfo.text}</span>}
         </div>
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -499,9 +506,9 @@ function TaskDetailDialog({
       <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center justify-between gap-2">
-            <DialogTitle className="text-xl" data-testid={`text-detail-title-${task.id}`}>{task.title}</DialogTitle>
+            <DialogTitle className="text-base font-medium" data-testid={`text-detail-title-${task.id}`}>{task.title}</DialogTitle>
             {canUrge && (
-              <Button variant="outline" size="sm" className="shrink-0 text-orange-600 border-orange-300 hover:bg-orange-50" onClick={() => urgeMutation.mutate()} disabled={urgeMutation.isPending} data-testid={`button-urge-${task.id}`}>
+              <Button variant="outline" size="sm" className="shrink-0 text-orange-500 border-border hover:text-orange-600" onClick={() => urgeMutation.mutate()} disabled={urgeMutation.isPending} data-testid={`button-urge-${task.id}`}>
                 <Zap className="w-3.5 h-3.5 mr-1" /> {urgeMutation.isPending ? "催办中..." : "催办"}
               </Button>
             )}
@@ -515,7 +522,7 @@ function TaskDetailDialog({
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">状态:</span>
-              <Badge className={cn("no-default-active-elevate", getStatusColor(task.status ?? "pending"))} variant="secondary">{getStatusLabel(task.status ?? "pending")}</Badge>
+              <Badge className={cn("text-xs px-2 py-0.5 rounded-full font-medium border-0", getStatusColor(task.status ?? "pending"))} variant="secondary">{getStatusLabel(task.status ?? "pending")}</Badge>
             </div>
             {canChangeStatus && (
               <Button size="sm" disabled={isStartBlocked || statusMutation.isPending} onClick={() => statusMutation.mutate(action.next)} data-testid={`button-status-${task.id}`}>
@@ -591,7 +598,7 @@ function TaskDetailDialog({
               <div className="flex flex-col gap-1 mt-1">
                 {depTasks.map((dep) => (
                   <div key={dep.id} className="flex items-center gap-2">
-                    <Badge className={cn("no-default-active-elevate text-xs", getStatusColor(dep.status ?? "pending"))} variant="secondary">{getStatusLabel(dep.status ?? "pending")}</Badge>
+                    <Badge className={cn("text-xs px-2 py-0.5 rounded-full font-medium border-0", getStatusColor(dep.status ?? "pending"))} variant="secondary">{getStatusLabel(dep.status ?? "pending")}</Badge>
                     <span className="text-sm">{dep.title}</span>
                   </div>
                 ))}
@@ -645,8 +652,8 @@ function PhaseSection({
   return (
     <div className="mb-6">
       <div
-        className="flex items-center justify-between gap-2 px-3 py-2 rounded-md mb-2 flex-wrap cursor-pointer select-none"
-        style={{ backgroundColor: phase.color ? `${phase.color}20` : undefined, borderLeft: `3px solid ${phase.color ?? "hsl(var(--primary))"}` }}
+        className="flex items-center justify-between gap-2 px-3 py-2 mb-2 flex-wrap cursor-pointer select-none"
+        style={{ borderLeft: `3px solid ${phase.color ?? "hsl(var(--primary))"}` }}
         onClick={() => setCollapsed(!collapsed)}
         data-testid={`toggle-phase-${phase.id}`}
       >
@@ -667,7 +674,7 @@ function PhaseSection({
               ))}
             </div>
           ))}
-          {parentTasks.length === 0 && subtasks.length === 0 && <p className="text-sm text-muted-foreground py-2 px-3">暂无任务</p>}
+          {parentTasks.length === 0 && subtasks.length === 0 && <p className="text-[13px] text-muted-foreground text-center py-8">暂无数据</p>}
         </div>
       )}
       {selectedTask && tasks.some((t) => t.id === selectedTask.id) && (
@@ -703,7 +710,8 @@ function PersonSection({
   return (
     <div className="mb-6">
       <div
-        className="flex items-center gap-2 px-3 py-2 rounded-md mb-2 bg-muted/50 cursor-pointer select-none"
+        className="flex items-center gap-2 px-3 py-2 mb-2 cursor-pointer select-none"
+        style={{ borderLeft: `3px solid ${user.color ?? '#888'}` }}
         onClick={() => setCollapsed(!collapsed)}
         data-testid={`toggle-person-${user.id}`}
       >
@@ -803,7 +811,7 @@ export default function Dashboard() {
       <header className="sticky top-0 z-50 flex items-center justify-between gap-2 px-3 md:px-4 py-2 md:py-3 border-b bg-background" data-testid="header">
         <div className="flex items-center gap-2 shrink-0">
           <img src={logoImg} alt="Deltapex" className="h-5 md:h-6 object-contain dark:invert" />
-          <span className="text-sm font-bold tracking-tight hidden sm:inline">任务中心</span>
+          <span className="text-sm font-medium tracking-tight hidden sm:inline">任务中心</span>
         </div>
         <div className="flex items-center gap-1 md:gap-2 overflow-x-auto">
           {isCeoOrAdmin && (
@@ -875,19 +883,21 @@ export default function Dashboard() {
       </header>
 
       <Tabs defaultValue="mine" className="flex flex-col flex-1 min-h-0">
-        <div className="px-4 pt-3">
-          <TabsList data-testid="tabs-list">
-            <TabsTrigger value="mine" data-testid="tab-mine">我的任务</TabsTrigger>
-            <TabsTrigger value="all" data-testid="tab-all">全部任务</TabsTrigger>
-            {isCeoOrAdmin && <TabsTrigger value="people" data-testid="tab-people">人员视图</TabsTrigger>}
-          </TabsList>
+        <div className="px-4 border-b">
+          <div className="flex gap-0" data-testid="tabs-list">
+            <TabsList className="bg-transparent h-auto p-0 gap-0 rounded-none">
+              <TabsTrigger value="mine" className="bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent" data-testid="tab-mine">我的任务</TabsTrigger>
+              <TabsTrigger value="all" className="bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent" data-testid="tab-all">全部任务</TabsTrigger>
+              {isCeoOrAdmin && <TabsTrigger value="people" className="bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent" data-testid="tab-people">人员视图</TabsTrigger>}
+            </TabsList>
+          </div>
         </div>
 
         <TabsContent value="mine" className="flex-1 min-h-0">
           <ScrollArea className="h-full">
             <div className="p-4">
               {myLoading ? <LoadingSkeleton /> : !myData || myData.tasks.length === 0 ? (
-                <p className="text-center text-muted-foreground py-12" data-testid="text-empty-mine">暂无任务</p>
+                <p className="text-[13px] text-muted-foreground text-center py-8" data-testid="text-empty-mine">暂无数据</p>
               ) : (() => {
                 const grouped = groupByPhase(myData.tasks);
                 const allTasksList = myData.tasks;
@@ -909,7 +919,7 @@ export default function Dashboard() {
         <TabsContent value="all" className="flex-1 min-h-0">
           <div className="flex items-center gap-2 px-4 py-2 border-b flex-wrap">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[120px]" data-testid="select-status-filter"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-[120px] h-8 text-[13px]" data-testid="select-status-filter"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部状态</SelectItem>
                 <SelectItem value="pending">待开始</SelectItem>
@@ -919,7 +929,7 @@ export default function Dashboard() {
               </SelectContent>
             </Select>
             <Select value={personFilter} onValueChange={setPersonFilter}>
-              <SelectTrigger className="w-[120px]" data-testid="select-person-filter"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-[120px] h-8 text-[13px]" data-testid="select-person-filter"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部人员</SelectItem>
                 {allUsers.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
@@ -929,7 +939,7 @@ export default function Dashboard() {
           <ScrollArea className="h-full">
             <div className="p-4">
               {allLoading ? <LoadingSkeleton /> : filteredAllTasks.length === 0 ? (
-                <p className="text-center text-muted-foreground py-12" data-testid="text-empty-all">暂无任务</p>
+                <p className="text-[13px] text-muted-foreground text-center py-8" data-testid="text-empty-all">暂无数据</p>
               ) : (() => {
                 const grouped = groupByPhase(filteredAllTasks);
                 const allTasksList = allData?.tasks ?? [];
@@ -954,7 +964,7 @@ export default function Dashboard() {
             <ScrollArea className="h-full">
               <div className="p-4">
                 {peopleLoading ? <LoadingSkeleton /> : !peopleData || peopleData.tasks.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-12" data-testid="text-empty-people">暂无任务</p>
+                  <p className="text-[13px] text-muted-foreground text-center py-8" data-testid="text-empty-people">暂无数据</p>
                 ) : (() => {
                   const grouped = groupByPerson(peopleData.tasks, peopleData.assigneeMap);
                   return (

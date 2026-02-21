@@ -5,7 +5,6 @@ import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { User, Department, OrgChange } from "@shared/schema";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,9 +37,9 @@ const CHANGE_TYPE_LABELS: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  pending: { label: "待审批", color: "bg-yellow-100 text-yellow-800" },
-  approved: { label: "已通过", color: "bg-green-100 text-green-800" },
-  rejected: { label: "已驳回", color: "bg-red-100 text-red-800" },
+  pending: { label: "待审批", color: "bg-amber-500/10 text-amber-600" },
+  approved: { label: "已通过", color: "bg-emerald-500/10 text-emerald-600" },
+  rejected: { label: "已驳回", color: "bg-red-500/10 text-red-500" },
 };
 
 function LoadingSkeleton() {
@@ -61,14 +60,13 @@ function DeptCard({ node, users, currentUser, onEditDept, onEditUser, onMoveUser
 
   return (
     <div className="mb-3" data-testid={`dept-card-${node.dept.id}`}>
-      <Card className="overflow-hidden">
+      <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden" style={{ borderLeft: `4px solid ${node.dept.color || "#888"}` }}>
         <div className="flex items-center gap-3 p-3 cursor-pointer" onClick={() => setExpanded(!expanded)} data-testid={`dept-toggle-${node.dept.id}`}>
-          <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: node.dept.color || "#888" }} />
           {expanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-sm">{node.dept.name}</span>
-              <Badge variant="outline" className="text-xs">{node.members.length}人</Badge>
+              <span className="font-medium text-sm">{node.dept.name}</span>
+              <Badge variant="outline" className="rounded-full text-xs font-medium border-0">{node.members.length}人</Badge>
             </div>
             {head && <p className="text-xs text-muted-foreground mt-0.5">负责人: {head.name}</p>}
           </div>
@@ -88,9 +86,9 @@ function DeptCard({ node, users, currentUser, onEditDept, onEditUser, onMoveUser
                 {node.members.map((m) => (
                   <div key={m.id} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-muted/50 group" data-testid={`user-row-${m.id}`}>
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color ?? "#888" }} />
-                    <span className="text-sm font-medium flex-1 min-w-0 truncate">{m.name}</span>
+                    <span className="text-[13px] font-medium flex-1 min-w-0 truncate">{m.name}</span>
                     <span className="text-xs text-muted-foreground truncate max-w-[120px]">{m.title}</span>
-                    {m.id === node.dept.head_id && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">负责人</Badge>}
+                    {m.id === node.dept.head_id && <Badge variant="secondary" className="rounded-full text-xs font-medium border-0">负责人</Badge>}
                     {canEdit && (
                       <div className="hidden group-hover:flex items-center gap-1">
                         <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onEditUser(m)} data-testid={`button-edit-user-${m.id}`}>
@@ -107,7 +105,7 @@ function DeptCard({ node, users, currentUser, onEditDept, onEditUser, onMoveUser
             )}
           </div>
         )}
-      </Card>
+      </div>
 
       {node.children.length > 0 && expanded && (
         <div className="ml-6 mt-2">
@@ -160,7 +158,7 @@ function EditDeptDialog({ dept, users, open, onOpenChange }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent data-testid="dialog-edit-dept">
         <DialogHeader>
-          <DialogTitle>{isNew ? "新建部门" : "编辑部门"}</DialogTitle>
+          <DialogTitle className="text-base font-medium">{isNew ? "新建部门" : "编辑部门"}</DialogTitle>
           <DialogDescription>{isNew ? "创建一个新的部门" : `编辑 ${dept?.name}`}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -227,7 +225,7 @@ function EditUserDialog({ targetUser, departments, open, onOpenChange }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent data-testid="dialog-edit-user">
         <DialogHeader>
-          <DialogTitle>编辑人员 - {targetUser.name}</DialogTitle>
+          <DialogTitle className="text-base font-medium">编辑人员 - {targetUser.name}</DialogTitle>
           <DialogDescription>修改人员信息</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -285,7 +283,7 @@ function MoveUserDialog({ targetUser, departments, open, onOpenChange }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent data-testid="dialog-move-user">
         <DialogHeader>
-          <DialogTitle>人员调动 - {targetUser.name}</DialogTitle>
+          <DialogTitle className="text-base font-medium">人员调动 - {targetUser.name}</DialogTitle>
           <DialogDescription>将 {targetUser.name} 调往其他部门</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -331,12 +329,12 @@ function ApprovalCard({ change, users, isCeo }: { change: OrgChange; users: Safe
   });
 
   return (
-    <Card className="p-3" data-testid={`change-card-${change.id}`}>
+    <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden p-3" data-testid={`change-card-${change.id}`}>
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <Badge className={statusInfo.color}>{statusInfo.label}</Badge>
-            <span className="text-sm font-medium">{CHANGE_TYPE_LABELS[change.change_type] || change.change_type}</span>
+            <Badge className={`rounded-full text-xs font-medium border-0 ${statusInfo.color}`}>{statusInfo.label}</Badge>
+            <span className="text-[13px] font-medium">{CHANGE_TYPE_LABELS[change.change_type] || change.change_type}</span>
           </div>
           <p className="text-xs text-muted-foreground">
             {requester?.name || change.requested_by} · {change.created_at ? new Date(change.created_at).toLocaleString("zh-CN") : ""}
@@ -359,16 +357,16 @@ function ApprovalCard({ change, users, isCeo }: { change: OrgChange; users: Safe
         <div className="mt-3 space-y-2 border-t pt-2">
           <Textarea placeholder="审批备注（可选）" value={note} onChange={(e) => setNote(e.target.value)} className="text-sm" rows={2} data-testid={`input-review-note-${change.id}`} />
           <div className="flex justify-end gap-2">
-            <Button size="sm" variant="outline" onClick={() => approveMut.mutate("rejected")} disabled={approveMut.isPending} data-testid={`button-reject-${change.id}`}>
+            <Button size="sm" variant="outline" className="text-[13px]" onClick={() => approveMut.mutate("rejected")} disabled={approveMut.isPending} data-testid={`button-reject-${change.id}`}>
               <XCircle className="w-3.5 h-3.5 mr-1" /> 驳回
             </Button>
-            <Button size="sm" onClick={() => approveMut.mutate("approved")} disabled={approveMut.isPending} data-testid={`button-approve-${change.id}`}>
+            <Button size="sm" className="text-[13px]" onClick={() => approveMut.mutate("approved")} disabled={approveMut.isPending} data-testid={`button-approve-${change.id}`}>
               <CheckCircle className="w-3.5 h-3.5 mr-1" /> 通过
             </Button>
           </div>
         </div>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -422,7 +420,7 @@ export default function Organization() {
           </Button>
         </Link>
         <Building2 className="w-4 h-4 md:w-5 md:h-5 text-primary shrink-0" />
-        <h1 className="text-sm md:text-lg font-bold shrink-0">组织架构</h1>
+        <h1 className="text-[13px] md:text-lg font-medium shrink-0">组织架构</h1>
         <div className="flex-1" />
         {isCeoOrAdmin && (
           <Link href="/collaboration">
@@ -441,17 +439,17 @@ export default function Organization() {
       <div className="flex-1 min-h-0 overflow-hidden">
         <Tabs defaultValue="tree" className="flex flex-col h-full">
           <div className="px-4 pt-3">
-            <TabsList data-testid="org-tabs">
-              <TabsTrigger value="tree" data-testid="tab-tree">
+            <TabsList className="bg-transparent h-auto p-0 gap-0 rounded-none" data-testid="org-tabs">
+              <TabsTrigger value="tree" className="bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent" data-testid="tab-tree">
                 <Building2 className="w-4 h-4 mr-1" /> 组织树
               </TabsTrigger>
-              <TabsTrigger value="approvals" data-testid="tab-approvals">
+              <TabsTrigger value="approvals" className="bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent" data-testid="tab-approvals">
                 <Clock className="w-4 h-4 mr-1" /> 审批
                 {pendingChanges.length > 0 && (
-                  <Badge variant="destructive" className="ml-1 text-[10px] px-1 py-0 h-4">{pendingChanges.length}</Badge>
+                  <Badge variant="destructive" className="ml-1 rounded-full text-[10px] px-1 py-0 h-4">{pendingChanges.length}</Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="history" data-testid="tab-history">
+              <TabsTrigger value="history" className="bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent" data-testid="tab-history">
                 <CheckCircle className="w-4 h-4 mr-1" /> 变更历史
               </TabsTrigger>
             </TabsList>
