@@ -23,6 +23,7 @@ import {
   Plus, Trash2, BarChart3, Award, Zap, Download, X, ChevronDown, ChevronRight,
   CheckSquare, Send, Building2, GanttChart
 } from "lucide-react";
+import logoImg from '@assets/AD5CCB66-F553-4B90-AFBC-EEA51B534333_1771683834711.png';
 
 type AssigneeMap = Record<string, User[]>;
 interface TasksResponse { tasks: Task[]; assigneeMap: AssigneeMap; }
@@ -799,41 +800,44 @@ export default function Dashboard() {
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      <header className="sticky top-0 z-50 flex items-center justify-between gap-4 px-4 py-3 border-b bg-background" data-testid="header">
-        <h1 className="text-lg font-bold tracking-tight">德湃任务中心</h1>
-        <div className="flex items-center gap-2">
+      <header className="sticky top-0 z-50 flex items-center justify-between gap-2 px-3 md:px-4 py-2 md:py-3 border-b bg-background" data-testid="header">
+        <div className="flex items-center gap-2 shrink-0">
+          <img src={logoImg} alt="Deltapex" className="h-5 md:h-6 object-contain dark:invert" />
+          <span className="text-sm font-bold tracking-tight hidden sm:inline">任务中心</span>
+        </div>
+        <div className="flex items-center gap-1 md:gap-2 overflow-x-auto">
           {isCeoOrAdmin && (
             <Link href="/overview">
-              <Button variant="ghost" size="sm" data-testid="link-overview">
-                <BarChart3 className="w-4 h-4 mr-1" /> 概览
+              <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-overview">
+                <BarChart3 className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">概览</span>
               </Button>
             </Link>
           )}
           {isCeoOrAdmin && (
             <Link href="/evaluation">
-              <Button variant="ghost" size="sm" data-testid="link-evaluation">
-                <Award className="w-4 h-4 mr-1" /> 考核
+              <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-evaluation">
+                <Award className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">考核</span>
               </Button>
             </Link>
           )}
           {isCeoOrAdmin && (
             <Link href="/organization">
-              <Button variant="ghost" size="sm" data-testid="link-organization">
-                <Building2 className="w-4 h-4 mr-1" /> 组织
+              <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-organization">
+                <Building2 className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">组织</span>
               </Button>
             </Link>
           )}
           {isCeoOrAdmin && (
             <Link href="/gantt">
-              <Button variant="ghost" size="sm" data-testid="link-gantt">
-                <GanttChart className="w-4 h-4 mr-1" /> 甘特图
+              <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-gantt">
+                <GanttChart className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">甘特图</span>
               </Button>
             </Link>
           )}
           {user.role === "ceo" && (
             <Link href="/sync">
-              <Button variant="ghost" size="sm" data-testid="link-sync">
-                <RefreshCw className="w-4 h-4 mr-1" /> 同步
+              <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-sync">
+                <RefreshCw className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">同步</span>
               </Button>
             </Link>
           )}
@@ -841,6 +845,7 @@ export default function Dashboard() {
             <Button
               variant="ghost"
               size="sm"
+              className="h-8 px-2 md:px-3 shrink-0"
               onClick={async () => {
                 try {
                   const res = await fetch("/api/export/excel", { credentials: "include" });
@@ -849,7 +854,7 @@ export default function Dashboard() {
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement("a");
                   a.href = url;
-                  a.download = `德湃任务中心_导出_${new Date().toISOString().split("T")[0]}.xlsx`;
+                  a.download = `Deltapex_任务导出_${new Date().toISOString().split("T")[0]}.xlsx`;
                   a.click();
                   URL.revokeObjectURL(url);
                 } catch (err) {
@@ -857,15 +862,15 @@ export default function Dashboard() {
               }}
               data-testid="button-export-excel"
             >
-              <Download className="w-4 h-4 mr-1" /> 导出
+              <Download className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">导出</span>
             </Button>
           )}
           <NotificationBell />
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: user.color ?? "#888" }} />
-            <span className="text-sm font-medium" data-testid="text-username">{user.name}</span>
+            <span className="text-xs md:text-sm font-medium" data-testid="text-username">{user.name}</span>
           </div>
-          <Button size="icon" variant="ghost" onClick={() => logout()} data-testid="button-logout"><LogOut /></Button>
+          <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => logout()} data-testid="button-logout"><LogOut className="w-4 h-4" /></Button>
         </div>
       </header>
 

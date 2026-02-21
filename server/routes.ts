@@ -1194,7 +1194,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
     const todayStr = new Date().toISOString().split("T")[0];
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.xml");
-    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(`德湃任务中心_导出_${todayStr}.xlsx`)}`);
+    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(`Deltapex_任务导出_${todayStr}.xlsx`)}`);
     res.send(Buffer.from(buf));
   });
 

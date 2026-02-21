@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
-import { ClipboardList, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import logoImg from '@assets/AD5CCB66-F553-4B90-AFBC-EEA51B534333_1771683834711.png';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,11 +64,9 @@ export default function LoginPage() {
       <Card className="w-full max-w-sm relative z-10">
         <CardHeader className="space-y-2 text-center">
           <div className="flex justify-center mb-2">
-            <div className="p-3 rounded-lg bg-primary/10">
-              <ClipboardList className="w-6 h-6 text-primary" />
-            </div>
+            <img src={logoImg} alt="Deltapex" className="h-8 object-contain dark:invert" />
           </div>
-          <CardTitle className="text-3xl font-bold">德湃任务中心</CardTitle>
+          <CardTitle className="text-lg font-bold">任务中心</CardTitle>
           <CardDescription className="text-base">团队任务看板</CardDescription>
         </CardHeader>
 
