@@ -1,0 +1,300 @@
+# 德湃任务中心 V2 — 第1轮：核心骨架
+
+## 项目概述
+
+给16人金融教育公司做的团队任务看板。第1轮只做**登录 + 看板 + 状态管理 + JSON同步**。
+
+## 技术栈
+
+- **Next.js 14** (App Router)
+- **PostgreSQL**（Replit 自带，连接字符串从环境变量 `DATABASE_URL` 读取）
+- **Prisma** ORM
+- **JWT (jose)** 认证，httpOnly cookie
+- **Tailwind CSS**
+
+-----
+
+## 数据库表
+
+```sql
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  title TEXT,
+  dept TEXT,
+  role TEXT NOT NULL DEFAULT 'staff', -- ceo/admin/head/staff
+  invite_code TEXT UNIQUE NOT NULL,
+  color TEXT DEFAULT '#888',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE phases (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  date_range TEXT,
+  color TEXT,
+  sort_order INTEGER DEFAULT 0
+);
+
+CREATE TABLE tasks (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  phase TEXT REFERENCES phases(id),
+  deadline DATE NOT NULL,
+  grace_deadline DATE,
+  deliverable TEXT,
+  reviewer_id TEXT REFERENCES users(id),
+  feishu_link TEXT,
+  status TEXT DEFAULT 'pending', -- pending/active/review/done
+  priority INTEGER DEFAULT 0,   -- 0普通 1重要 2紧急
+  parent_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+  depends_on TEXT,
+  sort_order INTEGER DEFAULT 0,
+  created_by TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP
+);
+
+CREATE TABLE task_assignees (
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  PRIMARY KEY (task_id, user_id)
+);
+
+CREATE TABLE task_logs (
+  id SERIAL PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id TEXT,
+  action TEXT NOT NULL,
+  old_value TEXT,
+  new_value TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+-----
+
+## 权限（四级）
+
+```
+CEO (alex)    → 看全部，编辑全部，创建删除
+Admin (tina)  → 看全部，编辑全部（不能删除）
+Head (anzhou) → 看自己 + 销售部/BD部下属的任务
+Staff (其他)  → 只看自己的，只能改自己任务的状态
+```
+
+-----
+
+## 第1轮功能（只做4个）
+
+### 1. 邀请码登录
+
+- 输入邀请码 → 验证 → JWT(7天) → httpOnly cookie → 跳转 /dashboard
+- 登出清 cookie
+- 格式 `DP-XXXX-XXXX`
+
+### 2. 主看板（/dashboard）
+
+**三个 Tab：**
+
+- **我的任务**（所有人可见）：当前用户负责的任务，按阶段分组
+- **全部任务**（CEO/Admin看全部，Head看自己+部门）：按阶段分组，可按状态/人员筛选
+- **人员视图**（CEO/Admin可见）：按人分组，每人下面列任务
+
+**任务卡片显示：**
+
+- 标题 + 优先级标签（🔴紧急 🟡重要）
+- 负责人色块 + 姓名
+- 状态标签（灰pending / 蓝active / 橙review / 绿done）
+- 截止日期 + 逾期计算（⚡还剩X天 / 橙色宽限期 / 红色逾期X天）
+- 交付物名称
+
+**点击卡片展开详情：**
+
+- 描述、负责人、考核人、截止日期、宽限期、交付物
+- 状态切换按钮（pending → active → review → done）
+- 飞书链接编辑框
+- 操作日志列表
+
+### 3. 任务状态流转
+
+- 点击切换状态，写入 task_logs
+- 完成时填充 completed_at
+- 被依赖阻塞的任务显示🔒，不可切为 active（depends_on 中的任务未全部 done）
+
+### 4. JSON 粘贴同步页面（/dashboard/sync）⭐
+
+仅 CEO 可访问。页面有一个大文本框，粘贴 JSON 后先预览再确认执行。
+
+**JSON 格式（严格遵守）：**
+
+```json
+{
+  "sync_date": "2026-02-21",
+  "sync_by": "alex",
+  "summary": "说明（可选）",
+
+  "updates": [
+    {
+      "id": "t01",
+      "status": "done",
+      "note": "已完成，合同盘点表已归档"
+    }
+  ],
+
+  "new_tasks": [
+    {
+      "title": "【AI知识库】阶段一验收",
+      "description": "描述...",
+      "assignees": ["michael"],
+      "reviewer_id": "alex",
+      "deadline": "2026-02-18",
+      "grace_deadline": "2026-02-20",
+      "phase": "cny",
+      "priority": 1,
+      "deliverable": "验收通过/修改清单",
+      "status": "pending",
+      "depends_on": "t01,t02",
+      "subtasks": ["子任务1", "子任务2"]
+    }
+  ],
+
+  "new_comments": [
+    {
+      "task_id": "t07",
+      "content": "初稿已审阅，需要修改细节"
+    }
+  ]
+}
+```
+
+**字段说明：**
+
+updates 每条：id(必填), status, note, priority, deadline, grace_deadline, feishu_link — 都是可选更新
+
+new_tasks 每条：title+assignees+deadline(必填), 其余可选。reviewer_id 默认 “alex”，status 默认 “pending”。自动生成 id 格式 `t-{时间戳}`。subtasks 数组会创建为子任务（parent_id 指向主任务）。
+
+new_comments 每条：task_id+content(必填)，以当前用户身份发表。
+
+**处理流程：**
+
+1. 粘贴 JSON → 点「解析预览」→ 分三个表格展示：更新/新增/评论
+1. 不存在的任务ID、缺必填字段的条目标黄跳过，不影响其他
+1. 用户点「确认同步」→ 执行写入 → 显示结果：✅更新X条/新增X条/评论X条/⚠️跳过X条
+1. 页面底部显示最近10次同步历史
+
+页面上放一个「📋 粘贴示例」按钮，自动填入上面的示例 JSON。
+
+-----
+
+## UI 规范
+
+- 风格：干净专业，参考 Linear
+- 主色 #1B3A5C，背景 #F4F2ED，卡片白色
+- 状态色：灰pending / 蓝active / 橙review / 绿done / 红overdue
+- 手机端优先，中文界面
+- 字体：-apple-system, ‘PingFang SC’, sans-serif
+
+-----
+
+## 种子数据
+
+### 16个用户
+
+```js
+const USERS = [
+  {id:'alex',name:'Alex',title:'CEO / 首席讲师',dept:'CEO办公室',role:'ceo',code:'DP-ALEX-9k2m',color:'#C0392B'},
+  {id:'tina',name:'Tina',title:'行政人事 / 考核专员',dept:'综合部',role:'admin',code:'DP-TINA-8x3k',color:'#2E86AB'},
+  {id:'anzhou',name:'安洲',title:'销售+BD负责人',dept:'销售部+BD部',role:'head',code:'DP-AZ-7f4n',color:'#7B1FA2'},
+  {id:'anna',name:'Anna',title:'销售代表',dept:'销售部',role:'staff',code:'DP-ANNA-3r8p',color:'#00897B'},
+  {id:'sera',name:'Sera',title:'高级销售代表',dept:'销售部',role:'staff',code:'DP-SERA-5t2w',color:'#00897B'},
+  {id:'xiaoluo',name:'小罗',title:'销售代表',dept:'销售部',role:'staff',code:'DP-XL-6y9q',color:'#00897B'},
+  {id:'xiaoming',name:'小明',title:'高级剪辑师',dept:'IP内容中心',role:'staff',code:'DP-XM-4d7h',color:'#E65100'},
+  {id:'andy',name:'Andy',title:'编导兼剪辑',dept:'IP内容中心',role:'staff',code:'DP-ANDY-2k5j',color:'#E65100'},
+  {id:'guolinlin',name:'郭林林',title:'剪辑师',dept:'IP内容中心',role:'staff',code:'DP-GLL-8m3v',color:'#E65100'},
+  {id:'linyuanyuan',name:'林媛媛',title:'内容助理(实习)',dept:'IP内容中心',role:'staff',code:'DP-LYY-1n6b',color:'#E65100'},
+  {id:'slime',name:'史莱姆',title:'运营编导',dept:'IP内容中心',role:'staff',code:'DP-SLM-9p4c',color:'#E65100'},
+  {id:'apple',name:'Apple',title:'达人/出镜IP',dept:'IP内容中心',role:'staff',code:'DP-APL-7q2x',color:'#E65100'},
+  {id:'ljy',name:'刘建烨',title:'内容创作/直播',dept:'IP内容中心',role:'staff',code:'DP-LJY-3s8f',color:'#E65100'},
+  {id:'tzsh',name:'唐张世涵',title:'直播/达人',dept:'IP内容中心',role:'staff',code:'DP-TZSH-5w1g',color:'#E65100'},
+  {id:'michael',name:'Michael',title:'助教',dept:'教研部',role:'staff',code:'DP-MCL-6e4r',color:'#1565C0'},
+  {id:'xiehai',name:'谢海',title:'助教(储备讲师)',dept:'教研部',role:'staff',code:'DP-XH-2a7t',color:'#1565C0'},
+];
+```
+
+### 4个阶段
+
+```js
+const PHASES = [
+  {id:'p0pre',label:'P0 节前冲刺',date_range:'2/10-2/14',color:'#C0392B',sort_order:1},
+  {id:'cny',label:'🧧 春节假期',date_range:'2/15-2/23',color:'#E65100',sort_order:2},
+  {id:'p1w1',label:'P1 节后第1周',date_range:'2/24-2/28',color:'#E67E22',sort_order:3},
+  {id:'p2w23',label:'P2 节后2-3周',date_range:'3/2-3/13',color:'#27AE60',sort_order:4},
+];
+```
+
+### 40个任务
+
+```js
+const TASKS = [
+  // P0 节前冲刺
+  {id:'t01',title:'全员合同档案盘点',desc:'逐人核查16人合同签署状态',assignees:['tina'],reviewer:'alex',deadline:'2026-02-10',grace:'2026-02-11',phase:'p0pre',deliverable:'《合同状态一览表》'},
+  {id:'t02',title:'联系法务加急出协议模板(4份)',desc:'竞业禁止、知识产权归属、个人劳务合作、KPI绩效对赌',assignees:['tina'],reviewer:'alex',deadline:'2026-02-10',grace:'2026-02-11',phase:'p0pre',deliverable:'4份协议模板(Word)'},
+  {id:'t03',title:'启动史莱姆背景调查',desc:'核实学历、工作经历、前公司离职原因',assignees:['tina'],reviewer:'alex',deadline:'2026-02-10',grace:'2026-02-13',phase:'p0pre',deliverable:'背调报告'},
+  {id:'t04',title:'与刘建烨面谈—竞业+知识产权协议',desc:'竞业补偿金、离职后12个月禁止期、在职产出归属',assignees:['alex'],reviewer:'alex',deadline:'2026-02-11',grace:'2026-02-12',phase:'p0pre',deliverable:'已签竞业+IP协议',priority:1,depends_on:'t02'},
+  {id:'t05',title:'与唐张世涵面谈—重签合作协议+KPI',desc:'终止挂职模式，重签劳务合作协议',assignees:['alex'],reviewer:'alex',deadline:'2026-02-12',grace:'2026-02-13',phase:'p0pre',deliverable:'已签劳务合作协议',priority:1,depends_on:'t02'},
+  {id:'t06',title:'与Apple面谈—KPI绩效对赌协议',desc:'出镜/出勤/转化标准',assignees:['alex'],reviewer:'alex',deadline:'2026-02-13',grace:'2026-02-14',phase:'p0pre',deliverable:'已签KPI对赌协议',priority:1,depends_on:'t02'},
+  {id:'t07',title:'销售提成制度细则初稿',desc:'10%佣金包内部分配规则',assignees:['anzhou'],reviewer:'alex',deadline:'2026-02-14',grace:'2026-02-14',phase:'p0pre',deliverable:'《销售提成制度》初稿'},
+  {id:'t08',title:'节前收尾：文件归档+背调跟进',desc:'已签协议扫描存档',assignees:['tina'],reviewer:'alex',deadline:'2026-02-14',grace:'2026-02-14',phase:'p0pre',deliverable:'归档完成+背调报告'},
+  // 春节假期
+  {id:'t09',title:'思考安洲合伙人对赌条款细节',desc:'70万业绩起分线、30%分红公式、BD提成比例',assignees:['alex'],reviewer:'alex',deadline:'2026-02-23',grace:'2026-02-24',phase:'cny',deliverable:'条款备忘录'},
+  {id:'t10',title:'确定双主体软件进货价方案',desc:'德湃教育从科技采购软件定价',assignees:['alex'],reviewer:'alex',deadline:'2026-02-23',grace:'2026-02-24',phase:'cny',deliverable:'定价方案'},
+  {id:'t11',title:'拟定各岗位KPI具体数值',desc:'V3方案中所有数值逐项填入',assignees:['alex'],reviewer:'alex',deadline:'2026-02-23',grace:'2026-02-24',phase:'cny',deliverable:'KPI数值清单'},
+  {id:'t12',title:'审阅安洲销售提成制度初稿',desc:'核实10%佣金包分配是否合理',assignees:['alex'],reviewer:'alex',deadline:'2026-02-23',grace:'2026-02-24',phase:'cny',deliverable:'批注/修改意见'},
+  // P1 节后第1周
+  {id:'t13',title:'全员NDA统一签署',desc:'16人全员签署',assignees:['tina'],reviewer:'alex',deadline:'2026-02-24',grace:'2026-02-25',phase:'p1w1',deliverable:'16份已签NDA',depends_on:'t02',subtasks:['销售部3人NDA','IP内容中心剪辑师NDA','IP内容中心达人NDA','教研部NDA','Tina自己NDA','楚彤NDA']},
+  {id:'t14',title:'内容创作者知识产权归属协议签署',desc:'小明、Andy等6人签署',assignees:['tina'],reviewer:'alex',deadline:'2026-02-24',grace:'2026-02-25',phase:'p1w1',deliverable:'6份已签IP归属协议'},
+  {id:'t15',title:'史莱姆试用期协议签署',desc:'试用期协议+NDA+竞业',assignees:['tina'],reviewer:'alex',deadline:'2026-02-24',grace:'2026-02-25',phase:'p1w1',deliverable:'已签试用期协议',depends_on:'t03'},
+  {id:'t16',title:'与安洲面谈—合伙人对赌+BD部启动',desc:'70万线/30%分红/BD提成/职责边界',assignees:['alex'],reviewer:'alex',deadline:'2026-02-24',grace:'2026-02-25',phase:'p1w1',deliverable:'确认条款',priority:1,depends_on:'t09,t12'},
+  {id:'t17',title:'BD部启动计划书',desc:'三条业务线启动节奏',assignees:['anzhou'],reviewer:'alex',deadline:'2026-02-25',grace:'2026-02-26',phase:'p1w1',deliverable:'《BD部启动计划书》'},
+  {id:'t18',title:'IP合作协议业务条款草案',desc:'运营管理服务范围、利润分成',assignees:['anzhou'],reviewer:'alex',deadline:'2026-02-25',grace:'2026-02-26',phase:'p1w1',deliverable:'IP合作业务条款草案'},
+  {id:'t19',title:'渠道分销体系方案',desc:'渠道等级、佣金比例、入驻标准',assignees:['anzhou'],reviewer:'alex',deadline:'2026-02-26',grace:'2026-02-27',phase:'p1w1',deliverable:'《渠道分销体系方案》'},
+  {id:'t20',title:'团长裂变体系方案',desc:'有赞分销等级、佣金规则',assignees:['anzhou'],reviewer:'alex',deadline:'2026-02-26',grace:'2026-02-27',phase:'p1w1',deliverable:'《团长裂变体系方案》'},
+  {id:'t21',title:'账号实名资源解决方案',desc:'梳理账号实名困境',assignees:['anzhou'],reviewer:'alex',deadline:'2026-02-26',grace:'2026-02-27',phase:'p1w1',deliverable:'《账号实名解决方案》'},
+  {id:'t22',title:'双主体关联交易定价决策',desc:'确定进货价→通知代账',assignees:['alex'],reviewer:'alex',deadline:'2026-02-25',grace:'2026-02-26',phase:'p1w1',deliverable:'定价方案'},
+  {id:'t23',title:'起草：合伙人对赌+双主体关联交易协议',desc:'基于确认条款起草正式文本',assignees:['tina'],reviewer:'alex',deadline:'2026-02-26',grace:'2026-02-27',phase:'p1w1',deliverable:'两份协议初稿',depends_on:'t16,t22'},
+  {id:'t24',title:'薪酬体系说明书+佣金结算规则',desc:'各岗位薪酬结构',assignees:['tina'],reviewer:'alex',deadline:'2026-02-26',grace:'2026-02-27',phase:'p1w1',deliverable:'薪酬说明+结算规则'},
+  {id:'t25',title:'竞业补偿金发放台账建档',desc:'竞业协议需有补偿金记录',assignees:['tina'],reviewer:'alex',deadline:'2026-02-26',grace:'2026-02-27',phase:'p1w1',deliverable:'《竞业补偿金台账》'},
+  {id:'t26',title:'KPI绩效考核制度终稿审批',desc:'Tina汇总，Alex确认签字',assignees:['alex'],reviewer:'alex',deadline:'2026-02-26',grace:'2026-02-27',phase:'p1w1',deliverable:'签字确认的《KPI制度》',depends_on:'t11'},
+  {id:'t27',title:'全员会议—新架构+KPI宣贯',desc:'IP内容CEO直管，BD部成立',assignees:['alex'],reviewer:'alex',deadline:'2026-02-27',grace:'2026-02-27',phase:'p1w1',deliverable:'会议纪要+签到',priority:1,depends_on:'t23,t26'},
+  {id:'t28',title:'审批安洲提交的BD方案',desc:'BD启动计划、IP合作条款等4份方案',assignees:['alex'],reviewer:'alex',deadline:'2026-02-27',grace:'2026-02-28',phase:'p1w1',deliverable:'批注后的4份方案',depends_on:'t17,t18,t19,t20'},
+  {id:'t29',title:'销售SOP流程文档',desc:'客资跟进流程、私域话术',assignees:['anzhou'],reviewer:'alex',deadline:'2026-02-28',grace:'2026-03-02',phase:'p1w1',deliverable:'《销售SOP》'},
+  {id:'t30',title:'本周签署文件全部归档',desc:'全部扫描+纸质双备份',assignees:['tina'],reviewer:'alex',deadline:'2026-02-28',grace:'2026-03-02',phase:'p1w1',deliverable:'归档完成'},
+  // P2 节后2-3周
+  {id:'t31',title:'员工手册初稿编写',desc:'考勤、请假、奖惩、行为规范',assignees:['tina'],reviewer:'alex',deadline:'2026-03-03',grace:'2026-03-05',phase:'p2w23',deliverable:'《员工手册》初稿'},
+  {id:'t32',title:'退费管理办法起草',desc:'2025年退费243万，需规范流程',assignees:['tina'],reviewer:'alex',deadline:'2026-03-03',grace:'2026-03-05',phase:'p2w23',deliverable:'《退费管理办法》'},
+  {id:'t33',title:'将安洲BD方案包装成正式协议(3份)',desc:'IP合作+渠道分销+团长分销',assignees:['tina'],reviewer:'alex',deadline:'2026-03-04',grace:'2026-03-06',phase:'p2w23',deliverable:'3份BD协议模板',depends_on:'t28'},
+  {id:'t34',title:'渠道商/团长推广素材包',desc:'产品介绍、课程卖点、佣金说明',assignees:['anzhou'],reviewer:'alex',deadline:'2026-03-04',grace:'2026-03-06',phase:'p2w23',deliverable:'推广素材包'},
+  {id:'t35',title:'首批BD目标清单+洽谈计划',desc:'Q1目标IP≥3个、渠道≥5个',assignees:['anzhou'],reviewer:'alex',deadline:'2026-03-05',grace:'2026-03-07',phase:'p2w23',deliverable:'《Q1 BD目标清单》'},
+  {id:'t36',title:'审批—员工手册+退费办法+BD协议模板',desc:'审批后定稿归档',assignees:['alex'],reviewer:'alex',deadline:'2026-03-06',grace:'2026-03-09',phase:'p2w23',deliverable:'审批签字后归档',depends_on:'t31,t32,t33'},
+  {id:'t37',title:'审批—推广素材包+BD目标清单',desc:'确认后BD正式外拓',assignees:['alex'],reviewer:'alex',deadline:'2026-03-06',grace:'2026-03-09',phase:'p2w23',deliverable:'审批通过',depends_on:'t34,t35'},
+  {id:'t38',title:'补充文件起草(6份)',desc:'离职交接/印章管理/学员信息保护等',assignees:['tina'],reviewer:'alex',deadline:'2026-03-11',grace:'2026-03-13',phase:'p2w23',deliverable:'6份补充文件'},
+  {id:'t39',title:'全部文件归档整理',desc:'四层结构，电子+纸质双备份',assignees:['tina'],reviewer:'alex',deadline:'2026-03-12',grace:'2026-03-13',phase:'p2w23',deliverable:'完整文件夹体系'},
+  {id:'t40',title:'三方对账—建档完成检查',desc:'逐项核查建档清单',assignees:['alex','tina','anzhou'],reviewer:'alex',deadline:'2026-03-13',grace:'2026-03-13',phase:'p2w23',deliverable:'《建档完成确认书》',priority:1,depends_on:'t36,t37,t38,t39',subtasks:['P0文件到位确认','P1文件到位确认','P2进度跟踪','安洲BD文件归档确认','双主体分账文件确认','缺失项清单']},
+];
+```
+
+-----
+
+## 验收清单
+
+- [ ] 邀请码登录正常（DP-ALEX-9k2m 能登录）
+- [ ] CEO 看到全部40个任务
+- [ ] 安洲只看到自己的+销售部/BD部下属任务
+- [ ] 普通员工只看自己的
+- [ ] 任务状态切换正常，日志有记录
+- [ ] 依赖阻塞🔒正常
+- [ ] JSON同步页面：粘贴→预览→确认→写入 全流程正常
+- [ ] 手机适配正常
