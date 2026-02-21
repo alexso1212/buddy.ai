@@ -218,6 +218,18 @@ export class DatabaseStorage {
     return Number(result[0]?.cnt ?? 0) > 0;
   }
 
+  async hasLogToday(taskId: string, action: string): Promise<boolean> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const result = await db.select({ cnt: count() }).from(task_logs)
+      .where(and(
+        eq(task_logs.task_id, taskId),
+        eq(task_logs.action, action),
+        gte(task_logs.created_at, today),
+      ));
+    return Number(result[0]?.cnt ?? 0) > 0;
+  }
+
   // ---- Comments ----
   async createComment(c: { task_id: string; user_id: string; content: string; }): Promise<Comment> {
     const [result] = await db.insert(comments).values(c).returning();

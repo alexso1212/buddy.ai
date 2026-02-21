@@ -80,7 +80,11 @@ async function autoUnblockCheck(completedTaskId: string) {
   }
 }
 
+let checkDeadlinesRunning = false;
 async function checkDeadlines() {
+  if (checkDeadlinesRunning) return;
+  checkDeadlinesRunning = true;
+  try {
   const allTasks = await storage.getAllTasks();
   const now = new Date();
   const today = now.toISOString().split("T")[0];
@@ -117,7 +121,10 @@ async function checkDeadlines() {
       }
 
       if (overdueDays >= 3) {
-        await storage.addLog({ task_id: task.id, action: "system_urge", new_value: `逾期${overdueDays}天，系统自动催办` }).catch(() => {});
+        const hasLog = await storage.hasLogToday(task.id, "system_urge");
+        if (!hasLog) {
+          await storage.addLog({ task_id: task.id, action: "system_urge", new_value: `逾期${overdueDays}天，系统自动催办` }).catch(() => {});
+        }
       }
 
       if (overdueDays >= 7) {
@@ -130,6 +137,9 @@ async function checkDeadlines() {
         }
       }
     }
+  }
+  } finally {
+    checkDeadlinesRunning = false;
   }
 }
 
