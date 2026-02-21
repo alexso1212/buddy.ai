@@ -843,7 +843,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.createOrgChange({ requested_by: user.id, change_type: changeType, target_type: "user", target_id: targetId, old_value: { name: target.name, title: target.title, dept_id: target.dept_id, role: target.role, color: target.color }, new_value: updates, status: "approved" });
       return res.json(stripInviteCode(updated!));
     } else {
-      const change = await storage.createOrgChange({ requested_by: user.id, change_type: "user_edit", target_type: "user", target_id: targetId, old_value: { name: target.name, title: target.title, dept_id: target.dept_id, role: target.role, color: target.color }, new_value: updates, status: "pending" });
+      const changeType = updates.dept_id !== undefined && updates.dept_id !== target.dept_id ? "user_move" : "user_edit";
+      const change = await storage.createOrgChange({ requested_by: user.id, change_type: changeType, target_type: "user", target_id: targetId, old_value: { name: target.name, title: target.title, dept_id: target.dept_id, role: target.role, color: target.color }, new_value: updates, status: "pending" });
       return res.json({ pending: true, change });
     }
   });

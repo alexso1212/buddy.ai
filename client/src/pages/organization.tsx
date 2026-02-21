@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -131,10 +131,12 @@ function EditDeptDialog({ dept, users, open, onOpenChange }: {
 
   const isNew = !dept;
 
-  useState(() => {
-    if (dept) { setName(dept.name); setColor(dept.color || "#888"); setHeadId(dept.head_id || ""); }
-    else { setName(""); setColor("#888888"); setHeadId(""); }
-  });
+  useEffect(() => {
+    if (open) {
+      if (dept) { setName(dept.name); setColor(dept.color || "#888"); setHeadId(dept.head_id || ""); }
+      else { setName(""); setColor("#888888"); setHeadId(""); }
+    }
+  }, [dept, open]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -197,9 +199,13 @@ function EditDeptDialog({ dept, users, open, onOpenChange }: {
 function EditUserDialog({ targetUser, departments, open, onOpenChange }: {
   targetUser: SafeUser | null; departments: Department[]; open: boolean; onOpenChange: (v: boolean) => void;
 }) {
-  const [title, setTitle] = useState(targetUser?.title || "");
-  const [color, setColor] = useState(targetUser?.color || "#888");
+  const [title, setTitle] = useState("");
+  const [color, setColor] = useState("#888");
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (open && targetUser) { setTitle(targetUser.title || ""); setColor(targetUser.color || "#888"); }
+  }, [targetUser, open]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -251,8 +257,12 @@ function EditUserDialog({ targetUser, departments, open, onOpenChange }: {
 function MoveUserDialog({ targetUser, departments, open, onOpenChange }: {
   targetUser: SafeUser | null; departments: Department[]; open: boolean; onOpenChange: (v: boolean) => void;
 }) {
-  const [deptId, setDeptId] = useState(targetUser?.dept_id || "");
+  const [deptId, setDeptId] = useState("");
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (open && targetUser) { setDeptId(targetUser.dept_id || ""); }
+  }, [targetUser, open]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -305,7 +315,7 @@ function ApprovalCard({ change, users, isCeo }: { change: OrgChange; users: Safe
   const { toast } = useToast();
   const requester = users.find((u) => u.id === change.requested_by);
   const reviewer = change.reviewed_by ? users.find((u) => u.id === change.reviewed_by) : null;
-  const statusInfo = STATUS_LABELS[change.status] || STATUS_LABELS.pending;
+  const statusInfo = STATUS_LABELS[change.status || "pending"] || STATUS_LABELS.pending;
 
   const approveMut = useMutation({
     mutationFn: async (status: string) => {
@@ -331,9 +341,9 @@ function ApprovalCard({ change, users, isCeo }: { change: OrgChange; users: Safe
           <p className="text-xs text-muted-foreground">
             {requester?.name || change.requested_by} · {change.created_at ? new Date(change.created_at).toLocaleString("zh-CN") : ""}
           </p>
-          {change.new_value && (
+          {change.new_value != null && (
             <div className="mt-2 text-xs bg-muted/50 rounded p-2">
-              <pre className="whitespace-pre-wrap">{JSON.stringify(change.new_value, null, 2)}</pre>
+              <pre className="whitespace-pre-wrap">{String(JSON.stringify(change.new_value, null, 2))}</pre>
             </div>
           )}
           {reviewer && change.status !== "pending" && (
