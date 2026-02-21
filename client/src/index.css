@@ -43,7 +43,7 @@
   --chart-3: 142 76% 28%;
   --chart-4: 262 52% 35%;
   --chart-5: 0 72% 35%;
-  --font-sans: Open Sans, sans-serif;
+  --font-sans: -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: Menlo, monospace;
   --radius: .5rem;
