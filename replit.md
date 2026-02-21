@@ -1,7 +1,7 @@
 # 德湃任务中心 (Depai Task Center)
 
 ## Overview
-Team task management board for a 16-person financial education company. V1: Login + Dashboard + Status management + JSON sync. V2: Notifications, Comments, Subtasks, Attachments, Automation Engine, KPI Evaluation, Overview Analytics. V3: Organization management, approval workflow, D3.js collaboration graph. V4: Evaluation dashboard analytics (radar/bar charts), Gantt chart, Excel export.
+Team task management board for a 16-person financial education company. V1: Login + Dashboard + Status management + JSON sync. V2: Notifications, Comments, Subtasks, Attachments, Automation Engine, KPI Evaluation, Overview Analytics. V3: Organization management, approval workflow, D3.js collaboration graph. V4: Evaluation dashboard analytics (radar/bar charts), Gantt chart, Excel export. V5A: Project layer (projects + modules as organizational layers above tasks).
 
 ## Tech Stack
 - Express.js + Vite + React (TypeScript)
@@ -15,7 +15,7 @@ Team task management board for a 16-person financial education company. V1: Logi
 - SheetJS (xlsx) for Excel export
 
 ## Project Structure
-- `shared/schema.ts` - Database schema (users, phases, tasks, task_assignees, task_logs, notifications, comments, eval_periods, eval_scores, eval_rules, attachments, departments, org_changes)
+- `shared/schema.ts` - Database schema (users, phases, projects, modules, tasks, task_assignees, task_logs, notifications, comments, eval_periods, eval_scores, eval_rules, attachments, departments, org_changes)
 - `server/storage.ts` - DatabaseStorage class with Drizzle ORM
 - `server/routes.ts` - API routes with JWT auth middleware
 - `client/src/lib/auth.tsx` - AuthProvider context
@@ -28,6 +28,9 @@ Team task management board for a 16-person financial education company. V1: Logi
 - `client/src/pages/organization.tsx` - Organization management (dept tree, edit, approval workflow, history)
 - `client/src/pages/collaboration.tsx` - D3.js force-directed collaboration graph
 - `client/src/pages/gantt.tsx` - Gantt chart (CEO/Admin only, pure CSS+JS)
+- `client/src/pages/projects.tsx` - Project list page (all users)
+- `client/src/pages/project-detail.tsx` - Project detail page with module progress, task list
+- `client/src/pages/project-wizard.tsx` - 6-step Typeform-style project creation wizard
 
 ## Key Features
 1. Invite code login (format: DP-XXXX-XXXX)
@@ -48,6 +51,7 @@ Team task management board for a 16-person financial education company. V1: Logi
 16. Evaluation Dashboard: radar chart (6-axis, current vs previous period), team ranking table (sortable, trend arrows), department comparison stacked bar chart
 17. Gantt Chart: pure CSS+JS timeline with status-colored bars, grace period extensions, dependency arrows (SVG), overdue indicators, phase collapse, day/week toggle, filters
 18. Excel Export: 3-sheet .xlsx download (任务明细, 人员统计, 考核报告) with SheetJS
+19. Project layer: projects + modules as 2D organizational layer (project=WHY, phase=WHEN), project list, detail page, 6-step creation wizard, dashboard project filter/grouping
 
 ## Roles
 - CEO (alex): Full access, evaluation override, urge capability
@@ -73,6 +77,8 @@ Team task management board for a 16-person financial education company. V1: Logi
 - GET /api/org-changes, PATCH /api/org-changes/:id (approval workflow)
 - GET /api/collaboration (force-directed graph data)
 - GET /api/export/excel (3-sheet .xlsx download, CEO/Admin only)
+- GET/POST /api/projects, GET/PATCH /api/projects/:id, POST /api/projects/:id/complete
+- GET/POST /api/modules, GET/PATCH /api/modules/:id, DELETE /api/modules/:id
 
 ## Automation Engine
 - Runs passively on GET /api/tasks (no cron needed)
@@ -99,3 +105,4 @@ Team task management board for a 16-person financial education company. V1: Logi
 - 2026-02-21: V4.2 Navigation + Task Detail Panel - Added back/home button to Gantt page header (desktop+mobile), TaskDetailPanel with full task info + upstream/downstream dependency visualization (replaces analysis panel when active), click-to-view on both desktop and mobile, mobile bottom sheet layout
 - 2026-02-21: V4.3 Interactive Org Tree - Top-down tree visualization with CSS connecting lines, CEO root node with departments below, expandable role cards (3 tabs: 人员/职能&KPI/利益), person popovers with dept task stats, planned departments (dashed border + 待招), status dots (green/yellow/red), mobile vertical layout, /api/departments/stats endpoint, 5 new department fields (description, kpi_description, compensation_note, budget_note, is_planned), dept hierarchy (运营总部 → 销售部/业务拓展部/市场部)
 - 2026-02-21: V4.4 Mubu-Style Dual View Org Page - Complete rewrite with two renderers: OrgOutline (Mubu-style nested bullet list with focus mode + breadcrumbs, expand/collapse, person popovers) and OrgMindmapSvg (SVG-based tree: horizontal L-R on desktop, vertical top-down on mobile, pinch-zoom/pan, fold/unfold with child count, long-press focus mode, rounded polyline connectors). Shared OrgDetailPanel (400px side panel desktop, 70vh bottom sheet mobile, 3 tabs: 人员/职能&KPI/利益). useOrgData hook for single data fetch. Tab bar: 大纲/导图/审批. Semantic color system (completion borders, workload bg tints, urgency dots). OrgColorLegend bar. /api/users/stats endpoint
+- 2026-02-21: V5A Project Layer - projects + modules tables, tasks extended with project_id/module_id/related_project_ids/is_milestone, 5 seeded projects + 16 modules + all 40 tasks mapped, project list page (/projects), project detail page (/project/:id) with module progress + task grouping + edit/complete, 6-step Typeform-style project creation wizard (/projects/new), dashboard project filter + group-by-project toggle, role-based visibility (CEO sees all, others see owned/created/assigned), server-side id generation + Zod validation

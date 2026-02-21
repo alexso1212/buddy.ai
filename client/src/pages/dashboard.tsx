@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn, getStatusColor, getStatusLabel, getPriorityLabel, getDeadlineInfo } from "@/lib/utils";
-import type { Task, Phase, User } from "@shared/schema";
+import type { Task, Phase, User, Project } from "@shared/schema";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   LogOut, Lock, Save, ExternalLink, RefreshCw, Bell, MessageSquare, Paperclip,
   Plus, Trash2, BarChart3, Award, Zap, Download, X, ChevronDown, ChevronRight,
-  CheckSquare, Send, Building2, GanttChart
+  CheckSquare, Send, Building2, GanttChart, FolderKanban
 } from "lucide-react";
 import logoImg from '@assets/AD5CCB66-F553-4B90-AFBC-EEA51B534333_1771683834711.png';
 
@@ -735,6 +735,51 @@ function PersonSection({
   );
 }
 
+function ProjectSection({
+  project, tasks, assigneeMap, allTasks, allUsers, selectedTask, onSelectTask, defaultCollapsed = true,
+}: {
+  project: { id: string; title: string; color: string | null }; tasks: Task[]; assigneeMap: AssigneeMap; allTasks: Task[]; allUsers: User[]; selectedTask: Task | null; onSelectTask: (task: Task | null) => void; defaultCollapsed?: boolean;
+}) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const doneCount = tasks.filter(t => t.status === 'done').length;
+  const progress = tasks.length > 0 ? Math.round((doneCount / tasks.length) * 100) : 0;
+
+  return (
+    <div className="mb-6">
+      <div
+        className="flex items-center justify-between gap-2 px-3 py-2 mb-2 flex-wrap cursor-pointer select-none"
+        style={{ borderLeft: `3px solid ${project.color ?? '#6B7280'}` }}
+        onClick={() => setCollapsed(!collapsed)}
+        data-testid={`toggle-project-${project.id}`}
+      >
+        <div className="flex items-center gap-1.5">
+          {collapsed ? <ChevronRight className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+          <FolderKanban className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="font-medium text-sm">{project.title}</span>
+          <span className="text-xs text-muted-foreground">({tasks.length})</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-16 h-1 bg-muted rounded-full overflow-hidden">
+            <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, backgroundColor: project.color ?? '#6B7280' }} />
+          </div>
+          <span className="text-xs text-muted-foreground">{progress}%</span>
+        </div>
+      </div>
+      {!collapsed && (
+        <div className="space-y-2">
+          {tasks.map((task) => (
+            <TaskCard key={task.id} task={task} assignees={assigneeMap[task.id] ?? []} allTasks={allTasks} onClick={() => onSelectTask(task)} />
+          ))}
+          {tasks.length === 0 && <p className="text-[13px] text-muted-foreground text-center py-8">暂无数据</p>}
+        </div>
+      )}
+      {selectedTask && tasks.some((t) => t.id === selectedTask.id) && (
+        <TaskDetailDialog task={selectedTask} assignees={assigneeMap[selectedTask.id] ?? []} allTasks={allTasks} allUsers={allUsers} open={true} onOpenChange={(o) => { if (!o) onSelectTask(null); }} />
+      )}
+    </div>
+  );
+}
+
 function LoadingSkeleton() {
   return (
     <div className="space-y-4 p-4">
@@ -755,6 +800,8 @@ export default function Dashboard() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [personFilter, setPersonFilter] = useState("all");
+  const [projectFilter, setProjectFilter] = useState("all");
+  const [groupByProject, setGroupByProject] = useState(false);
 
   if (!user) { setLocation("/"); return null; }
 
@@ -765,9 +812,11 @@ export default function Dashboard() {
   const { data: peopleData, isLoading: peopleLoading } = useQuery<TasksResponse>({ queryKey: ["/api/tasks?view=people"], enabled: isCeoOrAdmin });
   const { data: phasesData } = useQuery<Phase[]>({ queryKey: ["/api/phases"] });
   const { data: usersData } = useQuery<User[]>({ queryKey: ["/api/users"] });
+  const { data: projectsData } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
 
   const phases = phasesData ?? [];
   const allUsers = usersData ?? [];
+  const projects = projectsData ?? [];
 
   const groupByPhase = (tasks: Task[]) => {
     const grouped: Record<string, Task[]> = {};
@@ -785,8 +834,19 @@ export default function Dashboard() {
     let filtered = allData.tasks;
     if (statusFilter !== "all") filtered = filtered.filter((t) => t.status === statusFilter);
     if (personFilter !== "all") filtered = filtered.filter((t) => (allData.assigneeMap[t.id] ?? []).some((a) => a.id === personFilter));
+    if (projectFilter !== "all") filtered = filtered.filter((t) => t.project_id === projectFilter);
     return filtered;
-  }, [allData, statusFilter, personFilter]);
+  }, [allData, statusFilter, personFilter, projectFilter]);
+
+  const groupByProjectFn = (tasks: Task[]) => {
+    const grouped: Record<string, Task[]> = {};
+    for (const t of tasks) {
+      const key = t.project_id ?? "_none";
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(t);
+    }
+    return grouped;
+  };
 
   const groupByPerson = (tasks: Task[], aMap: AssigneeMap) => {
     const grouped: Record<string, Task[]> = {};
@@ -814,6 +874,11 @@ export default function Dashboard() {
           <span className="text-sm font-medium tracking-tight hidden sm:inline">任务中心</span>
         </div>
         <div className="flex items-center gap-1 md:gap-2 overflow-x-auto">
+          <Link href="/projects">
+            <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-projects">
+              <FolderKanban className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">项目</span>
+            </Button>
+          </Link>
           {isCeoOrAdmin && (
             <Link href="/overview">
               <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-overview">
@@ -935,25 +1000,58 @@ export default function Dashboard() {
                 {allUsers.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Select value={projectFilter} onValueChange={setProjectFilter}>
+              <SelectTrigger className="w-[120px] h-8 text-[13px]" data-testid="select-project-filter"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部项目</SelectItem>
+                {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Button
+              variant={groupByProject ? "secondary" : "ghost"}
+              size="sm"
+              className="h-8 px-2 text-[13px] shrink-0"
+              onClick={() => setGroupByProject(!groupByProject)}
+              data-testid="button-toggle-group-project"
+            >
+              <FolderKanban className="w-3.5 h-3.5 mr-1" />
+              按项目
+            </Button>
           </div>
           <ScrollArea className="h-full">
             <div className="p-4">
               {allLoading ? <LoadingSkeleton /> : filteredAllTasks.length === 0 ? (
                 <p className="text-[13px] text-muted-foreground text-center py-8" data-testid="text-empty-all">暂无数据</p>
               ) : (() => {
-                const grouped = groupByPhase(filteredAllTasks);
-                const allTasksList = allData?.tasks ?? [];
-                const aMap = allData?.assigneeMap ?? {};
-                return (
-                  <>
-                    {phases.map((phase) => grouped[phase.id]?.length ? (
-                      <PhaseSection key={phase.id} phase={phase} tasks={grouped[phase.id]} assigneeMap={aMap} allTasks={allTasksList} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} defaultCollapsed={true} />
-                    ) : null)}
-                    {grouped["_none"]?.length > 0 && (
-                      <PhaseSection phase={{ id: "_none", label: "未分类", date_range: null, color: "#888", sort_order: 999 }} tasks={grouped["_none"]} assigneeMap={aMap} allTasks={allTasksList} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} defaultCollapsed={true} />
-                    )}
-                  </>
-                );
+                if (groupByProject) {
+                  const grouped = groupByProjectFn(filteredAllTasks);
+                  const allTasksList = allData?.tasks ?? [];
+                  const aMap = allData?.assigneeMap ?? {};
+                  return (
+                    <>
+                      {projects.map((p) => grouped[p.id]?.length ? (
+                        <ProjectSection key={p.id} project={p} tasks={grouped[p.id]} assigneeMap={aMap} allTasks={allTasksList} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} />
+                      ) : null)}
+                      {grouped["_none"]?.length > 0 && (
+                        <ProjectSection project={{ id: "_none", title: "未分组", color: "#888" }} tasks={grouped["_none"]} assigneeMap={aMap} allTasks={allTasksList} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} />
+                      )}
+                    </>
+                  );
+                } else {
+                  const grouped = groupByPhase(filteredAllTasks);
+                  const allTasksList = allData?.tasks ?? [];
+                  const aMap = allData?.assigneeMap ?? {};
+                  return (
+                    <>
+                      {phases.map((phase) => grouped[phase.id]?.length ? (
+                        <PhaseSection key={phase.id} phase={phase} tasks={grouped[phase.id]} assigneeMap={aMap} allTasks={allTasksList} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} defaultCollapsed={true} />
+                      ) : null)}
+                      {grouped["_none"]?.length > 0 && (
+                        <PhaseSection phase={{ id: "_none", label: "未分类", date_range: null, color: "#888", sort_order: 999 }} tasks={grouped["_none"]} assigneeMap={aMap} allTasks={allTasksList} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} defaultCollapsed={true} />
+                      )}
+                    </>
+                  );
+                }
               })()}
             </div>
           </ScrollArea>

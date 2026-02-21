@@ -11,6 +11,8 @@ import {
   type Attachment,
   type Department,
   type OrgChange,
+  type Project,
+  type Module,
   users,
   phases,
   tasks,
@@ -24,6 +26,8 @@ import {
   attachments,
   departments,
   org_changes,
+  projects,
+  modules,
   analysis_cache,
 } from "@shared/schema";
 import { eq, inArray, and, desc, sql, like, gte, lte, ne, count, asc, or } from "drizzle-orm";
@@ -416,6 +420,105 @@ export class DatabaseStorage {
   async upsertAnalysisCache(id: string, data: any): Promise<void> {
     await db.insert(analysis_cache).values({ id, data, computed_at: new Date() })
       .onConflictDoUpdate({ target: analysis_cache.id, set: { data, computed_at: new Date() } });
+  }
+
+  // ---- Projects ----
+  async getAllProjects(): Promise<Project[]> {
+    return db.select().from(projects).orderBy(asc(projects.sort_order));
+  }
+
+  async getProjectById(id: string): Promise<Project | undefined> {
+    const [result] = await db.select().from(projects).where(eq(projects.id, id));
+    return result;
+  }
+
+  async createProject(project: {
+    id: string; title: string; description?: string; objective?: string;
+    acceptance_criteria?: string; owner_id?: string; created_by?: string;
+    deadline?: string; status?: string; priority?: number; scope?: string;
+    department_id?: string; color?: string; sort_order?: number;
+  }): Promise<Project> {
+    const [result] = await db.insert(projects).values(project).returning();
+    return result;
+  }
+
+  async updateProject(id: string, updates: Partial<{
+    title: string; description: string; objective: string; acceptance_criteria: string;
+    owner_id: string; deadline: string; status: string; priority: number;
+    scope: string; department_id: string; color: string; sort_order: number;
+    completed_at: Date | null;
+  }>): Promise<Project | undefined> {
+    const [result] = await db.update(projects).set(updates).where(eq(projects.id, id)).returning();
+    return result;
+  }
+
+  async getVisibleProjects(userId: string, userRole: string): Promise<Project[]> {
+    if (userRole === 'ceo') {
+      return db.select().from(projects).orderBy(asc(projects.sort_order));
+    }
+    // Get projects where user is owner, creator, or assigned to a task in the project
+    const assignedProjectIds = await db
+      .selectDistinct({ project_id: tasks.project_id })
+      .from(tasks)
+      .innerJoin(task_assignees, eq(tasks.id, task_assignees.task_id))
+      .where(and(eq(task_assignees.user_id, userId), sql`${tasks.project_id} IS NOT NULL`));
+    
+    const projectIds = assignedProjectIds.map(r => r.project_id).filter(Boolean) as string[];
+    
+    const conditions = [
+      eq(projects.owner_id, userId),
+      eq(projects.created_by, userId),
+    ];
+    if (projectIds.length > 0) {
+      conditions.push(inArray(projects.id, projectIds));
+    }
+    
+    return db.select().from(projects).where(or(...conditions)).orderBy(asc(projects.sort_order));
+  }
+
+  async getProjectTaskStats(projectId: string): Promise<{ total: number; done: number; active: number; overdue: number }> {
+    const projectTasks = await db.select().from(tasks).where(eq(tasks.project_id, projectId));
+    const today = new Date().toISOString().split('T')[0];
+    return {
+      total: projectTasks.length,
+      done: projectTasks.filter(t => t.status === 'done').length,
+      active: projectTasks.filter(t => t.status === 'active').length,
+      overdue: projectTasks.filter(t => t.status !== 'done' && t.deadline && t.deadline < today).length,
+    };
+  }
+
+  // ---- Modules ----
+  async getModulesByProjectId(projectId: string): Promise<Module[]> {
+    return db.select().from(modules).where(eq(modules.project_id, projectId)).orderBy(asc(modules.sort_order));
+  }
+
+  async getModuleById(id: string): Promise<Module | undefined> {
+    const [result] = await db.select().from(modules).where(eq(modules.id, id));
+    return result;
+  }
+
+  async createModule(mod: {
+    id: string; project_id: string; title: string; description?: string; sort_order?: number;
+  }): Promise<Module> {
+    const [result] = await db.insert(modules).values(mod).returning();
+    return result;
+  }
+
+  async updateModule(id: string, updates: Partial<{ title: string; description: string; sort_order: number }>): Promise<Module | undefined> {
+    const [result] = await db.update(modules).set(updates).where(eq(modules.id, id)).returning();
+    return result;
+  }
+
+  async deleteModule(id: string): Promise<void> {
+    await db.delete(modules).where(eq(modules.id, id));
+  }
+
+  async getTasksByProjectId(projectId: string): Promise<Task[]> {
+    return db.select().from(tasks).where(eq(tasks.project_id, projectId));
+  }
+
+  async getTasksByModuleId(moduleId: string): Promise<Task[]> {
+    return db.select().from(tasks).where(eq(tasks.module_id, moduleId));
   }
 }
 

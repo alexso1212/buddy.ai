@@ -39,6 +39,34 @@ export const phases = pgTable("phases", {
   sort_order: integer("sort_order").default(0),
 });
 
+export const projects = pgTable("projects", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  objective: text("objective"),
+  acceptance_criteria: text("acceptance_criteria"),
+  owner_id: text("owner_id").references(() => users.id),
+  created_by: text("created_by").references(() => users.id),
+  deadline: text("deadline"),
+  status: text("status").default("active"),
+  priority: integer("priority").default(1),
+  scope: text("scope").default("company"),
+  department_id: text("department_id").references(() => departments.id),
+  color: text("color"),
+  sort_order: integer("sort_order").default(0),
+  created_at: timestamp("created_at").defaultNow(),
+  completed_at: timestamp("completed_at"),
+});
+
+export const modules = pgTable("modules", {
+  id: text("id").primaryKey(),
+  project_id: text("project_id").notNull().references(() => projects.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  sort_order: integer("sort_order").default(0),
+  created_at: timestamp("created_at").defaultNow(),
+});
+
 export const tasks = pgTable("tasks", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
@@ -53,6 +81,10 @@ export const tasks = pgTable("tasks", {
   priority: integer("priority").default(0),
   parent_id: text("parent_id"),
   depends_on: text("depends_on"),
+  project_id: text("project_id").references(() => projects.id),
+  module_id: text("module_id").references(() => modules.id),
+  related_project_ids: text("related_project_ids").array(),
+  is_milestone: boolean("is_milestone").default(false),
   sort_order: integer("sort_order").default(0),
   created_by: text("created_by"),
   created_at: timestamp("created_at").defaultNow(),
@@ -159,6 +191,7 @@ export const org_changes = pgTable("org_changes", {
   reviewed_at: timestamp("reviewed_at"),
 });
 
+
 export const insertDepartmentSchema = createInsertSchema(departments).omit({
   created_at: true,
 });
@@ -227,6 +260,15 @@ export const insertOrgChangeSchema = createInsertSchema(org_changes).omit({
   reviewed_at: true,
 });
 
+export const insertProjectSchema = createInsertSchema(projects).omit({
+  created_at: true,
+  completed_at: true,
+});
+
+export const insertModuleSchema = createInsertSchema(modules).omit({
+  created_at: true,
+});
+
 export type InsertDepartment = z.infer<typeof insertDepartmentSchema>;
 export type Department = typeof departments.$inferSelect;
 
@@ -265,3 +307,9 @@ export type Attachment = typeof attachments.$inferSelect;
 
 export type InsertOrgChange = z.infer<typeof insertOrgChangeSchema>;
 export type OrgChange = typeof org_changes.$inferSelect;
+
+export type InsertProject = z.infer<typeof insertProjectSchema>;
+export type Project = typeof projects.$inferSelect;
+
+export type InsertModule = z.infer<typeof insertModuleSchema>;
+export type Module = typeof modules.$inferSelect;

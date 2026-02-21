@@ -13,18 +13,24 @@ import Evaluation from "@/pages/evaluation";
 import Organization from "@/pages/organization";
 import Collaboration from "@/pages/collaboration";
 import GanttChart from "@/pages/gantt";
+import ProjectDetail from "@/pages/project-detail";
+import Projects from "@/pages/projects";
+import ProjectWizard from "@/pages/project-wizard";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={LoginPage} />
       <Route path="/dashboard" component={Dashboard} />
+      <Route path="/projects" component={Projects} />
+      <Route path="/projects/new" component={ProjectWizard} />
       <Route path="/overview" component={Overview} />
       <Route path="/evaluation" component={Evaluation} />
       <Route path="/sync" component={SyncPage} />
       <Route path="/organization" component={Organization} />
       <Route path="/collaboration" component={Collaboration} />
       <Route path="/gantt" component={GanttChart} />
+      <Route path="/project/:id" component={ProjectDetail} />
       <Route component={NotFound} />
     </Switch>
   );

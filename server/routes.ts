@@ -6,7 +6,8 @@ import cookieParser from "cookie-parser";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import type { User } from "@shared/schema";
+import type { User, Project, Module } from "@shared/schema";
+import { insertProjectSchema, insertModuleSchema } from "@shared/schema";
 import * as XLSX from "xlsx";
 
 declare global {
@@ -1682,6 +1683,216 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const data = await computeAnalysis();
     await storage.upsertAnalysisCache("daily", data);
     return res.json(data);
+  });
+
+  // ---- Projects ----
+  app.get("/api/projects", authMiddleware, async (req, res) => {
+    try {
+      const user = req.user!;
+      const projects = await storage.getVisibleProjects(user.id, user.role);
+      const projectsWithStats = await Promise.all(projects.map(async (p) => {
+        const stats = await storage.getProjectTaskStats(p.id);
+        const mods = await storage.getModulesByProjectId(p.id);
+        return { ...p, stats, moduleCount: mods.length };
+      }));
+      res.json(projectsWithStats);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/projects/:id", authMiddleware, async (req, res) => {
+    try {
+      const id = req.params.id as string;
+      const project = await storage.getProjectById(id);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+      if (userRole !== 'ceo') {
+        const visibleProjects = await storage.getVisibleProjects(userId, userRole);
+        if (!visibleProjects.some(p => p.id === project.id)) {
+          return res.status(403).json({ message: "No access to this project" });
+        }
+      }
+
+      const mods = await storage.getModulesByProjectId(project.id);
+      const projectTasks = await storage.getTasksByProjectId(project.id);
+      const taskIds = projectTasks.map(t => t.id);
+      const assigneeMap = await storage.getAssigneesForTasks(taskIds);
+
+      const moduleStats = mods.map(m => {
+        const modTasks = projectTasks.filter(t => t.module_id === m.id);
+        const today = new Date().toISOString().split('T')[0];
+        return {
+          ...m,
+          taskCount: modTasks.length,
+          doneCount: modTasks.filter(t => t.status === 'done').length,
+          overdueCount: modTasks.filter(t => t.status !== 'done' && t.deadline && t.deadline < today).length,
+          blockedCount: modTasks.filter(t => t.status === 'pending' && t.depends_on).length,
+        };
+      });
+
+      const unassignedTasks = projectTasks.filter(t => !t.module_id);
+
+      const stats = await storage.getProjectTaskStats(project.id);
+      res.json({ project, modules: moduleStats, tasks: projectTasks, assigneeMap, stats, unassignedTasks });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/projects", authMiddleware, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { modules: moduleList, ...rawData } = req.body;
+
+      const id = 'proj_' + Date.now();
+      const allowedFields: Record<string, any> = { id };
+      const allowed = ['title', 'objective', 'acceptance_criteria', 'owner_id', 'deadline', 'priority', 'color', 'scope', 'description', 'sort_order'];
+      for (const key of allowed) {
+        if (rawData[key] !== undefined) allowedFields[key] = rawData[key];
+      }
+
+      const parsed = insertProjectSchema.parse(allowedFields);
+      const projectData: any = { ...parsed, id };
+      projectData.created_by = user.id;
+      if (!projectData.owner_id) projectData.owner_id = user.id;
+
+      const scope = projectData.scope || 'company';
+      if (scope === 'company' && user.role !== 'ceo') {
+        return res.status(403).json({ message: "Only CEO can create company-wide projects" });
+      }
+
+      const project = await storage.createProject(projectData);
+
+      if (Array.isArray(moduleList) && moduleList.length > 0) {
+        for (let i = 0; i < moduleList.length; i++) {
+          const mod = moduleList[i];
+          await storage.createModule({
+            id: mod.id || `mod_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}_${i}`,
+            project_id: project.id,
+            title: mod.title,
+            description: mod.description,
+            sort_order: mod.sort_order ?? i + 1,
+          });
+        }
+      }
+
+      res.json(project);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.patch("/api/projects/:id", authMiddleware, async (req, res) => {
+    try {
+      const id = req.params.id as string;
+      const user = req.user!;
+      const project = await storage.getProjectById(id);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+
+      if (user.id !== project.owner_id && user.id !== project.created_by && user.role !== 'ceo') {
+        return res.status(403).json({ message: "No permission" });
+      }
+
+      const allowedPatchFields = ['title', 'objective', 'acceptance_criteria', 'deadline', 'priority', 'color', 'scope', 'description', 'sort_order', 'owner_id'];
+      const patchData: Record<string, any> = {};
+      for (const key of allowedPatchFields) {
+        if (req.body[key] !== undefined) patchData[key] = req.body[key];
+      }
+
+      const updated = await storage.updateProject(id, patchData);
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/projects/:id/complete", authMiddleware, async (req, res) => {
+    try {
+      const id = req.params.id as string;
+      const user = req.user!;
+      const project = await storage.getProjectById(id);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+
+      if (user.id !== project.owner_id && user.role !== 'ceo') {
+        return res.status(403).json({ message: "Only project owner or CEO can complete a project" });
+      }
+
+      const updated = await storage.updateProject(id, {
+        status: 'completed',
+        completed_at: new Date(),
+      });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ---- Modules ----
+  app.get("/api/projects/:id/modules", authMiddleware, async (req, res) => {
+    try {
+      const id = req.params.id as string;
+      const mods = await storage.getModulesByProjectId(id);
+      res.json(mods);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/projects/:id/modules", authMiddleware, async (req, res) => {
+    try {
+      const projectId = req.params.id as string;
+      const id = 'mod_' + Date.now();
+      const moduleData = insertModuleSchema.parse({
+        id,
+        project_id: projectId,
+        title: req.body.title,
+        sort_order: req.body.sort_order ?? 0,
+      });
+      const mod = await storage.createModule(moduleData);
+      res.json(mod);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.patch("/api/modules/:id", authMiddleware, async (req, res) => {
+    try {
+      const id = req.params.id as string;
+      const updated = await storage.updateModule(id, req.body);
+      if (!updated) return res.status(404).json({ message: "Module not found" });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.delete("/api/modules/:id", authMiddleware, async (req, res) => {
+    try {
+      const id = req.params.id as string;
+      const moduleTasks = await storage.getTasksByModuleId(id);
+      if (moduleTasks.length > 0) {
+        return res.status(400).json({ message: "Cannot delete module with existing tasks. Move or delete tasks first." });
+      }
+      await storage.deleteModule(id);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/projects/:id/tasks", authMiddleware, async (req, res) => {
+    try {
+      const id = req.params.id as string;
+      const projectTasks = await storage.getTasksByProjectId(id);
+      const taskIds = projectTasks.map(t => t.id);
+      const assigneeMap = await storage.getAssigneesForTasks(taskIds);
+      res.json({ tasks: projectTasks, assigneeMap });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
   });
 
   return httpServer;
