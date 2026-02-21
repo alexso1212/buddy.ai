@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import {
   ChevronDown, ChevronRight, CalendarDays, ZoomIn, ZoomOut, Maximize2,
   RefreshCw, AlertTriangle, Clock, Users, Link2, ChevronLeft, BarChart3, ArrowLeft,
-  X, CheckCircle2, ArrowRightCircle
+  X, CheckCircle2, ArrowRightCircle, Bot
 } from "lucide-react";
 
 type AssigneeMap = Record<string, User[]>;
@@ -25,6 +25,7 @@ interface AnalysisData {
   workload: any[];
   nextWeekLookahead: any;
   computedAt: string;
+  ai?: { summary: string; suggestions: string[] } | null;
 }
 
 const ROW_HEIGHT = 36;
@@ -657,6 +658,27 @@ export default function GanttChart() {
               更新: {new Date(analysisData.computedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
             </p>
           )}
+
+          <section data-testid="analysis-ai" className="rounded-lg border border-blue-200 dark:border-blue-800 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-blue-950/20 dark:to-indigo-950/20 p-3">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <Bot className="w-3.5 h-3.5 text-blue-500" />
+              <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">AI 分析建议</span>
+            </div>
+            {analysisData.ai ? (
+              <div className="space-y-1.5">
+                <p className="text-[11px] text-foreground">{analysisData.ai.summary}</p>
+                {analysisData.ai.suggestions.length > 0 && (
+                  <ul className="space-y-0.5 pl-3">
+                    {analysisData.ai.suggestions.map((s: string, i: number) => (
+                      <li key={i} className="text-[10px] text-muted-foreground list-disc">{s}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : (
+              <p className="text-[10px] text-blue-500/70 dark:text-blue-400/60">AI 分析功能即将上线，敬请期待</p>
+            )}
+          </section>
 
           <section data-testid="analysis-blockers">
             <div className="flex items-center gap-1.5 mb-2">

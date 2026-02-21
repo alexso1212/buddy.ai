@@ -1327,6 +1327,25 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ---- Analysis ----
+  /**
+   * Placeholder for AI-powered analysis.
+   * Will call external LLM API to generate natural language insights
+   * based on rule engine output.
+   * 
+   * Input: ruleAnalysis object (blockers, dueThisWeek, workload, nextWeek, criticalPath)
+   * Output: { summary: string, suggestions: string[] } | null
+   * 
+   * Future implementation will:
+   * 1. Convert ruleAnalysis to a prompt
+   * 2. Call AI API
+   * 3. Parse response into summary + action suggestions
+   * 4. Return structured result
+   */
+  async function generateAIAnalysis(_ruleAnalysis: any): Promise<{ summary: string; suggestions: string[] } | null> {
+    // TODO: Implement when AI API key is configured
+    return null;
+  }
+
   async function computeAnalysis() {
     const allTasks = await storage.getAllTasks();
     const mainTasks = allTasks.filter((t) => !t.parent_id);
@@ -1537,7 +1556,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       dateRange: `${nextWeekStart.getMonth() + 1}/${nextWeekStart.getDate()}-${nextWeekEnd.getMonth() + 1}/${nextWeekEnd.getDate()}`,
     };
 
-    return {
+    // Stage 1: Rule engine (implemented)
+    const ruleAnalysis = {
       blockers,
       criticalPath: {
         path: criticalPath.path.map((id) => {
@@ -1550,6 +1570,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       workload,
       nextWeekLookahead,
       computedAt: now.toISOString(),
+    };
+
+    // Stage 2: AI analysis (placeholder, implement later)
+    const aiAnalysis = await generateAIAnalysis(ruleAnalysis);
+
+    return {
+      ...ruleAnalysis,
+      ai: aiAnalysis,
     };
   }
 
