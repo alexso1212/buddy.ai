@@ -1851,7 +1851,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         title: req.body.title,
         sort_order: req.body.sort_order ?? 0,
       });
-      const mod = await storage.createModule(moduleData);
+      const mod = await storage.createModule({
+        ...moduleData,
+        description: moduleData.description ?? undefined,
+        sort_order: moduleData.sort_order ?? undefined,
+      });
       res.json(mod);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
