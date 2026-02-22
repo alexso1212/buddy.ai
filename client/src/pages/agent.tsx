@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
-import { Trash2 } from "lucide-react";
+import { Trash2, Sparkles, ListPlus, BarChart3, Users, CheckSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface ActionPayload {
@@ -49,6 +49,13 @@ const defaultWelcomeMessage: Message = {
   content: "你好！我是 AI 助手，可以帮你管理任务、创建项目、查询进度。请告诉我你需要什么帮助？",
   type: "text",
 };
+
+const SUGGESTIONS = [
+  { text: "创建新任务", icon: ListPlus },
+  { text: "查看项目进度", icon: BarChart3 },
+  { text: "分析团队负载", icon: Users },
+  { text: "查询待办事项", icon: CheckSquare },
+];
 
 let msgCounter = 0;
 function nextId() {
@@ -356,50 +363,79 @@ export default function Agent() {
     []
   );
 
+  const isWelcomeOnly = messages.length === 1 && messages[0].role === "assistant" && messages[0].content === defaultWelcomeMessage.content;
+
   return (
-    <div className="flex flex-col h-full -m-6" data-testid="agent-page">
-      <div className="bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-4 flex items-start justify-between gap-4" data-testid="agent-header">
-        <div>
-          <h1 className="text-xl font-bold text-white">AI 助手</h1>
-          <p className="text-sm text-white/70">智能任务管理助手，帮你高效管理工作</p>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          data-testid="btn-clear-chat"
-          onClick={handleClearChat}
-          className="text-white hover:bg-white/20 no-default-hover-elevate shrink-0 mt-1"
-        >
-          <Trash2 className="w-5 h-5" />
-        </Button>
-      </div>
-
-      <div ref={scrollRef} className="flex-1 overflow-y-auto py-4" data-testid="agent-messages">
-        <div className="max-w-3xl mx-auto space-y-1">
-          {messages.map((msg) => (
-            <AiMessageBubble
-              key={msg.id}
-              message={msg}
-              onConfirm={handleConfirm}
-              onReject={handleReject}
-              onSkip={handleSkip}
-              onFollowUpSubmit={handleFollowUpSubmit}
-            />
-          ))}
-          {loading && (
-            <div className="flex justify-start px-4 py-1">
-              <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1">
-                <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:0ms]" />
-                <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:150ms]" />
-                <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:300ms]" />
-              </div>
+    <div className="flex flex-col h-full -m-6 bg-transparent" data-testid="agent-page">
+      {isWelcomeOnly ? (
+        <div className="flex-1 flex flex-col items-center justify-center px-4">
+          <div className="flex flex-col items-center gap-4 mb-8">
+            <div className="w-12 h-12 rounded-full bg-brand flex items-center justify-center">
+              <Sparkles className="w-6 h-6 text-white" />
             </div>
-          )}
+            <h1 className="font-serif text-2xl text-[var(--text-primary)]">有什么可以帮你的？</h1>
+          </div>
+          <div className="grid grid-cols-2 gap-3 w-full max-w-md">
+            {SUGGESTIONS.map((s) => {
+              const SIcon = s.icon;
+              return (
+                <button
+                  key={s.text}
+                  onClick={() => handleSend(s.text)}
+                  className="rounded-card border border-[var(--border-subtle)] hover:bg-black/5 dark:hover:bg-white/5 p-4 cursor-pointer text-left transition-colors"
+                  data-testid={`suggestion-${s.text}`}
+                >
+                  <SIcon className="w-4 h-4 text-[var(--text-secondary)] mb-2" />
+                  <span className="text-sm text-[var(--text-primary)]">{s.text}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto py-4 relative" ref={scrollRef} data-testid="agent-messages">
+          <div className="absolute top-2 right-2 z-10">
+            <Button
+              variant="ghost"
+              size="icon"
+              data-testid="btn-clear-chat"
+              onClick={handleClearChat}
+              className="text-[var(--text-secondary)] no-default-hover-elevate"
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </div>
+          <div className="max-w-3xl mx-auto space-y-1">
+            {messages.map((msg) => (
+              <AiMessageBubble
+                key={msg.id}
+                message={msg}
+                onConfirm={handleConfirm}
+                onReject={handleReject}
+                onSkip={handleSkip}
+                onFollowUpSubmit={handleFollowUpSubmit}
+              />
+            ))}
+            {loading && (
+              <div className="flex justify-start px-4 py-1">
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-brand flex items-center justify-center flex-shrink-0">
+                    <Sparkles className="w-3 h-3 text-white" />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-2 h-2 bg-[var(--text-secondary)] rounded-full animate-bounce [animation-delay:0ms]" />
+                    <span className="w-2 h-2 bg-[var(--text-secondary)] rounded-full animate-bounce [animation-delay:150ms]" />
+                    <span className="w-2 h-2 bg-[var(--text-secondary)] rounded-full animate-bounce [animation-delay:300ms]" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
-      <div className="border-t border-border bg-card" data-testid="agent-input">
-        <div className="max-w-3xl mx-auto">
+      <div className="bg-transparent" data-testid="agent-input">
+        <div className="max-w-3xl mx-auto px-4 pb-[env(safe-area-inset-bottom)]">
           <AiInputBar onSend={handleSend} loading={loading} />
         </div>
       </div>

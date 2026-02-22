@@ -13,13 +13,24 @@
   --opaque-button-border-intensity: -8;
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
-  --background: 30 6% 98%;
+  --bg-primary: #F5F5F0;
+  --bg-sidebar: #EEECE7;
+  --bg-composer: #FFFFFF;
+  --bg-bubble: #DDD9CE;
+  --bg-code: #F7F5F2;
+  --text-primary: #1A1A18;
+  --text-secondary: #6B6A68;
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --overlay: rgba(0, 0, 0, 0.3);
+  --brand: #AE5630;
+  --brand-hover: #C4633A;
+  --background: 40 11% 95%;
   --foreground: 0 0% 10%;
   --border: 0 0% 90%;
-  --card: 0 0% 100%;
+  --card: 40 11% 97%;
   --card-foreground: 0 0% 10%;
   --card-border: 0 0% 93%;
-  --sidebar: 0 0% 11%;
+  --sidebar: 37 6% 14%;
   --sidebar-foreground: 0 0% 96%;
   --sidebar-border: 0 0% 16%;
   --sidebar-primary: 0 0% 96%;
@@ -30,7 +41,7 @@
   --popover: 0 0% 100%;
   --popover-foreground: 0 0% 10%;
   --popover-border: 0 0% 90%;
-  --primary: 0 0% 11%;
+  --primary: 16 60% 43%;
   --primary-foreground: 0 0% 98%;
   --secondary: 0 0% 96%;
   --secondary-foreground: 0 0% 10%;
@@ -41,15 +52,15 @@
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
   --input: 0 0% 82%;
-  --ring: 0 0% 11%;
+  --ring: 16 60% 43%;
   --chart-1: 217 71% 53%;
   --chart-2: 25 85% 45%;
   --chart-3: 160 60% 45%;
   --chart-4: 262 52% 47%;
   --chart-5: 0 72% 51%;
-  --font-sans: -apple-system, 'PingFang SC', 'Noto Sans SC', sans-serif;
-  --font-serif: Georgia, serif;
-  --font-mono: Menlo, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', sans-serif;
+  --font-serif: Georgia, 'Noto Serif SC', 'Source Han Serif', serif;
+  --font-mono: 'SF Mono', 'Fira Code', Menlo, Consolas, monospace;
   --radius: .5rem;
   --shadow-2xs: 0 1px 0 rgba(0,0,0,0.02);
   --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
@@ -84,13 +95,22 @@
   --opaque-button-border-intensity: 9;
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
-  --background: 0 0% 7%;
+  --bg-primary: #2B2A27;
+  --bg-sidebar: #242320;
+  --bg-composer: #1F1E1B;
+  --bg-bubble: #393937;
+  --bg-code: #1A1917;
+  --text-primary: #EEEEEE;
+  --text-secondary: #9A9893;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --overlay: rgba(0, 0, 0, 0.5);
+  --background: 40 4% 16%;
   --foreground: 0 0% 93%;
   --border: 0 0% 16%;
-  --card: 0 0% 10%;
+  --card: 40 5% 13%;
   --card-foreground: 0 0% 93%;
   --card-border: 0 0% 14%;
-  --sidebar: 0 0% 10%;
+  --sidebar: 43 5% 13%;
   --sidebar-foreground: 0 0% 90%;
   --sidebar-border: 0 0% 16%;
   --sidebar-primary: 217 71% 53%;
@@ -101,7 +121,7 @@
   --popover: 0 0% 12%;
   --popover-foreground: 0 0% 90%;
   --popover-border: 0 0% 18%;
-  --primary: 217 71% 53%;
+  --primary: 16 60% 43%;
   --primary-foreground: 0 0% 98%;
   --secondary: 0 0% 16%;
   --secondary-foreground: 0 0% 93%;
@@ -112,7 +132,7 @@
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
   --input: 0 0% 25%;
-  --ring: 217 71% 53%;
+  --ring: 16 60% 43%;
   --chart-1: 217 80% 60%;
   --chart-2: 25 90% 55%;
   --chart-3: 160 70% 50%;
@@ -232,4 +252,12 @@
   .border.hover-elevate:not(.no-hover-interaction-elevate)::after {
     inset: -1px;
   }
+}
+
+@keyframes messageIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.message-enter {
+  animation: messageIn 200ms ease-out forwards;
 }

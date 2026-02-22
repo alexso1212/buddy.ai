@@ -9,6 +9,10 @@ export default {
         lg: ".5625rem", /* 9px */
         md: ".375rem", /* 6px */
         sm: ".1875rem", /* 3px */
+        'bubble': '18px',
+        'composer': '20px',
+        'card': '12px',
+        'btn': '8px',
       },
       colors: {
         // Flat / base colors (regular buttons)
@@ -81,11 +85,47 @@ export default {
           busy: "rgb(239 68 68)",
           offline: "rgb(156 163 175)",
         },
+        brand: {
+          DEFAULT: '#AE5630',
+          hover: '#C4633A',
+          light: '#F0DDD4',
+          dark: '#8B4526',
+        },
+        page: {
+          light: '#F5F5F0',
+          dark: '#2B2A27',
+        },
+        'chat-sidebar': {
+          light: '#EEECE7',
+          dark: '#242320',
+        },
+        composer: {
+          light: '#FFFFFF',
+          dark: '#1F1E1B',
+        },
+        bubble: {
+          light: '#DDD9CE',
+          dark: '#393937',
+        },
+        codeblock: {
+          light: '#F7F5F2',
+          dark: '#1A1917',
+        },
+        'content-primary': { light: '#1A1A18', dark: '#EEEEEE' },
+        'content-secondary': { light: '#6B6A68', dark: '#9A9893' },
       },
       fontFamily: {
-        sans: ["var(--font-sans)"],
-        serif: ["var(--font-serif)"],
-        mono: ["var(--font-mono)"],
+        sans: ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', 'sans-serif'],
+        serif: ['Georgia', 'Noto Serif SC', 'Source Han Serif', 'serif'],
+        mono: ['SF Mono', 'Fira Code', 'Menlo', 'Consolas', 'monospace'],
+      },
+      boxShadow: {
+        'composer': '0 4px 20px rgba(0,0,0,0.035)',
+        'dropdown': '0 4px 24px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04)',
+        'sidebar': '4px 0 24px rgba(0,0,0,0.1)',
+      },
+      transitionTimingFunction: {
+        'brand': 'cubic-bezier(0.165, 0.85, 0.45, 1)',
       },
       keyframes: {
         "accordion-down": {

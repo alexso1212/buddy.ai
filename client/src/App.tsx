@@ -54,7 +54,7 @@ function ThemeToggle() {
   ];
 
   return (
-    <div className="flex items-center gap-1 rounded-lg bg-sidebar-accent/40 p-1" data-testid="theme-toggle">
+    <div className="flex items-center gap-1 rounded-lg bg-black/5 dark:bg-white/5 p-1" data-testid="theme-toggle">
       {options.map((opt) => {
         const Icon = opt.icon;
         const active = theme === opt.value;
@@ -65,8 +65,8 @@ function ThemeToggle() {
             className={cn(
               "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs transition-colors",
               active
-                ? "bg-sidebar-accent text-sidebar-foreground"
-                : "text-sidebar-foreground/50 hover:text-sidebar-foreground/80"
+                ? "bg-white dark:bg-white/10 shadow-sm text-[var(--text-primary)]"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
             )}
             data-testid={`theme-${opt.value}`}
           >
@@ -111,25 +111,25 @@ function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
       
       <aside
         className={cn(
-          "fixed left-0 top-0 h-screen w-60 bg-sidebar text-sidebar-foreground flex flex-col transition-transform duration-300 z-50",
+          "fixed left-0 top-0 h-screen w-60 bg-[var(--bg-sidebar)] text-[var(--text-primary)] flex flex-col transition-transform duration-300 z-50",
           "md:translate-x-0 md:relative md:z-auto",
           isOpen ? "translate-x-0" : "-translate-x-full"
         )}
         data-testid="sidebar"
       >
-        <div className="md:hidden flex items-center justify-between p-4 border-b border-sidebar-border">
-          <h1 className="text-lg font-bold">德湃任务中心</h1>
+        <div className="md:hidden flex items-center justify-between p-4 border-b border-[var(--border-subtle)]">
+          <h1 className="text-lg font-bold flex items-center gap-2"><span className="w-2 h-5 rounded-sm bg-brand inline-block"></span>德湃任务中心</h1>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-sidebar-accent rounded-md"
+            className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-md"
             data-testid="sidebar-close"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="hidden md:block p-6 border-b border-sidebar-border">
-          <h1 className="text-lg font-bold">德湃任务中心</h1>
+        <div className="hidden md:block p-6 border-b border-[var(--border-subtle)]">
+          <h1 className="text-lg font-bold flex items-center gap-2"><span className="w-2 h-5 rounded-sm bg-brand inline-block"></span>德湃任务中心</h1>
         </div>
 
         <nav className="flex-1 p-4 space-y-2">
@@ -145,8 +145,8 @@ function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
                 className={cn(
                   "flex items-center gap-3 px-4 py-2 rounded-md transition-colors",
                   active
-                    ? "bg-sidebar-accent text-sidebar-foreground"
-                    : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+                    ? "bg-brand/10 text-brand"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5"
                 )}
                 onClick={() => onClose()}
                 data-testid={testId}
@@ -163,11 +163,11 @@ function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
           })}
         </nav>
 
-        <div className="p-4 border-t border-sidebar-border space-y-3">
+        <div className="p-4 border-t border-[var(--border-subtle)] space-y-3">
           <ThemeToggle />
           <div className="text-sm">
-            <p className="font-medium">Alexso</p>
-            <p className="text-sidebar-foreground/60 text-xs">(Owner)</p>
+            <p className="font-medium text-[var(--text-primary)]">Alexso</p>
+            <p className="text-[var(--text-secondary)] text-xs">(Owner)</p>
           </div>
         </div>
       </aside>
@@ -199,18 +199,19 @@ function App() {
   return (
     <ThemeProvider>
     <QueryClientProvider client={queryClient}>
-      <div className="flex h-screen bg-background">
+      <div className="flex h-screen bg-[var(--bg-primary)]">
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
         <div className="flex-1 flex flex-col overflow-hidden">
-          <header className="md:hidden flex items-center gap-2 p-4 bg-card border-b border-border">
+          <header className="md:hidden flex items-center gap-2 p-4 bg-[var(--bg-primary)] border-b border-[var(--border-subtle)]">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 hover:bg-sidebar-accent rounded-md"
+              className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-md"
               data-testid="menu-toggle"
             >
               <Menu className="w-6 h-6" />
             </button>
+            <span className="text-base font-bold text-[var(--text-primary)]">德湃</span>
           </header>
 
           <main

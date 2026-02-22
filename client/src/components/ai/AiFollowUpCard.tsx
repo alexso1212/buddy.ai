@@ -67,7 +67,7 @@ export default function AiFollowUpCard({
 
   return (
     <div
-      className="rounded-xl bg-card border border-border overflow-hidden"
+      className="rounded-card bg-card border border-[var(--border-subtle)] overflow-hidden"
       data-testid="followup-card"
     >
       <div className="px-4 py-3 text-sm text-foreground font-medium">
@@ -92,9 +92,9 @@ export default function AiFollowUpCard({
                     className={cn(
                       "rounded-full text-sm px-3 py-1.5 transition-colors duration-150",
                       isSelected
-                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                        ? "bg-brand/10 text-brand"
                         : "bg-muted text-foreground",
-                      !submitted && !isSelected && "hover:bg-blue-50 dark:hover:bg-blue-900/20",
+                      !submitted && !isSelected && "hover:bg-brand/5",
                       submitted && "opacity-70 cursor-not-allowed"
                     )}
                     data-testid={`followup-option-${q.field}-${idx}`}
@@ -112,9 +112,9 @@ export default function AiFollowUpCard({
                     className={cn(
                       "rounded-full text-sm px-3 py-1.5 transition-colors duration-150 flex items-center gap-1",
                       usingCustom[q.field]
-                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                        ? "bg-brand/10 text-brand"
                         : "bg-muted text-foreground",
-                      !submitted && !usingCustom[q.field] && "hover:bg-blue-50 dark:hover:bg-blue-900/20",
+                      !submitted && !usingCustom[q.field] && "hover:bg-brand/5",
                       submitted && "opacity-70 cursor-not-allowed"
                     )}
                   >
@@ -144,7 +144,7 @@ export default function AiFollowUpCard({
         ))}
       </div>
 
-      <div className="px-4 py-3 border-t border-border">
+      <div className="px-4 py-3 border-t border-[var(--border-subtle)]">
         {!submitted ? (
           <button
             onClick={handleSubmit}
@@ -152,7 +152,7 @@ export default function AiFollowUpCard({
             className={cn(
               "flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150 w-full",
               allAnswered
-                ? "bg-blue-500 text-white"
+                ? "bg-brand text-white"
                 : "bg-muted text-muted-foreground cursor-not-allowed"
             )}
             data-testid="followup-confirm"
@@ -161,7 +161,7 @@ export default function AiFollowUpCard({
             确认
           </button>
         ) : (
-          <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 text-sm justify-center">
+          <div className="flex items-center gap-1.5 text-brand text-sm justify-center">
             <Check className="w-4 h-4" />
             已提交
           </div>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { Check } from "lucide-react";
+import { Check, Sparkles } from "lucide-react";
 import AiConfirmCard from "./AiConfirmCard";
 import AiFollowUpCard from "./AiFollowUpCard";
 
@@ -48,6 +48,14 @@ interface AiMessageBubbleProps {
   onFollowUpSubmit?: (messageId: string, mergedData: Record<string, any>) => void;
 }
 
+function BrandLogo() {
+  return (
+    <div className="w-6 h-6 rounded-full bg-brand flex items-center justify-center flex-shrink-0">
+      <Sparkles className="w-3 h-3 text-white" />
+    </div>
+  );
+}
+
 function MultiConfirmGroup({
   message,
   confirmStates,
@@ -82,8 +90,11 @@ function MultiConfirmGroup({
       data-testid={`ai-message-${message.id}`}
     >
       {message.content && (
-        <div className="max-w-[80%] px-4 py-2.5 text-sm bg-muted text-foreground rounded-2xl rounded-bl-sm whitespace-pre-wrap break-words">
-          {message.content}
+        <div className="flex gap-3 max-w-[80%]">
+          <BrandLogo />
+          <div className="font-serif text-sm text-[var(--text-primary)] whitespace-pre-wrap break-words pt-0.5">
+            {message.content}
+          </div>
         </div>
       )}
       {hasUndecided && (
@@ -94,8 +105,8 @@ function MultiConfirmGroup({
             className={cn(
               "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150",
               confirmingAll
-                ? "bg-emerald-400 text-white/80 cursor-not-allowed"
-                : "bg-emerald-500 text-white"
+                ? "bg-brand/80 text-white/80 cursor-not-allowed"
+                : "bg-brand text-white"
             )}
             data-testid={`confirm-all-${message.id}`}
           >
@@ -139,7 +150,7 @@ export default function AiMessageBubble({
           className={cn(
             "text-xs px-3 py-1 rounded-full",
             isSuccess
-              ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
+              ? "bg-brand/10 text-brand dark:text-brand-light"
               : "bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400"
           )}
         >
@@ -158,8 +169,8 @@ export default function AiMessageBubble({
         <div
           className={cn(
             "max-w-[80%] px-4 py-2.5 text-sm",
-            "bg-gradient-to-br from-blue-500 to-indigo-600 text-white",
-            "rounded-2xl rounded-br-sm",
+            "bg-[var(--bg-bubble)] text-[var(--text-primary)]",
+            "rounded-[18px] rounded-br-sm",
             "whitespace-pre-wrap break-words"
           )}
         >
@@ -233,15 +244,11 @@ export default function AiMessageBubble({
       className="flex justify-start px-4 py-1"
       data-testid={`ai-message-${message.id}`}
     >
-      <div
-        className={cn(
-          "max-w-[80%] px-4 py-2.5 text-sm",
-          "bg-muted text-foreground",
-          "rounded-2xl rounded-bl-sm",
-          "whitespace-pre-wrap break-words"
-        )}
-      >
-        {message.content}
+      <div className="flex gap-3 max-w-[80%]">
+        <BrandLogo />
+        <div className="font-serif text-sm text-[var(--text-primary)] whitespace-pre-wrap break-words pt-0.5">
+          {message.content}
+        </div>
       </div>
     </div>
   );

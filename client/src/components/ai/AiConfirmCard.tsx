@@ -33,32 +33,32 @@ interface AiConfirmCardProps {
 
 const ACTION_CONFIG: Record<
   string,
-  { icon: typeof Plus; label: string; borderColor: string }
+  { icon: typeof Plus; label: string; accentColor: string }
 > = {
   create_task: {
     icon: Plus,
     label: "创建任务",
-    borderColor: "border-l-emerald-500",
+    accentColor: "text-brand",
   },
   update_task: {
     icon: Edit,
     label: "更新任务",
-    borderColor: "border-l-blue-500",
+    accentColor: "text-blue-500",
   },
   create_project: {
     icon: FolderPlus,
     label: "创建项目",
-    borderColor: "border-l-violet-500",
+    accentColor: "text-brand",
   },
   add_comment: {
     icon: MessageCircle,
     label: "添加评论",
-    borderColor: "border-l-amber-500",
+    accentColor: "text-amber-500",
   },
   query_tasks: {
     icon: Search,
     label: "查询任务",
-    borderColor: "border-l-cyan-500",
+    accentColor: "text-[var(--text-secondary)]",
   },
 };
 
@@ -94,7 +94,7 @@ export default function AiConfirmCard({
   const config = ACTION_CONFIG[action.actionType] || {
     icon: Search,
     label: action.actionType,
-    borderColor: "border-l-gray-500",
+    accentColor: "text-[var(--text-secondary)]",
   };
   const Icon = config.icon;
   const cardId = index !== undefined ? `confirm-card-${index}` : "confirm-card";
@@ -102,15 +102,11 @@ export default function AiConfirmCard({
 
   return (
     <div
-      className={cn(
-        "rounded-xl bg-card border border-border overflow-hidden",
-        "border-l-4",
-        config.borderColor
-      )}
+      className="rounded-card bg-card border border-[var(--border-subtle)]"
       data-testid={cardId}
     >
-      <div className="flex items-center gap-2 px-4 py-3 bg-muted border-b border-border">
-        <Icon className="w-4 h-4 text-muted-foreground" />
+      <div className="flex items-center gap-2 px-4 py-3 bg-muted border-b border-[var(--border-subtle)] rounded-t-card">
+        <Icon className={cn("w-4 h-4", config.accentColor)} />
         <span className="text-sm font-medium text-foreground">
           {config.label}
         </span>
@@ -154,7 +150,7 @@ export default function AiConfirmCard({
         </div>
       )}
 
-      <div className="px-4 py-3 border-t border-border">
+      <div className="px-4 py-3 border-t border-[var(--border-subtle)]">
         {confirmed === null && !skipped && (
           <div className="flex items-center gap-2">
             <button
@@ -168,7 +164,7 @@ export default function AiConfirmCard({
               className={cn(
                 "flex-1 flex items-center justify-center gap-1.5",
                 "px-3 py-1.5 rounded-lg text-sm font-medium",
-                "bg-emerald-500 text-white",
+                "bg-brand text-white",
                 "transition-colors duration-150",
                 buttonsDisabled && "opacity-50 cursor-not-allowed"
               )}
