@@ -141,7 +141,7 @@ export async function chat(
 
   const response = await client.chat.completions.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 1024,
+    max_tokens: 4096,
     messages: [
       { role: 'system', content: systemPrompt },
       ...conversationHistory.map(msg => ({

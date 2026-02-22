@@ -77,7 +77,7 @@ export default function Agent() {
         } else if (data.type === "confirm" && data.action) {
           assistantContent = data.action.followUpQuestion || data.action.summary || "";
         } else if (data.type === "multi_confirm" && data.actions) {
-          assistantContent = data.actions.map((a: ActionPayload) => a.summary).join("\n");
+          assistantContent = data.message || data.actions.map((a: ActionPayload) => a.summary).join("\n");
         }
 
         conversationHistory.current.push({
