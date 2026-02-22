@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn, getStatusColor, getStatusLabel, getDeadlineInfo } from "@/lib/utils";
-import type { Task, User, Project, Module } from "@shared/schema";
+import type { Task, User, Project, Module, Phase } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -160,6 +161,11 @@ function EditProjectDialog({
   const [acceptanceCriteria, setAcceptanceCriteria] = useState(project.acceptance_criteria ?? "");
   const [deadline, setDeadline] = useState(project.deadline ?? "");
   const [ownerId, setOwnerId] = useState(project.owner_id ?? "");
+  const [memberIds, setMemberIds] = useState<string[]>(project.member_ids ?? []);
+
+  const toggleMember = (uid: string) => {
+    setMemberIds((prev) => prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid]);
+  };
 
   const updateMut = useMutation({
     mutationFn: async () => {
@@ -169,6 +175,7 @@ function EditProjectDialog({
         acceptance_criteria: acceptanceCriteria || null,
         deadline: deadline || null,
         owner_id: ownerId || null,
+        member_ids: memberIds,
       });
     },
     onSuccess: () => {
@@ -215,10 +222,209 @@ function EditProjectDialog({
               </SelectContent>
             </Select>
           </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">项目成员（可多选）</label>
+            <div className="grid grid-cols-3 gap-1.5 max-h-[160px] overflow-y-auto">
+              {allUsers.filter(u => u.is_active !== false && u.id !== ownerId).map((u) => (
+                <label key={u.id} className="flex items-center gap-1.5 px-2 py-1.5 rounded-md border cursor-pointer hover:bg-muted/50 text-sm" data-testid={`toggle-member-${u.id}`}>
+                  <input type="checkbox" checked={memberIds.includes(u.id)} onChange={() => toggleMember(u.id)} className="rounded" />
+                  <span className="w-4 h-4 rounded-full shrink-0 flex items-center justify-center text-[9px] text-white" style={{ backgroundColor: u.color ?? "#888" }}>{(u.name ?? "?")[0]}</span>
+                  <span className="truncate">{u.name}</span>
+                </label>
+              ))}
+            </div>
+          </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
             <Button onClick={() => updateMut.mutate()} disabled={!title.trim() || updateMut.isPending} data-testid="button-save-project">
               {updateMut.isPending ? "保存中..." : "保存"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AddTaskDialog({
+  projectId,
+  projectModules,
+  allUsers,
+  open,
+  onOpenChange,
+}: {
+  projectId: string;
+  projectModules: Module[];
+  allUsers: User[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDescription, setTaskDescription] = useState("");
+  const [taskPhase, setTaskPhase] = useState("");
+  const [taskDeadline, setTaskDeadline] = useState("");
+  const [taskModuleId, setTaskModuleId] = useState("");
+  const [taskPriority, setTaskPriority] = useState("0");
+  const [taskAssigneeIds, setTaskAssigneeIds] = useState<string[]>([]);
+
+  const { data: phasesData } = useQuery<Phase[]>({ queryKey: ["/api/phases"] });
+  const phasesList = phasesData ?? [];
+
+  const createTaskMut = useMutation({
+    mutationFn: async () => {
+      const body: Record<string, any> = {
+        title: taskTitle.trim(),
+        deadline: taskDeadline,
+        project_id: projectId,
+        priority: Number(taskPriority),
+        created_by: user?.id,
+      };
+      if (taskDescription.trim()) body.description = taskDescription.trim();
+      if (taskPhase) body.phase = taskPhase;
+      if (taskModuleId) body.module_id = taskModuleId;
+      if (taskAssigneeIds.length > 0) body.assignee_ids = taskAssigneeIds;
+      const res = await apiRequest("POST", "/api/tasks", body);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({ title: "任务已创建" });
+      setTaskTitle("");
+      setTaskDescription("");
+      setTaskPhase("");
+      setTaskDeadline("");
+      setTaskModuleId("");
+      setTaskPriority("0");
+      setTaskAssigneeIds([]);
+      onOpenChange(false);
+    },
+    onError: (err: Error) => toast({ title: "创建失败", description: err.message, variant: "destructive" }),
+  });
+
+  const toggleAssignee = (userId: string) => {
+    setTaskAssigneeIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const canSubmit = taskTitle.trim().length > 0 && taskDeadline.length > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" data-testid="dialog-add-task">
+        <DialogHeader>
+          <DialogTitle>添加任务</DialogTitle>
+          <DialogDescription className="sr-only">在项目中创建新任务</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">任务标题 *</label>
+            <Input
+              value={taskTitle}
+              onChange={(e) => setTaskTitle(e.target.value)}
+              placeholder="输入任务标题"
+              data-testid="input-task-title"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">描述</label>
+            <Textarea
+              value={taskDescription}
+              onChange={(e) => setTaskDescription(e.target.value)}
+              placeholder="任务描述（可选）"
+              rows={2}
+              className="resize-none text-sm"
+              data-testid="input-task-description"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">阶段 *</label>
+            <Select value={taskPhase} onValueChange={setTaskPhase}>
+              <SelectTrigger data-testid="select-task-phase"><SelectValue placeholder="选择阶段" /></SelectTrigger>
+              <SelectContent>
+                {phasesList.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
+                ))}
+                {phasesList.length === 0 && (
+                  <>
+                    <SelectItem value="p0pre">P0 节前冲刺</SelectItem>
+                    <SelectItem value="cny">春节假期</SelectItem>
+                    <SelectItem value="p1w1">P1 节后第1周</SelectItem>
+                    <SelectItem value="p2w23">P2 节后2-3周</SelectItem>
+                  </>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">截止日期 *</label>
+            <Input
+              type="date"
+              value={taskDeadline}
+              onChange={(e) => setTaskDeadline(e.target.value)}
+              data-testid="input-task-deadline"
+            />
+          </div>
+          {projectModules.length > 0 && (
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">模块</label>
+              <Select value={taskModuleId} onValueChange={setTaskModuleId}>
+                <SelectTrigger data-testid="select-task-module"><SelectValue placeholder="选择模块（可选）" /></SelectTrigger>
+                <SelectContent>
+                  {projectModules.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>{m.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">优先级</label>
+            <Select value={taskPriority} onValueChange={setTaskPriority}>
+              <SelectTrigger data-testid="select-task-priority"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="0">普通</SelectItem>
+                <SelectItem value="1">重要</SelectItem>
+                <SelectItem value="2">紧急</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">负责人（可多选）</label>
+            <div className="space-y-1.5 max-h-[160px] overflow-y-auto border rounded-md p-2">
+              {allUsers
+                .filter((u) => u.is_active !== false)
+                .map((u) => (
+                  <label
+                    key={u.id}
+                    className="flex items-center gap-2 py-1 px-1 rounded-md cursor-pointer hover-elevate"
+                  >
+                    <Checkbox
+                      checked={taskAssigneeIds.includes(u.id)}
+                      onCheckedChange={() => toggleAssignee(u.id)}
+                    />
+                    <span
+                      className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[10px] text-white"
+                      style={{ backgroundColor: u.color ?? "#888" }}
+                    >
+                      {(u.name ?? "?")[0]}
+                    </span>
+                    <span className="text-sm">{u.name}</span>
+                  </label>
+                ))}
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+            <Button
+              onClick={() => createTaskMut.mutate()}
+              disabled={!canSubmit || createTaskMut.isPending}
+              data-testid="button-submit-task"
+            >
+              {createTaskMut.isPending ? "创建中..." : "创建任务"}
             </Button>
           </div>
         </div>
@@ -248,6 +454,7 @@ export default function ProjectDetail() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
+  const [addTaskOpen, setAddTaskOpen] = useState(false);
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
 
   const { data, isLoading } = useQuery<ProjectDetailResponse>({
@@ -434,11 +641,9 @@ export default function ProjectDetail() {
             {tasks.length === 0 ? (
               <Card className="p-8 text-center">
                 <p className="text-sm text-muted-foreground mb-4">项目已创建！现在可以开始添加任务了。</p>
-                <Link href="/dashboard">
-                  <Button data-testid="button-add-task">
-                    <Plus className="w-4 h-4 mr-1" /> 添加第一个任务
-                  </Button>
-                </Link>
+                <Button onClick={() => setAddTaskOpen(true)} data-testid="button-add-task">
+                  <Plus className="w-4 h-4 mr-1" /> 添加第一个任务
+                </Button>
               </Card>
             ) : (
               <div className="space-y-2">
@@ -569,11 +774,9 @@ export default function ProjectDetail() {
                 )}
 
                 <div className="pt-2">
-                  <Link href="/dashboard">
-                    <Button variant="outline" size="sm" data-testid="button-add-task">
-                      <Plus className="w-3.5 h-3.5 mr-1" /> 添加任务
-                    </Button>
-                  </Link>
+                  <Button variant="outline" size="sm" onClick={() => setAddTaskOpen(true)} data-testid="button-add-task">
+                    <Plus className="w-3.5 h-3.5 mr-1" /> 添加任务
+                  </Button>
                 </div>
               </div>
             )}
@@ -607,6 +810,24 @@ export default function ProjectDetail() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {addTaskOpen && (
+        <AddTaskDialog
+          projectId={id}
+          projectModules={modules}
+          allUsers={allUsers}
+          open={addTaskOpen}
+          onOpenChange={setAddTaskOpen}
+        />
+      )}
+
+      {project.status !== "completed" && (
+        <div className="fixed bottom-6 right-6 z-40">
+          <Button onClick={() => setAddTaskOpen(true)} data-testid="button-add-task-floating">
+            <Plus className="w-4 h-4 mr-1" /> 添加任务
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

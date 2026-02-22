@@ -53,6 +53,7 @@ export const projects = pgTable("projects", {
   scope: text("scope").default("company"),
   department_id: text("department_id").references(() => departments.id),
   color: text("color"),
+  member_ids: text("member_ids").array(),
   sort_order: integer("sort_order").default(0),
   created_at: timestamp("created_at").defaultNow(),
   completed_at: timestamp("completed_at"),

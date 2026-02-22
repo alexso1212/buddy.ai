@@ -170,7 +170,7 @@ export class DatabaseStorage {
     id: string; title: string; description?: string; phase?: string; deadline: string;
     grace_deadline?: string; deliverable?: string; reviewer_id?: string; feishu_link?: string;
     status?: string; priority?: number; parent_id?: string; depends_on?: string;
-    sort_order?: number; created_by?: string;
+    sort_order?: number; created_by?: string; project_id?: string; module_id?: string;
   }): Promise<Task> {
     const [result] = await db.insert(tasks).values(task).returning();
     return result;
@@ -468,6 +468,7 @@ export class DatabaseStorage {
     const conditions = [
       eq(projects.owner_id, userId),
       eq(projects.created_by, userId),
+      sql`${userId} = ANY(${projects.member_ids})`,
     ];
     if (projectIds.length > 0) {
       conditions.push(inArray(projects.id, projectIds));

@@ -13,12 +13,12 @@ import { ArrowLeft, ArrowRight, Check, X } from "lucide-react";
 const TOTAL_STEPS = 6;
 
 const stepsMeta = [
-  { title: "\u7ED9\u4F60\u7684\u9879\u76EE\u8D77\u4E2A\u540D\u5B57", required: true },
-  { title: "\u8FD9\u4E2A\u9879\u76EE\u8981\u8FBE\u6210\u4EC0\u4E48\u76EE\u6807\uFF1F", required: false },
-  { title: "\u600E\u6837\u7B97\u201C\u505A\u5B8C\u4E86\u201D\uFF1F", required: false },
-  { title: "\u4EC0\u4E48\u65F6\u5019\u9700\u8981\u5B8C\u6210\uFF1F", required: false },
-  { title: "\u8C01\u6765\u8D1F\u8D23\u63A8\u8FDB\uFF1F", required: true },
-  { title: "\u786E\u8BA4\u9879\u76EE\u4FE1\u606F", required: false },
+  { title: "给你的项目起个名字", required: true },
+  { title: "这个项目要达成什么目标？", required: false },
+  { title: '怎样算"做完了"？', required: false },
+  { title: "什么时候需要完成？", required: false },
+  { title: "谁来负责推进？", required: true },
+  { title: "确认项目信息", required: false },
 ];
 
 export default function ProjectWizard() {
@@ -32,6 +32,7 @@ export default function ProjectWizard() {
   const [criteria, setCriteria] = useState("");
   const [deadline, setDeadline] = useState("");
   const [ownerId, setOwnerId] = useState(user?.id ?? "");
+  const [memberIds, setMemberIds] = useState<string[]>([]);
   const [animDir, setAnimDir] = useState<"next" | "prev">("next");
   const [animating, setAnimating] = useState(false);
 
@@ -70,22 +71,23 @@ export default function ProjectWizard() {
 
   const createMut = useMutation({
     mutationFn: async () => {
-      const body: Record<string, string> = {
+      const body: Record<string, any> = {
         title: title.trim(),
         owner_id: ownerId,
       };
       if (objective.trim()) body.objective = objective.trim();
       if (criteria.trim()) body.acceptance_criteria = criteria.trim();
       if (deadline) body.deadline = deadline;
+      if (memberIds.length > 0) body.member_ids = memberIds;
       const res = await apiRequest("POST", "/api/projects", body);
       return res.json();
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      toast({ title: "\u9879\u76EE\u5DF2\u521B\u5EFA" });
+      toast({ title: "项目已创建" });
       setLocation(`/project/${data.id}`);
     },
-    onError: (err: Error) => toast({ title: "\u521B\u5EFA\u5931\u8D25", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: "创建失败", description: err.message, variant: "destructive" }),
   });
 
   if (!user) { setLocation("/"); return null; }
@@ -93,6 +95,14 @@ export default function ProjectWizard() {
 
   const ownerUser = users.find((u) => u.id === ownerId);
   const progress = ((step + 1) / TOTAL_STEPS) * 100;
+
+  const toggleMember = (userId: string) => {
+    setMemberIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const selectedMembers = users.filter((u) => memberIds.includes(u.id));
 
   const inputClass =
     "w-full text-lg py-3 bg-transparent border-0 border-b-2 border-muted rounded-none shadow-none focus-visible:ring-0 focus-visible:border-primary transition-colors placeholder:text-muted-foreground/50";
@@ -111,7 +121,7 @@ export default function ProjectWizard() {
             autoFocus
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="\u9879\u76EE\u540D\u79F0"
+            placeholder="项目名称"
             className={inputClass}
             data-testid="input-project-title"
           />
@@ -122,7 +132,7 @@ export default function ProjectWizard() {
             autoFocus
             value={objective}
             onChange={(e) => setObjective(e.target.value)}
-            placeholder="\u7528\u4E00\u53E5\u8BDD\u63CF\u8FF0\u9879\u76EE\u76EE\u6807"
+            placeholder="用一句话描述项目目标"
             className={`${inputClass} resize-none min-h-[100px]`}
             rows={3}
             data-testid="input-project-objective"
@@ -134,7 +144,7 @@ export default function ProjectWizard() {
             autoFocus
             value={criteria}
             onChange={(e) => setCriteria(e.target.value)}
-            placeholder="\u63CF\u8FF0\u9A8C\u6536\u6807\u51C6"
+            placeholder="描述验收标准"
             className={`${inputClass} resize-none min-h-[100px]`}
             rows={3}
             data-testid="input-project-criteria"
@@ -153,29 +163,85 @@ export default function ProjectWizard() {
         );
       case 4:
         return (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
-            {users
-              .filter((u) => u.is_active !== false)
-              .map((u) => (
-                <div
-                  key={u.id}
-                  className={`flex items-center gap-2 p-3 rounded-md border cursor-pointer transition-all ${
-                    ownerId === u.id
-                      ? "ring-2 ring-primary border-primary"
-                      : "border-border hover-elevate"
-                  }`}
-                  onClick={() => setOwnerId(u.id)}
-                  data-testid={`select-owner-${u.id}`}
-                >
-                  <span
-                    className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-xs text-white font-medium"
-                    style={{ backgroundColor: u.color ?? "#888" }}
-                  >
-                    {(u.name ?? "?")[0]}
-                  </span>
-                  <span className="text-sm truncate">{u.name}</span>
+          <div className="w-full space-y-6">
+            <div>
+              <h3 className="text-sm font-medium mb-3 text-muted-foreground">负责人</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
+                {users
+                  .filter((u) => u.is_active !== false)
+                  .map((u) => (
+                    <div
+                      key={u.id}
+                      className={`flex items-center gap-2 p-3 rounded-md border cursor-pointer transition-all ${
+                        ownerId === u.id
+                          ? "ring-2 ring-primary border-primary"
+                          : "border-border hover-elevate"
+                      }`}
+                      onClick={() => setOwnerId(u.id)}
+                      data-testid={`select-owner-${u.id}`}
+                    >
+                      <span
+                        className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-xs text-white font-medium"
+                        style={{ backgroundColor: u.color ?? "#888" }}
+                      >
+                        {(u.name ?? "?")[0]}
+                      </span>
+                      <span className="text-sm truncate">{u.name}</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium mb-3 text-muted-foreground">项目成员（可多选）</h3>
+              {selectedMembers.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {selectedMembers.map((u) => (
+                    <span
+                      key={u.id}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted text-sm"
+                    >
+                      <span
+                        className="w-4 h-4 rounded-full shrink-0 flex items-center justify-center text-[10px] text-white"
+                        style={{ backgroundColor: u.color ?? "#888" }}
+                      >
+                        {(u.name ?? "?")[0]}
+                      </span>
+                      {u.name}
+                      <button
+                        className="ml-1 text-muted-foreground"
+                        onClick={(e) => { e.stopPropagation(); toggleMember(u.id); }}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
                 </div>
-              ))}
+              )}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
+                {users
+                  .filter((u) => u.is_active !== false && u.id !== ownerId)
+                  .map((u) => (
+                    <div
+                      key={u.id}
+                      className={`flex items-center gap-2 p-3 rounded-md border cursor-pointer transition-all ${
+                        memberIds.includes(u.id)
+                          ? "ring-2 ring-primary border-primary"
+                          : "border-border hover-elevate"
+                      }`}
+                      onClick={() => toggleMember(u.id)}
+                      data-testid={`select-member-${u.id}`}
+                    >
+                      <span
+                        className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-xs text-white font-medium"
+                        style={{ backgroundColor: u.color ?? "#888" }}
+                      >
+                        {(u.name ?? "?")[0]}
+                      </span>
+                      <span className="text-sm truncate">{u.name}</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
           </div>
         );
       case 5:
@@ -183,29 +249,29 @@ export default function ProjectWizard() {
           <div className="w-full space-y-4">
             <div className="pl-4 border-l-2 border-primary space-y-3">
               <div>
-                <span className="text-xs text-muted-foreground">\u9879\u76EE\u540D\u79F0</span>
+                <span className="text-xs text-muted-foreground">项目名称</span>
                 <p className="text-sm font-medium">{title}</p>
               </div>
               {objective.trim() && (
                 <div>
-                  <span className="text-xs text-muted-foreground">\u76EE\u6807</span>
+                  <span className="text-xs text-muted-foreground">目标</span>
                   <p className="text-sm">{objective}</p>
                 </div>
               )}
               {criteria.trim() && (
                 <div>
-                  <span className="text-xs text-muted-foreground">\u9A8C\u6536\u6807\u51C6</span>
+                  <span className="text-xs text-muted-foreground">验收标准</span>
                   <p className="text-sm">{criteria}</p>
                 </div>
               )}
               {deadline && (
                 <div>
-                  <span className="text-xs text-muted-foreground">\u622A\u6B62\u65E5\u671F</span>
+                  <span className="text-xs text-muted-foreground">截止日期</span>
                   <p className="text-sm">{new Date(deadline).toLocaleDateString("zh-CN")}</p>
                 </div>
               )}
               <div>
-                <span className="text-xs text-muted-foreground">\u8D1F\u8D23\u4EBA</span>
+                <span className="text-xs text-muted-foreground">负责人</span>
                 <div className="flex items-center gap-2 mt-0.5">
                   {ownerUser && (
                     <span
@@ -215,9 +281,27 @@ export default function ProjectWizard() {
                       {(ownerUser.name ?? "?")[0]}
                     </span>
                   )}
-                  <span className="text-sm font-medium">{ownerUser?.name ?? "\u672A\u6307\u5B9A"}</span>
+                  <span className="text-sm font-medium">{ownerUser?.name ?? "未指定"}</span>
                 </div>
               </div>
+              {selectedMembers.length > 0 && (
+                <div>
+                  <span className="text-xs text-muted-foreground">项目成员</span>
+                  <div className="flex flex-wrap gap-2 mt-0.5">
+                    {selectedMembers.map((u) => (
+                      <div key={u.id} className="flex items-center gap-1">
+                        <span
+                          className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[10px] text-white"
+                          style={{ backgroundColor: u.color ?? "#888" }}
+                        >
+                          {(u.name ?? "?")[0]}
+                        </span>
+                        <span className="text-sm">{u.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <Button
               className="w-full"
@@ -226,7 +310,7 @@ export default function ProjectWizard() {
               onClick={() => createMut.mutate()}
               data-testid="button-create-project"
             >
-              {createMut.isPending ? "\u521B\u5EFA\u4E2D..." : "\u521B\u5EFA\u9879\u76EE"}
+              {createMut.isPending ? "创建中..." : "创建项目"}
               {!createMut.isPending && <Check className="w-4 h-4 ml-2" />}
             </Button>
           </div>
@@ -283,7 +367,7 @@ export default function ProjectWizard() {
                 data-testid="button-wizard-prev"
               >
                 <ArrowLeft className="w-4 h-4 mr-1" />
-                {step === 5 ? "\u4FEE\u6539" : "\u4E0A\u4E00\u6B65"}
+                {step === 5 ? "修改" : "上一步"}
               </Button>
             )}
           </div>
@@ -294,7 +378,7 @@ export default function ProjectWizard() {
                 onClick={next}
                 data-testid="button-wizard-skip"
               >
-                \u53EF\u4EE5\u8DF3\u8FC7
+                可以跳过
                 <ArrowRight className="w-4 h-4 ml-1" />
               </Button>
             )}
@@ -304,7 +388,7 @@ export default function ProjectWizard() {
                 onClick={next}
                 data-testid="button-wizard-next"
               >
-                {step === 0 ? "\u6309 Enter \u7EE7\u7EED" : "\u7EE7\u7EED"}
+                {step === 0 ? "按 Enter 继续" : "继续"}
                 <ArrowRight className="w-4 h-4 ml-1" />
               </Button>
             )}
@@ -314,7 +398,7 @@ export default function ProjectWizard() {
                 onClick={next}
                 data-testid="button-wizard-next"
               >
-                \u7EE7\u7EED
+                继续
                 <ArrowRight className="w-4 h-4 ml-1" />
               </Button>
             )}

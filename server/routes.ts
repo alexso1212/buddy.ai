@@ -210,6 +210,52 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     return res.json({ tasks: taskList, assigneeMap: strippedMap });
   });
 
+  app.post("/api/tasks", authMiddleware, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { title, description, phase, deadline, project_id, module_id, priority, assignee_ids, created_by } = req.body;
+
+      if (!title?.trim()) return res.status(400).json({ message: "Title required" });
+      if (!deadline) return res.status(400).json({ message: "Deadline required" });
+
+      if (project_id) {
+        const project = await storage.getProjectById(project_id);
+        if (!project) return res.status(404).json({ message: "Project not found" });
+        if (user.role !== "ceo" && user.role !== "admin" && user.id !== project.owner_id) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      } else {
+        if (user.role !== "ceo" && user.role !== "admin") {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+
+      const id = `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const task = await storage.createTask({
+        id,
+        title: title.trim(),
+        description: description?.trim() || undefined,
+        phase: phase || undefined,
+        deadline,
+        project_id: project_id || undefined,
+        module_id: module_id || undefined,
+        priority: priority !== undefined ? Number(priority) : 0,
+        status: "pending",
+        created_by: created_by || user.id,
+      });
+
+      if (Array.isArray(assignee_ids)) {
+        for (const uid of assignee_ids) {
+          await storage.addAssignee(task.id, uid);
+        }
+      }
+
+      return res.json(task);
+    } catch (e: any) {
+      return res.status(500).json({ message: e.message });
+    }
+  });
+
   app.get("/api/tasks/:id", authMiddleware, async (req, res) => {
     const task = await storage.getTaskById(req.params.id as string);
     if (!task) return res.status(404).json({ message: "Task not found" });
@@ -1764,6 +1810,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.status(403).json({ message: "Only CEO can create company-wide projects" });
       }
 
+      if (Array.isArray(rawData.member_ids) && rawData.member_ids.length > 0) {
+        projectData.member_ids = rawData.member_ids;
+      }
+
       const project = await storage.createProject(projectData);
 
       if (Array.isArray(moduleList) && moduleList.length > 0) {
@@ -1796,7 +1846,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.status(403).json({ message: "No permission" });
       }
 
-      const allowedPatchFields = ['title', 'objective', 'acceptance_criteria', 'deadline', 'priority', 'color', 'scope', 'description', 'sort_order', 'owner_id'];
+      const allowedPatchFields = ['title', 'objective', 'acceptance_criteria', 'deadline', 'priority', 'color', 'scope', 'description', 'sort_order', 'owner_id', 'member_ids'];
       const patchData: Record<string, any> = {};
       for (const key of allowedPatchFields) {
         if (req.body[key] !== undefined) patchData[key] = req.body[key];
