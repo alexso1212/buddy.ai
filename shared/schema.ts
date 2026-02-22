@@ -108,6 +108,8 @@ export const tasks = pgTable('tasks', {
   needsReview: boolean('needs_review').default(false).notNull(),
   warnings: text('warnings'),
 
+  starred: boolean('starred').default(false).notNull(),
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
