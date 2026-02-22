@@ -36,22 +36,22 @@ interface ActivityLogsResponse {
 
 function getStatusColor(status: string): string {
   switch (status) {
-    case "todo": return "bg-gray-200 text-gray-700";
-    case "in_progress": return "bg-yellow-200 text-yellow-700";
-    case "in_review": return "bg-blue-200 text-blue-700";
-    case "done": return "bg-green-200 text-green-700";
-    case "cancelled": return "bg-gray-400 text-gray-800";
-    default: return "bg-gray-200 text-gray-700";
+    case "todo": return "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200";
+    case "in_progress": return "bg-yellow-200 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-300";
+    case "in_review": return "bg-blue-200 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300";
+    case "done": return "bg-green-200 text-green-700 dark:bg-green-900/50 dark:text-green-300";
+    case "cancelled": return "bg-gray-400 text-gray-800 dark:bg-gray-600 dark:text-gray-200";
+    default: return "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200";
   }
 }
 
 function getPriorityColor(priority: string): string {
   switch (priority) {
-    case "urgent": return "bg-red-100 text-red-700";
-    case "high": return "bg-orange-100 text-orange-700";
-    case "medium": return "bg-blue-100 text-blue-700";
-    case "low": return "bg-gray-100 text-gray-600";
-    default: return "bg-gray-100 text-gray-600";
+    case "urgent": return "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300";
+    case "high": return "bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300";
+    case "medium": return "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300";
+    case "low": return "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300";
+    default: return "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300";
   }
 }
 
@@ -78,10 +78,10 @@ function formatDateTime(date: Date | string | null | undefined): string {
 }
 
 const VERDICT_COLORS: Record<string, { bg: string; text: string; label: string }> = {
-  in_scope:     { bg: 'bg-green-100', text: 'text-green-800', label: '份内职责' },
-  stretch:      { bg: 'bg-yellow-100', text: 'text-yellow-800', label: '延伸职责' },
-  out_of_scope: { bg: 'bg-red-100', text: 'text-red-800', label: '分外工作' },
-  shared:       { bg: 'bg-blue-100', text: 'text-blue-800', label: '跨部门协作' },
+  in_scope:     { bg: 'bg-green-100 dark:bg-green-900/50', text: 'text-green-800 dark:text-green-300', label: '份内职责' },
+  stretch:      { bg: 'bg-yellow-100 dark:bg-yellow-900/50', text: 'text-yellow-800 dark:text-yellow-300', label: '延伸职责' },
+  out_of_scope: { bg: 'bg-red-100 dark:bg-red-900/50', text: 'text-red-800 dark:text-red-300', label: '分外工作' },
+  shared:       { bg: 'bg-blue-100 dark:bg-blue-900/50', text: 'text-blue-800 dark:text-blue-300', label: '跨部门协作' },
 };
 
 interface VerdictData {
@@ -105,7 +105,7 @@ function VerdictCard({ verdict, onAccept, onOverride }: {
   return (
     <Card className="p-5 space-y-4" data-testid="verdict-card">
       <div className="flex items-center gap-2">
-        <Scale className="h-5 w-5 text-gray-500" />
+        <Scale className="h-5 w-5 text-muted-foreground" />
         <h3 className="font-semibold">权责判定结果</h3>
       </div>
 
@@ -128,7 +128,7 @@ function VerdictCard({ verdict, onAccept, onOverride }: {
           <p className="text-sm font-medium text-muted-foreground">匹配的职责条目:</p>
           <div className="space-y-1">
             {verdict.matchedResponsibilities.map((r, i) => (
-              <div key={i} className="flex items-center gap-1.5 text-sm text-green-700">
+              <div key={i} className="flex items-center gap-1.5 text-sm text-green-700 dark:text-green-400">
                 <Check className="h-3.5 w-3.5" />
                 {r}
               </div>
@@ -138,12 +138,12 @@ function VerdictCard({ verdict, onAccept, onOverride }: {
       )}
 
       {verdict.suggestedAssignee && (
-        <div className="p-3 rounded-md bg-amber-50 border border-amber-200 space-y-1">
-          <p className="text-sm font-medium text-amber-800">更合适的人选:</p>
-          <p className="text-sm text-amber-700">
+        <div className="p-3 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 space-y-1">
+          <p className="text-sm font-medium text-amber-800 dark:text-amber-300">更合适的人选:</p>
+          <p className="text-sm text-amber-700 dark:text-amber-300">
             → {verdict.suggestedAssignee.name}
           </p>
-          <p className="text-xs text-amber-600">{verdict.suggestedAssignee.reason}</p>
+          <p className="text-xs text-amber-600 dark:text-amber-400">{verdict.suggestedAssignee.reason}</p>
         </div>
       )}
 
@@ -487,8 +487,8 @@ export default function TaskDetail() {
       )}
 
       {verdictAccepted === true && (
-        <Card className="p-4 border-green-200 bg-green-50">
-          <div className="flex items-center gap-2 text-green-700 text-sm">
+        <Card className="p-4 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20">
+          <div className="flex items-center gap-2 text-green-700 dark:text-green-400 text-sm">
             <Check className="h-4 w-4" />
             判定已接受
           </div>
@@ -496,8 +496,8 @@ export default function TaskDetail() {
       )}
 
       {verdictAccepted === false && (
-        <Card className="p-4 border-amber-200 bg-amber-50">
-          <div className="flex items-center gap-2 text-amber-700 text-sm">
+        <Card className="p-4 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20">
+          <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 text-sm">
             <Scale className="h-4 w-4" />
             判定已推翻
           </div>

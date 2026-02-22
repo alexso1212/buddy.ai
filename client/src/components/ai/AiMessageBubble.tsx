@@ -43,8 +43,8 @@ export default function AiMessageBubble({
           className={cn(
             "text-xs px-3 py-1 rounded-full",
             isSuccess
-              ? "bg-emerald-50 text-emerald-600"
-              : "bg-red-50 text-red-500"
+              ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
+              : "bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400"
           )}
         >
           {message.content}
@@ -130,7 +130,7 @@ export default function AiMessageBubble({
       <div
         className={cn(
           "max-w-[80%] px-4 py-2.5 text-sm",
-          "bg-gray-100 text-gray-800",
+          "bg-muted text-foreground",
           "rounded-2xl rounded-bl-sm",
           "whitespace-pre-wrap break-words"
         )}

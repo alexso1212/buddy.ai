@@ -603,7 +603,7 @@ function TagListEditor({
             <button
               type="button"
               onClick={() => onChange(items.filter((_, j) => j !== i))}
-              className="ml-0.5 rounded-full p-0.5 hover:bg-gray-300"
+              className="ml-0.5 rounded-full p-0.5 hover:bg-muted"
             >
               <X className="w-3 h-3" />
             </button>

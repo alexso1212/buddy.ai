@@ -202,14 +202,14 @@ export default function AiChatPanel({ onClose }: AiChatPanelProps) {
     <div
       className={cn(
         "fixed right-6 bottom-24 z-50 w-[400px] h-[70vh] max-sm:w-[calc(100vw-1.5rem)] max-sm:right-3 max-sm:bottom-20",
-        "bg-white rounded-2xl shadow-2xl",
+        "bg-card rounded-2xl shadow-2xl",
         "flex flex-col overflow-hidden",
         "transition-all duration-200 origin-bottom-right",
         visible ? "scale-100 opacity-100" : "scale-95 opacity-0"
       )}
       data-testid="ai-chat-panel"
     >
-      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-blue-500 to-indigo-600">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border bg-gradient-to-r from-blue-500 to-indigo-600">
         <h3 className="text-sm font-semibold text-white">AI 助手</h3>
         <div className="flex items-center gap-1">
           <button
@@ -240,10 +240,10 @@ export default function AiChatPanel({ onClose }: AiChatPanelProps) {
         ))}
         {loading && (
           <div className="flex justify-start px-4 py-1">
-            <div className="bg-gray-100 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1">
-              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0ms]" />
-              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:150ms]" />
-              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:300ms]" />
+            <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1">
+              <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:0ms]" />
+              <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:150ms]" />
+              <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:300ms]" />
             </div>
           </div>
         )}

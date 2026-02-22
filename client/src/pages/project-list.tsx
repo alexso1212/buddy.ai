@@ -62,15 +62,15 @@ function formatDate(date: Date | string | null | undefined): string {
 function getStatusColor(status: string): string {
   switch (status) {
     case "active":
-      return "bg-green-100 text-green-800";
+      return "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300";
     case "paused":
-      return "bg-yellow-100 text-yellow-800";
+      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300";
     case "completed":
-      return "bg-blue-100 text-blue-800";
+      return "bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300";
     case "archived":
-      return "bg-gray-100 text-gray-800";
+      return "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200";
     default:
-      return "bg-gray-100 text-gray-800";
+      return "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200";
   }
 }
 
@@ -128,7 +128,7 @@ function NewProjectModal({
       className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center"
       data-testid="modal-new-project"
     >
-      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+      <div className="bg-card rounded-lg shadow-lg p-6 w-full max-w-md">
         <h2 className="text-xl font-semibold mb-4">新建项目</h2>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
@@ -278,9 +278,9 @@ export default function ProjectList() {
         </Button>
       </div>
 
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+      <div className="bg-card rounded-lg shadow-sm overflow-hidden">
         <Table data-testid="project-table">
-          <TableHeader className="bg-gray-50">
+          <TableHeader className="bg-muted">
             <TableRow>
               <TableHead>名称</TableHead>
               <TableHead>状态</TableHead>
@@ -306,7 +306,7 @@ export default function ProjectList() {
               projects.map((project) => (
                 <TableRow
                   key={project.id}
-                  className="cursor-pointer hover:bg-gray-50"
+                  className="cursor-pointer hover:bg-muted/50"
                   onClick={() => handleRowClick(project.id)}
                   data-testid={`project-row-${project.id}`}
                 >

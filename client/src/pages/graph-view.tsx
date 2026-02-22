@@ -118,7 +118,7 @@ export default function GraphView() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full" data-testid="graph-container">
-        <div className="text-gray-500">Loading graph data...</div>
+        <div className="text-muted-foreground">Loading graph data...</div>
       </div>
     );
   }
@@ -126,14 +126,14 @@ export default function GraphView() {
   return (
     <div
       data-testid="graph-container"
-      className="flex flex-col bg-gray-50"
+      className="flex flex-col bg-background"
       style={{ height: "calc(100vh - 48px)" }}
     >
-      <div className="flex items-center gap-3 px-4 py-2 border-b bg-white flex-wrap">
-        <span className="text-sm font-medium text-gray-700 mr-1">Project:</span>
+      <div className="flex items-center gap-3 px-4 py-2 border-b bg-card flex-wrap">
+        <span className="text-sm font-medium text-foreground mr-1">Project:</span>
         <select
           data-testid="select-project-filter"
-          className="text-sm border border-gray-300 rounded-md px-2 py-1 bg-white"
+          className="text-sm border border-border rounded-md px-2 py-1 bg-card"
           value={selectedProjectId ?? ""}
           onChange={(e) =>
             setSelectedProjectId(e.target.value === "" ? null : Number(e.target.value))
@@ -147,7 +147,7 @@ export default function GraphView() {
           ))}
         </select>
 
-        <span className="text-sm font-medium text-gray-700 ml-3 mr-1">Status:</span>
+        <span className="text-sm font-medium text-foreground ml-3 mr-1">Status:</span>
         {ALL_STATUSES.map((s) => (
           <label
             key={s}
@@ -158,13 +158,13 @@ export default function GraphView() {
               type="checkbox"
               checked={activeStatuses.has(s)}
               onChange={() => toggleStatus(s)}
-              className="rounded border-gray-300"
+              className="rounded border-border"
             />
             <span
               className="inline-block w-2.5 h-2.5 rounded-full mr-0.5"
               style={{ backgroundColor: STATUS_COLORS[s] }}
             />
-            <span className="text-gray-600">{STATUS_LABELS[s]}</span>
+            <span className="text-muted-foreground">{STATUS_LABELS[s]}</span>
           </label>
         ))}
       </div>
@@ -179,7 +179,7 @@ export default function GraphView() {
               onNodeClick={(node) => setSelectedNode(node)}
             />
           ) : (
-            <div className="flex items-center justify-center h-full text-gray-400">
+            <div className="flex items-center justify-center h-full text-muted-foreground">
               No tasks match the current filters
             </div>
           )}
@@ -188,12 +188,12 @@ export default function GraphView() {
         {selectedNode && (
           <Card
             data-testid="node-detail-panel"
-            className="w-80 border-l bg-white overflow-y-auto flex-shrink-0"
+            className="w-80 border-l bg-card overflow-y-auto flex-shrink-0"
             style={{ borderRadius: 0 }}
           >
             <div className="p-4 space-y-4">
               <div className="flex items-start justify-between gap-2">
-                <h3 className="text-base font-semibold text-gray-900">{selectedNode.title}</h3>
+                <h3 className="text-base font-semibold text-foreground">{selectedNode.title}</h3>
                 <Button
                   size="icon"
                   variant="ghost"
@@ -206,7 +206,7 @@ export default function GraphView() {
 
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-500">Status</span>
+                  <span className="text-muted-foreground">Status</span>
                   <Badge
                     style={{ backgroundColor: STATUS_COLORS[selectedNode.status] }}
                     className="text-white"
@@ -216,29 +216,29 @@ export default function GraphView() {
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-500">Priority</span>
-                  <span className="font-medium text-gray-800">
+                  <span className="text-muted-foreground">Priority</span>
+                  <span className="font-medium text-foreground">
                     {PRIORITY_LABELS[selectedNode.priority] || selectedNode.priority}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-500">Project</span>
-                  <span className="font-medium text-gray-800">{selectedNode.projectName}</span>
+                  <span className="text-muted-foreground">Project</span>
+                  <span className="font-medium text-foreground">{selectedNode.projectName}</span>
                 </div>
 
                 {selectedNode.assigneeName && (
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-500">Assignee</span>
-                    <span className="font-medium text-gray-800">{selectedNode.assigneeName}</span>
+                    <span className="text-muted-foreground">Assignee</span>
+                    <span className="font-medium text-foreground">{selectedNode.assigneeName}</span>
                   </div>
                 )}
 
                 {selectedNode.dueDate && (
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-500">Due Date</span>
+                    <span className="text-muted-foreground">Due Date</span>
                     <span
-                      className={`font-medium ${selectedNode.isOverdue ? "text-red-600" : "text-gray-800"}`}
+                      className={`font-medium ${selectedNode.isOverdue ? "text-red-600" : "text-foreground"}`}
                     >
                       {selectedNode.dueDate}
                     </span>
@@ -246,12 +246,12 @@ export default function GraphView() {
                 )}
 
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-500">Progress</span>
-                  <span className="font-medium text-gray-800">{selectedNode.progress}%</span>
+                  <span className="text-muted-foreground">Progress</span>
+                  <span className="font-medium text-foreground">{selectedNode.progress}%</span>
                 </div>
 
                 <div className="pt-2">
-                  <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="w-full bg-muted rounded-full h-2">
                     <div
                       className="h-2 rounded-full"
                       style={{
@@ -269,33 +269,33 @@ export default function GraphView() {
 
       <div
         data-testid="graph-legend"
-        className="flex items-center gap-4 px-4 py-2 border-t bg-white text-xs flex-wrap"
+        className="flex items-center gap-4 px-4 py-2 border-t bg-card text-xs flex-wrap"
       >
-        <span className="font-medium text-gray-600 mr-1">Status:</span>
+        <span className="font-medium text-muted-foreground mr-1">Status:</span>
         {ALL_STATUSES.map((s) => (
           <span key={s} className="flex items-center gap-1">
             <span
               className="inline-block w-3 h-3 rounded-full"
               style={{ backgroundColor: STATUS_COLORS[s] }}
             />
-            <span className="text-gray-600">{STATUS_LABELS[s]}</span>
+            <span className="text-muted-foreground">{STATUS_LABELS[s]}</span>
           </span>
         ))}
 
-        <span className="mx-2 text-gray-300">|</span>
+        <span className="mx-2 text-border">|</span>
 
-        <span className="font-medium text-gray-600 mr-1">Links:</span>
+        <span className="font-medium text-muted-foreground mr-1">Links:</span>
         <span className="flex items-center gap-1">
           <svg width="24" height="8">
             <line x1="0" y1="4" x2="24" y2="4" stroke="#ef4444" strokeWidth="3" />
           </svg>
-          <span className="text-gray-600">Blocking</span>
+          <span className="text-muted-foreground">Blocking</span>
         </span>
         <span className="flex items-center gap-1">
           <svg width="24" height="8">
             <line x1="0" y1="4" x2="24" y2="4" stroke="#10b981" strokeWidth="1.5" strokeDasharray="5,5" />
           </svg>
-          <span className="text-gray-600">Dependency</span>
+          <span className="text-muted-foreground">Dependency</span>
         </span>
       </div>
     </div>

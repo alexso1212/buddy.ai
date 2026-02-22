@@ -41,7 +41,7 @@ export default function AiInputBar({ onSend, loading }: AiInputBarProps) {
   );
 
   return (
-    <div className="flex items-end gap-2 p-3 border-t border-gray-200 bg-white rounded-b-2xl">
+    <div className="flex items-end gap-2 p-3 border-t border-border bg-card rounded-b-2xl">
       <textarea
         ref={textareaRef}
         value={value}
@@ -54,11 +54,11 @@ export default function AiInputBar({ onSend, loading }: AiInputBarProps) {
         disabled={loading}
         rows={1}
         className={cn(
-          "flex-1 resize-none rounded-xl border border-gray-200 px-3 py-2",
-          "text-sm leading-6 outline-none",
+          "flex-1 resize-none rounded-xl border border-border px-3 py-2",
+          "text-sm leading-6 outline-none text-foreground",
           "focus:border-blue-400 focus:ring-1 focus:ring-blue-400",
           "disabled:opacity-50 disabled:cursor-not-allowed",
-          "bg-gray-50"
+          "bg-muted"
         )}
         data-testid="ai-input"
       />

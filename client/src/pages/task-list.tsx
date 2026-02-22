@@ -68,32 +68,32 @@ function formatDate(date: Date | string | null | undefined): string {
 function getStatusColor(status: string): string {
   switch (status) {
     case "todo":
-      return "bg-gray-200 text-gray-700";
+      return "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200";
     case "in_progress":
-      return "bg-yellow-200 text-yellow-700";
+      return "bg-yellow-200 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-300";
     case "in_review":
-      return "bg-blue-200 text-blue-700";
+      return "bg-blue-200 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300";
     case "done":
-      return "bg-green-200 text-green-700";
+      return "bg-green-200 text-green-700 dark:bg-green-900/50 dark:text-green-300";
     case "cancelled":
-      return "bg-gray-400 text-gray-800";
+      return "bg-gray-400 text-gray-800 dark:bg-gray-600 dark:text-gray-200";
     default:
-      return "bg-gray-200 text-gray-700";
+      return "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200";
   }
 }
 
 function getPriorityColor(priority: string): string {
   switch (priority) {
     case "urgent":
-      return "bg-red-100 text-red-700";
+      return "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300";
     case "high":
-      return "bg-orange-100 text-orange-700";
+      return "bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300";
     case "medium":
-      return "bg-blue-100 text-blue-700";
+      return "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300";
     case "low":
-      return "bg-gray-100 text-gray-600";
+      return "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300";
     default:
-      return "bg-gray-100 text-gray-600";
+      return "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300";
   }
 }
 
@@ -176,7 +176,7 @@ function NewTaskModal({
       className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center"
       data-testid="modal-new-task"
     >
-      <div className="bg-white dark:bg-slate-950 rounded-lg shadow-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div className="bg-card rounded-lg shadow-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
         <h2 className="text-xl font-semibold mb-4">新建任务</h2>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">

@@ -92,21 +92,21 @@ export default function AiConfirmCard({
   return (
     <div
       className={cn(
-        "rounded-xl bg-white border border-gray-200 overflow-hidden",
+        "rounded-xl bg-card border border-border overflow-hidden",
         "border-l-4",
         config.borderColor
       )}
       data-testid={cardId}
     >
-      <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border-b border-gray-100">
-        <Icon className="w-4 h-4 text-gray-600" />
-        <span className="text-sm font-medium text-gray-700">
+      <div className="flex items-center gap-2 px-4 py-3 bg-muted border-b border-border">
+        <Icon className="w-4 h-4 text-muted-foreground" />
+        <span className="text-sm font-medium text-foreground">
           {config.label}
         </span>
       </div>
 
       <div className="px-4 py-3 space-y-2">
-        <p className="text-sm text-gray-800">{action.summary}</p>
+        <p className="text-sm text-foreground">{action.summary}</p>
         <div className="space-y-1">
           {Object.entries(action.data).map(([key, val]) => {
             if (val === null || val === undefined) return null;
@@ -122,17 +122,17 @@ export default function AiConfirmCard({
             }
             return (
               <div key={key} className="flex gap-2 text-xs">
-                <span className="text-gray-400 min-w-[4rem] text-right">
+                <span className="text-muted-foreground min-w-[4rem] text-right">
                   {DATA_LABELS[key] || key}
                 </span>
-                <span className="text-gray-700 break-all">{displayVal}</span>
+                <span className="text-foreground break-all">{displayVal}</span>
               </div>
             );
           })}
         </div>
       </div>
 
-      <div className="px-4 py-3 border-t border-gray-100">
+      <div className="px-4 py-3 border-t border-border">
         {confirmed === null && (
           <div className="flex items-center gap-2">
             <button
@@ -153,7 +153,7 @@ export default function AiConfirmCard({
               className={cn(
                 "flex-1 flex items-center justify-center gap-1.5",
                 "px-3 py-1.5 rounded-lg text-sm font-medium",
-                "bg-gray-100 text-gray-600",
+                "bg-muted text-muted-foreground",
                 "transition-colors duration-150"
               )}
               data-testid={index !== undefined ? `reject-action-${index}` : "reject-action"}
@@ -164,13 +164,13 @@ export default function AiConfirmCard({
           </div>
         )}
         {confirmed === true && (
-          <div className="flex items-center gap-1.5 text-emerald-600 text-sm">
+          <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 text-sm">
             <Check className="w-4 h-4" />
             已执行
           </div>
         )}
         {confirmed === false && (
-          <div className="flex items-center gap-1.5 text-red-500 text-sm">
+          <div className="flex items-center gap-1.5 text-red-500 dark:text-red-400 text-sm">
             <X className="w-4 h-4" />
             已取消
           </div>

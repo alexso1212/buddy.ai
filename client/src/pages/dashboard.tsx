@@ -51,17 +51,17 @@ function Dashboard() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "todo":
-        return "bg-gray-200 text-gray-700";
+        return "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200";
       case "in_progress":
-        return "bg-yellow-200 text-yellow-700";
+        return "bg-yellow-200 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-300";
       case "in_review":
-        return "bg-blue-200 text-blue-700";
+        return "bg-blue-200 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300";
       case "done":
-        return "bg-green-200 text-green-700";
+        return "bg-green-200 text-green-700 dark:bg-green-900/50 dark:text-green-300";
       case "cancelled":
-        return "bg-gray-400 text-gray-800";
+        return "bg-gray-400 text-gray-800 dark:bg-gray-600 dark:text-gray-200";
       default:
-        return "bg-gray-200 text-gray-700";
+        return "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200";
     }
   };
 
@@ -87,15 +87,15 @@ function Dashboard() {
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case "urgent":
-        return "bg-red-100 text-red-700";
+        return "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300";
       case "high":
-        return "bg-orange-100 text-orange-700";
+        return "bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300";
       case "medium":
-        return "bg-blue-100 text-blue-700";
+        return "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300";
       case "low":
-        return "bg-gray-100 text-gray-600";
+        return "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300";
       default:
-        return "bg-gray-100 text-gray-600";
+        return "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300";
     }
   };
 
@@ -118,82 +118,82 @@ function Dashboard() {
   if (isLoading) {
     return (
       <div className="p-6">
-        <div className="text-center text-gray-600">加载中...</div>
+        <div className="text-center text-muted-foreground">加载中...</div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
-      <h1 className="text-2xl font-bold text-gray-900 mb-8">Dashboard</h1>
+    <div className="p-6 bg-background min-h-screen">
+      <h1 className="text-2xl font-bold text-foreground mb-8">Dashboard</h1>
 
       {/* Stats Cards Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {/* Total Tasks */}
-        <div className="bg-white rounded-lg shadow-sm p-6" data-testid="stat-total">
-          <div className="text-gray-600 text-sm font-medium">Total Tasks</div>
-          <div className="text-3xl font-bold text-gray-900 mt-2">{totalTasks}</div>
+        <div className="bg-card rounded-lg shadow-sm p-6" data-testid="stat-total">
+          <div className="text-muted-foreground text-sm font-medium">Total Tasks</div>
+          <div className="text-3xl font-bold text-foreground mt-2">{totalTasks}</div>
         </div>
 
         {/* In Progress */}
-        <div className="bg-white rounded-lg shadow-sm p-6" data-testid="stat-in-progress">
-          <div className="text-gray-600 text-sm font-medium">In Progress</div>
+        <div className="bg-card rounded-lg shadow-sm p-6" data-testid="stat-in-progress">
+          <div className="text-muted-foreground text-sm font-medium">In Progress</div>
           <div className="text-3xl font-bold text-yellow-600 mt-2">{inProgressCount}</div>
         </div>
 
         {/* Completed */}
-        <div className="bg-white rounded-lg shadow-sm p-6" data-testid="stat-completed">
-          <div className="text-gray-600 text-sm font-medium">Completed</div>
+        <div className="bg-card rounded-lg shadow-sm p-6" data-testid="stat-completed">
+          <div className="text-muted-foreground text-sm font-medium">Completed</div>
           <div className="text-3xl font-bold text-green-600 mt-2">{completedCount}</div>
         </div>
 
         {/* Overdue */}
-        <div className="bg-white rounded-lg shadow-sm p-6" data-testid="stat-overdue">
-          <div className="text-gray-600 text-sm font-medium">Overdue</div>
+        <div className="bg-card rounded-lg shadow-sm p-6" data-testid="stat-overdue">
+          <div className="text-muted-foreground text-sm font-medium">Overdue</div>
           <div className="text-3xl font-bold text-red-600 mt-2">{overdueCount}</div>
         </div>
       </div>
 
       {/* My Tasks Table */}
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-bold text-gray-900">My Tasks</h2>
+      <div className="bg-card rounded-lg shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-border">
+          <h2 className="text-lg font-bold text-foreground">My Tasks</h2>
         </div>
 
         {myTasks.length === 0 ? (
-          <div className="px-6 py-8 text-center text-gray-500">No tasks assigned to you</div>
+          <div className="px-6 py-8 text-center text-muted-foreground">No tasks assigned to you</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full" data-testid="my-tasks-table">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <tr className="border-b border-border bg-muted">
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Title
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Project
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Status
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Priority
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Due Date
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-border">
                 {myTasks.map((task) => (
                   <tr
                     key={task.id}
                     data-testid={`task-row-${task.id}`}
                     onClick={() => navigate(`/tasks/${task.id}`)}
-                    className="hover:bg-gray-50 cursor-pointer transition-colors"
+                    className="hover:bg-muted/50 cursor-pointer transition-colors"
                   >
-                    <td className="px-6 py-4 text-sm text-gray-900">{task.title}</td>
-                    <td className="px-6 py-4 text-sm text-gray-700">{getProjectName(task.projectId)}</td>
+                    <td className="px-6 py-4 text-sm text-foreground">{task.title}</td>
+                    <td className="px-6 py-4 text-sm text-muted-foreground">{getProjectName(task.projectId)}</td>
                     <td className="px-6 py-4">
                       <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
                         {getStatusLabel(task.status)}
@@ -205,10 +205,10 @@ function Dashboard() {
                           {getPriorityLabel(task.priority)}
                         </span>
                       ) : (
-                        <span className="text-sm text-gray-500">—</span>
+                        <span className="text-sm text-muted-foreground">—</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-700">
+                    <td className="px-6 py-4 text-sm text-muted-foreground">
                       {task.dueDate ? formatDate(task.dueDate) : "—"}
                     </td>
                   </tr>
