@@ -290,7 +290,10 @@ function AddTaskDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks?view=mine"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks?view=all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks?view=people"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks?view=overview"] });
       toast({ title: "任务已创建" });
       setTaskTitle("");
       setTaskDescription("");
