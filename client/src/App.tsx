@@ -25,7 +25,11 @@ import {
   Menu,
   X,
   Network,
+  Sun,
+  Moon,
+  Monitor,
 } from "lucide-react";
+import { useTheme } from "@/components/ThemeProvider";
 
 const NAV_ITEMS = [
   { label: "仪表盘", icon: LayoutDashboard, path: "/" },
@@ -35,6 +39,41 @@ const NAV_ITEMS = [
   { label: "团队", icon: Users, path: "/team" },
   { label: "设置", icon: SettingsIcon, path: "/settings" },
 ];
+
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme();
+
+  const options: { value: "light" | "dark" | "system"; icon: typeof Sun; label: string }[] = [
+    { value: "light", icon: Sun, label: "浅色" },
+    { value: "dark", icon: Moon, label: "深色" },
+    { value: "system", icon: Monitor, label: "系统" },
+  ];
+
+  return (
+    <div className="flex items-center gap-1 rounded-lg bg-sidebar-accent/40 p-1" data-testid="theme-toggle">
+      {options.map((opt) => {
+        const Icon = opt.icon;
+        const active = theme === opt.value;
+        return (
+          <button
+            key={opt.value}
+            onClick={() => setTheme(opt.value)}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs transition-colors",
+              active
+                ? "bg-sidebar-accent text-sidebar-foreground"
+                : "text-sidebar-foreground/50 hover:text-sidebar-foreground/80"
+            )}
+            data-testid={`theme-${opt.value}`}
+          >
+            <Icon className="w-3.5 h-3.5" />
+            <span>{opt.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [location] = useLocation();
@@ -105,7 +144,8 @@ function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
           })}
         </nav>
 
-        <div className="p-4 border-t border-sidebar-border">
+        <div className="p-4 border-t border-sidebar-border space-y-3">
+          <ThemeToggle />
           <div className="text-sm">
             <p className="font-medium">Alexso</p>
             <p className="text-sidebar-foreground/60 text-xs">(Owner)</p>
