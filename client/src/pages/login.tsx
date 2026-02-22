@@ -91,7 +91,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-[11px] text-muted-foreground mt-6">
-          © 2026 德湃教育科技
+          © 2026 Buddy
         </p>
       </div>
     </div>

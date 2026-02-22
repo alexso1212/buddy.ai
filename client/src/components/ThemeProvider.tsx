@@ -9,8 +9,8 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
-  theme: "system",
-  resolvedTheme: "light",
+  theme: "dark",
+  resolvedTheme: "dark",
   setTheme: () => {},
 });
 
@@ -25,21 +25,25 @@ function getSystemTheme(): "light" | "dark" {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
     const saved = localStorage.getItem("theme");
-    return (saved as Theme) || "system";
+    return (saved as Theme) || "dark";
   });
 
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(() => {
     const saved = localStorage.getItem("theme") as Theme | null;
     if (saved && saved !== "system") return saved;
+    if (!saved) return "dark";
     return getSystemTheme();
   });
 
   const applyTheme = useCallback((resolved: "light" | "dark") => {
     setResolvedTheme(resolved);
+    const root = document.documentElement;
     if (resolved === "dark") {
-      document.documentElement.classList.add("dark");
+      root.classList.add("dark");
+      root.classList.remove("light");
     } else {
-      document.documentElement.classList.remove("dark");
+      root.classList.add("light");
+      root.classList.remove("dark");
     }
   }, []);
 

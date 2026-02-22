@@ -118,7 +118,7 @@ function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
         data-testid="sidebar"
       >
         <div className="md:hidden flex items-center justify-between p-4 border-b border-[var(--border-subtle)]">
-          <h1 className="text-lg font-bold flex items-center gap-2"><span className="w-2 h-5 rounded-sm bg-brand inline-block"></span>德湃任务中心</h1>
+          <h1 className="text-lg font-bold flex items-center gap-2"><span className="w-2 h-5 rounded-sm bg-brand inline-block"></span>Buddy</h1>
           <button
             onClick={onClose}
             className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-md"
@@ -129,7 +129,7 @@ function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
         </div>
 
         <div className="hidden md:block p-6 border-b border-[var(--border-subtle)]">
-          <h1 className="text-lg font-bold flex items-center gap-2"><span className="w-2 h-5 rounded-sm bg-brand inline-block"></span>德湃任务中心</h1>
+          <h1 className="text-lg font-bold flex items-center gap-2"><span className="w-2 h-5 rounded-sm bg-brand inline-block"></span>Buddy</h1>
         </div>
 
         <nav className="flex-1 p-4 space-y-2">
@@ -211,7 +211,7 @@ function App() {
             >
               <Menu className="w-6 h-6" />
             </button>
-            <span className="text-base font-bold text-[var(--text-primary)]">德湃</span>
+            <span className="text-base font-bold text-[var(--text-primary)]">Buddy</span>
           </header>
 
           <main

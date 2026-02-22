@@ -1,4 +1,4 @@
-# 德湃任务中心 (Depai Task Center)
+# Buddy (AI Chat Application)
 
 ## Overview
 Depai Task Center is a comprehensive team task management system designed for Deltapex Education, a financial education company. The project, currently in its V6 rebuild, features an 11-table data model with serial integer IDs, a full CRUD API, and an 8-page frontend with sidebar navigation. It aims to streamline task organization, enhance collaboration, and integrate advanced AI capabilities for task assignment, review, and dynamic assistance. The system supports various user roles with distinct access levels, ensuring a hierarchical and efficient workflow for managing organizations, departments, users, projects, and tasks.
