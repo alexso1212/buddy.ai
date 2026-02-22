@@ -1,7 +1,8 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Filter, ArrowUpDown, AlertTriangle, Trash2 } from "lucide-react";
+import { Filter, ArrowUpDown, AlertTriangle, Trash2, Star } from "lucide-react";
+import SwipeableTaskCard from "@/components/SwipeableTaskCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -682,50 +683,54 @@ export default function TaskList() {
             </div>
 
             {/* Mobile card list */}
-            <div className="md:hidden space-y-2" data-testid="mobile-task-cards">
+            <div className="md:hidden space-y-0" data-testid="mobile-task-cards">
               {sortedTasks.map((task) => (
-                <div
+                <SwipeableTaskCard
                   key={task.id}
-                  className="bg-card rounded-lg shadow-sm p-3 cursor-pointer relative"
-                  data-testid={`task-card-${task.id}`}
-                  onClick={() => navigate(`/tasks/${task.id}`)}
+                  taskId={task.id}
+                  taskTitle={task.title}
+                  taskStatus={task.status}
+                  taskPriority={task.priority}
+                  taskStarred={task.starred ?? false}
+                  onNavigate={() => navigate(`/tasks/${task.id}`)}
                 >
-                  <button
-                    onClick={(e) => handleDeleteTask(task.id, task.title, e)}
-                    className="absolute top-3 right-3 text-muted-foreground hover:text-destructive p-1"
-                    data-testid={`btn-delete-task-mobile-${task.id}`}
+                  <div
+                    className="p-3"
+                    data-testid={`task-card-${task.id}`}
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                  <div className="font-medium flex items-center gap-1" data-testid={`task-card-title-${task.id}`}>
-                    {task.needsReview && <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />}
-                    <span className="truncate">{task.title}</span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <span className="text-xs text-muted-foreground" data-testid={`task-card-project-${task.id}`}>
-                      {projectMap.get(task.projectId)?.name ?? "-"}
-                    </span>
-                    <span className="text-xs text-muted-foreground" data-testid={`task-card-assignee-${task.id}`}>
-                      {userMap.get(task.assigneeId!)?.displayName ?? "-"}
-                    </span>
-                  </div>
-                  {(task.participants?.length ?? 0) > 0 && (
-                    <div className="mt-2" onClick={(e) => e.stopPropagation()}>
-                      <ParticipantAvatars participants={task.participants || []} />
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="font-medium flex items-center gap-1 min-w-0 flex-1" data-testid={`task-card-title-${task.id}`}>
+                        {task.starred && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 flex-shrink-0" />}
+                        {task.needsReview && <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />}
+                        <span className="truncate">{task.title}</span>
+                      </div>
                     </div>
-                  )}
-                  <div className="flex items-center gap-2 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
-                    <StatusDropdown taskId={task.id} currentStatus={task.status} />
-                    <Badge className={getPriorityColor(task.priority)}>
-                      {getPriorityLabel(task.priority)}
-                    </Badge>
-                    {task.dueDate && (
-                      <span className="text-xs text-muted-foreground" data-testid={`task-card-due-${task.id}`}>
-                        {formatDate(task.dueDate)}
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className="text-xs text-muted-foreground" data-testid={`task-card-project-${task.id}`}>
+                        {projectMap.get(task.projectId)?.name ?? "-"}
                       </span>
+                      <span className="text-xs text-muted-foreground" data-testid={`task-card-assignee-${task.id}`}>
+                        {userMap.get(task.assigneeId!)?.displayName ?? "-"}
+                      </span>
+                    </div>
+                    {(task.participants?.length ?? 0) > 0 && (
+                      <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                        <ParticipantAvatars participants={task.participants || []} />
+                      </div>
                     )}
+                    <div className="flex items-center gap-2 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                      <StatusDropdown taskId={task.id} currentStatus={task.status} />
+                      <Badge className={getPriorityColor(task.priority)}>
+                        {getPriorityLabel(task.priority)}
+                      </Badge>
+                      {task.dueDate && (
+                        <span className="text-xs text-muted-foreground" data-testid={`task-card-due-${task.id}`}>
+                          {formatDate(task.dueDate)}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
+                </SwipeableTaskCard>
               ))}
             </div>
           </>

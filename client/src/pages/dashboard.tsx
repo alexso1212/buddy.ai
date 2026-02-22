@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { AlertTriangle, CheckCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle, Star } from "lucide-react";
+import SwipeableTaskCard from "@/components/SwipeableTaskCard";
 import type { Task, Project, User } from "@shared/schema";
 
 type TaskWithParticipants = Task & {
@@ -355,45 +356,51 @@ function Dashboard() {
             </div>
 
             {/* Mobile Card List View */}
-            <div className="md:hidden divide-y divide-border">
+            <div className="md:hidden">
               {attentionTasks.map(({ task, reasons }) => (
-                <div
+                <SwipeableTaskCard
                   key={task.id}
-                  data-testid={`attention-task-${task.id}`}
-                  onClick={() => navigate(`/tasks/${task.id}`)}
-                  className="flex cursor-pointer active:bg-muted/50 transition-colors"
+                  taskId={task.id}
+                  taskTitle={task.title}
+                  taskStatus={task.status}
+                  taskPriority={task.priority}
+                  taskStarred={task.starred ?? false}
+                  onNavigate={() => navigate(`/tasks/${task.id}`)}
                 >
-                  <div className={`w-1 flex-shrink-0 ${getRowIndicatorColor(reasons)}`} />
-                  <div className="flex-1 p-4">
-                    <div className="font-bold text-foreground mb-1">
-                      {task.title}
-                    </div>
-
-                    <div className="text-xs text-muted-foreground mb-3">
-                      {getProjectName(task.projectId)}
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
-                        {getStatusLabel(task.status)}
-                      </span>
-                      {task.priority && (
-                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(task.priority)}`}>
-                          {getPriorityLabel(task.priority)}
+                  <div
+                    className="flex"
+                    data-testid={`attention-task-${task.id}`}
+                  >
+                    <div className={`w-1 flex-shrink-0 ${getRowIndicatorColor(reasons)}`} />
+                    <div className="flex-1 p-4">
+                      <div className="font-bold text-foreground mb-1 flex items-center gap-1">
+                        {task.starred && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 flex-shrink-0" />}
+                        {task.title}
+                      </div>
+                      <div className="text-xs text-muted-foreground mb-3">
+                        {getProjectName(task.projectId)}
+                      </div>
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
+                          {getStatusLabel(task.status)}
                         </span>
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      {task.dueDate && (
-                        <div className="text-xs text-muted-foreground">
-                          截止: {formatDate(task.dueDate)}
-                        </div>
-                      )}
-                      {renderReasonTags(reasons)}
+                        {task.priority && (
+                          <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(task.priority)}`}>
+                            {getPriorityLabel(task.priority)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        {task.dueDate && (
+                          <div className="text-xs text-muted-foreground">
+                            截止: {formatDate(task.dueDate)}
+                          </div>
+                        )}
+                        {renderReasonTags(reasons)}
+                      </div>
                     </div>
                   </div>
-                </div>
+                </SwipeableTaskCard>
               ))}
             </div>
           </>
