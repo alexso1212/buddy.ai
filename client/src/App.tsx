@@ -158,8 +158,19 @@ function Sidebar({
   overlayRef: React.RefObject<HTMLDivElement>;
 }) {
   const [location] = useLocation();
-  const [buddyAiOpen, setBuddyAiOpen] = useState(true);
-  const [enterpriseOpen, setEnterpriseOpen] = useState(false);
+  const [buddyAiOpen, setBuddyAiOpen] = useState(() => {
+    try { const s = localStorage.getItem('sidebar_buddyAi'); return s !== null ? s === 'true' : true; } catch { return true; }
+  });
+  const [enterpriseOpen, setEnterpriseOpen] = useState(() => {
+    try { const s = localStorage.getItem('sidebar_enterprise'); return s !== null ? s === 'true' : false; } catch { return false; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem('sidebar_buddyAi', String(buddyAiOpen)); } catch {}
+  }, [buddyAiOpen]);
+  useEffect(() => {
+    try { localStorage.setItem('sidebar_enterprise', String(enterpriseOpen)); } catch {}
+  }, [enterpriseOpen]);
   const [selectedConvo, setSelectedConvo] = useState('s1');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ convoId: string; x: number; y: number } | null>(null);
@@ -339,7 +350,16 @@ function Sidebar({
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
-          {renderGroupHeader('Buddy AI', Bot, buddyAiOpen, () => setBuddyAiOpen(!buddyAiOpen), 'button-toggle-buddy-ai')}
+          {renderGroupHeader('企业管理', Building2, enterpriseOpen, () => setEnterpriseOpen(v => !v), 'button-toggle-enterprise')}
+          <CollapsibleContent isOpen={enterpriseOpen}>
+            <div>
+              {ENTERPRISE_NAV.map(renderNavItem)}
+            </div>
+          </CollapsibleContent>
+
+          <div style={{ height: 8 }} />
+
+          {renderGroupHeader('Buddy AI', Bot, buddyAiOpen, () => setBuddyAiOpen(v => !v), 'button-toggle-buddy-ai')}
           <CollapsibleContent isOpen={buddyAiOpen}>
             <div>
               {BUDDY_AI_NAV.map(renderNavItem)}
@@ -353,15 +373,6 @@ function Sidebar({
                 最近对话
               </div>
               {DUMMY_CONVERSATIONS.recents.map(renderConvoItem)}
-            </div>
-          </CollapsibleContent>
-
-          <div style={{ height: 8 }} />
-
-          {renderGroupHeader('企业管理', Building2, enterpriseOpen, () => setEnterpriseOpen(!enterpriseOpen), 'button-toggle-enterprise')}
-          <CollapsibleContent isOpen={enterpriseOpen}>
-            <div>
-              {ENTERPRISE_NAV.map(renderNavItem)}
             </div>
           </CollapsibleContent>
         </div>
