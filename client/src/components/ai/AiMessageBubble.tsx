@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { Check, Sparkles } from "lucide-react";
 import AiConfirmCard from "./AiConfirmCard";
 import AiFollowUpCard from "./AiFollowUpCard";
+import AIMessageContent from "./AIMessageContent";
 
 interface ActionPayload {
   actionType: string;
@@ -92,8 +93,8 @@ function MultiConfirmGroup({
       {message.content && (
         <div className="flex gap-3 max-w-[80%]">
           <BrandLogo />
-          <div className="font-serif text-sm text-[var(--text-primary)] whitespace-pre-wrap break-words pt-0.5">
-            {message.content}
+          <div className="pt-0.5 flex-1 min-w-0">
+            <AIMessageContent content={message.content} />
           </div>
         </div>
       )}
@@ -246,8 +247,8 @@ export default function AiMessageBubble({
     >
       <div className="flex gap-3 max-w-[80%]">
         <BrandLogo />
-        <div className="font-serif text-sm text-[var(--text-primary)] whitespace-pre-wrap break-words pt-0.5">
-          {message.content}
+        <div className="pt-0.5 flex-1 min-w-0">
+          <AIMessageContent content={message.content} />
         </div>
       </div>
     </div>
