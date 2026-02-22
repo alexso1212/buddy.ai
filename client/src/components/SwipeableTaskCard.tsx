@@ -18,6 +18,9 @@ interface SwipeableTaskCardProps {
 const SWIPE_THRESHOLD = 60;
 const ACTION_WIDTH = 240;
 
+const SPRING_OPEN = "transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1)";
+const SPRING_CLOSE = "transform 0.35s cubic-bezier(0.25, 1, 0.5, 1)";
+
 const PRIORITY_LABELS: Record<string, string> = {
   low: "低",
   medium: "中",
@@ -43,14 +46,17 @@ export default function SwipeableTaskCard({
   onDeleted,
 }: SwipeableTaskCardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const actionsRef = useRef<HTMLDivElement>(null);
   const priorityBtnRef = useRef<HTMLButtonElement>(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
   const currentXRef = useRef(0);
   const didSwipeRef = useRef(false);
+  const isTouchingRef = useRef(false);
   const directionLockedRef = useRef<"horizontal" | "vertical" | null>(null);
   const [translateX, setTranslateX] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
+  const [animState, setAnimState] = useState<"idle" | "dragging" | "opening" | "closing">("idle");
   const [showPriorityPicker, setShowPriorityPicker] = useState(false);
   const [pickerPos, setPickerPos] = useState({ top: 0, left: 0 });
 
@@ -98,14 +104,41 @@ export default function SwipeableTaskCard({
   });
 
   const closeSwipe = useCallback(() => {
+    setAnimState("closing");
     setTranslateX(0);
     setIsOpen(false);
     setShowPriorityPicker(false);
+    setTimeout(() => setAnimState("idle"), 350);
   }, []);
 
   useEffect(() => {
+    if (!isOpen) return;
+
+    const handleOutsideTouch = (e: TouchEvent | MouseEvent) => {
+      const target = e.target as Node;
+      if (actionsRef.current?.contains(target)) return;
+      if (containerRef.current?.contains(target)) {
+        closeSwipe();
+        return;
+      }
+      closeSwipe();
+    };
+
+    const timer = setTimeout(() => {
+      document.addEventListener("touchstart", handleOutsideTouch, { passive: true });
+      document.addEventListener("mousedown", handleOutsideTouch);
+    }, 30);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("touchstart", handleOutsideTouch);
+      document.removeEventListener("mousedown", handleOutsideTouch);
+    };
+  }, [isOpen, closeSwipe]);
+
+  useEffect(() => {
     if (!showPriorityPicker) return;
-    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+    const handleClickOutside = () => {
       setShowPriorityPicker(false);
     };
     const timer = setTimeout(() => {
@@ -125,10 +158,13 @@ export default function SwipeableTaskCard({
     startYRef.current = touch.clientY;
     currentXRef.current = translateX;
     didSwipeRef.current = false;
+    isTouchingRef.current = true;
     directionLockedRef.current = null;
+    setAnimState("idle");
   }, [translateX]);
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!isTouchingRef.current) return;
     const touch = e.touches[0];
     const diffX = touch.clientX - startXRef.current;
     const diffY = touch.clientY - startYRef.current;
@@ -144,30 +180,44 @@ export default function SwipeableTaskCard({
 
     e.preventDefault();
     didSwipeRef.current = true;
+    setAnimState("dragging");
 
     let newX = currentXRef.current + diffX;
-    newX = Math.max(-ACTION_WIDTH, Math.min(0, newX));
+    if (newX < -ACTION_WIDTH) {
+      const over = -ACTION_WIDTH - newX;
+      newX = -ACTION_WIDTH - over * 0.3;
+    }
+    newX = Math.min(0, newX);
     setTranslateX(newX);
   }, []);
 
   const handleTouchEnd = useCallback(() => {
+    isTouchingRef.current = false;
+
     if (directionLockedRef.current === "horizontal") {
       if (translateX < -SWIPE_THRESHOLD) {
+        setAnimState("opening");
         setTranslateX(-ACTION_WIDTH);
         setIsOpen(true);
+        setTimeout(() => setAnimState("idle"), 450);
       } else {
-        closeSwipe();
+        setAnimState("closing");
+        setTranslateX(0);
+        setIsOpen(false);
+        setTimeout(() => setAnimState("idle"), 350);
       }
     }
+
     setTimeout(() => {
       didSwipeRef.current = false;
       directionLockedRef.current = null;
     }, 50);
-  }, [translateX, closeSwipe]);
+  }, [translateX]);
 
-  const handleCardClick = useCallback(() => {
+  const handleCardClick = useCallback((e: React.MouseEvent) => {
     if (didSwipeRef.current) return;
     if (isOpen) {
+      e.stopPropagation();
       closeSwipe();
       return;
     }
@@ -188,6 +238,13 @@ export default function SwipeableTaskCard({
 
   const anyPending = starMutation.isPending || completeMutation.isPending || deleteMutation.isPending || priorityMutation.isPending;
 
+  const getTransition = () => {
+    if (animState === "dragging") return "none";
+    if (animState === "opening") return SPRING_OPEN;
+    if (animState === "closing") return SPRING_CLOSE;
+    return SPRING_CLOSE;
+  };
+
   return (
     <div
       ref={containerRef}
@@ -195,6 +252,7 @@ export default function SwipeableTaskCard({
       data-testid={`swipeable-card-${taskId}`}
     >
       <div
+        ref={actionsRef}
         className="absolute inset-y-0 right-0 flex items-stretch"
         style={{ width: ACTION_WIDTH }}
       >
@@ -257,7 +315,7 @@ export default function SwipeableTaskCard({
         className="relative bg-card rounded-xl"
         style={{
           transform: `translateX(${translateX}px)`,
-          transition: didSwipeRef.current ? "none" : "transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+          transition: getTransition(),
         }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
