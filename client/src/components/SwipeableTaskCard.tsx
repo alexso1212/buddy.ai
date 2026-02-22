@@ -15,24 +15,15 @@ interface SwipeableTaskCardProps {
   onDeleted?: () => void;
 }
 
-const SWIPE_THRESHOLD = 60;
+const SWIPE_THRESHOLD = 50;
 const ACTION_WIDTH = 240;
-
-const SPRING_OPEN = "transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1)";
-const SPRING_CLOSE = "transform 0.35s cubic-bezier(0.25, 1, 0.5, 1)";
+const BUTTON_W = 60;
 
 const PRIORITY_LABELS: Record<string, string> = {
   low: "低",
   medium: "中",
   high: "高",
   urgent: "紧急",
-};
-
-const PRIORITY_COLORS: Record<string, string> = {
-  low: "text-gray-500",
-  medium: "text-blue-500",
-  high: "text-orange-500",
-  urgent: "text-red-500",
 };
 
 export default function SwipeableTaskCard({
@@ -51,14 +42,19 @@ export default function SwipeableTaskCard({
   const startXRef = useRef(0);
   const startYRef = useRef(0);
   const currentXRef = useRef(0);
+  const velocityRef = useRef(0);
+  const lastMoveTimeRef = useRef(0);
+  const lastMoveXRef = useRef(0);
   const didSwipeRef = useRef(false);
   const isTouchingRef = useRef(false);
   const directionLockedRef = useRef<"horizontal" | "vertical" | null>(null);
   const [translateX, setTranslateX] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
-  const [animState, setAnimState] = useState<"idle" | "dragging" | "opening" | "closing">("idle");
+  const [isDragging, setIsDragging] = useState(false);
   const [showPriorityPicker, setShowPriorityPicker] = useState(false);
   const [pickerPos, setPickerPos] = useState({ top: 0, left: 0 });
+
+  const revealProgress = Math.min(1, Math.max(0, -translateX) / ACTION_WIDTH);
 
   const starMutation = useMutation({
     mutationFn: async () => {
@@ -104,51 +100,41 @@ export default function SwipeableTaskCard({
   });
 
   const closeSwipe = useCallback(() => {
-    setAnimState("closing");
     setTranslateX(0);
     setIsOpen(false);
+    setIsDragging(false);
     setShowPriorityPicker(false);
-    setTimeout(() => setAnimState("idle"), 350);
   }, []);
 
   useEffect(() => {
     if (!isOpen) return;
-
-    const handleOutsideTouch = (e: TouchEvent | MouseEvent) => {
+    const handle = (e: TouchEvent | MouseEvent) => {
       const target = e.target as Node;
       if (actionsRef.current?.contains(target)) return;
-      if (containerRef.current?.contains(target)) {
-        closeSwipe();
-        return;
-      }
       closeSwipe();
     };
-
     const timer = setTimeout(() => {
-      document.addEventListener("touchstart", handleOutsideTouch, { passive: true });
-      document.addEventListener("mousedown", handleOutsideTouch);
+      document.addEventListener("touchstart", handle, { passive: true });
+      document.addEventListener("mousedown", handle);
     }, 30);
-
     return () => {
       clearTimeout(timer);
-      document.removeEventListener("touchstart", handleOutsideTouch);
-      document.removeEventListener("mousedown", handleOutsideTouch);
+      document.removeEventListener("touchstart", handle);
+      document.removeEventListener("mousedown", handle);
     };
   }, [isOpen, closeSwipe]);
 
   useEffect(() => {
     if (!showPriorityPicker) return;
-    const handleClickOutside = () => {
-      setShowPriorityPicker(false);
-    };
+    const handle = () => setShowPriorityPicker(false);
     const timer = setTimeout(() => {
-      document.addEventListener("click", handleClickOutside);
-      document.addEventListener("touchstart", handleClickOutside);
+      document.addEventListener("click", handle);
+      document.addEventListener("touchstart", handle);
     }, 50);
     return () => {
       clearTimeout(timer);
-      document.removeEventListener("click", handleClickOutside);
-      document.removeEventListener("touchstart", handleClickOutside);
+      document.removeEventListener("click", handle);
+      document.removeEventListener("touchstart", handle);
     };
   }, [showPriorityPicker]);
 
@@ -160,7 +146,9 @@ export default function SwipeableTaskCard({
     didSwipeRef.current = false;
     isTouchingRef.current = true;
     directionLockedRef.current = null;
-    setAnimState("idle");
+    velocityRef.current = 0;
+    lastMoveTimeRef.current = Date.now();
+    lastMoveXRef.current = touch.clientX;
   }, [translateX]);
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
@@ -180,31 +168,41 @@ export default function SwipeableTaskCard({
 
     e.preventDefault();
     didSwipeRef.current = true;
-    setAnimState("dragging");
+    setIsDragging(true);
+
+    const now = Date.now();
+    const dt = now - lastMoveTimeRef.current;
+    if (dt > 0) {
+      velocityRef.current = (touch.clientX - lastMoveXRef.current) / dt;
+    }
+    lastMoveTimeRef.current = now;
+    lastMoveXRef.current = touch.clientX;
 
     let newX = currentXRef.current + diffX;
-    if (newX < -ACTION_WIDTH) {
+    if (newX > 0) {
+      newX = newX * 0.15;
+    } else if (newX < -ACTION_WIDTH) {
       const over = -ACTION_WIDTH - newX;
-      newX = -ACTION_WIDTH - over * 0.3;
+      newX = -ACTION_WIDTH - over * 0.2;
     }
-    newX = Math.min(0, newX);
     setTranslateX(newX);
   }, []);
 
   const handleTouchEnd = useCallback(() => {
     isTouchingRef.current = false;
+    setIsDragging(false);
 
     if (directionLockedRef.current === "horizontal") {
-      if (translateX < -SWIPE_THRESHOLD) {
-        setAnimState("opening");
+      const vel = velocityRef.current;
+      const shouldOpen = translateX < -SWIPE_THRESHOLD || vel < -0.5;
+      const shouldClose = !shouldOpen || vel > 0.5;
+
+      if (shouldOpen && !shouldClose) {
         setTranslateX(-ACTION_WIDTH);
         setIsOpen(true);
-        setTimeout(() => setAnimState("idle"), 450);
       } else {
-        setAnimState("closing");
         setTranslateX(0);
         setIsOpen(false);
-        setTimeout(() => setAnimState("idle"), 350);
       }
     }
 
@@ -238,12 +236,73 @@ export default function SwipeableTaskCard({
 
   const anyPending = starMutation.isPending || completeMutation.isPending || deleteMutation.isPending || priorityMutation.isPending;
 
-  const getTransition = () => {
-    if (animState === "dragging") return "none";
-    if (animState === "opening") return SPRING_OPEN;
-    if (animState === "closing") return SPRING_CLOSE;
-    return SPRING_CLOSE;
+  const getSpringTransition = () => {
+    if (isDragging) return "none";
+    return "transform 0.5s cubic-bezier(0.32, 0.72, 0, 1)";
   };
+
+  const btnScale = (index: number) => {
+    if (isDragging) {
+      const stagger = 0.15 * index;
+      const p = Math.max(0, Math.min(1, (revealProgress - stagger) / (1 - stagger)));
+      const s = 0.3 + 0.7 * p;
+      return `scale(${s})`;
+    }
+    return revealProgress > 0.1 ? "scale(1)" : "scale(0.3)";
+  };
+
+  const btnOpacity = (index: number) => {
+    if (isDragging) {
+      const stagger = 0.12 * index;
+      return Math.max(0, Math.min(1, (revealProgress - stagger) / (0.6)));
+    }
+    return revealProgress > 0.1 ? 1 : 0;
+  };
+
+  const actionBtnTransition = isDragging
+    ? "opacity 0.05s ease-out, transform 0.05s ease-out"
+    : "opacity 0.4s cubic-bezier(0.32, 0.72, 0, 1), transform 0.5s cubic-bezier(0.32, 0.72, 0, 1)";
+
+  const actions = [
+    {
+      key: "star",
+      bg: taskStarred ? "bg-amber-500" : "bg-amber-400",
+      icon: <Star className={`h-[18px] w-[18px] text-white ${taskStarred ? "fill-white" : ""}`} />,
+      label: taskStarred ? "取消" : "收藏",
+      onClick: (e: React.MouseEvent) => { e.stopPropagation(); starMutation.mutate(); },
+      testId: `swipe-star-${taskId}`,
+    },
+    {
+      key: "priority",
+      bg: "bg-indigo-500",
+      icon: <ArrowUpDown className="h-[18px] w-[18px] text-white" />,
+      label: "优先级",
+      onClick: openPriorityPicker,
+      testId: `swipe-priority-${taskId}`,
+      ref: priorityBtnRef,
+    },
+    {
+      key: "complete",
+      bg: taskStatus === "done" ? "bg-gray-500" : "bg-green-500",
+      icon: <CheckCircle className="h-[18px] w-[18px] text-white" />,
+      label: taskStatus === "done" ? "撤回" : "完成",
+      onClick: (e: React.MouseEvent) => { e.stopPropagation(); completeMutation.mutate(); },
+      testId: `swipe-complete-${taskId}`,
+    },
+    {
+      key: "delete",
+      bg: "bg-red-500",
+      icon: <Trash2 className="h-[18px] w-[18px] text-white" />,
+      label: "删除",
+      onClick: (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (window.confirm(`确定要删除任务「${taskTitle}」吗？`)) {
+          deleteMutation.mutate();
+        }
+      },
+      testId: `swipe-delete-${taskId}`,
+    },
+  ];
 
   return (
     <div
@@ -256,66 +315,34 @@ export default function SwipeableTaskCard({
         className="absolute inset-y-0 right-0 flex items-stretch"
         style={{ width: ACTION_WIDTH }}
       >
-        <button
-          className={`flex flex-col items-center justify-center w-[60px] transition-colors ${
-            taskStarred
-              ? "bg-amber-400 dark:bg-amber-500 text-white"
-              : "bg-amber-50 dark:bg-amber-900/40 text-amber-500"
-          } ${anyPending ? "opacity-50" : ""}`}
-          onClick={(e) => { e.stopPropagation(); starMutation.mutate(); }}
-          disabled={anyPending}
-          data-testid={`swipe-star-${taskId}`}
-        >
-          <Star className={`h-5 w-5 ${taskStarred ? "fill-current" : ""}`} />
-          <span className="text-[10px] mt-1 font-medium">{taskStarred ? "取消" : "收藏"}</span>
-        </button>
-
-        <button
-          ref={priorityBtnRef}
-          className={`flex flex-col items-center justify-center w-[60px] bg-indigo-50 dark:bg-indigo-900/40 ${PRIORITY_COLORS[taskPriority]} ${anyPending ? "opacity-50" : ""}`}
-          onClick={openPriorityPicker}
-          disabled={anyPending}
-          data-testid={`swipe-priority-${taskId}`}
-        >
-          <ArrowUpDown className="h-5 w-5" />
-          <span className="text-[10px] mt-1 font-medium">优先级</span>
-        </button>
-
-        <button
-          className={`flex flex-col items-center justify-center w-[60px] transition-colors ${
-            taskStatus === "done"
-              ? "bg-green-500 dark:bg-green-600 text-white"
-              : "bg-green-50 dark:bg-green-900/40 text-green-600 dark:text-green-400"
-          } ${anyPending ? "opacity-50" : ""}`}
-          onClick={(e) => { e.stopPropagation(); completeMutation.mutate(); }}
-          disabled={anyPending}
-          data-testid={`swipe-complete-${taskId}`}
-        >
-          <CheckCircle className={`h-5 w-5 ${taskStatus === "done" ? "fill-current" : ""}`} />
-          <span className="text-[10px] mt-1 font-medium">{taskStatus === "done" ? "撤回" : "完成"}</span>
-        </button>
-
-        <button
-          className={`flex flex-col items-center justify-center w-[60px] bg-red-50 dark:bg-red-900/40 text-red-500 ${anyPending ? "opacity-50" : ""}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (window.confirm(`确定要删除任务「${taskTitle}」吗？`)) {
-              deleteMutation.mutate();
-            }
-          }}
-          disabled={anyPending}
-          data-testid={`swipe-delete-${taskId}`}
-        >
-          <Trash2 className="h-5 w-5" />
-          <span className="text-[10px] mt-1 font-medium">删除</span>
-        </button>
+        {actions.map((action, i) => (
+          <button
+            key={action.key}
+            ref={action.key === "priority" ? priorityBtnRef : undefined}
+            className={`flex flex-col items-center justify-center ${action.bg}`}
+            style={{
+              width: BUTTON_W,
+              transform: btnScale(i),
+              opacity: btnOpacity(i),
+              transition: actionBtnTransition,
+              willChange: "transform, opacity",
+            }}
+            onClick={action.onClick as any}
+            disabled={anyPending}
+            data-testid={action.testId}
+          >
+            {action.icon}
+            <span className="text-[10px] mt-1 font-medium text-white/90">{action.label}</span>
+          </button>
+        ))}
       </div>
 
       <div
         className="relative bg-card rounded-xl"
         style={{
           transform: `translateX(${translateX}px)`,
-          transition: getTransition(),
+          transition: getSpringTransition(),
+          willChange: "transform",
         }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
@@ -327,18 +354,19 @@ export default function SwipeableTaskCard({
 
       {showPriorityPicker && createPortal(
         <div
-          className="fixed z-[9999] bg-card border border-border rounded-lg shadow-xl py-1 min-w-[90px]"
+          className="fixed z-[9999] bg-card border border-border rounded-xl shadow-2xl py-1.5 min-w-[100px] overflow-hidden"
           style={{
             top: pickerPos.top,
             left: pickerPos.left,
             transform: "translateY(-100%)",
+            animation: "pickerIn 0.2s cubic-bezier(0.32, 0.72, 0, 1)",
           }}
           onClick={(e) => e.stopPropagation()}
         >
           {["urgent", "high", "medium", "low"].map((p) => (
             <button
               key={p}
-              className={`w-full px-3 py-2.5 text-sm text-left transition-colors flex items-center gap-2 active:bg-muted ${
+              className={`w-full px-4 py-2.5 text-sm text-left transition-colors flex items-center gap-2.5 active:bg-muted/80 ${
                 taskPriority === p ? "bg-muted font-semibold" : ""
               }`}
               onClick={(e) => { e.stopPropagation(); priorityMutation.mutate(p); }}
