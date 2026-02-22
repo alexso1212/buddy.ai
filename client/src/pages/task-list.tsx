@@ -40,9 +40,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertTaskSchema, type Task, type Project, type User } from "@shared/schema";
 import { z } from "zod";
+import ParticipantAvatars from "@/components/ParticipantAvatars";
+
+type TaskWithParticipants = Task & {
+  participants?: Array<{
+    id: number;
+    taskId: number;
+    userId: number;
+    role: string;
+    user: User | null;
+  }>;
+};
 
 type TasksResponse = {
-  data: Task[];
+  data: TaskWithParticipants[];
 };
 
 type ProjectsResponse = {
@@ -546,6 +557,7 @@ export default function TaskList() {
                     <TableHead>状态</TableHead>
                     <TableHead>优先级</TableHead>
                     <TableHead>指派人</TableHead>
+                    <TableHead>相关人员</TableHead>
                     <TableHead>截止日期</TableHead>
                     <TableHead>权重</TableHead>
                   </TableRow>
@@ -569,6 +581,9 @@ export default function TaskList() {
                         </Badge>
                       </TableCell>
                       <TableCell>{userMap.get(task.assigneeId!)?.displayName ?? "-"}</TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <ParticipantAvatars participants={task.participants || []} />
+                      </TableCell>
                       <TableCell>{formatDate(task.dueDate)}</TableCell>
                       <TableCell>{task.weight}</TableCell>
                     </TableRow>
@@ -597,6 +612,11 @@ export default function TaskList() {
                       {userMap.get(task.assigneeId!)?.displayName ?? "-"}
                     </span>
                   </div>
+                  {(task.participants?.length ?? 0) > 0 && (
+                    <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                      <ParticipantAvatars participants={task.participants || []} />
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
                     <StatusDropdown taskId={task.id} currentStatus={task.status} />
                     <Badge className={getPriorityColor(task.priority)}>

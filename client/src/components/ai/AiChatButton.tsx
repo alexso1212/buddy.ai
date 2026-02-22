@@ -14,7 +14,6 @@ export default function AiChatButton({ onClick }: AiChatButtonProps) {
         "bg-gradient-to-br from-blue-500 to-indigo-600",
         "flex items-center justify-center",
         "text-white shadow-lg",
-        "animate-pulse hover:animate-none",
         "hover:scale-110 active:scale-95",
         "transition-transform duration-200"
       )}

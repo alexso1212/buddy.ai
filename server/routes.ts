@@ -11,6 +11,7 @@ import {
   insertTaskSchema,
   insertTaskDependencySchema,
   insertTaskCommentSchema,
+  insertTaskParticipantSchema,
   insertJobRoleSchema,
 } from "@shared/schema";
 import { judgeTaskAssignment } from "./services/ai/verdictService";
@@ -293,7 +294,16 @@ export async function registerRoutes(server: Server, app: Express) {
         filters.parentTaskId = val === "null" ? null : parseInt(val);
       }
 
-      const data = await storage.getTasks(Object.keys(filters).length > 0 ? filters : undefined);
+      const tasksData = await storage.getTasks(Object.keys(filters).length > 0 ? filters : undefined);
+      const taskIds = tasksData.map(t => t.id);
+      const allParticipants = await storage.getTaskParticipantsByTaskIds(taskIds);
+      const allUsers = await storage.getUsers();
+      const data = tasksData.map(t => ({
+        ...t,
+        participants: allParticipants
+          .filter(p => p.taskId === t.id)
+          .map(p => ({ ...p, user: allUsers.find(u => u.id === p.userId) || null })),
+      }));
       return res.json({ data });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
@@ -305,12 +315,18 @@ export async function registerRoutes(server: Server, app: Express) {
       const id = parseInt(req.params.id);
       const task = await storage.getTaskById(id);
       if (!task) return res.status(404).json({ error: "Task not found" });
-      const [subtasks, dependencies, comments] = await Promise.all([
+      const [subtasks, dependencies, comments, participantsRaw] = await Promise.all([
         storage.getTasks({ parentTaskId: id }),
         storage.getTaskDependencies(id),
         storage.getTaskComments(id),
+        storage.getTaskParticipants(id),
       ]);
-      return res.json({ data: { ...task, subtasks, dependencies, comments } });
+      const allUsers = await storage.getUsers();
+      const participants = participantsRaw.map(p => ({
+        ...p,
+        user: allUsers.find(u => u.id === p.userId) || null,
+      }));
+      return res.json({ data: { ...task, subtasks, dependencies, comments, participants } });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }
@@ -459,6 +475,70 @@ export async function registerRoutes(server: Server, app: Express) {
         source: "manual",
       });
       return res.status(201).json({ data: comment });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== Task Participants =====================
+  app.get("/api/tasks/:id/participants", async (req, res) => {
+    try {
+      const taskId = parseInt(req.params.id);
+      const participants = await storage.getTaskParticipants(taskId);
+      const users = await storage.getUsers();
+      const data = participants.map(p => ({
+        ...p,
+        user: users.find(u => u.id === p.userId) || null,
+      }));
+      return res.json({ data });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/tasks/:id/participants", async (req, res) => {
+    try {
+      const taskId = parseInt(req.params.id);
+      const task = await storage.getTaskById(taskId);
+      if (!task) return res.status(404).json({ error: "Task not found" });
+
+      const parsed = insertTaskParticipantSchema.safeParse({ ...req.body, taskId });
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+
+      const participant = await storage.addTaskParticipant(parsed.data);
+      await storage.createActivityLog({
+        orgId: task.orgId,
+        userId: getActivityUserId(req.body),
+        entityType: "task",
+        entityId: taskId,
+        action: "add_participant",
+        changes: JSON.stringify({ userId: parsed.data.userId, role: parsed.data.role }),
+        source: "manual",
+      });
+      return res.status(201).json({ data: participant });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/tasks/:taskId/participants/:userId", async (req, res) => {
+    try {
+      const taskId = parseInt(req.params.taskId);
+      const userId = parseInt(req.params.userId);
+      const task = await storage.getTaskById(taskId);
+      if (!task) return res.status(404).json({ error: "Task not found" });
+
+      await storage.removeTaskParticipantByTaskAndUser(taskId, userId);
+      await storage.createActivityLog({
+        orgId: task.orgId,
+        userId: getActivityUserId(req.body),
+        entityType: "task",
+        entityId: taskId,
+        action: "remove_participant",
+        changes: JSON.stringify({ userId }),
+        source: "manual",
+      });
+      return res.json({ data: { success: true } });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }

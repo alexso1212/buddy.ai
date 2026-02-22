@@ -11,6 +11,7 @@ import {
   taskDependencies,
   activityLogs,
   taskComments,
+  taskParticipants,
   jobRoles,
   verdicts,
   type Organization,
@@ -21,6 +22,7 @@ import {
   type TaskDependency,
   type ActivityLog,
   type TaskComment,
+  type TaskParticipant,
   type JobRole,
   type Verdict,
   type InsertOrganization,
@@ -31,6 +33,7 @@ import {
   type InsertTaskDependency,
   type InsertActivityLog,
   type InsertTaskComment,
+  type InsertTaskParticipant,
   type InsertJobRole,
   type InsertVerdict,
 } from "@shared/schema";
@@ -181,6 +184,30 @@ export class DatabaseStorage {
   async createTaskComment(data: InsertTaskComment): Promise<TaskComment> {
     const [result] = await db.insert(taskComments).values(data).returning();
     return result;
+  }
+
+  async getTaskParticipants(taskId: number): Promise<TaskParticipant[]> {
+    return db.select().from(taskParticipants).where(eq(taskParticipants.taskId, taskId));
+  }
+
+  async getTaskParticipantsByTaskIds(taskIds: number[]): Promise<TaskParticipant[]> {
+    if (taskIds.length === 0) return [];
+    return db.select().from(taskParticipants).where(inArray(taskParticipants.taskId, taskIds));
+  }
+
+  async addTaskParticipant(data: InsertTaskParticipant): Promise<TaskParticipant> {
+    const [result] = await db.insert(taskParticipants).values(data).returning();
+    return result;
+  }
+
+  async removeTaskParticipant(id: number): Promise<void> {
+    await db.delete(taskParticipants).where(eq(taskParticipants.id, id));
+  }
+
+  async removeTaskParticipantByTaskAndUser(taskId: number, userId: number): Promise<void> {
+    await db.delete(taskParticipants).where(
+      and(eq(taskParticipants.taskId, taskId), eq(taskParticipants.userId, userId))
+    );
   }
 
   async getAllTaskDependencies(): Promise<TaskDependency[]> {

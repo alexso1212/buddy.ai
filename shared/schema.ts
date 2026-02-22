@@ -148,6 +148,17 @@ export const taskComments = pgTable('task_comments', {
 });
 
 // ============================================================
+// 9. task_participants（任务参与人）
+// ============================================================
+export const taskParticipants = pgTable('task_participants', {
+  id: serial('id').primaryKey(),
+  taskId: integer('task_id').references(() => tasks.id, { onDelete: 'cascade' }).notNull(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  role: varchar('role', { length: 50 }).notNull().default('participant'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// ============================================================
 // 10. verdicts（权责判定记录）
 // ============================================================
 export const verdicts = pgTable('verdicts', {
@@ -221,6 +232,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   createdTasks: many(tasks, { relationName: 'taskCreator' }),
   assignedTasks: many(tasks, { relationName: 'taskAssignee' }),
   comments: many(taskComments),
+  participatedTasks: many(taskParticipants),
 }));
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
@@ -261,6 +273,7 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
     relationName: 'taskAssignee',
   }),
   comments: many(taskComments),
+  participants: many(taskParticipants),
 }));
 
 export const taskDependenciesRelations = relations(taskDependencies, ({ one }) => ({
@@ -283,6 +296,17 @@ export const taskCommentsRelations = relations(taskComments, ({ one }) => ({
   }),
   user: one(users, {
     fields: [taskComments.userId],
+    references: [users.id],
+  }),
+}));
+
+export const taskParticipantsRelations = relations(taskParticipants, ({ one }) => ({
+  task: one(tasks, {
+    fields: [taskParticipants.taskId],
+    references: [tasks.id],
+  }),
+  user: one(users, {
+    fields: [taskParticipants.userId],
     references: [users.id],
   }),
 }));
@@ -390,6 +414,13 @@ export const insertJobRoleSchema = createInsertSchema(jobRoles).omit({
 });
 export type InsertJobRole = z.infer<typeof insertJobRoleSchema>;
 export type JobRole = typeof jobRoles.$inferSelect;
+
+export const insertTaskParticipantSchema = createInsertSchema(taskParticipants).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertTaskParticipant = z.infer<typeof insertTaskParticipantSchema>;
+export type TaskParticipant = typeof taskParticipants.$inferSelect;
 
 export const insertVerdictSchema = createInsertSchema(verdicts).omit({
   id: true,

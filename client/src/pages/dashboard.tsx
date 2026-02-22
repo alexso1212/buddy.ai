@@ -1,11 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import type { Task, Project } from "@shared/schema";
+import type { Task, Project, User } from "@shared/schema";
+import ParticipantAvatars from "@/components/ParticipantAvatars";
+
+type TaskWithParticipants = Task & {
+  participants?: Array<{
+    id: number;
+    taskId: number;
+    userId: number;
+    role: string;
+    user: User | null;
+  }>;
+};
 
 function Dashboard() {
   const [, navigate] = useLocation();
 
-  const { data: tasksResponse, isLoading: tasksLoading } = useQuery<{ data: Task[] }>({
+  const { data: tasksResponse, isLoading: tasksLoading } = useQuery<{ data: TaskWithParticipants[] }>({
     queryKey: ["/api/tasks"],
   });
 
@@ -185,6 +196,9 @@ function Dashboard() {
                         Priority
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        相关人员
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                         Due Date
                       </th>
                     </tr>
@@ -212,6 +226,9 @@ function Dashboard() {
                           ) : (
                             <span className="text-sm text-muted-foreground">—</span>
                           )}
+                        </td>
+                        <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                          <ParticipantAvatars participants={task.participants || []} />
                         </td>
                         <td className="px-6 py-4 text-sm text-muted-foreground">
                           {task.dueDate ? formatDate(task.dueDate) : "—"}
@@ -251,6 +268,12 @@ function Dashboard() {
                       </span>
                     )}
                   </div>
+
+                  {(task.participants?.length ?? 0) > 0 && (
+                    <div className="mt-2 mb-3" onClick={(e) => e.stopPropagation()}>
+                      <ParticipantAvatars participants={task.participants || []} />
+                    </div>
+                  )}
 
                   {/* Due Date */}
                   {task.dueDate && (

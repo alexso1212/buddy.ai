@@ -12,10 +12,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Plus, Pencil, Trash2, MessageSquare, GitBranch, ListTree, Activity, Scale, Check, X as XIcon, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, MessageSquare, GitBranch, ListTree, Activity, Scale, Check, X as XIcon, Loader2, UserPlus, Users } from "lucide-react";
 
 interface TaskDetailResponse {
-  data: Task & { subtasks: Task[]; dependencies: TaskDependency[]; comments: TaskComment[] };
+  data: Task & { 
+    subtasks: Task[]; 
+    dependencies: TaskDependency[]; 
+    comments: TaskComment[]; 
+    participants: Array<{ id: number; taskId: number; userId: number; role: string; user: User | null }>;
+  };
 }
 
 interface UsersResponse {
@@ -235,6 +240,7 @@ export default function TaskDetail() {
   const subtasks = task?.subtasks ?? [];
   const dependencies = task?.dependencies ?? [];
   const comments = task?.comments ?? [];
+  const participants = task?.participants ?? [];
   const users = usersRes?.data ?? [];
   const projects = projectsRes?.data ?? [];
   const allTasks = allTasksRes?.data ?? [];
@@ -322,6 +328,41 @@ export default function TaskDetail() {
     },
     onError: (err: Error) => {
       toast({ title: "添加失败", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const [participantOpen, setParticipantOpen] = useState(false);
+  const [participantUserId, setParticipantUserId] = useState("");
+  const [participantRole, setParticipantRole] = useState("participant");
+
+  const addParticipantMutation = useMutation({
+    mutationFn: async ({ userId, role }: { userId: number; role: string }) => {
+      await apiRequest("POST", `/api/tasks/${id}/participants`, { userId, role });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks', id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+      setParticipantUserId("");
+      setParticipantRole("participant");
+      setParticipantOpen(false);
+      toast({ title: "参与人已添加" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "添加失败", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const removeParticipantMutation = useMutation({
+    mutationFn: async ({ taskId, userId }: { taskId: number; userId: number }) => {
+      await apiRequest("DELETE", `/api/tasks/${taskId}/participants/${userId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks', id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+      toast({ title: "参与人已移除" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "移除失败", description: err.message, variant: "destructive" });
     },
   });
 
@@ -509,6 +550,52 @@ export default function TaskDetail() {
             <span>{task.progress}%</span>
           </div>
         </div>
+
+        <div className="mt-6 pt-4 border-t border-border">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-1.5">
+              <Users className="h-4 w-4" />
+              相关人员 ({participants.length})
+            </h3>
+            <Button size="sm" variant="outline" onClick={() => setParticipantOpen(true)} data-testid="btn-add-participant">
+              <UserPlus className="mr-1 h-3.5 w-3.5" />
+              添加
+            </Button>
+          </div>
+          {participants.length === 0 ? (
+            <p className="text-sm text-muted-foreground">暂无相关人员</p>
+          ) : (
+            <div className="flex flex-wrap gap-2" data-testid="participant-list">
+              {participants.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center gap-2 bg-muted rounded-full px-3 py-1.5 text-sm group"
+                  data-testid={`participant-chip-${p.userId}`}
+                >
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-medium ${["bg-blue-500","bg-green-500","bg-purple-500","bg-pink-500","bg-amber-500","bg-teal-500","bg-indigo-500","bg-rose-500"][p.userId % 8]}`}>
+                    {p.user?.avatarUrl ? (
+                      <img src={p.user.avatarUrl} alt={p.user.displayName} className="w-full h-full rounded-full object-cover" />
+                    ) : (
+                      (p.user?.displayName || "?").charAt(0).toUpperCase()
+                    )}
+                  </div>
+                  <span className="font-medium">{p.user?.displayName || `User #${p.userId}`}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {p.role === "participant" ? "参与人" : p.role === "reviewer" ? "审核人" : p.role === "observer" ? "观察者" : p.role}
+                  </span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); removeParticipantMutation.mutate({ taskId: Number(id), userId: p.userId }); }}
+                    disabled={removeParticipantMutation.isPending}
+                    className="ml-1 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                    data-testid={`btn-remove-participant-${p.userId}`}
+                  >
+                    <XIcon className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </Card>
 
       <div className={detailTab === "info" ? "" : "hidden md:block"}>
@@ -624,6 +711,57 @@ export default function TaskDetail() {
           ))}
         </div>
       </Card>
+
+      <Dialog open={participantOpen} onOpenChange={setParticipantOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>添加相关人员</DialogTitle>
+            <DialogDescription>选择要添加到此任务的相关人员</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">选择成员</label>
+              <Select value={participantUserId} onValueChange={setParticipantUserId}>
+                <SelectTrigger data-testid="select-participant-user">
+                  <SelectValue placeholder="选择成员" />
+                </SelectTrigger>
+                <SelectContent>
+                  {users
+                    .filter(u => u.isActive && !participants.some(p => p.userId === u.id))
+                    .map(u => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.displayName}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium">角色</label>
+              <Select value={participantRole} onValueChange={setParticipantRole}>
+                <SelectTrigger data-testid="select-participant-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="participant">参与人</SelectItem>
+                  <SelectItem value="reviewer">审核人</SelectItem>
+                  <SelectItem value="observer">观察者</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              disabled={!participantUserId || addParticipantMutation.isPending}
+              onClick={() => addParticipantMutation.mutate({
+                userId: parseInt(participantUserId),
+                role: participantRole,
+              })}
+              data-testid="btn-submit-participant"
+            >
+              {addParticipantMutation.isPending ? "添加中..." : "添加"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={depOpen} onOpenChange={setDepOpen}>
         <DialogContent>

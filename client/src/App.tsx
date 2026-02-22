@@ -6,8 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import NotFound from "@/pages/not-found";
-import AiChatButton from "@/components/ai/AiChatButton";
-import AiChatPanel from "@/components/ai/AiChatPanel";
+import Agent from "@/pages/agent";
 import Dashboard from "@/pages/dashboard";
 import ProjectList from "@/pages/project-list";
 import ProjectDetail from "@/pages/project-detail";
@@ -25,6 +24,7 @@ import {
   Menu,
   X,
   Network,
+  Bot,
   Sun,
   Moon,
   Monitor,
@@ -34,6 +34,7 @@ import { useTheme } from "@/components/ThemeProvider";
 const NAV_ITEMS = [
   { label: "仪表盘", icon: LayoutDashboard, path: "/" },
   { label: "图谱", icon: Network, path: "/graph" },
+  { label: "助手", icon: Bot, path: "/agent" },
   { label: "项目", icon: FolderKanban, path: "/projects" },
   { label: "任务", icon: CheckSquare, path: "/tasks" },
   { label: "团队", icon: Users, path: "/team" },
@@ -161,6 +162,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/graph" component={GraphView} />
+      <Route path="/agent" component={Agent} />
       <Route path="/projects" component={ProjectList} />
       <Route path="/projects/:id" component={ProjectDetail} />
       <Route path="/tasks" component={TaskList} />
@@ -174,7 +176,6 @@ function Router() {
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [aiChatOpen, setAiChatOpen] = useState(false);
 
   return (
     <ThemeProvider>
@@ -203,8 +204,6 @@ function App() {
       </div>
 
       <Toaster />
-      {!aiChatOpen && <AiChatButton onClick={() => setAiChatOpen(true)} />}
-      {aiChatOpen && <AiChatPanel onClose={() => setAiChatOpen(false)} />}
     </QueryClientProvider>
     </ThemeProvider>
   );

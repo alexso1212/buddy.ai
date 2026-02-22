@@ -1,7 +1,7 @@
 # 德湃任务中心 (Depai Task Center) - V6 Rebuild
 
 ## Overview
-Team task management system for Deltapex Education (financial education company). Complete V6 rebuild with simplified 8-table data model using serial integer IDs. Full CRUD API + 7-page frontend with sidebar navigation.
+Team task management system for Deltapex Education (financial education company). Complete V6 rebuild with 11-table data model using serial integer IDs. Full CRUD API + 8-page frontend with sidebar navigation.
 
 ## Tech Stack
 - Express.js + Vite + React (TypeScript)
@@ -10,7 +10,7 @@ Team task management system for Deltapex Education (financial education company)
 - wouter for frontend routing
 
 ## Project Structure
-- `shared/schema.ts` - Database schema: 8 tables (organizations, departments, users, projects, tasks, task_dependencies, activity_logs, task_comments)
+- `shared/schema.ts` - Database schema: 11 tables (organizations, departments, users, projects, tasks, task_dependencies, activity_logs, task_comments, task_participants, job_roles, verdicts)
 - `server/storage.ts` - DatabaseStorage class with CRUD methods for all 8 tables
 - `server/routes.ts` - REST API routes with Zod validation, unified response format, auto activity logging
 - `server/seed.ts` - Seed script: Deltapex Education org, 5 departments, CEO user
@@ -33,10 +33,11 @@ Team task management system for Deltapex Education (financial education company)
 - GET/POST /api/users, PATCH/DELETE /api/users/:id
 - GET /api/projects (includes owner info), POST /api/projects
 - GET /api/projects/:id (includes tasks), PATCH/DELETE /api/projects/:id
-- GET /api/tasks (filters: projectId, assigneeId, status, parentTaskId), POST /api/tasks
-- GET /api/tasks/:id (includes subtasks, dependencies, comments), PATCH/DELETE /api/tasks/:id
+- GET /api/tasks (filters: projectId, assigneeId, status, parentTaskId; includes participants), POST /api/tasks
+- GET /api/tasks/:id (includes subtasks, dependencies, comments, participants), PATCH/DELETE /api/tasks/:id
 - GET /api/tasks/:id/dependencies, POST/DELETE /api/task-dependencies/:id
 - GET /api/tasks/:id/comments, POST /api/tasks/:id/comments
+- GET/POST /api/tasks/:id/participants, DELETE /api/tasks/:taskId/participants/:userId
 - GET /api/activity-logs (filters: entityType, entityId)
 
 ## API Conventions
@@ -57,15 +58,19 @@ Team task management system for Deltapex Education (financial education company)
 - Departments: 管理层, 课程研发, 市场运营, 技术开发, 交易策略
 - CEO user: Alexso (id: 1, role: owner)
 
-## Frontend Pages (7 pages, sidebar + content layout)
+## Frontend Pages (8 pages, sidebar + content layout)
 - `client/src/App.tsx` - Sidebar navigation (240px, dark bg) + content area, responsive mobile menu
-- `client/src/pages/dashboard.tsx` - Stats cards (total/in-progress/completed/overdue) + my tasks table
+- `client/src/pages/dashboard.tsx` - Stats cards (total/in-progress/completed/overdue) + my tasks table with participant avatars
+- `client/src/pages/agent.tsx` - Full-page AI chat interface (replaces floating button), max-w-3xl centered layout
 - `client/src/pages/project-list.tsx` - Projects table with owner, new project modal
 - `client/src/pages/project-detail.tsx` - Project info + task table, edit project modal, new task modal
-- `client/src/pages/task-list.tsx` - Task table with filters (project/status/assignee), inline status change, new task modal
-- `client/src/pages/task-detail.tsx` - Full task info, subtasks, dependencies, comments, activity log
-- `client/src/pages/team.tsx` - User list + department tree (2 tabs), add/edit/delete
+- `client/src/pages/task-list.tsx` - Task table with filters (project/status/assignee), inline status change, participant avatars column, new task modal
+- `client/src/pages/task-detail.tsx` - Full task info, participant management (add/remove), subtasks, dependencies, comments, activity log, verdict
+- `client/src/pages/team.tsx` - User list + department tree + job roles (3 tabs), add/edit/delete
 - `client/src/pages/settings.tsx` - Organization info (read-only)
+
+## Shared Components
+- `client/src/components/ParticipantAvatars.tsx` - Overlapping avatar circles with click-to-expand popup showing full participant list with role labels
 
 ## Status Colors (Tailwind)
 - todo: bg-gray-200 text-gray-700
