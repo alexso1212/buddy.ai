@@ -183,6 +183,23 @@ export const verdicts = pgTable('verdicts', {
 });
 
 // ============================================================
+// 11. notifications（通知）
+// ============================================================
+export const notifications = pgTable('notifications', {
+  id: serial('id').primaryKey(),
+  orgId: integer('org_id').references(() => organizations.id).notNull(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  type: varchar('type', { length: 50 }).notNull(),
+  entityType: varchar('entity_type', { length: 50 }).notNull(),
+  entityId: integer('entity_id').notNull(),
+  entityTitle: varchar('entity_title', { length: 500 }).notNull(),
+  message: text('message').notNull(),
+  triggeredBy: integer('triggered_by').references(() => users.id).notNull(),
+  isRead: boolean('is_read').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// ============================================================
 // Relations 定义
 // ============================================================
 
@@ -343,6 +360,19 @@ export const verdictsRelations = relations(verdicts, ({ one }) => ({
   }),
 }));
 
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(users, {
+    fields: [notifications.userId],
+    references: [users.id],
+    relationName: 'notificationRecipient',
+  }),
+  triggeredByUser: one(users, {
+    fields: [notifications.triggeredBy],
+    references: [users.id],
+    relationName: 'notificationTrigger',
+  }),
+}));
+
 // ============================================================
 // Insert Schemas & Types
 // ============================================================
@@ -432,3 +462,10 @@ export const insertVerdictSchema = createInsertSchema(verdicts).omit({
 });
 export type InsertVerdict = z.infer<typeof insertVerdictSchema>;
 export type Verdict = typeof verdicts.$inferSelect;
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;

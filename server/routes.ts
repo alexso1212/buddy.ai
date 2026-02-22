@@ -21,6 +21,73 @@ function getActivityUserId(body: any): number {
 }
 
 export async function registerRoutes(server: Server, app: Express) {
+  async function generateTeamNotifications(
+    triggeredByUserId: number,
+    entityType: 'task' | 'project',
+    entityId: number,
+    entityTitle: string,
+    orgId: number,
+    type: string,
+    message: string
+  ) {
+    const recipientIds = new Set<number>();
+
+    if (entityType === 'task') {
+      const task = await storage.getTaskById(entityId);
+      if (task) {
+        if (task.assigneeId && task.assigneeId !== triggeredByUserId) recipientIds.add(task.assigneeId);
+        if (task.creatorId !== triggeredByUserId) recipientIds.add(task.creatorId);
+        const participants = await storage.getTaskParticipants(entityId);
+        for (const p of participants) {
+          if (p.userId !== triggeredByUserId) recipientIds.add(p.userId);
+        }
+      }
+    } else if (entityType === 'project') {
+      const project = await storage.getProjectById(entityId);
+      if (project) {
+        if (project.ownerId !== triggeredByUserId) recipientIds.add(project.ownerId);
+        const projectTasks = await storage.getTasks({ projectId: entityId });
+        for (const t of projectTasks) {
+          if (t.assigneeId && t.assigneeId !== triggeredByUserId) recipientIds.add(t.assigneeId);
+          if (t.creatorId !== triggeredByUserId) recipientIds.add(t.creatorId);
+        }
+      }
+    }
+
+    // Team vs Personal: Only notify superiors if there are already other recipients
+    // (meaning it's a team event, not a purely personal task)
+    if (recipientIds.size > 0) {
+      const triggerUser = await storage.getUserById(triggeredByUserId);
+      if (triggerUser && triggerUser.deptId) {
+        const allUsers = await storage.getUsers();
+        const heads = allUsers.filter(u => u.deptId === triggerUser.deptId && (u.role === 'head' || u.role === 'admin' || u.role === 'owner') && u.id !== triggeredByUserId);
+        for (const h of heads) {
+          recipientIds.add(h.id);
+        }
+        const ownerUsers = allUsers.filter(u => u.role === 'owner' && u.id !== triggeredByUserId);
+        for (const o of ownerUsers) {
+          recipientIds.add(o.id);
+        }
+      }
+    }
+
+    if (recipientIds.size === 0) return;
+
+    const notificationData = Array.from(recipientIds).map(userId => ({
+      orgId,
+      userId,
+      type,
+      entityType,
+      entityId,
+      entityTitle,
+      message,
+      triggeredBy: triggeredByUserId,
+      isRead: false,
+    }));
+
+    await storage.createManyNotifications(notificationData);
+  }
+
   // ===================== Organizations =====================
   app.get("/api/organizations", async (_req, res) => {
     try {
@@ -254,6 +321,20 @@ export async function registerRoutes(server: Server, app: Express) {
         changes: JSON.stringify(req.body),
         source: "manual",
       });
+      if (req.body.status && req.body.status !== existing.status) {
+        const triggerUserId = getActivityUserId(req.body);
+        const triggerUser = await storage.getUserById(triggerUserId);
+        const triggerName = triggerUser?.displayName || '某人';
+        const statusLabels: Record<string, string> = {
+          active: '进行中', paused: '已暂停', completed: '已完成', archived: '已归档'
+        };
+        const newStatusLabel = statusLabels[req.body.status] || req.body.status;
+        await generateTeamNotifications(
+          triggerUserId, 'project', id, existing.name, existing.orgId,
+          req.body.status === 'completed' ? 'completed' : 'status_change',
+          `${triggerName} 将项目「${existing.name}」状态更改为「${newStatusLabel}」`
+        );
+      }
       return res.json({ data: updated });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
@@ -265,16 +346,49 @@ export async function registerRoutes(server: Server, app: Express) {
       const id = parseInt(req.params.id);
       const existing = await storage.getProjectById(id);
       if (!existing) return res.status(404).json({ error: "Project not found" });
+
+      const triggerUserId = getActivityUserId(req.body);
+      const recipientIds = new Set<number>();
+      if (existing.ownerId !== triggerUserId) recipientIds.add(existing.ownerId);
+      const projectTasks = await storage.getTasks({ projectId: id });
+      for (const t of projectTasks) {
+        if (t.assigneeId && t.assigneeId !== triggerUserId) recipientIds.add(t.assigneeId);
+        if (t.creatorId !== triggerUserId) recipientIds.add(t.creatorId);
+      }
+      const triggerUser = await storage.getUserById(triggerUserId);
+      if (triggerUser && recipientIds.size > 0) {
+        const allUsers = await storage.getUsers();
+        const ownerUsers = allUsers.filter(u => u.role === 'owner' && u.id !== triggerUserId);
+        for (const o of ownerUsers) recipientIds.add(o.id);
+      }
+
       await storage.deleteProject(id);
       await storage.createActivityLog({
         orgId: existing.orgId,
-        userId: getActivityUserId(req.body),
+        userId: triggerUserId,
         entityType: "project",
         entityId: id,
         action: "delete",
         changes: JSON.stringify({ id, name: existing.name }),
         source: "manual",
       });
+
+      if (recipientIds.size > 0) {
+        const triggerName = triggerUser?.displayName || '某人';
+        const notifs = Array.from(recipientIds).map(userId => ({
+          orgId: existing.orgId,
+          userId,
+          type: 'deleted' as const,
+          entityType: 'project' as const,
+          entityId: id,
+          entityTitle: existing.name,
+          message: `${triggerName} 删除了项目「${existing.name}」`,
+          triggeredBy: triggerUserId,
+          isRead: false,
+        }));
+        await storage.createManyNotifications(notifs);
+      }
+
       return res.json({ data: { success: true } });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
@@ -367,6 +481,20 @@ export async function registerRoutes(server: Server, app: Express) {
         changes: JSON.stringify(req.body),
         source: "manual",
       });
+      if (req.body.status && req.body.status !== existing.status) {
+        const triggerUserId = getActivityUserId(req.body);
+        const statusLabels: Record<string, string> = {
+          todo: '待办', in_progress: '进行中', in_review: '审核中', done: '已完成', cancelled: '已取消'
+        };
+        const newStatusLabel = statusLabels[req.body.status] || req.body.status;
+        const triggerUser = await storage.getUserById(triggerUserId);
+        const triggerName = triggerUser?.displayName || '某人';
+        await generateTeamNotifications(
+          triggerUserId, 'task', id, existing.title, existing.orgId,
+          req.body.status === 'done' ? 'completed' : 'status_change',
+          `${triggerName} 将任务「${existing.title}」状态更改为「${newStatusLabel}」`
+        );
+      }
       return res.json({ data: updated });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
@@ -378,16 +506,49 @@ export async function registerRoutes(server: Server, app: Express) {
       const id = parseInt(req.params.id);
       const existing = await storage.getTaskById(id);
       if (!existing) return res.status(404).json({ error: "Task not found" });
+
+      const triggerUserId = getActivityUserId(req.body);
+      const participants = await storage.getTaskParticipants(id);
+      const recipientIds = new Set<number>();
+      if (existing.assigneeId && existing.assigneeId !== triggerUserId) recipientIds.add(existing.assigneeId);
+      if (existing.creatorId !== triggerUserId) recipientIds.add(existing.creatorId);
+      for (const p of participants) {
+        if (p.userId !== triggerUserId) recipientIds.add(p.userId);
+      }
+      const triggerUser = await storage.getUserById(triggerUserId);
+      if (triggerUser && recipientIds.size > 0) {
+        const allUsers = await storage.getUsers();
+        const ownerUsers = allUsers.filter(u => u.role === 'owner' && u.id !== triggerUserId);
+        for (const o of ownerUsers) recipientIds.add(o.id);
+      }
+
       await storage.deleteTask(id);
       await storage.createActivityLog({
         orgId: existing.orgId,
-        userId: getActivityUserId(req.body),
+        userId: triggerUserId,
         entityType: "task",
         entityId: id,
         action: "delete",
         changes: JSON.stringify({ id, title: existing.title }),
         source: "manual",
       });
+
+      if (recipientIds.size > 0) {
+        const triggerName = triggerUser?.displayName || '某人';
+        const notifs = Array.from(recipientIds).map(userId => ({
+          orgId: existing.orgId,
+          userId,
+          type: 'deleted' as const,
+          entityType: 'task' as const,
+          entityId: id,
+          entityTitle: existing.title,
+          message: `${triggerName} 删除了任务「${existing.title}」`,
+          triggeredBy: triggerUserId,
+          isRead: false,
+        }));
+        await storage.createManyNotifications(notifs);
+      }
+
       return res.json({ data: { success: true } });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
@@ -996,6 +1157,53 @@ export async function registerRoutes(server: Server, app: Express) {
       }
 
       return res.json({ data: Object.entries(statsByUser).map(([userId, stats]) => ({ userId: parseInt(userId), ...stats })) });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== Notifications =====================
+  app.get("/api/notifications", async (req, res) => {
+    try {
+      const userId = parseInt(req.query.userId as string) || 1;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const data = await storage.getNotificationsByUserId(userId, limit);
+      const allUsers = await storage.getUsers();
+      const enriched = data.map(n => ({
+        ...n,
+        triggeredByUser: allUsers.find(u => u.id === n.triggeredBy) || null,
+      }));
+      return res.json({ data: enriched });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/notifications/unread-count", async (req, res) => {
+    try {
+      const userId = parseInt(req.query.userId as string) || 1;
+      const count = await storage.getUnreadNotificationCount(userId);
+      return res.json({ data: { count } });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/notifications/:id/read", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const notification = await storage.markNotificationRead(id);
+      return res.json({ data: notification });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/notifications/mark-all-read", async (req, res) => {
+    try {
+      const userId = req.body.userId || 1;
+      await storage.markAllNotificationsRead(userId);
+      return res.json({ data: { success: true } });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }

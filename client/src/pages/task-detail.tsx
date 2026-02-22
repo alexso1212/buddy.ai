@@ -473,6 +473,27 @@ export default function TaskDetail() {
     );
   };
 
+  const deleteTaskMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/tasks/${id}`, { userId: 1 });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/stats/overview'] });
+      toast({ title: "任务已删除" });
+      setLocation("/tasks");
+    },
+    onError: (err: Error) => {
+      toast({ title: "删除失败", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleDeleteTask = () => {
+    if (window.confirm(`确定要删除任务「${task?.title}」吗？此操作不可撤销。`)) {
+      deleteTaskMutation.mutate();
+    }
+  };
+
   const handleJudge = async () => {
     if (!task || !task.assigneeId) return;
     setVerdictLoading(true);
@@ -634,10 +655,21 @@ export default function TaskDetail() {
               <Badge className={getPriorityColor(task.priority)}>{getPriorityLabel(task.priority)}</Badge>
             </div>
           </div>
-          <Button variant="outline" onClick={() => setEditOpen(true)} data-testid="btn-edit-task">
-            <Pencil className="mr-2 h-4 w-4" />
-            编辑
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setEditOpen(true)} data-testid="btn-edit-task">
+              <Pencil className="mr-2 h-4 w-4" />
+              编辑
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteTask}
+              disabled={deleteTaskMutation.isPending}
+              data-testid="btn-delete-task"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              删除
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 text-sm">

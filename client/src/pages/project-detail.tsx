@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, Plus, Pencil } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, CheckCircle } from "lucide-react";
 
 interface ProjectDetailResponse {
   data: Project & { tasks: Task[] };
@@ -352,6 +352,34 @@ export default function ProjectDetail() {
   const [editOpen, setEditOpen] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
 
+  const deleteProjectMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/projects/${id}`, { userId: 1 });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "项目已删除" });
+      setLocation("/projects");
+    },
+    onError: (err: Error) => {
+      toast({ title: "删除失败", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const completeProjectMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("PATCH", `/api/projects/${id}`, { status: 'completed', userId: 1 });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "项目已标记完成" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "操作失败", description: err.message, variant: "destructive" });
+    },
+  });
+
   const { data: projectData, isLoading: projectLoading } = useQuery<ProjectDetailResponse>({
     queryKey: ["/api/projects", id],
     enabled: !!id,
@@ -408,13 +436,40 @@ export default function ProjectDetail() {
             {project.name}
           </h1>
         </div>
-        <Button
-          onClick={() => setEditOpen(true)}
-          data-testid="btn-edit-project"
-        >
-          <Pencil className="h-4 w-4 mr-2" />
-          Edit
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          {project.status !== 'completed' && (
+            <Button
+              variant="outline"
+              onClick={() => completeProjectMutation.mutate()}
+              disabled={completeProjectMutation.isPending}
+              data-testid="btn-complete-project"
+            >
+              <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
+              标记完成
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            onClick={() => setEditOpen(true)}
+            data-testid="btn-edit-project"
+          >
+            <Pencil className="h-4 w-4 mr-2" />
+            编辑
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              if (window.confirm(`确定要删除项目「${project.name}」吗？此操作不可撤销。`)) {
+                deleteProjectMutation.mutate();
+              }
+            }}
+            disabled={deleteProjectMutation.isPending}
+            data-testid="btn-delete-project"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            删除
+          </Button>
+        </div>
       </div>
 
       {/* Project info */}

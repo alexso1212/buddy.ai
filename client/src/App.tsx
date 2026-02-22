@@ -1,11 +1,12 @@
 import { Switch, Route, useLocation, Link } from "wouter";
 import { useState } from "react";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import NotFound from "@/pages/not-found";
+import Notifications from "@/pages/notifications";
 import Agent from "@/pages/agent";
 import Dashboard from "@/pages/dashboard";
 import ProjectList from "@/pages/project-list";
@@ -25,6 +26,7 @@ import {
   X,
   Network,
   Bot,
+  Bell,
   Sun,
   Moon,
   Monitor,
@@ -38,6 +40,7 @@ const NAV_ITEMS = [
   { label: "项目", icon: FolderKanban, path: "/projects" },
   { label: "任务", icon: CheckSquare, path: "/tasks" },
   { label: "团队", icon: Users, path: "/team" },
+  { label: "通知", icon: Bell, path: "/notifications" },
   { label: "设置", icon: SettingsIcon, path: "/settings" },
 ];
 
@@ -78,6 +81,16 @@ function ThemeToggle() {
 
 function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [location] = useLocation();
+
+  const { data: unreadRes } = useQuery<{ data: { count: number } }>({
+    queryKey: ["/api/notifications/unread-count"],
+    queryFn: async () => {
+      const res = await fetch("/api/notifications/unread-count?userId=1");
+      return res.json();
+    },
+    refetchInterval: 30000,
+  });
+  const unreadCount = unreadRes?.data?.count ?? 0;
 
   const isActive = (path: string) => {
     if (path === "/") {
@@ -140,6 +153,11 @@ function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
               >
                 <Icon className="w-5 h-5" />
                 <span>{item.label}</span>
+                {item.label === "通知" && unreadCount > 0 && (
+                  <span className="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -169,6 +187,7 @@ function Router() {
       <Route path="/tasks/:id" component={TaskDetail} />
       <Route path="/team" component={Team} />
       <Route path="/settings" component={Settings} />
+      <Route path="/notifications" component={Notifications} />
       <Route component={NotFound} />
     </Switch>
   );

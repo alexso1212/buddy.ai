@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Filter, ArrowUpDown, AlertTriangle } from "lucide-react";
+import { Filter, ArrowUpDown, AlertTriangle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -405,6 +405,23 @@ export default function TaskList() {
   const [filterAssignee, setFilterAssignee] = useState<string | undefined>(undefined);
   const [sortBy, setSortBy] = useState<string>("created_desc");
 
+  const deleteMutation = useMutation({
+    mutationFn: async (taskId: number) => {
+      await apiRequest("DELETE", `/api/tasks/${taskId}`, { userId: 1 });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats/overview"] });
+    },
+  });
+
+  const handleDeleteTask = (taskId: number, taskTitle: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (window.confirm(`确定要删除任务「${taskTitle}」吗？此操作不可撤销。`)) {
+      deleteMutation.mutate(taskId);
+    }
+  };
+
   const { data: tasksResponse, isLoading: tasksLoading } = useQuery<TasksResponse>({
     queryKey: ["/api/tasks"],
   });
@@ -614,6 +631,7 @@ export default function TaskList() {
                     <TableHead>相关人员</TableHead>
                     <TableHead>截止日期</TableHead>
                     <TableHead>权重</TableHead>
+                    <TableHead>操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -645,6 +663,18 @@ export default function TaskList() {
                       </TableCell>
                       <TableCell>{formatDate(task.dueDate)}</TableCell>
                       <TableCell>{task.weight}</TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={(e) => handleDeleteTask(task.id, task.title, e)}
+                          disabled={deleteMutation.isPending}
+                          data-testid={`btn-delete-task-${task.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -656,10 +686,17 @@ export default function TaskList() {
               {sortedTasks.map((task) => (
                 <div
                   key={task.id}
-                  className="bg-card rounded-lg shadow-sm p-3 cursor-pointer"
+                  className="bg-card rounded-lg shadow-sm p-3 cursor-pointer relative"
                   data-testid={`task-card-${task.id}`}
                   onClick={() => navigate(`/tasks/${task.id}`)}
                 >
+                  <button
+                    onClick={(e) => handleDeleteTask(task.id, task.title, e)}
+                    className="absolute top-3 right-3 text-muted-foreground hover:text-destructive p-1"
+                    data-testid={`btn-delete-task-mobile-${task.id}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                   <div className="font-medium flex items-center gap-1" data-testid={`task-card-title-${task.id}`}>
                     {task.needsReview && <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />}
                     <span className="truncate">{task.title}</span>

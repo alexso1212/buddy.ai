@@ -10,14 +10,14 @@ Team task management system for Deltapex Education (financial education company)
 - wouter for frontend routing
 
 ## Project Structure
-- `shared/schema.ts` - Database schema: 11 tables (organizations, departments, users, projects, tasks, task_dependencies, activity_logs, task_comments, task_participants, job_roles, verdicts)
+- `shared/schema.ts` - Database schema: 11 tables (organizations, departments, users, projects, tasks, task_dependencies, activity_logs, task_comments, task_participants, job_roles, verdicts, notifications)
 - `server/storage.ts` - DatabaseStorage class with CRUD methods for all 8 tables
 - `server/routes.ts` - REST API routes with Zod validation, unified response format, auto activity logging
 - `server/seed.ts` - Seed script: Deltapex Education org, 5 departments, CEO user
 - `01-data-model-spec.md` - Data model specification
 - `02-crud-ui-spec.md` - CRUD API + UI specification
 
-## Database Schema (8 tables, serial IDs)
+## Database Schema (11 tables, serial IDs)
 1. **organizations** - id, name, slug, logoUrl, plan, createdAt, updatedAt
 2. **departments** - id, orgId, name, parentId, headId, sortOrder, createdAt, updatedAt
 3. **users** - id, orgId, deptId, email, displayName, avatarUrl, role (owner/admin/head/member), isActive, createdAt, updatedAt
@@ -157,4 +157,5 @@ Team task management system for Deltapex Education (financial education company)
 - 2026-02-22: AI Verdict (Round 2) - Team page 3-tab layout (members/departments/job roles), job role column in members table, TagListEditor for responsibilities/boundaries/skills CRUD, task detail verdict button with VerdictCard (color-coded: green/yellow/red/blue), accept/override verdict actions
 - 2026-02-22: AI Verdict (Round 3) - System prompt adds judge_assignment + query_verdicts actions, actionSchemas for both, actionExecutor calls verdictService for judge_assignment, query_verdicts returns per-user stats in executeQuery
 - 2026-02-22: Dark mode - System prefers-color-scheme ThemeProvider with manual toggle (light/dark/system), all pages/components use CSS variable classes (bg-background, bg-card, text-foreground, text-muted-foreground, border-border), status/priority/verdict badges have dark: variants, sidebar uses bg-sidebar tokens, AI chat components dark-mode-aware
+- 2026-02-22: Team Notification System - notifications table (orgId, userId, type, entityType, entityId, entityTitle, message, triggeredBy, isRead), generateTeamNotifications helper with team-vs-personal logic (only notifies superiors when other people are involved), task/project PATCH status change and DELETE auto-generate notifications, delete buttons on task list/detail and project list/detail, project complete/archive dropdown actions, notifications page with unread badge in sidebar, 30s polling for unread count
 - 2026-02-22: Mobile UI optimization - Responsive layouts using md: breakpoint. Dashboard: compact stat cards + task card list. Task list: collapsible filter bar + task cards. Project list: project cards. Task detail: tab navigation (详情/子任务/依赖/评论/活动) to avoid long scrolling. Team: member cards. Desktop layout unchanged.

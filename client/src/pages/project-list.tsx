@@ -11,6 +11,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Trash2, CheckCircle, MoreVertical } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -256,6 +263,24 @@ export default function ProjectList() {
   const projects = projectsQuery.data?.data ?? [];
   const users = usersQuery.data?.data ?? [];
 
+  const deleteProjectMutation = useMutation({
+    mutationFn: async (projectId: number) => {
+      await apiRequest("DELETE", `/api/projects/${projectId}`, { userId: 1 });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+    },
+  });
+
+  const updateProjectStatusMutation = useMutation({
+    mutationFn: async ({ projectId, status }: { projectId: number; status: string }) => {
+      await apiRequest("PATCH", `/api/projects/${projectId}`, { status, userId: 1 });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+    },
+  });
+
   const handleRowClick = (projectId: number) => {
     setLocation(`/projects/${projectId}`);
   };
@@ -289,18 +314,19 @@ export default function ProjectList() {
               <TableHead>负责人</TableHead>
               <TableHead>开始日期</TableHead>
               <TableHead>目标日期</TableHead>
+              <TableHead>操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {projectsQuery.isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8">
+                <TableCell colSpan={6} className="text-center py-8">
                   加载中...
                 </TableCell>
               </TableRow>
             ) : projects.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8">
+                <TableCell colSpan={6} className="text-center py-8">
                   暂无项目
                 </TableCell>
               </TableRow>
@@ -323,6 +349,45 @@ export default function ProjectList() {
                   </TableCell>
                   <TableCell>{formatDate(project.startDate)}</TableCell>
                   <TableCell>{formatDate(project.targetDate)}</TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="icon" variant="ghost" data-testid={`btn-project-actions-${project.id}`}>
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {project.status !== 'completed' && (
+                          <DropdownMenuItem
+                            onClick={() => updateProjectStatusMutation.mutate({ projectId: project.id, status: 'completed' })}
+                            data-testid={`btn-complete-project-${project.id}`}
+                          >
+                            <CheckCircle className="mr-2 h-4 w-4 text-green-600" />
+                            标记完成
+                          </DropdownMenuItem>
+                        )}
+                        {project.status !== 'archived' && (
+                          <DropdownMenuItem
+                            onClick={() => updateProjectStatusMutation.mutate({ projectId: project.id, status: 'archived' })}
+                          >
+                            归档
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => {
+                            if (window.confirm(`确定要删除项目「${project.name}」吗？此操作不可撤销。`)) {
+                              deleteProjectMutation.mutate(project.id);
+                            }
+                          }}
+                          data-testid={`btn-delete-project-${project.id}`}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          删除项目
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
                 </TableRow>
               ))
             )}
@@ -352,7 +417,42 @@ export default function ProjectList() {
               data-testid={`project-card-${project.id}`}
             >
               {/* Project Name */}
-              <div className="font-medium mb-2">{project.name}</div>
+              <div className="flex items-start justify-between gap-2">
+                <div className="font-medium mb-2">{project.name}</div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      onClick={(e) => e.stopPropagation()}
+                      className="p-1 text-muted-foreground hover:text-foreground"
+                      data-testid={`btn-project-actions-mobile-${project.id}`}
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {project.status !== 'completed' && (
+                      <DropdownMenuItem
+                        onClick={(e) => { e.stopPropagation(); updateProjectStatusMutation.mutate({ projectId: project.id, status: 'completed' }); }}
+                      >
+                        <CheckCircle className="mr-2 h-4 w-4 text-green-600" />
+                        标记完成
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm(`确定要删除项目「${project.name}」吗？`)) {
+                          deleteProjectMutation.mutate(project.id);
+                        }
+                      }}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      删除
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
 
               {/* Status and Owner Row */}
               <div className="flex items-center gap-2 mb-2 text-sm text-muted-foreground">

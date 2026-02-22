@@ -14,6 +14,7 @@ import {
   taskParticipants,
   jobRoles,
   verdicts,
+  notifications,
   type Organization,
   type Department,
   type User,
@@ -36,6 +37,8 @@ import {
   type InsertTaskParticipant,
   type InsertJobRole,
   type InsertVerdict,
+  type Notification,
+  type InsertNotification,
 } from "@shared/schema";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -281,6 +284,36 @@ export class DatabaseStorage {
 
   async getAllVerdicts(): Promise<Verdict[]> {
     return db.select().from(verdicts).orderBy(desc(verdicts.createdAt));
+  }
+
+  async getNotificationsByUserId(userId: number, limit?: number): Promise<Notification[]> {
+    const q = db.select().from(notifications).where(eq(notifications.userId, userId)).orderBy(desc(notifications.createdAt));
+    if (limit) return q.limit(limit);
+    return q;
+  }
+
+  async getUnreadNotificationCount(userId: number): Promise<number> {
+    const result = await db.select({ count: sql<number>`count(*)::int` }).from(notifications).where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
+    return result[0]?.count ?? 0;
+  }
+
+  async markNotificationRead(id: number): Promise<Notification | undefined> {
+    const [result] = await db.update(notifications).set({ isRead: true }).where(eq(notifications.id, id)).returning();
+    return result;
+  }
+
+  async markAllNotificationsRead(userId: number): Promise<void> {
+    await db.update(notifications).set({ isRead: true }).where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
+  }
+
+  async createNotification(data: InsertNotification): Promise<Notification> {
+    const [result] = await db.insert(notifications).values(data).returning();
+    return result;
+  }
+
+  async createManyNotifications(dataList: InsertNotification[]): Promise<Notification[]> {
+    if (dataList.length === 0) return [];
+    return db.insert(notifications).values(dataList).returning();
   }
 }
 
