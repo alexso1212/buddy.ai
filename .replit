@@ -42,3 +42,5 @@ waitForPort = 5000
 
 [userenv.shared]
 OPENROUTER_API_KEY = "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"
+AI_API_KEY = "sk-umgPtvk8aDwZ4pKx8c75C84eA31044679bC5A3E4F776Bb5a"
+AI_BASE_URL = "https://new.pumpkinai.vip/v1"

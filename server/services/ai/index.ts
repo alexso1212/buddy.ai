@@ -4,8 +4,8 @@ import { ACTION_SCHEMAS } from './actionSchemas';
 import { storage } from '../../storage';
 
 const client = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: process.env.AI_BASE_URL,
+  apiKey: process.env.AI_API_KEY,
 });
 
 interface ChatResponse {
@@ -51,7 +51,7 @@ export async function chat(
     .replace('{{projectList}}', formatProjectList(allProjects));
 
   const response = await client.chat.completions.create({
-    model: 'anthropic/claude-3.5-haiku',
+    model: 'claude-sonnet-4-20250514',
     max_tokens: 1024,
     messages: [
       { role: 'system', content: systemPrompt },
