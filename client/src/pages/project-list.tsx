@@ -261,16 +261,17 @@ export default function ProjectList() {
   };
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 md:p-6">
+      {/* Responsive Header */}
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 md:gap-0 mb-6">
         <h1
-          className="text-3xl font-bold"
+          className="text-2xl md:text-3xl font-bold"
           data-testid="project-list-title"
         >
           项目列表
         </h1>
         <Button
-          className="bg-blue-600 text-white hover:bg-blue-700"
+          className="w-full md:w-auto"
           onClick={() => setIsModalOpen(true)}
           data-testid="btn-new-project"
         >
@@ -278,7 +279,8 @@ export default function ProjectList() {
         </Button>
       </div>
 
-      <div className="bg-card rounded-lg shadow-sm overflow-hidden">
+      {/* Desktop Table */}
+      <div className="hidden md:block bg-card rounded-lg shadow-sm overflow-hidden">
         <Table data-testid="project-table">
           <TableHeader className="bg-muted">
             <TableRow>
@@ -326,6 +328,49 @@ export default function ProjectList() {
             )}
           </TableBody>
         </Table>
+      </div>
+
+      {/* Mobile Card List */}
+      <div
+        className="md:hidden space-y-2"
+        data-testid="project-card-list"
+      >
+        {projectsQuery.isLoading ? (
+          <div className="text-center py-8 text-muted-foreground">
+            加载中...
+          </div>
+        ) : projects.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            暂无项目
+          </div>
+        ) : (
+          projects.map((project) => (
+            <div
+              key={project.id}
+              className="bg-card rounded-lg shadow-sm p-4 cursor-pointer hover-elevate"
+              onClick={() => handleRowClick(project.id)}
+              data-testid={`project-card-${project.id}`}
+            >
+              {/* Project Name */}
+              <div className="font-medium mb-2">{project.name}</div>
+
+              {/* Status and Owner Row */}
+              <div className="flex items-center gap-2 mb-2 text-sm text-muted-foreground">
+                <Badge className={getStatusColor(project.status)}>
+                  {project.status}
+                </Badge>
+                <span data-testid={`project-owner-${project.id}`}>
+                  {project.owner?.displayName || "-"}
+                </span>
+              </div>
+
+              {/* Dates Row */}
+              <div className="text-xs text-muted-foreground" data-testid={`project-dates-${project.id}`}>
+                {formatDate(project.startDate)} → {formatDate(project.targetDate)}
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       <NewProjectModal

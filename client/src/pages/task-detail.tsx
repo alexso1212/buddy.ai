@@ -203,6 +203,7 @@ export default function TaskDetail() {
   const [verdictData, setVerdictData] = useState<VerdictData | null>(null);
   const [verdictLoading, setVerdictLoading] = useState(false);
   const [verdictAccepted, setVerdictAccepted] = useState<boolean | null>(null);
+  const [detailTab, setDetailTab] = useState<"info" | "subtasks" | "deps" | "comments" | "activity">("info");
 
   const { data: taskRes, isLoading: taskLoading } = useQuery<TaskDetailResponse>({
     queryKey: ['/api/tasks', id],
@@ -407,7 +408,39 @@ export default function TaskDetail() {
         返回任务列表
       </Button>
 
-      <Card className="p-6">
+      <div className="flex gap-2 overflow-x-auto md:hidden pb-1" data-testid="mobile-tab-bar">
+        {([
+          { key: "info" as const, label: "详情" },
+          { key: "subtasks" as const, label: "子任务", count: subtasks.length },
+          { key: "deps" as const, label: "依赖", count: dependencies.length },
+          { key: "comments" as const, label: "评论", count: comments.length },
+          { key: "activity" as const, label: "活动" },
+        ]).map(tab => (
+          <button
+            key={tab.key}
+            data-testid={`mobile-tab-${tab.key}`}
+            onClick={() => setDetailTab(tab.key)}
+            className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1.5 ${
+              detailTab === tab.key
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground"
+            }`}
+          >
+            {tab.label}
+            {tab.count !== undefined && tab.count > 0 && (
+              <span className={`inline-flex items-center justify-center rounded-full min-w-[1.25rem] h-5 px-1 text-[10px] font-semibold ${
+                detailTab === tab.key
+                  ? "bg-primary-foreground/20 text-primary-foreground"
+                  : "bg-foreground/10 text-muted-foreground"
+              }`}>
+                {tab.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <Card className={`p-6 ${detailTab === "info" ? "" : "hidden md:block"}`}>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="space-y-3 flex-1 min-w-0">
             <h1 className="text-2xl font-bold" data-testid="text-task-title">{task.title}</h1>
@@ -425,7 +458,7 @@ export default function TaskDetail() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 mt-6 text-sm">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 text-sm">
           <div>
             <span className="text-muted-foreground">负责人：</span>
             <span>{getUserName(task.assigneeId)}</span>
@@ -478,33 +511,35 @@ export default function TaskDetail() {
         </div>
       </Card>
 
-      {verdictData && verdictAccepted === null && (
-        <VerdictCard
-          verdict={verdictData}
-          onAccept={handleAcceptVerdict}
-          onOverride={handleOverrideVerdict}
-        />
-      )}
+      <div className={detailTab === "info" ? "" : "hidden md:block"}>
+        {verdictData && verdictAccepted === null && (
+          <VerdictCard
+            verdict={verdictData}
+            onAccept={handleAcceptVerdict}
+            onOverride={handleOverrideVerdict}
+          />
+        )}
 
-      {verdictAccepted === true && (
-        <Card className="p-4 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20">
-          <div className="flex items-center gap-2 text-green-700 dark:text-green-400 text-sm">
-            <Check className="h-4 w-4" />
-            判定已接受
-          </div>
-        </Card>
-      )}
+        {verdictAccepted === true && (
+          <Card className="p-4 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20">
+            <div className="flex items-center gap-2 text-green-700 dark:text-green-400 text-sm">
+              <Check className="h-4 w-4" />
+              判定已接受
+            </div>
+          </Card>
+        )}
 
-      {verdictAccepted === false && (
-        <Card className="p-4 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20">
-          <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 text-sm">
-            <Scale className="h-4 w-4" />
-            判定已推翻
-          </div>
-        </Card>
-      )}
+        {verdictAccepted === false && (
+          <Card className="p-4 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20">
+            <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 text-sm">
+              <Scale className="h-4 w-4" />
+              判定已推翻
+            </div>
+          </Card>
+        )}
+      </div>
 
-      <Card className="p-6">
+      <Card className={`p-6 ${detailTab === "subtasks" ? "" : "hidden md:block"}`}>
         <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <ListTree className="h-5 w-5" />
@@ -555,7 +590,7 @@ export default function TaskDetail() {
         </DialogContent>
       </Dialog>
 
-      <Card className="p-6">
+      <Card className={`p-6 ${detailTab === "deps" ? "" : "hidden md:block"}`}>
         <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <GitBranch className="h-5 w-5" />
@@ -621,7 +656,7 @@ export default function TaskDetail() {
         </DialogContent>
       </Dialog>
 
-      <Card className="p-6">
+      <Card className={`p-6 ${detailTab === "comments" ? "" : "hidden md:block"}`}>
         <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
           <MessageSquare className="h-5 w-5" />
           评论
@@ -658,7 +693,7 @@ export default function TaskDetail() {
         </div>
       </Card>
 
-      <Card className="p-6">
+      <Card className={`p-6 ${detailTab === "activity" ? "" : "hidden md:block"}`}>
         <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
           <Activity className="h-5 w-5" />
           活动日志

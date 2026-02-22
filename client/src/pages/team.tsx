@@ -207,41 +207,89 @@ function MembersTab({
             ))}
           </div>
         ) : (
-          <Table data-testid="user-table">
-            <TableHeader>
-              <TableRow>
-                <TableHead>姓名</TableHead>
-                <TableHead>邮箱</TableHead>
-                <TableHead>部门</TableHead>
-                <TableHead>岗位</TableHead>
-                <TableHead>角色</TableHead>
-                <TableHead>状态</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((user) => (
-                <TableRow key={user.id} data-testid={`user-row-${user.id}`}>
-                  <TableCell>{user.displayName}</TableCell>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell>
-                    {user.deptId ? deptMap.get(user.deptId)?.name ?? "-" : "-"}
-                  </TableCell>
-                  <TableCell data-testid={`user-jobrole-${user.id}`}>
-                    {user.jobRoleId ? jobRoleMap.get(user.jobRoleId)?.title ?? "-" : "-"}
-                  </TableCell>
-                  <TableCell>{user.role}</TableCell>
-                  <TableCell>{user.isActive ? "活跃" : "停用"}</TableCell>
-                </TableRow>
-              ))}
-              {users.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground">
-                    暂无成员
-                  </TableCell>
-                </TableRow>
+          <>
+            {/* Desktop Table */}
+            <div className="hidden md:block">
+              <Table data-testid="user-table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>姓名</TableHead>
+                    <TableHead>邮箱</TableHead>
+                    <TableHead>部门</TableHead>
+                    <TableHead>岗位</TableHead>
+                    <TableHead>角色</TableHead>
+                    <TableHead>状态</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {users.map((user) => (
+                    <TableRow key={user.id} data-testid={`user-row-${user.id}`}>
+                      <TableCell>{user.displayName}</TableCell>
+                      <TableCell>{user.email}</TableCell>
+                      <TableCell>
+                        {user.deptId ? deptMap.get(user.deptId)?.name ?? "-" : "-"}
+                      </TableCell>
+                      <TableCell data-testid={`user-jobrole-${user.id}`}>
+                        {user.jobRoleId ? jobRoleMap.get(user.jobRoleId)?.title ?? "-" : "-"}
+                      </TableCell>
+                      <TableCell>{user.role}</TableCell>
+                      <TableCell>{user.isActive ? "活跃" : "停用"}</TableCell>
+                    </TableRow>
+                  ))}
+                  {users.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        暂无成员
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Mobile Card List */}
+            <div className="md:hidden">
+              {users.length === 0 ? (
+                <div className="p-4 text-center text-muted-foreground">暂无成员</div>
+              ) : (
+                <div className="space-y-2 p-4" data-testid="user-card-list">
+                  {users.map((user) => (
+                    <div
+                      key={user.id}
+                      className="bg-card rounded-lg shadow-sm p-4"
+                      data-testid={`user-card-${user.id}`}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="font-medium">{user.displayName}</span>
+                        <Badge variant="secondary" className="text-xs">
+                          {user.role}
+                        </Badge>
+                      </div>
+                      <div className="text-sm text-muted-foreground mb-1">
+                        {user.deptId ? deptMap.get(user.deptId)?.name ?? "-" : "-"}
+                      </div>
+                      <div
+                        className="text-xs text-muted-foreground mb-3"
+                        data-testid={`user-jobrole-mobile-${user.id}`}
+                      >
+                        {user.jobRoleId ? jobRoleMap.get(user.jobRoleId)?.title ?? "-" : "-"}
+                      </div>
+                      <div
+                        className={`text-xs font-medium ${
+                          user.isActive
+                            ? "text-green-600 dark:text-green-400"
+                            : "text-red-600 dark:text-red-400"
+                        }`}
+                        data-testid={`user-status-${user.id}`}
+                      >
+                        {user.isActive ? "活跃" : "停用"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
-            </TableBody>
-          </Table>
+            </div>
+          </>
         )}
       </Card>
 

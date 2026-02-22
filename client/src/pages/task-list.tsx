@@ -1,6 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { useLocation } from "wouter";
+import { Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -387,6 +388,7 @@ function StatusDropdown({
 export default function TaskList() {
   const [, navigate] = useLocation();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [filterProject, setFilterProject] = useState<string | undefined>(undefined);
   const [filterStatus, setFilterStatus] = useState<string | undefined>(undefined);
   const [filterAssignee, setFilterAssignee] = useState<string | undefined>(undefined);
@@ -425,64 +427,99 @@ export default function TaskList() {
 
   const statusOptions = ["todo", "in_progress", "in_review", "done", "cancelled"];
 
+  const filterControls = (
+    <>
+      <div className="min-w-[200px]">
+        <label className="text-sm font-medium">项目</label>
+        <Select value={filterProject ?? "all"} onValueChange={setFilterProject}>
+          <SelectTrigger data-testid="filter-project">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部</SelectItem>
+            {projects.map((project) => (
+              <SelectItem key={project.id} value={String(project.id)}>
+                {project.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="min-w-[200px]">
+        <label className="text-sm font-medium">状态</label>
+        <Select value={filterStatus ?? "all"} onValueChange={setFilterStatus}>
+          <SelectTrigger data-testid="filter-status">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部</SelectItem>
+            {statusOptions.map((status) => (
+              <SelectItem key={status} value={status}>
+                {status.replace(/_/g, " ")}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="min-w-[200px]">
+        <label className="text-sm font-medium">指派人</label>
+        <Select value={filterAssignee ?? "all"} onValueChange={setFilterAssignee}>
+          <SelectTrigger data-testid="filter-assignee">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部</SelectItem>
+            {users.map((user) => (
+              <SelectItem key={user.id} value={String(user.id)}>
+                {user.displayName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </>
+  );
+
   return (
     <div className="flex flex-col h-full p-6 gap-4">
-      <h1 className="text-3xl font-bold" data-testid="task-list-title">
+      {/* Mobile header: title + filter toggle + new task button */}
+      <div className="flex items-center gap-3 md:hidden" data-testid="mobile-header">
+        <h1 className="text-3xl font-bold flex-1" data-testid="task-list-title-mobile">
+          任务列表
+        </h1>
+        <Button
+          size="icon"
+          variant="outline"
+          onClick={() => setShowFilters((prev) => !prev)}
+          data-testid="btn-toggle-filters"
+        >
+          <Filter />
+        </Button>
+        <Button
+          onClick={() => setIsModalOpen(true)}
+          data-testid="btn-new-task-mobile"
+        >
+          新建任务
+        </Button>
+      </div>
+
+      {/* Mobile collapsible filters */}
+      {showFilters && (
+        <div className="flex flex-col gap-3 md:hidden" data-testid="mobile-filters">
+          {filterControls}
+        </div>
+      )}
+
+      {/* Desktop header */}
+      <h1 className="text-3xl font-bold hidden md:block" data-testid="task-list-title">
         任务列表
       </h1>
 
-      <div className="flex flex-row items-end gap-3 flex-wrap">
-        <div className="min-w-[200px]">
-          <label className="text-sm font-medium">项目</label>
-          <Select value={filterProject ?? "all"} onValueChange={setFilterProject}>
-            <SelectTrigger data-testid="filter-project">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部</SelectItem>
-              {projects.map((project) => (
-                <SelectItem key={project.id} value={String(project.id)}>
-                  {project.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="min-w-[200px]">
-          <label className="text-sm font-medium">状态</label>
-          <Select value={filterStatus ?? "all"} onValueChange={setFilterStatus}>
-            <SelectTrigger data-testid="filter-status">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部</SelectItem>
-              {statusOptions.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {status.replace(/_/g, " ")}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="min-w-[200px]">
-          <label className="text-sm font-medium">指派人</label>
-          <Select value={filterAssignee ?? "all"} onValueChange={setFilterAssignee}>
-            <SelectTrigger data-testid="filter-assignee">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部</SelectItem>
-              {users.map((user) => (
-                <SelectItem key={user.id} value={String(user.id)}>
-                  {user.displayName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
+      {/* Desktop filter bar */}
+      <div className="hidden md:flex flex-row items-end gap-3 flex-wrap">
+        {filterControls}
         <Button
           onClick={() => setIsModalOpen(true)}
           className="ml-auto"
@@ -498,43 +535,83 @@ export default function TaskList() {
             <p className="text-muted-foreground">加载中...</p>
           </div>
         ) : (
-          <Table data-testid="task-table">
-            <TableHeader>
-              <TableRow>
-                <TableHead>标题</TableHead>
-                <TableHead>项目</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>优先级</TableHead>
-                <TableHead>指派人</TableHead>
-                <TableHead>截止日期</TableHead>
-                <TableHead>权重</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          <>
+            {/* Desktop table */}
+            <div className="hidden md:block">
+              <Table data-testid="task-table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>标题</TableHead>
+                    <TableHead>项目</TableHead>
+                    <TableHead>状态</TableHead>
+                    <TableHead>优先级</TableHead>
+                    <TableHead>指派人</TableHead>
+                    <TableHead>截止日期</TableHead>
+                    <TableHead>权重</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredTasks.map((task) => (
+                    <TableRow
+                      key={task.id}
+                      data-testid={`task-row-${task.id}`}
+                      onClick={() => navigate(`/tasks/${task.id}`)}
+                      className="cursor-pointer hover:bg-muted/50"
+                    >
+                      <TableCell className="font-medium">{task.title}</TableCell>
+                      <TableCell>{projectMap.get(task.projectId)?.name ?? "-"}</TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <StatusDropdown taskId={task.id} currentStatus={task.status} />
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getPriorityColor(task.priority)}>
+                          {getPriorityLabel(task.priority)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{userMap.get(task.assigneeId!)?.displayName ?? "-"}</TableCell>
+                      <TableCell>{formatDate(task.dueDate)}</TableCell>
+                      <TableCell>{task.weight}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Mobile card list */}
+            <div className="md:hidden space-y-2" data-testid="mobile-task-cards">
               {filteredTasks.map((task) => (
-                <TableRow
+                <div
                   key={task.id}
-                  data-testid={`task-row-${task.id}`}
+                  className="bg-card rounded-lg shadow-sm p-3 cursor-pointer"
+                  data-testid={`task-card-${task.id}`}
                   onClick={() => navigate(`/tasks/${task.id}`)}
-                  className="cursor-pointer hover:bg-muted/50"
                 >
-                  <TableCell className="font-medium">{task.title}</TableCell>
-                  <TableCell>{projectMap.get(task.projectId)?.name ?? "-"}</TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
+                  <div className="font-medium truncate" data-testid={`task-card-title-${task.id}`}>
+                    {task.title}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className="text-xs text-muted-foreground" data-testid={`task-card-project-${task.id}`}>
+                      {projectMap.get(task.projectId)?.name ?? "-"}
+                    </span>
+                    <span className="text-xs text-muted-foreground" data-testid={`task-card-assignee-${task.id}`}>
+                      {userMap.get(task.assigneeId!)?.displayName ?? "-"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
                     <StatusDropdown taskId={task.id} currentStatus={task.status} />
-                  </TableCell>
-                  <TableCell>
                     <Badge className={getPriorityColor(task.priority)}>
                       {getPriorityLabel(task.priority)}
                     </Badge>
-                  </TableCell>
-                  <TableCell>{userMap.get(task.assigneeId!)?.displayName ?? "-"}</TableCell>
-                  <TableCell>{formatDate(task.dueDate)}</TableCell>
-                  <TableCell>{task.weight}</TableCell>
-                </TableRow>
+                    {task.dueDate && (
+                      <span className="text-xs text-muted-foreground" data-testid={`task-card-due-${task.id}`}>
+                        {formatDate(task.dueDate)}
+                      </span>
+                    )}
+                  </div>
+                </div>
               ))}
-            </TableBody>
-          </Table>
+            </div>
+          </>
         )}
       </div>
 

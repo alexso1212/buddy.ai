@@ -130,92 +130,138 @@ function Dashboard() {
       {/* Stats Cards Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {/* Total Tasks */}
-        <div className="bg-card rounded-lg shadow-sm p-6" data-testid="stat-total">
+        <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-total">
           <div className="text-muted-foreground text-sm font-medium">Total Tasks</div>
-          <div className="text-3xl font-bold text-foreground mt-2">{totalTasks}</div>
+          <div className="text-2xl md:text-3xl font-bold text-foreground mt-2">{totalTasks}</div>
         </div>
 
         {/* In Progress */}
-        <div className="bg-card rounded-lg shadow-sm p-6" data-testid="stat-in-progress">
+        <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-in-progress">
           <div className="text-muted-foreground text-sm font-medium">In Progress</div>
-          <div className="text-3xl font-bold text-yellow-600 mt-2">{inProgressCount}</div>
+          <div className="text-2xl md:text-3xl font-bold text-yellow-600 mt-2">{inProgressCount}</div>
         </div>
 
         {/* Completed */}
-        <div className="bg-card rounded-lg shadow-sm p-6" data-testid="stat-completed">
+        <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-completed">
           <div className="text-muted-foreground text-sm font-medium">Completed</div>
-          <div className="text-3xl font-bold text-green-600 mt-2">{completedCount}</div>
+          <div className="text-2xl md:text-3xl font-bold text-green-600 mt-2">{completedCount}</div>
         </div>
 
         {/* Overdue */}
-        <div className="bg-card rounded-lg shadow-sm p-6" data-testid="stat-overdue">
+        <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-overdue">
           <div className="text-muted-foreground text-sm font-medium">Overdue</div>
-          <div className="text-3xl font-bold text-red-600 mt-2">{overdueCount}</div>
+          <div className="text-2xl md:text-3xl font-bold text-red-600 mt-2">{overdueCount}</div>
         </div>
       </div>
 
-      {/* My Tasks Table */}
+      {/* My Tasks Section */}
       <div className="bg-card rounded-lg shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-border">
           <h2 className="text-lg font-bold text-foreground">My Tasks</h2>
         </div>
 
         {myTasks.length === 0 ? (
-          <div className="px-6 py-8 text-center text-muted-foreground">No tasks assigned to you</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full" data-testid="my-tasks-table">
-              <thead>
-                <tr className="border-b border-border bg-muted">
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Title
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Project
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Priority
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Due Date
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {myTasks.map((task) => (
-                  <tr
-                    key={task.id}
-                    data-testid={`task-row-${task.id}`}
-                    onClick={() => navigate(`/tasks/${task.id}`)}
-                    className="hover:bg-muted/50 cursor-pointer transition-colors"
-                  >
-                    <td className="px-6 py-4 text-sm text-foreground">{task.title}</td>
-                    <td className="px-6 py-4 text-sm text-muted-foreground">{getProjectName(task.projectId)}</td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
-                        {getStatusLabel(task.status)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {task.priority ? (
-                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(task.priority)}`}>
-                          {getPriorityLabel(task.priority)}
-                        </span>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">—</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-muted-foreground">
-                      {task.dueDate ? formatDate(task.dueDate) : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="px-6 py-8 text-center text-muted-foreground">
+            No tasks assigned to you
           </div>
+        ) : (
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden md:block">
+              <div className="overflow-x-auto">
+                <table className="w-full" data-testid="my-tasks-table">
+                  <thead>
+                    <tr className="border-b border-border bg-muted">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        Title
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        Project
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        Priority
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        Due Date
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {myTasks.map((task) => (
+                      <tr
+                        key={task.id}
+                        data-testid={`task-row-${task.id}`}
+                        onClick={() => navigate(`/tasks/${task.id}`)}
+                        className="hover:bg-muted/50 cursor-pointer transition-colors"
+                      >
+                        <td className="px-6 py-4 text-sm text-foreground">{task.title}</td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground">{getProjectName(task.projectId)}</td>
+                        <td className="px-6 py-4">
+                          <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
+                            {getStatusLabel(task.status)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          {task.priority ? (
+                            <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(task.priority)}`}>
+                              {getPriorityLabel(task.priority)}
+                            </span>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground">
+                          {task.dueDate ? formatDate(task.dueDate) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Mobile Card List View */}
+            <div className="md:hidden divide-y divide-border">
+              {myTasks.map((task) => (
+                <div
+                  key={task.id}
+                  data-testid={`task-card-${task.id}`}
+                  onClick={() => navigate(`/tasks/${task.id}`)}
+                  className="p-4 cursor-pointer active:bg-muted/50 transition-colors"
+                >
+                  {/* Title */}
+                  <div className="font-bold text-foreground mb-1">{task.title}</div>
+
+                  {/* Project Name */}
+                  <div className="text-xs text-muted-foreground mb-3">
+                    {getProjectName(task.projectId)}
+                  </div>
+
+                  {/* Status and Priority Badges Row */}
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
+                      {getStatusLabel(task.status)}
+                    </span>
+                    {task.priority && (
+                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(task.priority)}`}>
+                        {getPriorityLabel(task.priority)}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Due Date */}
+                  {task.dueDate && (
+                    <div className="text-xs text-muted-foreground">
+                      Due: {formatDate(task.dueDate)}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>
