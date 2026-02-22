@@ -32,7 +32,7 @@ function Dashboard() {
   // Helper to get project name by ID
   const getProjectName = (projectId: number) => {
     const project = projects.find((p) => p.id === projectId);
-    return project?.name ?? "Unknown";
+    return project?.name ?? "未知项目";
   };
 
   // Calculate stats
@@ -80,15 +80,15 @@ function Dashboard() {
   const getStatusLabel = (status: string) => {
     switch (status) {
       case "todo":
-        return "To Do";
+        return "待办";
       case "in_progress":
-        return "In Progress";
+        return "进行中";
       case "in_review":
-        return "In Review";
+        return "审核中";
       case "done":
-        return "Done";
+        return "已完成";
       case "cancelled":
-        return "Cancelled";
+        return "已取消";
       default:
         return status;
     }
@@ -114,13 +114,13 @@ function Dashboard() {
   const getPriorityLabel = (priority: string) => {
     switch (priority) {
       case "urgent":
-        return "Urgent";
+        return "紧急";
       case "high":
-        return "High";
+        return "高";
       case "medium":
-        return "Medium";
+        return "中";
       case "low":
-        return "Low";
+        return "低";
       default:
         return priority;
     }
@@ -136,31 +136,31 @@ function Dashboard() {
 
   return (
     <div className="p-6 bg-background min-h-screen">
-      <h1 className="text-2xl font-bold text-foreground mb-8">Dashboard</h1>
+      <h1 className="text-2xl font-bold text-foreground mb-8">仪表盘</h1>
 
       {/* Stats Cards Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {/* Total Tasks */}
         <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-total">
-          <div className="text-muted-foreground text-sm font-medium">Total Tasks</div>
+          <div className="text-muted-foreground text-sm font-medium">总任务数</div>
           <div className="text-2xl md:text-3xl font-bold text-foreground mt-2">{totalTasks}</div>
         </div>
 
         {/* In Progress */}
         <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-in-progress">
-          <div className="text-muted-foreground text-sm font-medium">In Progress</div>
+          <div className="text-muted-foreground text-sm font-medium">进行中</div>
           <div className="text-2xl md:text-3xl font-bold text-yellow-600 mt-2">{inProgressCount}</div>
         </div>
 
         {/* Completed */}
         <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-completed">
-          <div className="text-muted-foreground text-sm font-medium">Completed</div>
+          <div className="text-muted-foreground text-sm font-medium">已完成</div>
           <div className="text-2xl md:text-3xl font-bold text-green-600 mt-2">{completedCount}</div>
         </div>
 
         {/* Overdue */}
         <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-overdue">
-          <div className="text-muted-foreground text-sm font-medium">Overdue</div>
+          <div className="text-muted-foreground text-sm font-medium">逾期</div>
           <div className="text-2xl md:text-3xl font-bold text-red-600 mt-2">{overdueCount}</div>
         </div>
       </div>
@@ -168,12 +168,12 @@ function Dashboard() {
       {/* My Tasks Section */}
       <div className="bg-card rounded-lg shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-border">
-          <h2 className="text-lg font-bold text-foreground">My Tasks</h2>
+          <h2 className="text-lg font-bold text-foreground">我的任务</h2>
         </div>
 
         {myTasks.length === 0 ? (
           <div className="px-6 py-8 text-center text-muted-foreground">
-            No tasks assigned to you
+            暂无分配给你的任务
           </div>
         ) : (
           <>
@@ -184,22 +184,22 @@ function Dashboard() {
                   <thead>
                     <tr className="border-b border-border bg-muted">
                       <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                        Title
+                        标题
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                        Project
+                        项目
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                        Status
+                        状态
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                        Priority
+                        优先级
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                         相关人员
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                        Due Date
+                        截止日期
                       </th>
                     </tr>
                   </thead>
@@ -278,7 +278,7 @@ function Dashboard() {
                   {/* Due Date */}
                   {task.dueDate && (
                     <div className="text-xs text-muted-foreground">
-                      Due: {formatDate(task.dueDate)}
+                      截止: {formatDate(task.dueDate)}
                     </div>
                   )}
                 </div>

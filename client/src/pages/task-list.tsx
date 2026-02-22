@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Filter } from "lucide-react";
+import { Filter, ArrowUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -403,6 +403,7 @@ export default function TaskList() {
   const [filterProject, setFilterProject] = useState<string | undefined>(undefined);
   const [filterStatus, setFilterStatus] = useState<string | undefined>(undefined);
   const [filterAssignee, setFilterAssignee] = useState<string | undefined>(undefined);
+  const [sortBy, setSortBy] = useState<string>("created_desc");
 
   const { data: tasksResponse, isLoading: tasksLoading } = useQuery<TasksResponse>({
     queryKey: ["/api/tasks"],
@@ -434,6 +435,35 @@ export default function TaskList() {
       return false;
     }
     return true;
+  });
+
+  const priorityOrder: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+
+  const sortedTasks = [...filteredTasks].sort((a, b) => {
+    switch (sortBy) {
+      case "due_asc": {
+        if (!a.dueDate && !b.dueDate) return 0;
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      }
+      case "due_desc": {
+        if (!a.dueDate && !b.dueDate) return 0;
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
+      }
+      case "created_asc":
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      case "created_desc":
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      case "priority_asc":
+        return (priorityOrder[a.priority] ?? 9) - (priorityOrder[b.priority] ?? 9);
+      case "priority_desc":
+        return (priorityOrder[b.priority] ?? 9) - (priorityOrder[a.priority] ?? 9);
+      default:
+        return 0;
+    }
   });
 
   const statusOptions = ["todo", "in_progress", "in_review", "done", "cancelled"];
@@ -487,6 +517,26 @@ export default function TaskList() {
                 {user.displayName}
               </SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="min-w-[200px]">
+        <label className="text-sm font-medium flex items-center gap-1">
+          <ArrowUpDown className="w-3.5 h-3.5" />
+          排序
+        </label>
+        <Select value={sortBy} onValueChange={setSortBy}>
+          <SelectTrigger data-testid="sort-select">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="created_desc">创建时间 ↓ 最新</SelectItem>
+            <SelectItem value="created_asc">创建时间 ↑ 最早</SelectItem>
+            <SelectItem value="due_asc">截止日期 ↑ 最近</SelectItem>
+            <SelectItem value="due_desc">截止日期 ↓ 最远</SelectItem>
+            <SelectItem value="priority_asc">优先级 ↑ 最高</SelectItem>
+            <SelectItem value="priority_desc">优先级 ↓ 最低</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -563,7 +613,7 @@ export default function TaskList() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredTasks.map((task) => (
+                  {sortedTasks.map((task) => (
                     <TableRow
                       key={task.id}
                       data-testid={`task-row-${task.id}`}
@@ -594,7 +644,7 @@ export default function TaskList() {
 
             {/* Mobile card list */}
             <div className="md:hidden space-y-2" data-testid="mobile-task-cards">
-              {filteredTasks.map((task) => (
+              {sortedTasks.map((task) => (
                 <div
                   key={task.id}
                   className="bg-card rounded-lg shadow-sm p-3 cursor-pointer"
