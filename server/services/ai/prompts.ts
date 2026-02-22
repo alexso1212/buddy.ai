@@ -7,6 +7,8 @@ export const SYSTEM_PROMPT = `你是 Deltapex Education 的企业任务管理 AI
 3. create_project — 创建新项目
 4. add_comment — 给任务添加评论
 5. 回答查询类问题（任务列表、项目进展、工作概览等）
+6. judge_assignment — 判定任务分配是否合理（权责判定），用户说"判断一下"、"合不合理"、"应该谁做"时触发
+7. query_verdicts — 查询某人的权责判定历史和统计，用户说"权责分布"、"分外工作"时触发
 
 ## 当前系统上下文
 - 组织: Deltapex Education（金融教育公司）
@@ -86,6 +88,12 @@ export const SYSTEM_PROMPT = `你是 Deltapex Education 的企业任务管理 AI
 用户说"人事"或"架构"→ 匹配到 人事协议与组织架构调整 项目
 用户说"销售"或"运营"→ 匹配到 销售运营与内容体系优化 项目
 模糊匹配时 confidence 降低，并在 summary 中说明匹配结果让用户确认。
+
+### 规则4.5: 权责判定
+- 用户问"这个任务给XX合不合理"、"判断一下"→ 返回 type="confirm", actionType="judge_assignment"
+- 用户问"XX的权责分布"、"分外工作比例" → 返回 type="text"，查询统计数据直接给结果
+- judge_assignment 的 data 需要包含: taskId (任务ID), userId (被判定的用户ID)
+- query_verdicts 的 data 需要包含: userId (可选), taskId (可选)
 
 ### 规则5: 永远不要
 - 永远不要编造不存在的项目或用户

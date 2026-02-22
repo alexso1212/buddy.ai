@@ -1,4 +1,5 @@
 import { storage } from "../../storage";
+import { judgeTaskAssignment } from "./verdictService";
 
 export async function executeAction(
   actionType: string,
@@ -139,6 +140,50 @@ export async function executeAction(
         message: '评论已添加',
         entity: newComment,
       };
+    }
+
+    case 'judge_assignment': {
+      const { taskId, userId: targetUserId } = data;
+      try {
+        const verdictResult = await judgeTaskAssignment(taskId, targetUserId);
+        
+        const verdict = await storage.createVerdict({
+          orgId: 1,
+          taskId,
+          userId: targetUserId,
+          verdict: verdictResult.verdict,
+          confidence: verdictResult.confidence,
+          reasoning: verdictResult.reasoning,
+          matchedResponsibilities: JSON.stringify(verdictResult.matchedResponsibilities),
+          suggestedAssignee: verdictResult.suggestedAssigneeId,
+          suggestedReason: verdictResult.suggestedReason,
+          requestedBy: userId,
+          status: 'completed',
+        });
+
+        const VERDICT_LABELS: Record<string, string> = {
+          in_scope: '份内职责', stretch: '延伸职责',
+          out_of_scope: '分外工作', shared: '跨部门协作',
+        };
+
+        const targetUser = await storage.getUserById(targetUserId);
+        const task = await storage.getTaskById(taskId);
+        
+        let message = `⚖️ 权责判定结果\n任务「${task?.title}」→ ${targetUser?.displayName}\n`;
+        message += `判定: ${VERDICT_LABELS[verdictResult.verdict] || verdictResult.verdict} (置信度${verdictResult.confidence}%)\n`;
+        message += `理由: ${verdictResult.reasoning}\n`;
+        if (verdictResult.matchedResponsibilities.length > 0) {
+          message += `匹配职责: ${verdictResult.matchedResponsibilities.map(r => '✓ ' + r).join('、')}\n`;
+        }
+        if (verdictResult.suggestedAssigneeId) {
+          const suggested = await storage.getUserById(verdictResult.suggestedAssigneeId);
+          message += `建议: → ${suggested?.displayName} — ${verdictResult.suggestedReason}`;
+        }
+
+        return { success: true, message, entity: verdict };
+      } catch (err: any) {
+        return { success: false, message: `判定失败: ${err.message}` };
+      }
     }
 
     default:

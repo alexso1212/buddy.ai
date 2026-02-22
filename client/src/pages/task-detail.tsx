@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Plus, Pencil, Trash2, MessageSquare, GitBranch, ListTree, Activity } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, MessageSquare, GitBranch, ListTree, Activity, Scale, Check, X as XIcon, Loader2 } from "lucide-react";
 
 interface TaskDetailResponse {
   data: Task & { subtasks: Task[]; dependencies: TaskDependency[]; comments: TaskComment[] };
@@ -77,6 +77,117 @@ function formatDateTime(date: Date | string | null | undefined): string {
   return d.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
+const VERDICT_COLORS: Record<string, { bg: string; text: string; label: string }> = {
+  in_scope:     { bg: 'bg-green-100', text: 'text-green-800', label: '份内职责' },
+  stretch:      { bg: 'bg-yellow-100', text: 'text-yellow-800', label: '延伸职责' },
+  out_of_scope: { bg: 'bg-red-100', text: 'text-red-800', label: '分外工作' },
+  shared:       { bg: 'bg-blue-100', text: 'text-blue-800', label: '跨部门协作' },
+};
+
+interface VerdictData {
+  id: number;
+  verdict: string;
+  confidence: number;
+  reasoning: string;
+  matchedResponsibilities: string[];
+  suggestedAssignee?: { id: number; name: string; reason: string };
+}
+
+function VerdictCard({ verdict, onAccept, onOverride }: {
+  verdict: VerdictData;
+  onAccept: () => void;
+  onOverride: (reason: string) => void;
+}) {
+  const [overrideMode, setOverrideMode] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
+  const colors = VERDICT_COLORS[verdict.verdict] || VERDICT_COLORS.shared;
+
+  return (
+    <Card className="p-5 space-y-4" data-testid="verdict-card">
+      <div className="flex items-center gap-2">
+        <Scale className="h-5 w-5 text-gray-500" />
+        <h3 className="font-semibold">权责判定结果</h3>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <Badge className={`${colors.bg} ${colors.text}`} data-testid="verdict-badge">
+          {colors.label}
+        </Badge>
+        <span className="text-sm text-muted-foreground" data-testid="verdict-confidence">
+          置信度: {verdict.confidence}%
+        </span>
+      </div>
+
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-muted-foreground">判定理由:</p>
+        <p className="text-sm" data-testid="verdict-reasoning">{verdict.reasoning}</p>
+      </div>
+
+      {verdict.matchedResponsibilities.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-muted-foreground">匹配的职责条目:</p>
+          <div className="space-y-1">
+            {verdict.matchedResponsibilities.map((r, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-sm text-green-700">
+                <Check className="h-3.5 w-3.5" />
+                {r}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {verdict.suggestedAssignee && (
+        <div className="p-3 rounded-md bg-amber-50 border border-amber-200 space-y-1">
+          <p className="text-sm font-medium text-amber-800">更合适的人选:</p>
+          <p className="text-sm text-amber-700">
+            → {verdict.suggestedAssignee.name}
+          </p>
+          <p className="text-xs text-amber-600">{verdict.suggestedAssignee.reason}</p>
+        </div>
+      )}
+
+      {!overrideMode ? (
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={onAccept} data-testid="btn-accept-verdict">
+            <Check className="h-3.5 w-3.5 mr-1" />
+            接受判定
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setOverrideMode(true)} data-testid="btn-override-verdict">
+            推翻判定
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <Textarea
+            placeholder="请填写推翻理由..."
+            value={overrideReason}
+            onChange={(e) => setOverrideReason(e.target.value)}
+            data-testid="input-override-reason"
+          />
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              disabled={!overrideReason.trim()}
+              onClick={() => {
+                onOverride(overrideReason.trim());
+                setOverrideMode(false);
+                setOverrideReason("");
+              }}
+              data-testid="btn-submit-override"
+            >
+              确认推翻
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setOverrideMode(false)}>
+              取消
+            </Button>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function TaskDetail() {
   const [, params] = useRoute('/tasks/:id');
   const [, setLocation] = useLocation();
@@ -89,6 +200,9 @@ export default function TaskDetail() {
   const [depOpen, setDepOpen] = useState(false);
   const [depTaskId, setDepTaskId] = useState("");
   const [commentText, setCommentText] = useState("");
+  const [verdictData, setVerdictData] = useState<VerdictData | null>(null);
+  const [verdictLoading, setVerdictLoading] = useState(false);
+  const [verdictAccepted, setVerdictAccepted] = useState<boolean | null>(null);
 
   const { data: taskRes, isLoading: taskLoading } = useQuery<TaskDetailResponse>({
     queryKey: ['/api/tasks', id],
@@ -210,6 +324,59 @@ export default function TaskDetail() {
     },
   });
 
+  const handleJudge = async () => {
+    if (!task || !task.assigneeId) return;
+    setVerdictLoading(true);
+    setVerdictData(null);
+    setVerdictAccepted(null);
+    try {
+      const res = await apiRequest("POST", "/api/verdicts/judge", {
+        taskId: Number(id),
+        userId: task.assigneeId,
+        requestedBy: 1,
+      });
+      const json = await res.json();
+      const v = json.data.verdict;
+      setVerdictData({
+        id: v.id,
+        verdict: v.verdict,
+        confidence: v.confidence,
+        reasoning: v.reasoning,
+        matchedResponsibilities: v.matchedResponsibilities || [],
+        suggestedAssignee: v.suggestedAssignee,
+      });
+    } catch (err: any) {
+      toast({ title: "判定失败", description: err.message, variant: "destructive" });
+    } finally {
+      setVerdictLoading(false);
+    }
+  };
+
+  const handleAcceptVerdict = async () => {
+    if (!verdictData) return;
+    try {
+      await apiRequest("PATCH", `/api/verdicts/${verdictData.id}/accept`, { userId: 1 });
+      setVerdictAccepted(true);
+      toast({ title: "已接受判定" });
+    } catch (err: any) {
+      toast({ title: "操作失败", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleOverrideVerdict = async (reason: string) => {
+    if (!verdictData) return;
+    try {
+      await apiRequest("PATCH", `/api/verdicts/${verdictData.id}/override`, {
+        overrideReason: reason,
+        userId: 1,
+      });
+      setVerdictAccepted(false);
+      toast({ title: "已推翻判定" });
+    } catch (err: any) {
+      toast({ title: "操作失败", description: err.message, variant: "destructive" });
+    }
+  };
+
   if (taskLoading) {
     return (
       <div className="p-6 space-y-4 max-w-4xl mx-auto">
@@ -262,6 +429,23 @@ export default function TaskDetail() {
           <div>
             <span className="text-muted-foreground">负责人：</span>
             <span>{getUserName(task.assigneeId)}</span>
+            {task.assigneeId && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="ml-2 h-7 text-xs"
+                onClick={handleJudge}
+                disabled={verdictLoading}
+                data-testid="btn-judge-verdict"
+              >
+                {verdictLoading ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                ) : (
+                  <Scale className="h-3.5 w-3.5 mr-1" />
+                )}
+                权责判定
+              </Button>
+            )}
           </div>
           <div>
             <span className="text-muted-foreground">创建者：</span>
@@ -293,6 +477,32 @@ export default function TaskDetail() {
           </div>
         </div>
       </Card>
+
+      {verdictData && verdictAccepted === null && (
+        <VerdictCard
+          verdict={verdictData}
+          onAccept={handleAcceptVerdict}
+          onOverride={handleOverrideVerdict}
+        />
+      )}
+
+      {verdictAccepted === true && (
+        <Card className="p-4 border-green-200 bg-green-50">
+          <div className="flex items-center gap-2 text-green-700 text-sm">
+            <Check className="h-4 w-4" />
+            判定已接受
+          </div>
+        </Card>
+      )}
+
+      {verdictAccepted === false && (
+        <Card className="p-4 border-amber-200 bg-amber-50">
+          <div className="flex items-center gap-2 text-amber-700 text-sm">
+            <Scale className="h-4 w-4" />
+            判定已推翻
+          </div>
+        </Card>
+      )}
 
       <Card className="p-6">
         <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">

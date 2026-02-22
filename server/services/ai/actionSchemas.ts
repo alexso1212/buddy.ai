@@ -45,10 +45,22 @@ export const addCommentSchema = z.object({
   content: z.string().min(1),
 });
 
+export const judgeAssignmentSchema = z.object({
+  taskId: z.number(),
+  userId: z.number(),
+});
+
+export const queryVerdictsSchema = z.object({
+  userId: z.number().optional(),
+  taskId: z.number().optional(),
+});
+
 export const ACTION_SCHEMAS: Record<string, z.ZodSchema> = {
   create_task: createTaskSchema,
   update_task: updateTaskSchema,
   query_tasks: queryTasksSchema,
   create_project: createProjectSchema,
   add_comment: addCommentSchema,
+  judge_assignment: judgeAssignmentSchema,
+  query_verdicts: queryVerdictsSchema,
 };

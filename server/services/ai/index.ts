@@ -58,6 +58,35 @@ async function executeQuery(actionType: string, data: Record<string, any>): Prom
       );
       return `共 ${projects.length} 个项目：\n${lines.join('\n')}`;
     }
+    case 'query_verdicts': {
+      const verdicts = data.userId 
+        ? await storage.getVerdictsByUserId(data.userId)
+        : data.taskId
+          ? await storage.getVerdictsByTaskId(data.taskId)
+          : await storage.getAllVerdicts();
+      
+      if (verdicts.length === 0) return '暂无权责判定记录。';
+      
+      if (data.userId) {
+        const user = await storage.getUserById(data.userId);
+        const stats = { in_scope: 0, stretch: 0, out_of_scope: 0, shared: 0, total: 0 };
+        for (const v of verdicts) {
+          if (v.verdict in stats) (stats as any)[v.verdict]++;
+          stats.total++;
+        }
+        const pct = (n: number) => stats.total > 0 ? Math.round(n / stats.total * 100) : 0;
+        return `${user?.displayName || 'Unknown'}的权责分布（共${stats.total}条判定）：\n` +
+          `- 份内职责: ${pct(stats.in_scope)}% (${stats.in_scope}个)\n` +
+          `- 延伸职责: ${pct(stats.stretch)}% (${stats.stretch}个)\n` +
+          `- 分外工作: ${pct(stats.out_of_scope)}% (${stats.out_of_scope}个)\n` +
+          `- 跨部门协作: ${pct(stats.shared)}% (${stats.shared}个)`;
+      }
+      
+      const lines = verdicts.slice(0, 10).map((v, i) => 
+        `${i + 1}. 任务ID:${v.taskId} → 用户ID:${v.userId} | ${v.verdict} (${v.confidence}%)`
+      );
+      return `共${verdicts.length}条判定记录：\n${lines.join('\n')}`;
+    }
     case 'query_overview': {
       const allTasks = await storage.getTasks({});
       const total = allTasks.length;
