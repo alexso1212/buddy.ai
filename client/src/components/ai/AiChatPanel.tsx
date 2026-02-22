@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Minus, X } from "lucide-react";
+import { Minus, X, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import AiMessageBubble from "./AiMessageBubble";
@@ -229,7 +229,7 @@ export default function AiChatPanel({ onClose }: AiChatPanelProps) {
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto py-3 space-y-1">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto py-3">
         {messages.map((msg) => (
           <AiMessageBubble
             key={msg.id}
@@ -239,11 +239,16 @@ export default function AiChatPanel({ onClose }: AiChatPanelProps) {
           />
         ))}
         {loading && (
-          <div className="flex justify-start px-4 py-1">
-            <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1">
-              <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:0ms]" />
-              <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:150ms]" />
-              <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:300ms]" />
+          <div className="flex justify-start px-4 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center flex-shrink-0" style={{ width: 20, height: 20, borderRadius: '50%', background: '#C4703F' }}>
+                <Sparkles className="w-2.5 h-2.5 text-white" />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 bg-[var(--text-secondary)] rounded-full animate-bounce [animation-delay:0ms]" />
+                <span className="w-2 h-2 bg-[var(--text-secondary)] rounded-full animate-bounce [animation-delay:150ms]" />
+                <span className="w-2 h-2 bg-[var(--text-secondary)] rounded-full animate-bounce [animation-delay:300ms]" />
+              </div>
             </div>
           </div>
         )}

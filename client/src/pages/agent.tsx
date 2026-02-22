@@ -393,7 +393,7 @@ export default function Agent() {
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto py-4 relative" ref={scrollRef} data-testid="agent-messages">
+        <div className="flex-1 overflow-y-auto py-4 relative" ref={scrollRef} data-testid="agent-messages" style={{ WebkitOverflowScrolling: 'touch', scrollBehavior: 'smooth' }}>
           <div className="absolute top-2 right-2 z-10">
             <Button
               variant="ghost"
@@ -405,7 +405,7 @@ export default function Agent() {
               <Trash2 className="w-4 h-4" />
             </Button>
           </div>
-          <div className="max-w-3xl mx-auto space-y-1">
+          <div className="max-w-3xl mx-auto">
             {messages.map((msg) => (
               <AiMessageBubble
                 key={msg.id}
@@ -417,10 +417,10 @@ export default function Agent() {
               />
             ))}
             {loading && (
-              <div className="flex justify-start px-4 py-1">
+              <div className="flex justify-start px-4 mb-6">
                 <div className="flex items-center gap-3">
-                  <div className="w-6 h-6 rounded-full bg-brand flex items-center justify-center flex-shrink-0">
-                    <Sparkles className="w-3 h-3 text-white" />
+                  <div className="flex items-center justify-center flex-shrink-0" style={{ width: 20, height: 20, borderRadius: '50%', background: '#C4703F' }}>
+                    <Sparkles className="w-2.5 h-2.5 text-white" />
                   </div>
                   <div className="flex items-center gap-1">
                     <span className="w-2 h-2 bg-[var(--text-secondary)] rounded-full animate-bounce [animation-delay:0ms]" />

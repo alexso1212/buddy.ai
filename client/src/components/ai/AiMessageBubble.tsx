@@ -51,8 +51,12 @@ interface AiMessageBubbleProps {
 
 function BrandLogo() {
   return (
-    <div className="w-6 h-6 rounded-full bg-brand flex items-center justify-center flex-shrink-0">
-      <Sparkles className="w-3 h-3 text-white" />
+    <div
+      className="flex items-center justify-center flex-shrink-0"
+      style={{ width: 20, height: 20, borderRadius: '50%', background: '#C4703F' }}
+      data-testid="brand-logo"
+    >
+      <Sparkles className="w-2.5 h-2.5 text-white" />
     </div>
   );
 }
@@ -87,15 +91,15 @@ function MultiConfirmGroup({
 
   return (
     <div
-      className="flex flex-col justify-start px-4 py-1 space-y-2"
+      className="flex flex-col justify-start px-4 mb-6 space-y-2"
       data-testid={`ai-message-${message.id}`}
     >
       {message.content && (
-        <div className="flex gap-3 max-w-[80%]">
-          <BrandLogo />
-          <div className="pt-0.5 flex-1 min-w-0">
-            <AIMessageContent content={message.content} />
+        <div className="max-w-full">
+          <div className="mb-2">
+            <BrandLogo />
           </div>
+          <AIMessageContent content={message.content} />
         </div>
       )}
       {hasUndecided && (
@@ -144,7 +148,7 @@ export default function AiMessageBubble({
     const isSuccess = message.content.includes("成功") || message.content.includes("已");
     return (
       <div
-        className="flex justify-center px-4 py-1"
+        className="flex justify-center px-4 mb-6"
         data-testid={`ai-message-${message.id}`}
       >
         <span
@@ -164,16 +168,23 @@ export default function AiMessageBubble({
   if (message.role === "user") {
     return (
       <div
-        className="flex justify-end px-4 py-1"
+        className="flex justify-end px-4 mb-6"
         data-testid={`ai-message-${message.id}`}
       >
         <div
-          className={cn(
-            "max-w-[80%] px-4 py-2.5 text-sm",
-            "bg-[var(--bg-bubble)] text-[var(--text-primary)]",
-            "rounded-[18px] rounded-br-sm",
-            "whitespace-pre-wrap break-words"
-          )}
+          style={{
+            maxWidth: '82%',
+            background: 'var(--bg-bubble)',
+            borderRadius: 18,
+            padding: '10px 14px',
+            fontFamily: 'var(--font-sans)',
+            fontSize: 16,
+            lineHeight: 1.5,
+            color: 'var(--text-primary)',
+            wordBreak: 'break-word',
+          }}
+          className="whitespace-pre-wrap"
+          data-testid={`user-bubble-${message.id}`}
         >
           {message.content}
         </div>
@@ -189,7 +200,7 @@ export default function AiMessageBubble({
   ) {
     return (
       <div
-        className="flex justify-start px-4 py-1"
+        className="flex justify-start px-4 mb-6"
         data-testid={`ai-message-${message.id}`}
       >
         <div className="max-w-[90%]">
@@ -228,7 +239,7 @@ export default function AiMessageBubble({
 
   if (message.type === "follow_up" && message.followUp && onFollowUpSubmit) {
     return (
-      <div className="flex justify-start px-4 py-1" data-testid={`ai-message-${message.id}`}>
+      <div className="flex justify-start px-4 mb-6" data-testid={`ai-message-${message.id}`}>
         <div className="max-w-[90%]">
           <AiFollowUpCard
             followUp={message.followUp}
@@ -242,14 +253,14 @@ export default function AiMessageBubble({
 
   return (
     <div
-      className="flex justify-start px-4 py-1"
+      className="flex justify-start px-4 mb-6"
       data-testid={`ai-message-${message.id}`}
     >
-      <div className="flex gap-3 max-w-[80%]">
-        <BrandLogo />
-        <div className="pt-0.5 flex-1 min-w-0">
-          <AIMessageContent content={message.content} />
+      <div className="max-w-full">
+        <div className="mb-2">
+          <BrandLogo />
         </div>
+        <AIMessageContent content={message.content} />
       </div>
     </div>
   );

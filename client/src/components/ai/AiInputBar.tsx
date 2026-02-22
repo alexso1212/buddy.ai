@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from "react";
-import { Send } from "lucide-react";
+import { ArrowUp, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AiInputBarProps {
@@ -15,8 +15,7 @@ export default function AiInputBar({ onSend, loading }: AiInputBarProps) {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    const lineHeight = 24;
-    const maxHeight = lineHeight * 4;
+    const maxHeight = 120;
     el.style.height = Math.min(el.scrollHeight, maxHeight) + "px";
   }, []);
 
@@ -40,9 +39,20 @@ export default function AiInputBar({ onSend, loading }: AiInputBarProps) {
     [handleSend]
   );
 
+  const isEmpty = !value.trim();
+
   return (
-    <div className="bg-transparent py-3">
-      <div className="bg-[var(--bg-composer)] rounded-[20px] shadow-composer border border-[var(--border-subtle)] flex items-end gap-2 px-4 py-3">
+    <div style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <div
+        style={{
+          background: 'var(--bg-composer)',
+          borderRadius: 20,
+          border: '1px solid var(--border-subtle)',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.2)',
+          overflow: 'hidden',
+        }}
+        data-testid="ai-composer"
+      >
         <textarea
           ref={textareaRef}
           value={value}
@@ -54,27 +64,78 @@ export default function AiInputBar({ onSend, loading }: AiInputBarProps) {
           placeholder="输入消息..."
           disabled={loading}
           rows={1}
+          style={{
+            width: '100%',
+            minHeight: 36,
+            maxHeight: 120,
+            padding: '14px 16px 8px 16px',
+            fontSize: 16,
+            fontFamily: 'var(--font-sans)',
+            lineHeight: 1.5,
+            color: 'var(--text-primary)',
+            background: 'transparent',
+            border: 'none',
+            outline: 'none',
+            resize: 'none',
+            display: 'block',
+          }}
           className={cn(
-            "flex-1 resize-none bg-transparent border-0",
-            "text-sm leading-6 outline-none text-[var(--text-primary)]",
-            "placeholder:text-[var(--text-secondary)] focus:ring-0",
+            "placeholder:text-[var(--text-placeholder)]",
             "disabled:opacity-50 disabled:cursor-not-allowed"
           )}
           data-testid="ai-input"
         />
-        <button
-          onClick={handleSend}
-          disabled={!value.trim() || loading}
-          className={cn(
-            "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center",
-            "bg-brand hover:bg-brand-hover text-white",
-            "disabled:opacity-40 disabled:cursor-not-allowed",
-            "transition-colors duration-150"
-          )}
-          data-testid="ai-send"
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '4px 10px 10px 10px',
+          }}
+          data-testid="ai-toolbar"
         >
-          <Send className="w-4 h-4" />
-        </button>
+          <button
+            style={{
+              width: 30,
+              height: 30,
+              background: 'transparent',
+              border: '1px solid var(--border-medium)',
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: 'var(--text-secondary)',
+            }}
+            data-testid="ai-attach"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={handleSend}
+            disabled={isEmpty || loading}
+            style={{
+              width: 30,
+              height: 30,
+              background: 'var(--brand)',
+              borderRadius: 8,
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: isEmpty ? 'default' : 'pointer',
+              opacity: isEmpty ? 0.35 : 1,
+              transition: 'opacity 150ms, transform 100ms',
+            }}
+            onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.95)'; }}
+            onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+            data-testid="ai-send"
+          >
+            <ArrowUp className="w-4 h-4 text-white" strokeWidth={2.5} />
+          </button>
+        </div>
       </div>
     </div>
   );
