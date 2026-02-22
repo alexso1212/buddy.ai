@@ -1,5 +1,5 @@
 import { Switch, Route, useLocation, Link } from "wouter";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -21,27 +21,57 @@ import {
   FolderKanban,
   CheckSquare,
   Users,
-  Settings as SettingsIcon,
   Menu,
-  X,
   Network,
   Bot,
-  Bell,
   Sun,
   Moon,
   Monitor,
+  MessageSquare,
+  FolderClosed,
+  Settings2,
+  Code2,
+  Building2,
+  ChevronRight,
+  Plus,
+  Bell,
+  LogOut,
+  Star,
+  StarOff,
+  Pencil,
+  Trash2,
+  FolderInput,
+  HelpCircle,
 } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 
-const NAV_ITEMS = [
-  { label: "仪表盘", icon: LayoutDashboard, path: "/" },
-  { label: "图谱", icon: Network, path: "/graph" },
-  { label: "助手", icon: Bot, path: "/agent" },
-  { label: "项目", icon: FolderKanban, path: "/projects" },
-  { label: "任务", icon: CheckSquare, path: "/tasks" },
-  { label: "团队", icon: Users, path: "/team" },
-  { label: "通知", icon: Bell, path: "/notifications" },
-  { label: "设置", icon: SettingsIcon, path: "/settings" },
+const DUMMY_CONVERSATIONS = {
+  starred: [
+    { id: 's1', title: 'Claude iOS UI设计规范文档' },
+    { id: 's2', title: '任务看板功能齐全却难以坚持使用的原因分析' },
+    { id: 's3', title: '团队任务看板系统需求梳理' },
+  ],
+  recents: [
+    { id: 'r1', title: 'Anthropic Messages API集成方案' },
+    { id: 'r2', title: 'Artifact access error排查' },
+    { id: 'r3', title: 'EOS Capital Tech Stack评估' },
+    { id: 'r4', title: '虚花簪诗解读与翻译' },
+  ],
+};
+
+const BUDDY_AI_NAV = [
+  { label: 'Chats', icon: MessageSquare, path: '/agent' },
+  { label: 'Projects', icon: FolderClosed, path: '/projects' },
+  { label: 'Artifacts', icon: Settings2, path: null },
+  { label: 'Code', icon: Code2, path: null },
+];
+
+const ENTERPRISE_NAV = [
+  { label: '仪表盘', icon: LayoutDashboard, path: '/' },
+  { label: '图谱', icon: Network, path: '/graph' },
+  { label: '项目', icon: FolderKanban, path: '/projects' },
+  { label: '任务', icon: CheckSquare, path: '/tasks' },
+  { label: '团队', icon: Users, path: '/team' },
 ];
 
 function ThemeToggle() {
@@ -79,108 +109,640 @@ function ThemeToggle() {
   );
 }
 
-function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const [location] = useLocation();
+function CollapsibleContent({ isOpen, children }: { isOpen: boolean; children: React.ReactNode }) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number | string>(isOpen ? 'auto' : 0);
+  const [shouldRender, setShouldRender] = useState(isOpen);
 
-  const { data: unreadRes } = useQuery<{ data: { count: number } }>({
-    queryKey: ["/api/notifications/unread-count"],
-    queryFn: async () => {
-      const res = await fetch("/api/notifications/unread-count?userId=1");
-      return res.json();
-    },
-    refetchInterval: 30000,
-  });
-  const unreadCount = unreadRes?.data?.count ?? 0;
+  useEffect(() => {
+    if (isOpen) {
+      setShouldRender(true);
+      requestAnimationFrame(() => {
+        const h = contentRef.current?.scrollHeight || 0;
+        setHeight(h);
+        setTimeout(() => setHeight('auto'), 300);
+      });
+    } else {
+      const h = contentRef.current?.scrollHeight || 0;
+      setHeight(h);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setHeight(0));
+      });
+      setTimeout(() => setShouldRender(false), 300);
+    }
+  }, [isOpen]);
+
+  return (
+    <div
+      ref={contentRef}
+      style={{
+        height: typeof height === 'number' ? height : height,
+        overflow: 'hidden',
+        transition: 'height 300ms ease',
+      }}
+    >
+      {shouldRender && children}
+    </div>
+  );
+}
+
+function Sidebar({ 
+  isOpen, 
+  onClose,
+  sidebarRef,
+  overlayRef,
+}: { 
+  isOpen: boolean; 
+  onClose: () => void;
+  sidebarRef: React.RefObject<HTMLElement>;
+  overlayRef: React.RefObject<HTMLDivElement>;
+}) {
+  const [location] = useLocation();
+  const [buddyAiOpen, setBuddyAiOpen] = useState(true);
+  const [enterpriseOpen, setEnterpriseOpen] = useState(false);
+  const [selectedConvo, setSelectedConvo] = useState('s1');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ convoId: string; x: number; y: number } | null>(null);
+  const pressTimerRef = useRef<number>(0);
+  const { theme, setTheme } = useTheme();
 
   const isActive = (path: string) => {
-    if (path === "/") {
-      return location === "/";
-    }
+    if (path === '/') return location === '/';
     return location.startsWith(path);
+  };
+
+  const renderNavItem = (item: { label: string; icon: typeof MessageSquare; path: string | null }, index: number) => {
+    const Icon = item.icon;
+    const active = item.path ? isActive(item.path) : false;
+    const testId = item.path === '/' ? 'nav-dashboard' : item.path ? `nav-${item.path.slice(1)}` : `nav-${item.label.toLowerCase()}`;
+
+    const content = (
+      <div
+        style={{
+          height: 46,
+          padding: '0 20px 0 28px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+          background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
+          cursor: 'pointer',
+          transition: 'background 150ms',
+        }}
+        onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+        onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+        data-testid={testId}
+      >
+        <Icon size={20} color="#ECECEC" strokeWidth={1.5} />
+        <span style={{ fontSize: 16.5, fontWeight: 400, color: '#ECECEC' }}>{item.label}</span>
+      </div>
+    );
+
+    if (item.path) {
+      return (
+        <Link key={item.label} href={item.path} onClick={onClose} style={{ textDecoration: 'none' }}>
+          {content}
+        </Link>
+      );
+    }
+    return <div key={item.label}>{content}</div>;
+  };
+
+  const renderConvoItem = (convo: { id: string; title: string }) => {
+    const selected = convo.id === selectedConvo;
+    const isStarred = DUMMY_CONVERSATIONS.starred.some(s => s.id === convo.id);
+    return (
+      <div
+        key={convo.id}
+        onClick={() => setSelectedConvo(convo.id)}
+        onTouchStart={(e) => {
+          const touch = e.touches[0];
+          pressTimerRef.current = window.setTimeout(() => {
+            if (navigator.vibrate) navigator.vibrate(10);
+            setContextMenu({ convoId: convo.id, x: touch.clientX, y: touch.clientY });
+          }, 500);
+        }}
+        onTouchEnd={() => clearTimeout(pressTimerRef.current)}
+        onTouchMove={() => clearTimeout(pressTimerRef.current)}
+        style={{
+          padding: '12px 16px',
+          margin: '0 8px 2px 16px',
+          borderRadius: 10,
+          background: selected ? 'rgba(255,255,255,0.08)' : 'transparent',
+          cursor: 'pointer',
+          fontSize: 15.5,
+          fontWeight: 400,
+          color: '#ECECEC',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap' as const,
+          transition: 'background 150ms',
+        }}
+        onMouseEnter={e => { if (!selected) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+        onMouseLeave={e => { if (!selected) e.currentTarget.style.background = selected ? 'rgba(255,255,255,0.08)' : 'transparent'; }}
+        data-testid={`convo-${convo.id}`}
+      >
+        {convo.title}
+      </div>
+    );
+  };
+
+  const renderGroupHeader = (
+    label: string,
+    icon: typeof Bot,
+    isExpanded: boolean,
+    onToggle: () => void,
+    testId: string,
+  ) => {
+    const GroupIcon = icon;
+    return (
+      <button
+        onClick={onToggle}
+        style={{
+          width: '100%',
+          height: 48,
+          padding: '0 20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          color: '#ECECEC',
+        }}
+        data-testid={testId}
+      >
+        <div style={{
+          transition: 'transform 200ms ease',
+          transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+          display: 'flex',
+          alignItems: 'center',
+        }}>
+          <ChevronRight size={16} color="#9A9893" />
+        </div>
+        <GroupIcon size={20} color="#ECECEC" />
+        <span style={{ fontSize: 16, fontWeight: 600, color: '#ECECEC' }}>{label}</span>
+      </button>
+    );
   };
 
   return (
     <>
-      {/* Mobile overlay */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
-          onClick={onClose}
-        />
-      )}
-      
+      <div
+        ref={overlayRef}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.4)',
+          zIndex: 40,
+          opacity: isOpen ? 1 : 0,
+          pointerEvents: isOpen ? 'auto' : 'none',
+          transition: 'opacity 300ms',
+        }}
+        className="md:hidden"
+        onClick={onClose}
+        data-testid="sidebar-overlay"
+      />
+
       <aside
-        className={cn(
-          "fixed left-0 top-0 h-screen w-60 bg-[var(--bg-sidebar)] text-[var(--text-primary)] flex flex-col transition-transform duration-300 z-50",
-          "md:translate-x-0 md:relative md:z-auto",
-          isOpen ? "translate-x-0" : "-translate-x-full"
-        )}
+        ref={sidebarRef}
+        style={{
+          width: '82vw',
+          maxWidth: 340,
+          background: 'var(--bg-sidebar)',
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          zIndex: 50,
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 20px)',
+          display: 'flex',
+          flexDirection: 'column',
+          transition: 'transform 350ms cubic-bezier(0.32, 0.72, 0, 1)',
+          transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
+        }}
+        className="md:!translate-x-0 md:!relative md:!z-auto md:!w-[260px] md:!max-w-[260px]"
         data-testid="sidebar"
       >
-        <div className="md:hidden flex items-center justify-between p-4 border-b border-[var(--border-subtle)]">
-          <h1 className="text-lg font-bold flex items-center gap-2"><span className="w-2 h-5 rounded-sm bg-brand inline-block"></span>Buddy</h1>
-          <button
-            onClick={onClose}
+        <div style={{ padding: '0 20px 20px 20px' }}>
+          <h1
             style={{
-              width: 36, height: 36,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(255,255,255,0.07)',
-              border: '1px solid rgba(255,255,255,0.10)',
-              borderRadius: '50%',
-              cursor: 'pointer',
-              color: 'var(--text-primary)',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
+              fontFamily: "Georgia, 'Noto Serif SC', serif",
+              fontSize: 28,
+              fontWeight: 700,
+              color: '#ECECEC',
+              margin: 0,
             }}
-            data-testid="sidebar-close"
+            data-testid="text-sidebar-title"
           >
-            <X size={18} strokeWidth={1.8} />
+            Buddy
+          </h1>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+          {renderGroupHeader('Buddy AI', Bot, buddyAiOpen, () => setBuddyAiOpen(!buddyAiOpen), 'button-toggle-buddy-ai')}
+          <CollapsibleContent isOpen={buddyAiOpen}>
+            <div>
+              {BUDDY_AI_NAV.map(renderNavItem)}
+
+              <div style={{ padding: '20px 20px 8px 28px', fontSize: 14.5, fontWeight: 500, color: '#C4703F' }} data-testid="text-starred-label">
+                收藏
+              </div>
+              {DUMMY_CONVERSATIONS.starred.map(renderConvoItem)}
+
+              <div style={{ padding: '20px 20px 8px 28px', fontSize: 14.5, fontWeight: 500, color: '#C4703F' }} data-testid="text-recents-label">
+                最近对话
+              </div>
+              {DUMMY_CONVERSATIONS.recents.map(renderConvoItem)}
+            </div>
+          </CollapsibleContent>
+
+          <div style={{ height: 8 }} />
+
+          {renderGroupHeader('企业管理', Building2, enterpriseOpen, () => setEnterpriseOpen(!enterpriseOpen), 'button-toggle-enterprise')}
+          <CollapsibleContent isOpen={enterpriseOpen}>
+            <div>
+              {ENTERPRISE_NAV.map(renderNavItem)}
+            </div>
+          </CollapsibleContent>
+        </div>
+
+        <div
+          style={{
+            padding: '16px 20px',
+            paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexShrink: 0,
+            gap: 8,
+          }}
+        >
+          <div
+            style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
+            onClick={() => setSettingsOpen(true)}
+            data-testid="button-open-settings"
+          >
+            <div
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: '50%',
+                background: '#4A4A47',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 15,
+                fontWeight: 600,
+                color: '#FFFFFF',
+                flexShrink: 0,
+              }}
+              data-testid="img-avatar"
+            >
+              A
+            </div>
+            <span style={{ fontSize: 15.5, color: '#ECECEC', marginLeft: 10 }} data-testid="text-username">Alexso</span>
+          </div>
+
+          <button
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: '50%',
+              background: '#AE5630',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              flexShrink: 0,
+              transition: 'transform 100ms',
+            }}
+            onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.95)')}
+            onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+            onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
+            data-testid="button-new-chat"
+          >
+            <Plus size={20} color="#FFFFFF" />
           </button>
         </div>
-
-        <div className="hidden md:block p-6 border-b border-[var(--border-subtle)]">
-          <h1 className="text-lg font-bold flex items-center gap-2"><span className="w-2 h-5 rounded-sm bg-brand inline-block"></span>Buddy</h1>
-        </div>
-
-        <nav className="flex-1 p-4 space-y-2">
-          {NAV_ITEMS.map((item) => {
-            const active = isActive(item.path);
-            const Icon = item.icon;
-            const testId = item.path === "/" ? "nav-dashboard" : `nav-${item.path.slice(1)}`;
-
-            return (
-              <Link
-                key={item.path}
-                href={item.path}
-                className={cn(
-                  "flex items-center gap-3 px-4 py-2 rounded-md transition-colors",
-                  active
-                    ? "bg-brand/10 text-brand"
-                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5"
-                )}
-                onClick={() => onClose()}
-                data-testid={testId}
-              >
-                <Icon className="w-5 h-5" />
-                <span>{item.label}</span>
-                {item.label === "通知" && unreadCount > 0 && (
-                  <span className="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="p-4 border-t border-[var(--border-subtle)] space-y-3">
-          <ThemeToggle />
-          <div className="text-sm">
-            <p className="font-medium text-[var(--text-primary)]">Alexso</p>
-            <p className="text-[var(--text-secondary)] text-xs">(Owner)</p>
-          </div>
-        </div>
       </aside>
+
+      {settingsOpen && (
+        <>
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.4)',
+              zIndex: 55,
+            }}
+            onClick={() => setSettingsOpen(false)}
+            data-testid="settings-overlay"
+          />
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              zIndex: 60,
+              background: 'var(--bg-sidebar)',
+              borderRadius: '16px 16px 0 0',
+              padding: '24px 20px',
+              paddingBottom: 'calc(24px + env(safe-area-inset-bottom, 0px))',
+              boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
+              animation: 'settingsSlideUp 300ms cubic-bezier(0.165, 0.85, 0.45, 1) forwards',
+            }}
+            data-testid="settings-action-sheet"
+          >
+            <style>{`
+              @keyframes settingsSlideUp {
+                from { transform: translateY(100%); }
+                to { transform: translateY(0); }
+              }
+            `}</style>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
+              <div
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: '50%',
+                  background: '#4A4A47',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 20,
+                  fontWeight: 600,
+                  color: '#FFFFFF',
+                  flexShrink: 0,
+                }}
+              >
+                A
+              </div>
+              <div>
+                <div style={{ fontSize: 17, fontWeight: 600, color: '#ECECEC' }} data-testid="text-settings-username">Alexso</div>
+                <div style={{ fontSize: 14, color: '#9A9893' }} data-testid="text-settings-email">alexso@company.com</div>
+              </div>
+            </div>
+
+            <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
+
+            <Link
+              href="/settings"
+              onClick={() => { setSettingsOpen(false); onClose(); }}
+              style={{ textDecoration: 'none' }}
+            >
+              <div
+                style={{
+                  height: 48,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 14,
+                  borderRadius: 8,
+                  padding: '0 8px',
+                  cursor: 'pointer',
+                  transition: 'background 150ms',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                data-testid="settings-item-settings"
+              >
+                <Settings2 size={20} color="#ECECEC" />
+                <span style={{ fontSize: 16, fontWeight: 400, color: '#ECECEC' }}>设置</span>
+              </div>
+            </Link>
+
+            <Link
+              href="/notifications"
+              onClick={() => { setSettingsOpen(false); onClose(); }}
+              style={{ textDecoration: 'none' }}
+            >
+              <div
+                style={{
+                  height: 48,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 14,
+                  borderRadius: 8,
+                  padding: '0 8px',
+                  cursor: 'pointer',
+                  transition: 'background 150ms',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                data-testid="settings-item-notifications"
+              >
+                <Bell size={20} color="#ECECEC" />
+                <span style={{ fontSize: 16, fontWeight: 400, color: '#ECECEC' }}>通知</span>
+              </div>
+            </Link>
+
+            <div
+              style={{
+                height: 48,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 14,
+                borderRadius: 8,
+                padding: '0 8px',
+                cursor: 'pointer',
+                transition: 'background 150ms',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              data-testid="settings-item-darkmode"
+            >
+              <Moon size={20} color="#ECECEC" />
+              <span style={{ fontSize: 16, fontWeight: 400, color: '#ECECEC', flex: 1 }}>深色模式</span>
+              <div
+                style={{
+                  width: 44,
+                  height: 24,
+                  borderRadius: 12,
+                  background: theme === 'dark' ? '#AE5630' : 'rgba(255,255,255,0.2)',
+                  position: 'relative',
+                  transition: 'background 200ms',
+                  flexShrink: 0,
+                }}
+              >
+                <div
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: '50%',
+                    background: '#FFFFFF',
+                    position: 'absolute',
+                    top: 2,
+                    left: theme === 'dark' ? 22 : 2,
+                    transition: 'left 200ms',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div
+              style={{
+                height: 48,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 14,
+                borderRadius: 8,
+                padding: '0 8px',
+                cursor: 'pointer',
+                transition: 'background 150ms',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              data-testid="settings-item-help"
+            >
+              <HelpCircle size={20} color="#ECECEC" />
+              <span style={{ fontSize: 16, fontWeight: 400, color: '#ECECEC' }}>帮助与反馈</span>
+            </div>
+
+            <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
+
+            <div
+              style={{
+                height: 48,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 14,
+                borderRadius: 8,
+                padding: '0 8px',
+                cursor: 'pointer',
+                transition: 'background 150ms',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              onClick={() => setSettingsOpen(false)}
+              data-testid="settings-item-logout"
+            >
+              <LogOut size={20} color="#E5534B" />
+              <span style={{ fontSize: 16, fontWeight: 400, color: '#E5534B' }}>退出登录</span>
+            </div>
+          </div>
+        </>
+      )}
+
+      {contextMenu && (
+        <>
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.2)',
+              zIndex: 65,
+            }}
+            onClick={() => setContextMenu(null)}
+            data-testid="context-menu-overlay"
+          />
+          <div
+            style={{
+              position: 'fixed',
+              left: Math.min(contextMenu.x, window.innerWidth - 220),
+              top: Math.min(contextMenu.y, window.innerHeight - 200),
+              zIndex: 70,
+              background: '#3C3B37',
+              borderRadius: 14,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.2)',
+              padding: '6px 0',
+              minWidth: 200,
+              animation: 'contextMenuIn 200ms ease-out forwards',
+            }}
+            data-testid="context-menu"
+          >
+            <style>{`
+              @keyframes contextMenuIn {
+                from { transform: scale(0.95); opacity: 0; }
+                to { transform: scale(1); opacity: 1; }
+              }
+            `}</style>
+            {(() => {
+              const isStarred = DUMMY_CONVERSATIONS.starred.some(s => s.id === contextMenu.convoId);
+              return (
+                <>
+                  <div
+                    style={{
+                      height: 44,
+                      padding: '0 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      cursor: 'pointer',
+                      transition: 'background 150ms',
+                      borderRadius: 0,
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                    onClick={() => setContextMenu(null)}
+                    data-testid="context-menu-move-project"
+                  >
+                    <FolderInput size={18} color="#ECECEC" />
+                    <span style={{ fontSize: 15, fontWeight: 400, color: '#ECECEC' }}>移到项目</span>
+                  </div>
+                  <div
+                    style={{
+                      height: 44,
+                      padding: '0 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      cursor: 'pointer',
+                      transition: 'background 150ms',
+                      borderRadius: 0,
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                    onClick={() => setContextMenu(null)}
+                    data-testid="context-menu-star"
+                  >
+                    {isStarred ? <StarOff size={18} color="#ECECEC" /> : <Star size={18} color="#ECECEC" />}
+                    <span style={{ fontSize: 15, fontWeight: 400, color: '#ECECEC' }}>{isStarred ? '取消收藏' : '收藏'}</span>
+                  </div>
+                  <div
+                    style={{
+                      height: 44,
+                      padding: '0 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      cursor: 'pointer',
+                      transition: 'background 150ms',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                    onClick={() => setContextMenu(null)}
+                    data-testid="context-menu-rename"
+                  >
+                    <Pencil size={18} color="#ECECEC" />
+                    <span style={{ fontSize: 15, fontWeight: 400, color: '#ECECEC' }}>重命名</span>
+                  </div>
+                  <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
+                  <div
+                    style={{
+                      height: 44,
+                      padding: '0 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      cursor: 'pointer',
+                      transition: 'background 150ms',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                    onClick={() => setContextMenu(null)}
+                    data-testid="context-menu-delete"
+                  >
+                    <Trash2 size={18} color="#E5534B" />
+                    <span style={{ fontSize: 15, fontWeight: 400, color: '#E5534B' }}>删除</span>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </>
+      )}
     </>
   );
 }
@@ -205,12 +767,133 @@ function Router() {
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  
+  const dragRef = useRef({
+    isDragging: false,
+    startX: 0,
+    startTime: 0,
+    currentX: 0,
+    type: '' as '' | 'open' | 'close',
+  });
+  
+  const sidebarWidth = 340;
+
+  useEffect(() => {
+    const handleTouchStart = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      const drag = dragRef.current;
+      
+      if (!sidebarOpen && touch.clientX < 25) {
+        drag.isDragging = true;
+        drag.startX = touch.clientX;
+        drag.startTime = Date.now();
+        drag.currentX = touch.clientX;
+        drag.type = 'open';
+      }
+      
+      if (sidebarOpen && sidebarRef.current) {
+        const rect = sidebarRef.current.getBoundingClientRect();
+        if (touch.clientX < rect.right) {
+          drag.isDragging = true;
+          drag.startX = touch.clientX;
+          drag.startTime = Date.now();
+          drag.currentX = touch.clientX;
+          drag.type = 'close';
+        }
+      }
+    };
+    
+    const handleTouchMove = (e: TouchEvent) => {
+      const drag = dragRef.current;
+      if (!drag.isDragging) return;
+      
+      drag.currentX = e.touches[0].clientX;
+      const deltaX = drag.currentX - drag.startX;
+      
+      const sidebar = sidebarRef.current;
+      const overlay = overlayRef.current;
+      if (!sidebar || !overlay) return;
+      
+      sidebar.style.transition = 'none';
+      overlay.style.transition = 'none';
+      
+      if (drag.type === 'open' && deltaX > 0) {
+        const actualWidth = Math.min(sidebar.offsetWidth, sidebarWidth);
+        const progress = Math.min(deltaX / actualWidth, 1);
+        sidebar.style.transform = `translateX(${-actualWidth + deltaX}px)`;
+        overlay.style.opacity = String(progress * 0.4);
+        overlay.style.pointerEvents = 'auto';
+        overlay.style.display = 'block';
+      }
+      
+      if (drag.type === 'close' && deltaX < 0) {
+        const actualWidth = Math.min(sidebar.offsetWidth, sidebarWidth);
+        sidebar.style.transform = `translateX(${deltaX}px)`;
+        const progress = 1 + deltaX / actualWidth;
+        overlay.style.opacity = String(Math.max(0, progress * 0.4));
+      }
+    };
+    
+    const handleTouchEnd = () => {
+      const drag = dragRef.current;
+      if (!drag.isDragging) return;
+      drag.isDragging = false;
+      
+      const sidebar = sidebarRef.current;
+      const overlay = overlayRef.current;
+      if (!sidebar || !overlay) return;
+      
+      const deltaX = drag.currentX - drag.startX;
+      const elapsed = Date.now() - drag.startTime;
+      const velocity = Math.abs(deltaX) / elapsed;
+      const actualWidth = Math.min(sidebar.offsetWidth, sidebarWidth);
+      
+      sidebar.style.transition = 'transform 350ms cubic-bezier(0.32, 0.72, 0, 1)';
+      overlay.style.transition = 'opacity 350ms ease';
+      
+      if (drag.type === 'open') {
+        if (deltaX > actualWidth * 0.3 || velocity > 0.5) {
+          sidebar.style.transform = 'translateX(0)';
+          overlay.style.opacity = '0.4';
+          setSidebarOpen(true);
+        } else {
+          sidebar.style.transform = 'translateX(-100%)';
+          overlay.style.opacity = '0';
+          setTimeout(() => { overlay.style.pointerEvents = 'none'; }, 350);
+          setSidebarOpen(false);
+        }
+      }
+      
+      if (drag.type === 'close') {
+        if (deltaX < -actualWidth * 0.3 || velocity > 0.5) {
+          sidebar.style.transform = 'translateX(-100%)';
+          overlay.style.opacity = '0';
+          setSidebarOpen(false);
+        } else {
+          sidebar.style.transform = 'translateX(0)';
+          overlay.style.opacity = '0.4';
+        }
+      }
+    };
+    
+    document.addEventListener('touchstart', handleTouchStart, { passive: true });
+    document.addEventListener('touchmove', handleTouchMove, { passive: true });
+    document.addEventListener('touchend', handleTouchEnd, { passive: true });
+    
+    return () => {
+      document.removeEventListener('touchstart', handleTouchStart);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [sidebarOpen]);
 
   return (
     <ThemeProvider>
     <QueryClientProvider client={queryClient}>
       <div className="flex h-screen bg-[var(--bg-primary)]">
-        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} sidebarRef={sidebarRef} overlayRef={overlayRef} />
 
         <div className="flex-1 flex flex-col overflow-hidden">
           <header className="md:hidden" style={{
@@ -251,7 +934,7 @@ function App() {
           </header>
 
           <main
-            className="flex-1 overflow-auto ml-0 md:ml-60"
+            className="flex-1 overflow-auto ml-0 md:ml-[260px]"
             data-testid="content-area"
           >
             <Router />
