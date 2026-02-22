@@ -177,6 +177,10 @@ export class DatabaseStorage {
     return result;
   }
 
+  async getAllTaskDependencies(): Promise<TaskDependency[]> {
+    return await db.select().from(taskDependencies);
+  }
+
   async getActivityLogs(filters?: { entityType?: string; entityId?: number }): Promise<ActivityLog[]> {
     if (!filters) {
       return db.select().from(activityLogs).orderBy(desc(activityLogs.createdAt));

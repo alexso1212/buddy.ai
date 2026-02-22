@@ -83,3 +83,4 @@ Team task management system for Deltapex Education (financial education company)
 ## Recent Changes
 - 2026-02-22: V6 Complete backend rebuild - 8-table schema (serial IDs), full CRUD API, seed script, enriched GET endpoints (project owner, project tasks, task subtasks/deps/comments)
 - 2026-02-22: V6 Frontend rebuild - 7 pages with sidebar navigation, all CRUD operations, status color badges, filter bar, inline status change, subtasks/deps/comments on task detail
+- 2026-02-22: Graph visualization (Round 1) - D3.js force-directed graph on /graph page, /api/graph/data and /api/graph/subtasks/:taskId endpoints, ForceGraph component with node size by weight (radius=12+weight*4), status colors, blocking/non-blocking link styles with arrows, cluster force grouping by project, zoom/pan/drag, hover highlight, detail panel, toolbar filters (project + status), legend, default hide done/cancelled

@@ -472,4 +472,170 @@ export async function registerRoutes(server: Server, app: Express) {
       return res.status(500).json({ error: e.message });
     }
   });
+
+  // ===================== Graph Visualization =====================
+  app.get("/api/graph/data", async (req, res) => {
+    try {
+      const { projectId, deptId, status } = req.query;
+
+      const projectColors = [
+        '#6366f1', '#f59e0b', '#10b981', '#ef4444', '#3b82f6',
+        '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#64748b',
+      ];
+
+      // Get all tasks with filters
+      const taskFilters: any = {};
+      if (projectId) taskFilters.projectId = parseInt(projectId as string);
+      if (status) {
+        // status is comma-separated
+      }
+
+      const allTasks = await storage.getTasks(taskFilters);
+      
+      // Get all projects for color mapping
+      const allProjects = await storage.getProjects();
+      const projectMap = new Map(allProjects.map(p => [p.id, p]));
+
+      // Get all users for assignee names
+      const allUsers = await storage.getUsers();
+      const userMap = new Map(allUsers.map(u => [u.id, u]));
+
+      // Get all dependencies
+      const allDeps = await storage.getAllTaskDependencies();
+
+      // Filter by status if provided
+      const statusFilter = status ? (status as string).split(',') : null;
+
+      // Filter: only top-level tasks (parentTaskId === null), apply filters
+      let filteredTasks = allTasks.filter(t => t.parentTaskId === null);
+      if (deptId) {
+        const deptIdNum = parseInt(deptId as string);
+        const projectsInDept = allProjects.filter(p => p.deptId === deptIdNum).map(p => p.id);
+        filteredTasks = filteredTasks.filter(t => projectsInDept.includes(t.projectId));
+      }
+      if (statusFilter) {
+        filteredTasks = filteredTasks.filter(t => statusFilter.includes(t.status));
+      }
+
+      // Check which tasks have subtasks
+      const tasksWithSubtasks = new Set(
+        allTasks.filter(t => t.parentTaskId !== null).map(t => t.parentTaskId)
+      );
+
+      const now = new Date();
+      const filteredIds = new Set(filteredTasks.map(t => t.id));
+
+      const nodes = filteredTasks.map(t => {
+        const project = projectMap.get(t.projectId);
+        const assignee = t.assigneeId ? userMap.get(t.assigneeId) : null;
+        return {
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+          weight: t.weight,
+          progress: t.progress,
+          projectId: t.projectId,
+          projectName: project?.name ?? '',
+          deptId: project?.deptId ?? null,
+          assigneeId: t.assigneeId,
+          assigneeName: assignee?.displayName ?? null,
+          dueDate: t.dueDate ? t.dueDate.toISOString() : null,
+          isOverdue: !!(t.dueDate && t.dueDate < now && t.status !== 'done' && t.status !== 'cancelled'),
+          type: t.type,
+          parentTaskId: t.parentTaskId,
+          hasSubtasks: tasksWithSubtasks.has(t.id),
+        };
+      });
+
+      // Build a map of task statuses for isBlocking calculation
+      const taskStatusMap = new Map(allTasks.map(t => [t.id, t.status]));
+
+      const links = allDeps
+        .filter(d => filteredIds.has(d.taskId) && filteredIds.has(d.dependsOnTaskId))
+        .map(d => ({
+          source: d.dependsOnTaskId,
+          target: d.taskId,
+          type: d.type,
+          isBlocking: taskStatusMap.get(d.dependsOnTaskId) !== 'done',
+        }));
+
+      const projectsUsed = Array.from(new Set(filteredTasks.map(t => t.projectId)));
+      const projectsInfo = projectsUsed.map((pid, idx) => ({
+        id: pid,
+        name: projectMap.get(pid)?.name ?? '',
+        color: projectColors[idx % projectColors.length],
+      }));
+
+      return res.json({ data: { nodes, links, projects: projectsInfo } });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/graph/subtasks/:taskId", async (req, res) => {
+    try {
+      const taskId = parseInt(req.params.taskId);
+      const allTasks = await storage.getTasks({ parentTaskId: taskId });
+      const allProjects = await storage.getProjects();
+      const projectMap = new Map(allProjects.map(p => [p.id, p]));
+      const allUsers = await storage.getUsers();
+      const userMap = new Map(allUsers.map(u => [u.id, u]));
+      const allDeps = await storage.getAllTaskDependencies();
+      const allTasksAll = await storage.getTasks({});
+      const tasksWithSubtasks = new Set(
+        allTasksAll.filter(t => t.parentTaskId !== null).map(t => t.parentTaskId)
+      );
+      const now = new Date();
+      const subtaskIds = new Set(allTasks.map(t => t.id));
+      const taskStatusMap = new Map(allTasksAll.map(t => [t.id, t.status]));
+
+      const nodes = allTasks.map(t => {
+        const project = projectMap.get(t.projectId);
+        const assignee = t.assigneeId ? userMap.get(t.assigneeId) : null;
+        return {
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+          weight: t.weight,
+          progress: t.progress,
+          projectId: t.projectId,
+          projectName: project?.name ?? '',
+          deptId: project?.deptId ?? null,
+          assigneeId: t.assigneeId,
+          assigneeName: assignee?.displayName ?? null,
+          dueDate: t.dueDate ? t.dueDate.toISOString() : null,
+          isOverdue: !!(t.dueDate && t.dueDate < now && t.status !== 'done' && t.status !== 'cancelled'),
+          type: t.type,
+          parentTaskId: t.parentTaskId,
+          hasSubtasks: tasksWithSubtasks.has(t.id),
+        };
+      });
+
+      const links = allDeps
+        .filter(d => subtaskIds.has(d.taskId) && subtaskIds.has(d.dependsOnTaskId))
+        .map(d => ({
+          source: d.dependsOnTaskId,
+          target: d.taskId,
+          type: d.type,
+          isBlocking: taskStatusMap.get(d.dependsOnTaskId) !== 'done',
+        }));
+
+      const projectColors = [
+        '#6366f1', '#f59e0b', '#10b981', '#ef4444', '#3b82f6',
+        '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#64748b',
+      ];
+      const projectsUsed = Array.from(new Set(allTasks.map(t => t.projectId)));
+      const projectsInfo = projectsUsed.map((pid, idx) => ({
+        id: pid,
+        name: projectMap.get(pid)?.name ?? '',
+        color: projectColors[idx % projectColors.length],
+      }));
+
+      return res.json({ data: { nodes, links, projects: projectsInfo } });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
 }

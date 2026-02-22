@@ -12,6 +12,7 @@ import TaskList from "@/pages/task-list";
 import TaskDetail from "@/pages/task-detail";
 import Team from "@/pages/team";
 import Settings from "@/pages/settings";
+import GraphView from "@/pages/graph-view";
 import {
   LayoutDashboard,
   FolderKanban,
@@ -20,10 +21,12 @@ import {
   Settings as SettingsIcon,
   Menu,
   X,
+  Network,
 } from "lucide-react";
 
 const NAV_ITEMS = [
   { label: "仪表盘", icon: LayoutDashboard, path: "/" },
+  { label: "图谱", icon: Network, path: "/graph" },
   { label: "项目", icon: FolderKanban, path: "/projects" },
   { label: "任务", icon: CheckSquare, path: "/tasks" },
   { label: "团队", icon: Users, path: "/team" },
@@ -119,6 +122,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/graph" component={GraphView} />
       <Route path="/projects" component={ProjectList} />
       <Route path="/projects/:id" component={ProjectDetail} />
       <Route path="/tasks" component={TaskList} />
