@@ -366,7 +366,7 @@ export default function Agent() {
   const isWelcomeOnly = messages.length === 1 && messages[0].role === "assistant" && messages[0].content === defaultWelcomeMessage.content;
 
   return (
-    <div className="flex flex-col h-full -m-6 bg-transparent" data-testid="agent-page">
+    <div className="flex flex-col h-full bg-transparent" data-testid="agent-page">
       {isWelcomeOnly ? (
         <div className="flex-1 flex flex-col items-center justify-center px-4">
           <div className="flex flex-col items-center gap-4 mb-8">
