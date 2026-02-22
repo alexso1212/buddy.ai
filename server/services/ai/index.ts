@@ -6,6 +6,7 @@ import { storage } from '../../storage';
 const client = new OpenAI({
   baseURL: process.env.AI_BASE_URL,
   apiKey: process.env.AI_API_KEY,
+  timeout: 30000,
 });
 
 interface ChatResponse {
@@ -72,6 +73,13 @@ export async function chat(
 
   try {
     const parsed = JSON.parse(aiText);
+
+    if (!parsed.type || !['text', 'confirm', 'multi_confirm'].includes(parsed.type)) {
+      if (parsed.message && typeof parsed.message === 'string') {
+        return { type: 'text', message: parsed.message };
+      }
+      return { type: 'text', message: aiText };
+    }
 
     if (parsed.type === 'confirm' && parsed.action) {
       const schema = ACTION_SCHEMAS[parsed.action.actionType];
