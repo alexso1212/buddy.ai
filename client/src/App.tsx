@@ -203,15 +203,32 @@ function App() {
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
         <div className="flex-1 flex flex-col overflow-hidden">
-          <header className="md:hidden flex items-center gap-2 p-4 bg-[var(--bg-primary)] border-b border-[var(--border-subtle)]">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-md"
-              data-testid="menu-toggle"
-            >
-              <Menu className="w-6 h-6" />
+          <header className="md:hidden" style={{
+            height: 54,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 8px',
+            background: 'var(--bg-primary)',
+            borderBottom: '1px solid var(--border-subtle)',
+            flexShrink: 0,
+            position: 'relative',
+          }} data-testid="top-bar">
+            <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
+              width: 44, height: 44,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--text-primary)',
+            }} data-testid="menu-toggle">
+              <Menu size={22} />
             </button>
-            <span className="text-base font-bold text-[var(--text-primary)]">Buddy</span>
+            <span style={{
+              position: 'absolute', left: '50%', transform: 'translateX(-50%)',
+              fontSize: 17, fontWeight: 600,
+              color: 'var(--text-primary)',
+              fontFamily: 'var(--font-sans)',
+            }} data-testid="top-bar-title">Buddy</span>
+            <div style={{ width: 44 }} />
           </header>
 
           <main

@@ -92,6 +92,7 @@ function MultiConfirmGroup({
   return (
     <div
       className="flex flex-col justify-start px-4 mb-6 space-y-2"
+      style={{ animation: 'messageAppear 200ms ease-out' }}
       data-testid={`ai-message-${message.id}`}
     >
       {message.content && (
@@ -169,6 +170,7 @@ export default function AiMessageBubble({
     return (
       <div
         className="flex justify-end px-4 mb-6"
+        style={{ animation: 'messageAppear 200ms ease-out' }}
         data-testid={`ai-message-${message.id}`}
       >
         <div
@@ -201,6 +203,7 @@ export default function AiMessageBubble({
     return (
       <div
         className="flex justify-start px-4 mb-6"
+        style={{ animation: 'messageAppear 200ms ease-out' }}
         data-testid={`ai-message-${message.id}`}
       >
         <div className="max-w-[90%]">
@@ -239,7 +242,7 @@ export default function AiMessageBubble({
 
   if (message.type === "follow_up" && message.followUp && onFollowUpSubmit) {
     return (
-      <div className="flex justify-start px-4 mb-6" data-testid={`ai-message-${message.id}`}>
+      <div className="flex justify-start px-4 mb-6" style={{ animation: 'messageAppear 200ms ease-out' }} data-testid={`ai-message-${message.id}`}>
         <div className="max-w-[90%]">
           <AiFollowUpCard
             followUp={message.followUp}
@@ -254,6 +257,7 @@ export default function AiMessageBubble({
   return (
     <div
       className="flex justify-start px-4 mb-6"
+      style={{ animation: 'messageAppear 200ms ease-out' }}
       data-testid={`ai-message-${message.id}`}
     >
       <div className="max-w-full">
