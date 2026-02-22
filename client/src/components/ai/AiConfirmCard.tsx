@@ -110,12 +110,22 @@ export default function AiConfirmCard({
         <div className="space-y-1">
           {Object.entries(action.data).map(([key, val]) => {
             if (val === null || val === undefined) return null;
+            let displayVal: string;
+            if (typeof val === 'object') {
+              if (Array.isArray(val)) {
+                displayVal = val.map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(', ');
+              } else {
+                displayVal = JSON.stringify(val);
+              }
+            } else {
+              displayVal = String(val);
+            }
             return (
               <div key={key} className="flex gap-2 text-xs">
                 <span className="text-gray-400 min-w-[4rem] text-right">
                   {DATA_LABELS[key] || key}
                 </span>
-                <span className="text-gray-700">{String(val)}</span>
+                <span className="text-gray-700 break-all">{displayVal}</span>
               </div>
             );
           })}
