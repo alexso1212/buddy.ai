@@ -432,7 +432,7 @@ export default function ProjectDetail() {
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h1 className="text-3xl font-bold" data-testid="text-project-name">
+          <h1 className="text-xl md:text-3xl font-bold line-clamp-1" data-testid="text-project-name">
             {project.name}
           </h1>
         </div>
@@ -505,7 +505,7 @@ export default function ProjectDetail() {
       {/* Tasks section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold">Tasks</h2>
+          <h2 className="text-lg md:text-2xl font-bold">Tasks</h2>
           <Button
             onClick={() => setNewTaskOpen(true)}
             data-testid="btn-new-task"

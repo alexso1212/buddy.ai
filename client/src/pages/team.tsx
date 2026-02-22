@@ -76,7 +76,7 @@ export default function Team() {
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold" data-testid="team-title">团队管理</h1>
+      <h1 className="text-xl md:text-2xl font-bold" data-testid="team-title">团队管理</h1>
 
       <div className="flex gap-2">
         <Button

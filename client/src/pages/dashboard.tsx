@@ -227,7 +227,7 @@ function Dashboard() {
 
   return (
     <div className="p-6 bg-background min-h-screen">
-      <h1 className="text-2xl font-bold text-foreground mb-8">仪表盘</h1>
+      <h1 className="text-xl md:text-2xl font-bold text-foreground mb-6 md:mb-8">仪表盘</h1>
 
       {/* Stats Cards Row */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
@@ -373,9 +373,9 @@ function Dashboard() {
                   >
                     <div className={`w-1 flex-shrink-0 ${getRowIndicatorColor(reasons)}`} />
                     <div className="flex-1 p-4">
-                      <div className="font-bold text-foreground mb-1 flex items-center gap-1">
+                      <div className="text-sm font-medium text-foreground mb-1 flex items-center gap-1 min-w-0">
                         {task.starred && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 flex-shrink-0" />}
-                        {task.title}
+                        <span className="truncate line-clamp-1">{task.title}</span>
                       </div>
                       <div className="text-xs text-muted-foreground mb-3">
                         {getProjectName(task.projectId)}

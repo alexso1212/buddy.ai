@@ -290,7 +290,7 @@ export default function ProjectList() {
       {/* Responsive Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 md:gap-0 mb-6">
         <h1
-          className="text-2xl md:text-3xl font-bold"
+          className="text-xl md:text-3xl font-bold"
           data-testid="project-list-title"
         >
           项目列表

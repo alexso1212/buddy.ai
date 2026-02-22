@@ -646,7 +646,7 @@ export default function TaskDetail() {
       <Card className={`p-6 ${detailTab === "info" ? "" : "hidden md:block"}`}>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="space-y-3 flex-1 min-w-0">
-            <h1 className="text-2xl font-bold" data-testid="text-task-title">{task.needsReview && <AlertTriangle className="inline w-6 h-6 text-amber-500 mr-1.5 align-text-bottom" />}{task.title}</h1>
+            <h1 className="text-lg md:text-2xl font-bold line-clamp-2" data-testid="text-task-title">{task.needsReview && <AlertTriangle className="inline w-5 md:w-6 h-5 md:h-6 text-amber-500 mr-1 md:mr-1.5 align-text-bottom" />}{task.title}</h1>
             {task.description && (
               <p className="text-muted-foreground">{task.description}</p>
             )}

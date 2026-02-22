@@ -569,7 +569,7 @@ export default function TaskList() {
     <div className="flex flex-col h-full p-6 gap-4">
       {/* Mobile header: title + filter toggle + new task button */}
       <div className="flex items-center gap-3 md:hidden" data-testid="mobile-header">
-        <h1 className="text-3xl font-bold flex-1" data-testid="task-list-title-mobile">
+        <h1 className="text-xl font-bold flex-1" data-testid="task-list-title-mobile">
           任务列表
         </h1>
         <Button
@@ -596,7 +596,7 @@ export default function TaskList() {
       )}
 
       {/* Desktop header */}
-      <h1 className="text-3xl font-bold hidden md:block" data-testid="task-list-title">
+      <h1 className="text-2xl md:text-3xl font-bold hidden md:block" data-testid="task-list-title">
         任务列表
       </h1>
 
@@ -699,10 +699,10 @@ export default function TaskList() {
                     data-testid={`task-card-${task.id}`}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <div className="font-medium flex items-center gap-1 min-w-0 flex-1" data-testid={`task-card-title-${task.id}`}>
+                      <div className="text-sm font-medium flex items-center gap-1 min-w-0 flex-1" data-testid={`task-card-title-${task.id}`}>
                         {task.starred && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 flex-shrink-0" />}
-                        {task.needsReview && <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />}
-                        <span className="truncate">{task.title}</span>
+                        {task.needsReview && <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
+                        <span className="truncate line-clamp-1">{task.title}</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">

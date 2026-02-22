@@ -105,7 +105,7 @@ export default function Notifications() {
     <div className="p-4 md:p-6 max-w-3xl mx-auto" data-testid="notifications-page">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-6">
         <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-2xl md:text-3xl font-bold" data-testid="notifications-title">通知中心</h1>
+          <h1 className="text-xl md:text-3xl font-bold" data-testid="notifications-title">通知中心</h1>
           {unreadCount > 0 && (
             <Badge className="bg-blue-500 text-white" data-testid="unread-badge">
               {unreadCount} 未读

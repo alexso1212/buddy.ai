@@ -14,7 +14,7 @@ export default function Settings() {
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold" data-testid="settings-title">系统设置</h1>
+      <h1 className="text-xl md:text-2xl font-bold" data-testid="settings-title">系统设置</h1>
 
       <Card>
         <CardHeader className="flex flex-row items-center gap-2">
