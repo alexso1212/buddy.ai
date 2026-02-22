@@ -63,7 +63,12 @@ export async function chat(
     ],
   });
 
-  const aiText = response.choices[0]?.message?.content || '';
+  let aiText = response.choices[0]?.message?.content || '';
+
+  const codeBlockMatch = aiText.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) {
+    aiText = codeBlockMatch[1].trim();
+  }
 
   try {
     const parsed = JSON.parse(aiText);
