@@ -80,7 +80,22 @@ Team task management system for Deltapex Education (financial education company)
 - medium: bg-blue-100 text-blue-700
 - low: bg-gray-100 text-gray-600
 
+## AI Chat Components
+- `client/src/components/ai/AiChatButton.tsx` - Floating 56px circular button at bottom-right
+- `client/src/components/ai/AiChatPanel.tsx` - Main chat panel (400px, 70vh), manages messages/history/loading state
+- `client/src/components/ai/AiMessageBubble.tsx` - Message bubbles (user/assistant/system/confirm/multi_confirm)
+- `client/src/components/ai/AiConfirmCard.tsx` - Action confirmation card with per-action confirm/reject
+- `client/src/components/ai/AiInputBar.tsx` - Input bar with Enter-to-send, Shift+Enter for newline
+
+## AI Backend (server/services/ai/)
+- `index.ts` - OpenAI SDK with OpenRouter baseURL, claude-3.5-haiku model
+- `prompts.ts` - System prompt with dynamic team/project context
+- `actionSchemas.ts` - Zod schemas for create_task, update_task, query_tasks, create_project, add_comment
+- `actionExecutor.ts` - Executes confirmed actions with ai_chat source logging
+- API routes: POST /api/ai/chat, POST /api/ai/confirm
+
 ## Recent Changes
 - 2026-02-22: V6 Complete backend rebuild - 8-table schema (serial IDs), full CRUD API, seed script, enriched GET endpoints (project owner, project tasks, task subtasks/deps/comments)
 - 2026-02-22: V6 Frontend rebuild - 7 pages with sidebar navigation, all CRUD operations, status color badges, filter bar, inline status change, subtasks/deps/comments on task detail
 - 2026-02-22: Graph visualization (Round 1) - D3.js force-directed graph on /graph page, /api/graph/data and /api/graph/subtasks/:taskId endpoints, ForceGraph component with node size by weight (radius=12+weight*4), status colors, blocking/non-blocking link styles with arrows, cluster force grouping by project, zoom/pan/drag, hover highlight, detail panel, toolbar filters (project + status), legend, default hide done/cancelled
+- 2026-02-22: AI Chat (Round 1) - OpenAI SDK with OpenRouter, Claude 3.5 Haiku model, floating chat button + panel, confirm cards with per-action states, multi_confirm support, follow-up questions, activity logging with ai_chat source

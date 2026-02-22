@@ -5,6 +5,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
 import NotFound from "@/pages/not-found";
+import AiChatButton from "@/components/ai/AiChatButton";
+import AiChatPanel from "@/components/ai/AiChatPanel";
 import Dashboard from "@/pages/dashboard";
 import ProjectList from "@/pages/project-list";
 import ProjectDetail from "@/pages/project-detail";
@@ -136,15 +138,14 @@ function Router() {
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [aiChatOpen, setAiChatOpen] = useState(false);
 
   return (
     <QueryClientProvider client={queryClient}>
       <div className="flex h-screen bg-gray-50">
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-        {/* Main content */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Header with mobile menu button */}
           <header className="md:hidden flex items-center gap-2 p-4 bg-white border-b">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -155,7 +156,6 @@ function App() {
             </button>
           </header>
 
-          {/* Content area */}
           <main
             className="flex-1 overflow-auto p-6 ml-0 md:ml-60"
             data-testid="content-area"
@@ -166,6 +166,8 @@ function App() {
       </div>
 
       <Toaster />
+      {!aiChatOpen && <AiChatButton onClick={() => setAiChatOpen(true)} />}
+      {aiChatOpen && <AiChatPanel onClose={() => setAiChatOpen(false)} />}
     </QueryClientProvider>
   );
 }
