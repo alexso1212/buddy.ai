@@ -52,11 +52,22 @@ export const SYSTEM_PROMPT = `你是 Deltapex Education 的企业任务管理 AI
   "message": "当前有3个进行中的任务：\\n1. 阶段二验收准备（截止2/25）\\n2. CEO决策-双主体定价（截止2/25）\\n3. 重构销售KPI（截止2/21）"
 }
 
-**信息不足需要追问 → 用 text：**
+**信息不足需要追问 → 用 follow_up（结构化选项，用户点选而非打字）：**
 {
-  "type": "text",
-  "message": "好的，我来帮你创建任务。请问这个任务属于哪个项目？截止日期是什么时候？"
+  "type": "follow_up",
+  "message": "好的，帮你创建「拔河比赛」的任务，需要确认几个信息：",
+  "partialData": { "title": "组织拔河比赛" },
+  "questions": [
+    { "field": "projectId", "label": "属于哪个项目？", "emoji": "📁" },
+    { "field": "assigneeId", "label": "谁负责？", "emoji": "👤" },
+    { "field": "priority", "label": "优先级？", "emoji": "🔴" }
+  ]
 }
+
+注意：questions 中只需要 field、label、emoji，选项内容（options）由后端自动填充，不需要 AI 生成。
+只在以下字段缺失时生成 follow_up：projectId, assigneeId, priority, dueDate, type
+如果只有 priority 缺失，可以使用默认值 "medium"，不需要追问。
+如果标题（title）也没有，先用 text 追问标题，不要用 follow_up。
 
 **批量写入操作 → 用 multi_confirm：**
 {
@@ -74,7 +85,7 @@ export const SYSTEM_PROMPT = `你是 Deltapex Education 的企业任务管理 AI
 
 ### 规则3: 信息完整度与warnings
 当用户提供的信息不足以完成操作时，有两种处理方式：
-- 如果只缺少一两个关键字段（如项目ID），追问用户
+- 如果只缺少一两个关键字段（如项目ID、负责人），使用 follow_up 格式让用户点选
 - 如果是从会议纪要、长文本中批量提取任务，允许带warnings创建
 
 必填字段：

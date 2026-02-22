@@ -14,17 +14,31 @@ interface ActionPayload {
   followUpQuestion?: string;
 }
 
+interface FollowUpData {
+  message: string;
+  partialData: Record<string, any>;
+  questions: {
+    field: string;
+    label: string;
+    emoji: string;
+    options: { label: string; value: any }[];
+    allowCustom?: boolean;
+  }[];
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
-  type?: "text" | "confirm" | "multi_confirm";
+  type?: "text" | "confirm" | "multi_confirm" | "follow_up";
   action?: ActionPayload;
   actions?: ActionPayload[];
   confirmed?: boolean | null;
   actionConfirmed?: (boolean | null)[];
   skipped?: boolean;
   actionSkipped?: boolean[];
+  followUp?: FollowUpData;
+  followUpSubmitted?: boolean;
 }
 
 const STORAGE_KEY = "ai_chat_history";
@@ -134,6 +148,8 @@ export default function Agent() {
           assistantContent = data.action.followUpQuestion || data.action.summary || "";
         } else if (data.type === "multi_confirm" && data.actions) {
           assistantContent = data.message || data.actions.map((a: ActionPayload) => a.summary).join("\n");
+        } else if (data.type === "follow_up" && data.followUp) {
+          assistantContent = data.followUp.message || "";
         }
 
         conversationHistory.current.push({
@@ -148,6 +164,7 @@ export default function Agent() {
           type: data.type,
           action: data.action,
           actions: data.actions,
+          followUp: data.followUp,
           confirmed: data.type === "confirm" ? null : undefined,
           actionConfirmed: data.type === "multi_confirm" && data.actions
             ? data.actions.map(() => null)
@@ -269,6 +286,76 @@ export default function Agent() {
     setMessages((prev) => [...prev, sysMsg]);
   }, []);
 
+  const handleFollowUpSubmit = useCallback(
+    async (messageId: string, mergedData: Record<string, any>) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId ? { ...m, followUpSubmitted: true } : m
+        )
+      );
+
+      conversationHistory.current.push({
+        role: "user",
+        content: `用户已选择完成信息：${JSON.stringify(mergedData)}`,
+      });
+
+      setLoading(true);
+      try {
+        const res = await apiRequest("POST", "/api/ai/chat", {
+          message: `用户已选择完成信息，请直接用这些数据创建确认卡片（不要再追问）：${JSON.stringify(mergedData)}`,
+          conversationHistory: conversationHistory.current,
+          currentUserId: 1,
+        });
+        const json = await res.json();
+        const data = json.data;
+
+        let assistantContent = "";
+        if (data.type === "text") {
+          assistantContent = data.message || "";
+        } else if (data.type === "confirm" && data.action) {
+          assistantContent = data.action.summary || "";
+        } else if (data.type === "multi_confirm" && data.actions) {
+          assistantContent = data.message || data.actions.map((a: any) => a.summary).join("\n");
+        } else if (data.type === "follow_up" && data.followUp) {
+          assistantContent = data.followUp.message || "";
+        }
+
+        conversationHistory.current.push({
+          role: "assistant",
+          content: assistantContent,
+        });
+
+        const assistantMsg: Message = {
+          id: nextId(),
+          role: "assistant",
+          content: assistantContent,
+          type: data.type,
+          action: data.action,
+          actions: data.actions,
+          followUp: data.followUp,
+          confirmed: data.type === "confirm" ? null : undefined,
+          actionConfirmed: data.type === "multi_confirm" && data.actions
+            ? data.actions.map(() => null)
+            : undefined,
+          actionSkipped: data.type === "multi_confirm" && data.actions
+            ? data.actions.map(() => false)
+            : undefined,
+        };
+        setMessages((prev) => [...prev, assistantMsg]);
+      } catch (err: any) {
+        const errorMsg: Message = {
+          id: nextId(),
+          role: "system",
+          content: err.message || "请求失败，请稍后重试",
+        };
+        setMessages((prev) => [...prev, errorMsg]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
   return (
     <div className="flex flex-col h-full -m-6" data-testid="agent-page">
       <div className="bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-4 flex items-start justify-between gap-4" data-testid="agent-header">
@@ -296,6 +383,7 @@ export default function Agent() {
               onConfirm={handleConfirm}
               onReject={handleReject}
               onSkip={handleSkip}
+              onFollowUpSubmit={handleFollowUpSubmit}
             />
           ))}
           {loading && (

@@ -10,7 +10,7 @@ const client = new OpenAI({
 });
 
 interface ChatResponse {
-  type: 'text' | 'confirm' | 'multi_confirm';
+  type: 'text' | 'confirm' | 'multi_confirm' | 'follow_up';
   message?: string;
   action?: {
     actionType: string;
@@ -26,6 +26,153 @@ interface ChatResponse {
     summary: string;
     confidence: number;
   }[];
+  followUp?: {
+    message: string;
+    partialData: Record<string, any>;
+    questions: {
+      field: string;
+      label: string;
+      emoji: string;
+      options: { label: string; value: any }[];
+      allowCustom?: boolean;
+    }[];
+  };
+}
+
+function formatDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function getNextDayOfWeek(dayOfWeek: number): Date {
+  const now = new Date();
+  const current = now.getDay();
+  let diff = dayOfWeek - current;
+  if (diff <= 0) diff += 7;
+  const result = new Date(now);
+  result.setDate(now.getDate() + diff);
+  return result;
+}
+
+function buildFollowUpResponse(
+  parsed: any,
+  allUsers: { id: number; displayName: string }[],
+  allProjects: { id: number; name: string }[],
+  currentUserId: number
+): ChatResponse {
+  const data = parsed.partialData || parsed.action?.data || {};
+  const aiQuestions: any[] = parsed.questions || [];
+
+  const fieldEmojis: Record<string, { label: string; emoji: string }> = {
+    projectId: { label: '属于哪个项目？', emoji: '📁' },
+    assigneeId: { label: '谁负责？', emoji: '👤' },
+    priority: { label: '优先级？', emoji: '🔴' },
+    dueDate: { label: '截止日期？', emoji: '📅' },
+    type: { label: '任务类型？', emoji: '📋' },
+  };
+
+  const now = new Date();
+  const today = formatDate(now);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const tomorrowStr = formatDate(tomorrow);
+  const friday = getNextDayOfWeek(5);
+  const fridayStr = formatDate(friday);
+  const monday = getNextDayOfWeek(1);
+  const mondayStr = formatDate(monday);
+
+  const optionGenerators: Record<string, () => { options: { label: string; value: any }[]; allowCustom?: boolean }> = {
+    projectId: () => ({
+      options: allProjects.map(p => ({ label: p.name, value: p.id })),
+    }),
+    assigneeId: () => {
+      const opts: { label: string; value: any }[] = [];
+      const currentUser = allUsers.find(u => u.id === currentUserId);
+      if (currentUser) {
+        opts.push({ label: '我自己', value: currentUser.id });
+      }
+      for (const u of allUsers) {
+        if (u.id !== currentUserId) {
+          opts.push({ label: u.displayName, value: u.id });
+        }
+      }
+      return { options: opts };
+    },
+    priority: () => ({
+      options: [
+        { label: '紧急', value: 'critical' },
+        { label: '高', value: 'high' },
+        { label: '中', value: 'medium' },
+        { label: '低', value: 'low' },
+      ],
+    }),
+    dueDate: () => ({
+      options: [
+        { label: '今天', value: today },
+        { label: '明天', value: tomorrowStr },
+        { label: '本周五', value: fridayStr },
+        { label: '下周一', value: mondayStr },
+      ],
+      allowCustom: true,
+    }),
+    type: () => ({
+      options: [
+        { label: '任务', value: 'task' },
+        { label: '里程碑', value: 'milestone' },
+      ],
+    }),
+  };
+
+  const questions: ChatResponse['followUp'] extends undefined ? never : NonNullable<ChatResponse['followUp']>['questions'] = [];
+
+  if (aiQuestions.length > 0) {
+    for (const q of aiQuestions) {
+      if (data[q.field] !== undefined && data[q.field] !== null) continue;
+      const gen = optionGenerators[q.field];
+      if (gen) {
+        const { options, allowCustom } = gen();
+        questions.push({
+          field: q.field,
+          label: q.label || fieldEmojis[q.field]?.label || q.field,
+          emoji: q.emoji || fieldEmojis[q.field]?.emoji || '❓',
+          options,
+          allowCustom,
+        });
+      }
+    }
+  } else {
+    const missingFields = ['projectId', 'assigneeId', 'dueDate', 'type'].filter(f => {
+      return data[f] === undefined || data[f] === null;
+    });
+    if (!data.priority && missingFields.length > 0) {
+      missingFields.push('priority');
+    }
+    for (const field of missingFields) {
+      const gen = optionGenerators[field];
+      if (gen) {
+        const info = fieldEmojis[field];
+        const { options, allowCustom } = gen();
+        questions.push({
+          field,
+          label: info?.label || field,
+          emoji: info?.emoji || '❓',
+          options,
+          allowCustom,
+        });
+      }
+    }
+  }
+
+  return {
+    type: 'follow_up',
+    followUp: {
+      message: parsed.message || `需要确认几个信息：`,
+      partialData: data,
+      questions,
+    },
+  };
 }
 
 function formatTeamMembers(users: { id: number; displayName: string; role: string; email: string }[]): string {
@@ -162,11 +309,15 @@ export async function chat(
   try {
     const parsed = JSON.parse(aiText);
 
-    if (!parsed.type || !['text', 'confirm', 'multi_confirm'].includes(parsed.type)) {
+    if (!parsed.type || !['text', 'confirm', 'multi_confirm', 'follow_up'].includes(parsed.type)) {
       if (parsed.message && typeof parsed.message === 'string') {
         return { type: 'text', message: parsed.message };
       }
       return { type: 'text', message: aiText };
+    }
+
+    if (parsed.type === 'follow_up') {
+      return buildFollowUpResponse(parsed, allUsers, allProjects, context.currentUserId);
     }
 
     if (parsed.type === 'confirm' && parsed.action) {
@@ -175,8 +326,51 @@ export async function chat(
         return { type: 'text', message: result };
       }
 
+      if (parsed.action.actionType === 'create_task') {
+        const schema = ACTION_SCHEMAS['create_task'];
+        if (schema) {
+          const validation = schema.safeParse(parsed.action.data);
+          if (!validation.success) {
+            const actionData = parsed.action.data || {};
+            if (actionData.title) {
+              return buildFollowUpResponse(
+                {
+                  message: `好的，帮你创建「${actionData.title}」的任务，需要确认几个信息：`,
+                  partialData: actionData,
+                  questions: [],
+                },
+                allUsers,
+                allProjects,
+                context.currentUserId
+              );
+            }
+            return {
+              type: 'text',
+              message: '抱歉，我生成的操作数据有误。请重新描述一下你的需求。',
+            };
+          }
+        }
+
+        if (parsed.action.confidence < 0.7) {
+          const actionData = parsed.action.data || {};
+          const missingKey = ['projectId', 'assigneeId', 'dueDate'].some(f => !actionData[f]);
+          if (missingKey && actionData.title) {
+            return buildFollowUpResponse(
+              {
+                message: `好的，帮你创建「${actionData.title}」的任务，需要确认几个信息：`,
+                partialData: actionData,
+                questions: [],
+              },
+              allUsers,
+              allProjects,
+              context.currentUserId
+            );
+          }
+        }
+      }
+
       const schema = ACTION_SCHEMAS[parsed.action.actionType];
-      if (schema) {
+      if (schema && parsed.action.actionType !== 'create_task') {
         const validation = schema.safeParse(parsed.action.data);
         if (!validation.success) {
           return {

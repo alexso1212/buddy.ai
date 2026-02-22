@@ -2,6 +2,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Check } from "lucide-react";
 import AiConfirmCard from "./AiConfirmCard";
+import AiFollowUpCard from "./AiFollowUpCard";
 
 interface ActionPayload {
   actionType: string;
@@ -12,17 +13,31 @@ interface ActionPayload {
   followUpQuestion?: string;
 }
 
+interface FollowUpData {
+  message: string;
+  partialData: Record<string, any>;
+  questions: {
+    field: string;
+    label: string;
+    emoji: string;
+    options: { label: string; value: any }[];
+    allowCustom?: boolean;
+  }[];
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
-  type?: "text" | "confirm" | "multi_confirm";
+  type?: "text" | "confirm" | "multi_confirm" | "follow_up";
   action?: ActionPayload;
   actions?: ActionPayload[];
   confirmed?: boolean | null;
   actionConfirmed?: (boolean | null)[];
   skipped?: boolean;
   actionSkipped?: boolean[];
+  followUp?: FollowUpData;
+  followUpSubmitted?: boolean;
 }
 
 interface AiMessageBubbleProps {
@@ -30,6 +45,7 @@ interface AiMessageBubbleProps {
   onConfirm?: (messageId: string, actionIndex?: number) => void;
   onReject?: (messageId: string, actionIndex?: number) => void;
   onSkip?: (messageId: string, actionIndex?: number) => void;
+  onFollowUpSubmit?: (messageId: string, mergedData: Record<string, any>) => void;
 }
 
 function MultiConfirmGroup({
@@ -110,6 +126,7 @@ export default function AiMessageBubble({
   onConfirm,
   onReject,
   onSkip,
+  onFollowUpSubmit,
 }: AiMessageBubbleProps) {
   if (message.role === "system") {
     const isSuccess = message.content.includes("成功") || message.content.includes("已");
@@ -194,6 +211,20 @@ export default function AiMessageBubble({
         onReject={onReject}
         onSkip={onSkip}
       />
+    );
+  }
+
+  if (message.type === "follow_up" && message.followUp && onFollowUpSubmit) {
+    return (
+      <div className="flex justify-start px-4 py-1" data-testid={`ai-message-${message.id}`}>
+        <div className="max-w-[90%]">
+          <AiFollowUpCard
+            followUp={message.followUp}
+            onSubmit={(mergedData) => onFollowUpSubmit(message.id, mergedData)}
+            submitted={message.followUpSubmitted}
+          />
+        </div>
+      </div>
     );
   }
 

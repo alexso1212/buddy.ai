@@ -137,7 +137,17 @@ Team task management system for Deltapex Education (financial education company)
 ## API Routes (Stats)
 - GET /api/stats/overview - Returns totalTasks, inProgressCount, completedCount, overdueCount, needsReviewCount, todayNew, weekNew, monthNew
 
+## AI Follow-Up (Structured Options)
+- When AI detects missing fields for create_task (projectId, assigneeId, priority, dueDate, type), returns `follow_up` type response
+- `AiFollowUpCard` component renders clickable option buttons instead of text questions
+- Options auto-populated from DB: projects list, users list, fixed priority/date/type options
+- User clicks options → submits → AI returns confirm card with complete data
+- Custom input supported for dueDate (allowCustom flag)
+- Backend: `buildFollowUpResponse()` in `server/services/ai/index.ts` generates options
+- Triggers: AI returns follow_up type, Zod validation fails with title present, confidence < 0.7 with missing key fields
+
 ## Recent Changes
+- 2026-02-22: AI follow-up structured options - AiFollowUpCard with clickable buttons for missing fields, replaces text-based follow-up questions
 - 2026-02-22: Fix duplicate task creation (confirm button disables on click), cache invalidation after AI confirm (invalidates /api/tasks, /api/projects, /api/stats/overview), dashboard two-row stats (row 1: overview, row 2: today/week/month new), AI chat sessionStorage persistence with clear button
 - 2026-02-22: V6 Complete backend rebuild - 8-table schema (serial IDs), full CRUD API, seed script, enriched GET endpoints (project owner, project tasks, task subtasks/deps/comments)
 - 2026-02-22: V6 Frontend rebuild - 7 pages with sidebar navigation, all CRUD operations, status color badges, filter bar, inline status change, subtasks/deps/comments on task detail
