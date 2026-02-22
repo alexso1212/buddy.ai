@@ -368,7 +368,7 @@ export default function Agent() {
   return (
     <div className="flex flex-col h-full bg-transparent" data-testid="agent-page">
       {isWelcomeOnly ? (
-        <div className="flex-1 flex flex-col items-center justify-center px-4">
+        <div className="flex-1 flex flex-col items-center justify-center px-3">
           <div className="flex flex-col items-center gap-4 mb-8">
             <div className="w-12 h-12 rounded-full bg-brand flex items-center justify-center">
               <Sparkles className="w-6 h-6 text-white" />
@@ -417,7 +417,7 @@ export default function Agent() {
               />
             ))}
             {loading && (
-              <div className="flex justify-start px-4 mb-6" data-testid="ai-loading">
+              <div className="flex justify-start px-3 mb-6" data-testid="ai-loading">
                 <div>
                   <div style={{ position: 'relative', width: 32, height: 32, marginBottom: 10 }}>
                     <svg width="32" height="32" viewBox="0 0 32 32"
@@ -461,7 +461,7 @@ export default function Agent() {
       )}
 
       <div className="bg-transparent" data-testid="agent-input">
-        <div className="max-w-3xl mx-auto px-4 pb-[env(safe-area-inset-bottom)]">
+        <div className="max-w-3xl mx-auto px-3 pb-[env(safe-area-inset-bottom)]">
           <AiInputBar onSend={handleSend} loading={loading} />
         </div>
       </div>

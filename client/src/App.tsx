@@ -251,7 +251,7 @@ function App() {
           </header>
 
           <main
-            className="flex-1 overflow-auto p-6 ml-0 md:ml-60"
+            className="flex-1 overflow-auto ml-0 md:ml-60"
             data-testid="content-area"
           >
             <Router />
