@@ -88,14 +88,41 @@ Team task management system for Deltapex Education (financial education company)
 - `client/src/components/ai/AiInputBar.tsx` - Input bar with Enter-to-send, Shift+Enter for newline
 
 ## AI Backend (server/services/ai/)
-- `index.ts` - OpenAI SDK with OpenRouter baseURL, claude-3.5-haiku model
-- `prompts.ts` - System prompt with dynamic team/project context
+- `index.ts` - OpenAI SDK with OpenRouter baseURL, claude-sonnet-4 model
+- `prompts.ts` - System prompt with dynamic team/project/task context
 - `actionSchemas.ts` - Zod schemas for create_task, update_task, query_tasks, create_project, add_comment
 - `actionExecutor.ts` - Executes confirmed actions with ai_chat source logging
+- `verdictService.ts` - AI verdict judgment service using claude-sonnet-4, temp=0.1
 - API routes: POST /api/ai/chat, POST /api/ai/confirm
+
+## Database Schema (10 tables, serial IDs)
+### New tables (AI Verdict feature)
+9. **job_roles** - id, orgId, deptId, title, description, responsibilities (JSON string), boundaries (JSON string), requiredSkills (JSON string), createdAt, updatedAt
+10. **verdicts** - id, orgId, taskId, userId, verdict (in_scope/stretch/out_of_scope/shared), confidence (0-100), reasoning, matchedResponsibilities, suggestedAssignee, suggestedReason, requestedBy, status (pending/completed/accepted/overridden), overrideReason, createdAt, updatedAt
+- **users** table now has `jobRoleId` field linking to job_roles
+
+## API Routes (Verdict feature)
+- GET/POST/PATCH/DELETE /api/job-roles - Job role CRUD
+- PATCH /api/users/:id/job-role - Assign job role to user
+- POST /api/verdicts/judge - AI judges task-user assignment
+- POST /api/verdicts/judge-assignment - Auto-judge during task assignment
+- GET /api/verdicts/task/:taskId - Get verdicts for a task
+- GET /api/verdicts/user/:userId - Get verdicts for a user
+- PATCH /api/verdicts/:id/accept - Accept verdict
+- PATCH /api/verdicts/:id/override - Override verdict (requires reason)
+- GET /api/verdicts/stats - Verdict statistics by user
+
+## Seed Data (Job Roles)
+- CEO / 总经理 → Alexso
+- HR/行政主管 → Tina
+- VP/运营总监 → 安洲
+- 技术开发工程师 → Michael
+- 市场运营专员 → Apple, 唐张世涵
+- 交易策略分析师 → 刘建烨
 
 ## Recent Changes
 - 2026-02-22: V6 Complete backend rebuild - 8-table schema (serial IDs), full CRUD API, seed script, enriched GET endpoints (project owner, project tasks, task subtasks/deps/comments)
 - 2026-02-22: V6 Frontend rebuild - 7 pages with sidebar navigation, all CRUD operations, status color badges, filter bar, inline status change, subtasks/deps/comments on task detail
 - 2026-02-22: Graph visualization (Round 1) - D3.js force-directed graph on /graph page, /api/graph/data and /api/graph/subtasks/:taskId endpoints, ForceGraph component with node size by weight (radius=12+weight*4), status colors, blocking/non-blocking link styles with arrows, cluster force grouping by project, zoom/pan/drag, hover highlight, detail panel, toolbar filters (project + status), legend, default hide done/cancelled
 - 2026-02-22: AI Chat (Round 1) - OpenAI SDK with OpenRouter, Claude 3.5 Haiku model, floating chat button + panel, confirm cards with per-action states, multi_confirm support, follow-up questions, activity logging with ai_chat source
+- 2026-02-22: AI Verdict (Round 1) - job_roles + verdicts tables, jobRoleId on users, verdict service with claude-sonnet-4 (temp=0.1), job-roles CRUD API, verdict judge/accept/override/stats APIs, 6 job role seed data with user assignments

@@ -28,12 +28,29 @@ export const departments = pgTable('departments', {
 });
 
 // ============================================================
-// 3. users（用户）
+// 3. job_roles（岗位职责）
+// ============================================================
+export const jobRoles = pgTable('job_roles', {
+  id: serial('id').primaryKey(),
+  orgId: integer('org_id').references(() => organizations.id).notNull(),
+  deptId: integer('dept_id').references(() => departments.id),
+  title: varchar('title', { length: 255 }).notNull(),
+  description: text('description'),
+  responsibilities: text('responsibilities').notNull(),
+  boundaries: text('boundaries'),
+  requiredSkills: text('required_skills'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ============================================================
+// 4. users（用户）
 // ============================================================
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   orgId: integer('org_id').references(() => organizations.id).notNull(),
   deptId: integer('dept_id').references(() => departments.id),
+  jobRoleId: integer('job_role_id').references(() => jobRoles.id),
   email: varchar('email', { length: 255 }).notNull().unique(),
   displayName: varchar('display_name', { length: 255 }).notNull(),
   avatarUrl: text('avatar_url'),
@@ -44,7 +61,7 @@ export const users = pgTable('users', {
 });
 
 // ============================================================
-// 4. projects（项目）
+// 5. projects（项目）
 // ============================================================
 export const projects = pgTable('projects', {
   id: serial('id').primaryKey(),
@@ -131,6 +148,27 @@ export const taskComments = pgTable('task_comments', {
 });
 
 // ============================================================
+// 10. verdicts（权责判定记录）
+// ============================================================
+export const verdicts = pgTable('verdicts', {
+  id: serial('id').primaryKey(),
+  orgId: integer('org_id').references(() => organizations.id).notNull(),
+  taskId: integer('task_id').references(() => tasks.id).notNull(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  verdict: varchar('verdict', { length: 50 }).notNull(),
+  confidence: integer('confidence').notNull(),
+  reasoning: text('reasoning').notNull(),
+  matchedResponsibilities: text('matched_responsibilities'),
+  suggestedAssignee: integer('suggested_assignee').references(() => users.id),
+  suggestedReason: text('suggested_reason'),
+  requestedBy: integer('requested_by').references(() => users.id).notNull(),
+  status: varchar('status', { length: 50 }).notNull().default('pending'),
+  overrideReason: text('override_reason'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ============================================================
 // Relations 定义
 // ============================================================
 
@@ -155,6 +193,18 @@ export const departmentsRelations = relations(departments, ({ one, many }) => ({
   projects: many(projects),
 }));
 
+export const jobRolesRelations = relations(jobRoles, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [jobRoles.orgId],
+    references: [organizations.id],
+  }),
+  department: one(departments, {
+    fields: [jobRoles.deptId],
+    references: [departments.id],
+  }),
+  users: many(users),
+}));
+
 export const usersRelations = relations(users, ({ one, many }) => ({
   organization: one(organizations, {
     fields: [users.orgId],
@@ -163,6 +213,10 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   department: one(departments, {
     fields: [users.deptId],
     references: [departments.id],
+  }),
+  jobRole: one(jobRoles, {
+    fields: [users.jobRoleId],
+    references: [jobRoles.id],
   }),
   createdTasks: many(tasks, { relationName: 'taskCreator' }),
   assignedTasks: many(tasks, { relationName: 'taskAssignee' }),
@@ -240,6 +294,28 @@ export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
   }),
 }));
 
+export const verdictsRelations = relations(verdicts, ({ one }) => ({
+  task: one(tasks, {
+    fields: [verdicts.taskId],
+    references: [tasks.id],
+  }),
+  user: one(users, {
+    fields: [verdicts.userId],
+    references: [users.id],
+    relationName: 'verdictUser',
+  }),
+  suggestedUser: one(users, {
+    fields: [verdicts.suggestedAssignee],
+    references: [users.id],
+    relationName: 'suggestedAssignee',
+  }),
+  requestedByUser: one(users, {
+    fields: [verdicts.requestedBy],
+    references: [users.id],
+    relationName: 'verdictRequester',
+  }),
+}));
+
 // ============================================================
 // Insert Schemas & Types
 // ============================================================
@@ -306,3 +382,19 @@ export const insertTaskCommentSchema = createInsertSchema(taskComments).omit({
 });
 export type InsertTaskComment = z.infer<typeof insertTaskCommentSchema>;
 export type TaskComment = typeof taskComments.$inferSelect;
+
+export const insertJobRoleSchema = createInsertSchema(jobRoles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertJobRole = z.infer<typeof insertJobRoleSchema>;
+export type JobRole = typeof jobRoles.$inferSelect;
+
+export const insertVerdictSchema = createInsertSchema(verdicts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertVerdict = z.infer<typeof insertVerdictSchema>;
+export type Verdict = typeof verdicts.$inferSelect;

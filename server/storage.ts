@@ -11,6 +11,8 @@ import {
   taskDependencies,
   activityLogs,
   taskComments,
+  jobRoles,
+  verdicts,
   type Organization,
   type Department,
   type User,
@@ -19,6 +21,8 @@ import {
   type TaskDependency,
   type ActivityLog,
   type TaskComment,
+  type JobRole,
+  type Verdict,
   type InsertOrganization,
   type InsertDepartment,
   type InsertUser,
@@ -27,6 +31,8 @@ import {
   type InsertTaskDependency,
   type InsertActivityLog,
   type InsertTaskComment,
+  type InsertJobRole,
+  type InsertVerdict,
 } from "@shared/schema";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -198,6 +204,56 @@ export class DatabaseStorage {
   async createActivityLog(data: InsertActivityLog): Promise<ActivityLog> {
     const [result] = await db.insert(activityLogs).values(data).returning();
     return result;
+  }
+
+  async getJobRoles(): Promise<JobRole[]> {
+    return db.select().from(jobRoles);
+  }
+
+  async getJobRoleById(id: number): Promise<JobRole | undefined> {
+    const [result] = await db.select().from(jobRoles).where(eq(jobRoles.id, id));
+    return result;
+  }
+
+  async createJobRole(data: InsertJobRole): Promise<JobRole> {
+    const [result] = await db.insert(jobRoles).values(data).returning();
+    return result;
+  }
+
+  async updateJobRole(id: number, data: Partial<InsertJobRole>): Promise<JobRole | undefined> {
+    const [result] = await db.update(jobRoles).set(data).where(eq(jobRoles.id, id)).returning();
+    return result;
+  }
+
+  async deleteJobRole(id: number): Promise<void> {
+    await db.delete(jobRoles).where(eq(jobRoles.id, id));
+  }
+
+  async getVerdictsByTaskId(taskId: number): Promise<Verdict[]> {
+    return db.select().from(verdicts).where(eq(verdicts.taskId, taskId)).orderBy(desc(verdicts.createdAt));
+  }
+
+  async getVerdictsByUserId(userId: number): Promise<Verdict[]> {
+    return db.select().from(verdicts).where(eq(verdicts.userId, userId)).orderBy(desc(verdicts.createdAt));
+  }
+
+  async getVerdictById(id: number): Promise<Verdict | undefined> {
+    const [result] = await db.select().from(verdicts).where(eq(verdicts.id, id));
+    return result;
+  }
+
+  async createVerdict(data: InsertVerdict): Promise<Verdict> {
+    const [result] = await db.insert(verdicts).values(data).returning();
+    return result;
+  }
+
+  async updateVerdict(id: number, data: Partial<InsertVerdict>): Promise<Verdict | undefined> {
+    const [result] = await db.update(verdicts).set(data).where(eq(verdicts.id, id)).returning();
+    return result;
+  }
+
+  async getAllVerdicts(): Promise<Verdict[]> {
+    return db.select().from(verdicts).orderBy(desc(verdicts.createdAt));
   }
 }
 

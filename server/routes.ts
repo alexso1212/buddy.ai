@@ -11,7 +11,9 @@ import {
   insertTaskSchema,
   insertTaskDependencySchema,
   insertTaskCommentSchema,
+  insertJobRoleSchema,
 } from "@shared/schema";
+import { judgeTaskAssignment } from "./services/ai/verdictService";
 
 function getActivityUserId(body: any): number {
   return body?.userId ?? body?.creatorId ?? 1;
@@ -636,6 +638,284 @@ export async function registerRoutes(server: Server, app: Express) {
       }));
 
       return res.json({ data: { nodes, links, projects: projectsInfo } });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== Job Roles =====================
+  app.get("/api/job-roles", async (_req, res) => {
+    try {
+      const data = await storage.getJobRoles();
+      return res.json({ data });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/job-roles", async (req, res) => {
+    try {
+      const parsed = insertJobRoleSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      const role = await storage.createJobRole(parsed.data);
+      await storage.createActivityLog({
+        orgId: role.orgId,
+        userId: getActivityUserId(req.body),
+        entityType: "job_role",
+        entityId: role.id,
+        action: "create",
+        changes: JSON.stringify(parsed.data),
+        source: "manual",
+      });
+      return res.status(201).json({ data: role });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/job-roles/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existing = await storage.getJobRoleById(id);
+      if (!existing) return res.status(404).json({ error: "Job role not found" });
+      const updated = await storage.updateJobRole(id, req.body);
+      await storage.createActivityLog({
+        orgId: existing.orgId,
+        userId: getActivityUserId(req.body),
+        entityType: "job_role",
+        entityId: id,
+        action: "update",
+        changes: JSON.stringify(req.body),
+        source: "manual",
+      });
+      return res.json({ data: updated });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/job-roles/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existing = await storage.getJobRoleById(id);
+      if (!existing) return res.status(404).json({ error: "Job role not found" });
+      await storage.deleteJobRole(id);
+      await storage.createActivityLog({
+        orgId: existing.orgId,
+        userId: getActivityUserId(req.body),
+        entityType: "job_role",
+        entityId: id,
+        action: "delete",
+        changes: JSON.stringify({ id, title: existing.title }),
+        source: "manual",
+      });
+      return res.json({ data: { success: true } });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/users/:id/job-role", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existing = await storage.getUserById(id);
+      if (!existing) return res.status(404).json({ error: "User not found" });
+      const { jobRoleId } = req.body;
+      const updated = await storage.updateUser(id, { jobRoleId });
+      await storage.createActivityLog({
+        orgId: existing.orgId,
+        userId: getActivityUserId(req.body),
+        entityType: "user",
+        entityId: id,
+        action: "assign_job_role",
+        changes: JSON.stringify({ jobRoleId }),
+        source: "manual",
+      });
+      return res.json({ data: updated });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== Verdicts =====================
+  app.post("/api/verdicts/judge", async (req, res) => {
+    try {
+      const { taskId, userId, requestedBy } = req.body;
+      if (!taskId || !userId) return res.status(400).json({ error: "taskId and userId are required" });
+
+      const verdictResult = await judgeTaskAssignment(taskId, userId);
+
+      const verdict = await storage.createVerdict({
+        orgId: 1,
+        taskId,
+        userId,
+        verdict: verdictResult.verdict,
+        confidence: verdictResult.confidence,
+        reasoning: verdictResult.reasoning,
+        matchedResponsibilities: JSON.stringify(verdictResult.matchedResponsibilities),
+        suggestedAssignee: verdictResult.suggestedAssigneeId,
+        suggestedReason: verdictResult.suggestedReason,
+        requestedBy: requestedBy || 1,
+        status: 'completed',
+      });
+
+      const suggestedUser = verdictResult.suggestedAssigneeId
+        ? await storage.getUserById(verdictResult.suggestedAssigneeId)
+        : null;
+
+      await storage.createActivityLog({
+        orgId: 1,
+        userId: requestedBy || 1,
+        entityType: "verdict",
+        entityId: verdict.id,
+        action: "judge",
+        changes: JSON.stringify({ taskId, userId, verdict: verdictResult.verdict }),
+        source: "system",
+      });
+
+      return res.json({
+        data: {
+          verdict: {
+            id: verdict.id,
+            verdict: verdict.verdict,
+            confidence: verdict.confidence,
+            reasoning: verdict.reasoning,
+            matchedResponsibilities: verdictResult.matchedResponsibilities,
+            suggestedAssignee: suggestedUser ? {
+              id: suggestedUser.id,
+              name: suggestedUser.displayName,
+              reason: verdictResult.suggestedReason,
+            } : undefined,
+          },
+        },
+      });
+    } catch (e: any) {
+      console.error('Verdict judge error:', e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/verdicts/judge-assignment", async (req, res) => {
+    try {
+      const { taskId, userId, requestedBy } = req.body;
+      if (!taskId || !userId) return res.status(400).json({ error: "taskId and userId are required" });
+
+      const verdictResult = await judgeTaskAssignment(taskId, userId);
+
+      const verdict = await storage.createVerdict({
+        orgId: 1,
+        taskId,
+        userId,
+        verdict: verdictResult.verdict,
+        confidence: verdictResult.confidence,
+        reasoning: verdictResult.reasoning,
+        matchedResponsibilities: JSON.stringify(verdictResult.matchedResponsibilities),
+        suggestedAssignee: verdictResult.suggestedAssigneeId,
+        suggestedReason: verdictResult.suggestedReason,
+        requestedBy: requestedBy || 1,
+        status: 'completed',
+      });
+
+      return res.json({ data: verdict });
+    } catch (e: any) {
+      console.error('Verdict judge-assignment error:', e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/verdicts/task/:taskId", async (req, res) => {
+    try {
+      const taskId = parseInt(req.params.taskId);
+      const data = await storage.getVerdictsByTaskId(taskId);
+      return res.json({ data });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/verdicts/user/:userId", async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const data = await storage.getVerdictsByUserId(userId);
+      return res.json({ data });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/verdicts/:id/accept", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existing = await storage.getVerdictById(id);
+      if (!existing) return res.status(404).json({ error: "Verdict not found" });
+      const updated = await storage.updateVerdict(id, { status: 'accepted' });
+      await storage.createActivityLog({
+        orgId: existing.orgId,
+        userId: getActivityUserId(req.body),
+        entityType: "verdict",
+        entityId: id,
+        action: "accept",
+        changes: JSON.stringify({ status: 'accepted' }),
+        source: "manual",
+      });
+      return res.json({ data: updated });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/verdicts/:id/override", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existing = await storage.getVerdictById(id);
+      if (!existing) return res.status(404).json({ error: "Verdict not found" });
+      const { overrideReason } = req.body;
+      if (!overrideReason) return res.status(400).json({ error: "overrideReason is required" });
+      const updated = await storage.updateVerdict(id, { status: 'overridden', overrideReason });
+      await storage.createActivityLog({
+        orgId: existing.orgId,
+        userId: getActivityUserId(req.body),
+        entityType: "verdict",
+        entityId: id,
+        action: "override",
+        changes: JSON.stringify({ status: 'overridden', overrideReason }),
+        source: "manual",
+      });
+      return res.json({ data: updated });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/verdicts/stats", async (req, res) => {
+    try {
+      const allVerdicts = await storage.getAllVerdicts();
+      const allUsers = await storage.getUsers();
+      const userMap = new Map(allUsers.map(u => [u.id, u]));
+
+      const statsByUser: Record<number, { displayName: string; in_scope: number; stretch: number; out_of_scope: number; shared: number; total: number }> = {};
+
+      for (const v of allVerdicts) {
+        if (!statsByUser[v.userId]) {
+          const user = userMap.get(v.userId);
+          statsByUser[v.userId] = {
+            displayName: user?.displayName ?? 'Unknown',
+            in_scope: 0,
+            stretch: 0,
+            out_of_scope: 0,
+            shared: 0,
+            total: 0,
+          };
+        }
+        const s = statsByUser[v.userId];
+        if (v.verdict === 'in_scope') s.in_scope++;
+        else if (v.verdict === 'stretch') s.stretch++;
+        else if (v.verdict === 'out_of_scope') s.out_of_scope++;
+        else if (v.verdict === 'shared') s.shared++;
+        s.total++;
+      }
+
+      return res.json({ data: Object.entries(statsByUser).map(([userId, stats]) => ({ userId: parseInt(userId), ...stats })) });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }
