@@ -121,10 +121,20 @@ function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
           <h1 className="text-lg font-bold flex items-center gap-2"><span className="w-2 h-5 rounded-sm bg-brand inline-block"></span>Buddy</h1>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-md"
+            style={{
+              width: 36, height: 36,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(255,255,255,0.07)',
+              border: '1px solid rgba(255,255,255,0.10)',
+              borderRadius: '50%',
+              cursor: 'pointer',
+              color: 'var(--text-primary)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+            }}
             data-testid="sidebar-close"
           >
-            <X className="w-5 h-5" />
+            <X size={18} strokeWidth={1.8} />
           </button>
         </div>
 
@@ -215,12 +225,21 @@ function App() {
             position: 'relative',
           }} data-testid="top-bar">
             <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
-              width: 44, height: 44,
+              width: 40, height: 40,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'none', border: 'none', cursor: 'pointer',
+              background: 'rgba(255,255,255,0.07)',
+              border: '1px solid rgba(255,255,255,0.10)',
+              borderRadius: '50%',
+              cursor: 'pointer',
               color: 'var(--text-primary)',
-            }} data-testid="menu-toggle">
-              <Menu size={22} />
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              transition: 'background 150ms',
+            }} data-testid="menu-toggle"
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
+            >
+              <Menu size={20} strokeWidth={1.8} />
             </button>
             <span style={{
               position: 'absolute', left: '50%', transform: 'translateX(-50%)',
@@ -228,7 +247,7 @@ function App() {
               color: 'var(--text-primary)',
               fontFamily: 'var(--font-sans)',
             }} data-testid="top-bar-title">Buddy</span>
-            <div style={{ width: 44 }} />
+            <div style={{ width: 40 }} />
           </header>
 
           <main
