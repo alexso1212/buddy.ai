@@ -1,433 +1,191 @@
-import { useState, useMemo } from "react";
-import { useRoute, Link, useLocation } from "wouter";
+import { useState } from "react";
+import { useRoute, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { cn, getStatusColor, getStatusLabel, getDeadlineInfo } from "@/lib/utils";
-import type { Task, User, Project, Module, Phase } from "@shared/schema";
+import { cn } from "@/lib/utils";
+import type { Project, Task, User } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  ArrowLeft, FolderOpen, ChevronDown, ChevronRight, Plus,
-  Pencil, CheckCircle2, Calendar, Target, ClipboardCheck, UserCircle
-} from "lucide-react";
-
-type AssigneeMap = Record<string, User[]>;
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ArrowLeft, Plus, Pencil } from "lucide-react";
 
 interface ProjectDetailResponse {
-  project: Project;
-  modules: Module[];
-  tasks: Task[];
-  assigneeMap: AssigneeMap;
-  stats: { total: number; done: number; active: number; pending: number; review: number };
-  unassignedTasks: Task[];
+  data: Project & { tasks: Task[] };
 }
 
-function daysBetween(a: Date, b: Date) {
-  return Math.ceil((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
-}
-
-function getProjectHealth(project: Project, tasks: Task[]) {
-  if (!project.deadline) return { status: "healthy", color: "#10B981", label: "健康" };
-  const totalDays = daysBetween(new Date(project.created_at!), new Date(project.deadline));
-  const elapsedDays = daysBetween(new Date(project.created_at!), new Date());
-  const timeConsumed = totalDays > 0 ? elapsedDays / totalDays : 1;
-  const totalTasks = tasks.length;
-  const completedTasks = tasks.filter((t) => t.status === "done").length;
-  const completionRate = totalTasks > 0 ? completedTasks / totalTasks : 0;
-  const today = new Date().toISOString().split("T")[0];
-  const overdueCount = tasks.filter((t) => t.status !== "done" && t.deadline && t.deadline < today).length;
-
-  if (completionRate < timeConsumed * 0.5 || overdueCount >= 3) {
-    return { status: "danger", color: "#EF4444", label: "危险" };
+function getTaskStatusColor(status: string): string {
+  switch (status) {
+    case "todo":
+      return "bg-gray-200 text-gray-700";
+    case "in_progress":
+      return "bg-yellow-200 text-yellow-700";
+    case "in_review":
+      return "bg-blue-200 text-blue-700";
+    case "done":
+      return "bg-green-200 text-green-700";
+    case "cancelled":
+      return "bg-gray-400 text-gray-800";
+    default:
+      return "bg-gray-200 text-gray-700";
   }
-  if (completionRate < timeConsumed * 0.8 || overdueCount >= 1) {
-    return { status: "at_risk", color: "#F59E0B", label: "有风险" };
+}
+
+function getProjectStatusColor(status: string): string {
+  switch (status) {
+    case "active":
+      return "bg-green-200 text-green-700";
+    case "paused":
+      return "bg-yellow-200 text-yellow-700";
+    case "completed":
+      return "bg-blue-200 text-blue-700";
+    case "archived":
+      return "bg-gray-200 text-gray-700";
+    default:
+      return "bg-gray-200 text-gray-700";
   }
-  return { status: "healthy", color: "#10B981", label: "健康" };
 }
 
-function ModuleRow({
-  mod,
-  tasks,
-  assigneeMap,
-  projectColor,
-  allUsers,
-}: {
-  mod: Module;
-  tasks: Task[];
-  assigneeMap: AssigneeMap;
-  projectColor: string;
-  allUsers: User[];
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const doneTasks = tasks.filter((t) => t.status === "done").length;
-  const progress = tasks.length > 0 ? doneTasks / tasks.length : 0;
-  const today = new Date().toISOString().split("T")[0];
-  const overdueCount = tasks.filter((t) => t.status !== "done" && t.deadline && t.deadline < today).length;
-
-  const notes: string[] = [];
-  if (overdueCount > 0) notes.push(`${overdueCount}逾期`);
-
-  return (
-    <div data-testid={`module-row-${mod.id}`}>
-      <div
-        className="flex items-center gap-3 py-2.5 px-3 cursor-pointer select-none hover-elevate rounded-md"
-        onClick={() => setExpanded(!expanded)}
-        data-testid={`module-expand-${mod.id}`}
-      >
-        {expanded ? (
-          <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
-        ) : (
-          <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-        )}
-        <span className="text-sm font-medium min-w-0 truncate">{mod.title}</span>
-        <div className="flex-1 mx-2">
-          <div className="h-1 rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-300"
-              style={{ width: `${progress * 100}%`, backgroundColor: projectColor }}
-            />
-          </div>
-        </div>
-        <span className="text-xs text-muted-foreground shrink-0 whitespace-nowrap">
-          {tasks.length}个任务{notes.length > 0 ? ` · ${notes.join(" · ")}` : ""}
-        </span>
-      </div>
-      {expanded && (
-        <div className="ml-7 space-y-1.5 pb-2">
-          {tasks.map((task) => {
-            const assignees = assigneeMap[task.id] ?? [];
-            const deadlineInfo = task.deadline ? getDeadlineInfo(task.deadline, task.grace_deadline) : null;
-            return (
-              <div
-                key={task.id}
-                className="flex items-center gap-2 py-1.5 px-2 rounded-md hover-elevate flex-wrap"
-                data-testid={`task-row-${task.id}`}
-              >
-                <span className="text-sm min-w-0 truncate flex-1">{task.title}</span>
-                <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-                  {assignees.map((u) => (
-                    <div key={u.id} className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: u.color ?? "#888" }} />
-                      <span className="text-xs text-muted-foreground">{u.name}</span>
-                    </div>
-                  ))}
-                  {deadlineInfo && (
-                    <span className={cn("text-xs", deadlineInfo.color)}>{deadlineInfo.text}</span>
-                  )}
-                  <Badge
-                    className={cn("text-xs px-2 py-0.5 rounded-full font-medium border-0", getStatusColor(task.status ?? "pending"))}
-                    variant="secondary"
-                  >
-                    {getStatusLabel(task.status ?? "pending")}
-                  </Badge>
-                </div>
-              </div>
-            );
-          })}
-          {tasks.length === 0 && (
-            <p className="text-xs text-muted-foreground py-2 px-2">暂无任务</p>
-          )}
-        </div>
-      )}
-    </div>
-  );
+function getPriorityColor(priority: string): string {
+  switch (priority) {
+    case "urgent":
+      return "bg-red-100 text-red-700";
+    case "high":
+      return "bg-orange-100 text-orange-700";
+    case "medium":
+      return "bg-blue-100 text-blue-700";
+    case "low":
+      return "bg-gray-100 text-gray-600";
+    default:
+      return "bg-gray-100 text-gray-600";
+  }
 }
 
-function EditProjectDialog({
-  project,
-  allUsers,
-  open,
-  onOpenChange,
-}: {
+function getPriorityLabel(priority: string): string {
+  switch (priority) {
+    case "low":
+      return "Low";
+    case "medium":
+      return "Medium";
+    case "high":
+      return "High";
+    case "urgent":
+      return "Urgent";
+    default:
+      return priority;
+  }
+}
+
+function formatDate(date: Date | string | null | undefined): string {
+  if (!date) return "-";
+  const d = new Date(date);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+interface EditProjectModalProps {
   project: Project;
-  allUsers: User[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+}
+
+function EditProjectModal({ project, open, onOpenChange }: EditProjectModalProps) {
   const { toast } = useToast();
-  const [title, setTitle] = useState(project.title);
-  const [objective, setObjective] = useState(project.objective ?? "");
-  const [acceptanceCriteria, setAcceptanceCriteria] = useState(project.acceptance_criteria ?? "");
-  const [deadline, setDeadline] = useState(project.deadline ?? "");
-  const [ownerId, setOwnerId] = useState(project.owner_id ?? "");
-  const [memberIds, setMemberIds] = useState<string[]>(project.member_ids ?? []);
+  const [name, setName] = useState(project.name);
+  const [description, setDescription] = useState(project.description || "");
+  const [status, setStatus] = useState(project.status);
+  const [startDate, setStartDate] = useState(project.startDate ? project.startDate.toString().split("T")[0] : "");
+  const [targetDate, setTargetDate] = useState(project.targetDate ? project.targetDate.toString().split("T")[0] : "");
 
-  const toggleMember = (uid: string) => {
-    setMemberIds((prev) => prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid]);
-  };
-
-  const updateMut = useMutation({
+  const updateMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("PATCH", `/api/projects/${project.id}`, {
-        title,
-        objective: objective || null,
-        acceptance_criteria: acceptanceCriteria || null,
-        deadline: deadline || null,
-        owner_id: ownerId || null,
-        member_ids: memberIds,
+        name,
+        description: description || null,
+        status,
+        startDate: startDate ? new Date(startDate) : null,
+        targetDate: targetDate ? new Date(targetDate) : null,
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", project.id] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      toast({ title: "项目已更新" });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", project.id.toString()] });
+      toast({ title: "Project updated successfully" });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast({ title: "更新失败", description: err.message, variant: "destructive" }),
+    onError: (error: Error) => {
+      toast({ title: "Failed to update project", description: error.message, variant: "destructive" });
+    },
   });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle>编辑项目</DialogTitle>
-          <DialogDescription className="sr-only">编辑项目信息</DialogDescription>
+          <DialogTitle>Edit Project</DialogTitle>
+          <DialogDescription>Update project details</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">项目名称</label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} data-testid="input-project-title" />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">目标</label>
-            <Textarea value={objective} onChange={(e) => setObjective(e.target.value)} rows={2} className="resize-none text-sm" data-testid="input-project-objective" />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">交付标准</label>
-            <Textarea value={acceptanceCriteria} onChange={(e) => setAcceptanceCriteria(e.target.value)} rows={2} className="resize-none text-sm" data-testid="input-project-criteria" />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">截止日期</label>
-            <Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} data-testid="input-project-deadline" />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">负责人</label>
-            <Select value={ownerId} onValueChange={setOwnerId}>
-              <SelectTrigger data-testid="select-project-owner"><SelectValue placeholder="选择负责人" /></SelectTrigger>
-              <SelectContent>
-                {allUsers.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">项目成员（可多选）</label>
-            <div className="grid grid-cols-3 gap-1.5 max-h-[160px] overflow-y-auto">
-              {allUsers.filter(u => u.is_active !== false && u.id !== ownerId).map((u) => (
-                <label key={u.id} className="flex items-center gap-1.5 px-2 py-1.5 rounded-md border cursor-pointer hover:bg-muted/50 text-sm" data-testid={`toggle-member-${u.id}`}>
-                  <input type="checkbox" checked={memberIds.includes(u.id)} onChange={() => toggleMember(u.id)} className="rounded" />
-                  <span className="w-4 h-4 rounded-full shrink-0 flex items-center justify-center text-[9px] text-white" style={{ backgroundColor: u.color ?? "#888" }}>{(u.name ?? "?")[0]}</span>
-                  <span className="truncate">{u.name}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
-            <Button onClick={() => updateMut.mutate()} disabled={!title.trim() || updateMut.isPending} data-testid="button-save-project">
-              {updateMut.isPending ? "保存中..." : "保存"}
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function AddTaskDialog({
-  projectId,
-  projectModules,
-  allUsers,
-  open,
-  onOpenChange,
-}: {
-  projectId: string;
-  projectModules: Module[];
-  allUsers: User[];
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const { user } = useAuth();
-  const { toast } = useToast();
-  const [taskTitle, setTaskTitle] = useState("");
-  const [taskDescription, setTaskDescription] = useState("");
-  const [taskPhase, setTaskPhase] = useState("");
-  const [taskDeadline, setTaskDeadline] = useState("");
-  const [taskModuleId, setTaskModuleId] = useState("");
-  const [taskPriority, setTaskPriority] = useState("0");
-  const [taskAssigneeIds, setTaskAssigneeIds] = useState<string[]>([]);
-
-  const { data: phasesData } = useQuery<Phase[]>({ queryKey: ["/api/phases"] });
-  const phasesList = phasesData ?? [];
-
-  const createTaskMut = useMutation({
-    mutationFn: async () => {
-      const body: Record<string, any> = {
-        title: taskTitle.trim(),
-        deadline: taskDeadline,
-        project_id: projectId,
-        priority: Number(taskPriority),
-        created_by: user?.id,
-      };
-      if (taskDescription.trim()) body.description = taskDescription.trim();
-      if (taskPhase) body.phase = taskPhase;
-      if (taskModuleId) body.module_id = taskModuleId;
-      if (taskAssigneeIds.length > 0) body.assignee_ids = taskAssigneeIds;
-      const res = await apiRequest("POST", "/api/tasks", body);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks?view=mine"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks?view=all"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks?view=people"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks?view=overview"] });
-      toast({ title: "任务已创建" });
-      setTaskTitle("");
-      setTaskDescription("");
-      setTaskPhase("");
-      setTaskDeadline("");
-      setTaskModuleId("");
-      setTaskPriority("0");
-      setTaskAssigneeIds([]);
-      onOpenChange(false);
-    },
-    onError: (err: Error) => toast({ title: "创建失败", description: err.message, variant: "destructive" }),
-  });
-
-  const toggleAssignee = (userId: string) => {
-    setTaskAssigneeIds((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
-    );
-  };
-
-  const canSubmit = taskTitle.trim().length > 0 && taskDeadline.length > 0;
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" data-testid="dialog-add-task">
-        <DialogHeader>
-          <DialogTitle>添加任务</DialogTitle>
-          <DialogDescription className="sr-only">在项目中创建新任务</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">任务标题 *</label>
+            <label className="text-sm font-medium">Name</label>
             <Input
-              value={taskTitle}
-              onChange={(e) => setTaskTitle(e.target.value)}
-              placeholder="输入任务标题"
-              data-testid="input-task-title"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Project name"
             />
           </div>
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">描述</label>
+            <label className="text-sm font-medium">Description</label>
             <Textarea
-              value={taskDescription}
-              onChange={(e) => setTaskDescription(e.target.value)}
-              placeholder="任务描述（可选）"
-              rows={2}
-              className="resize-none text-sm"
-              data-testid="input-task-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Project description"
+              rows={3}
+              className="resize-none"
             />
           </div>
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">阶段 *</label>
-            <Select value={taskPhase} onValueChange={setTaskPhase}>
-              <SelectTrigger data-testid="select-task-phase"><SelectValue placeholder="选择阶段" /></SelectTrigger>
+            <label className="text-sm font-medium">Status</label>
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
-                {phasesList.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
-                ))}
-                {phasesList.length === 0 && (
-                  <>
-                    <SelectItem value="p0pre">P0 节前冲刺</SelectItem>
-                    <SelectItem value="cny">春节假期</SelectItem>
-                    <SelectItem value="p1w1">P1 节后第1周</SelectItem>
-                    <SelectItem value="p2w23">P2 节后2-3周</SelectItem>
-                  </>
-                )}
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="paused">Paused</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="archived">Archived</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">截止日期 *</label>
+            <label className="text-sm font-medium">Start Date</label>
             <Input
               type="date"
-              value={taskDeadline}
-              onChange={(e) => setTaskDeadline(e.target.value)}
-              data-testid="input-task-deadline"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
             />
           </div>
-          {projectModules.length > 0 && (
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">模块</label>
-              <Select value={taskModuleId} onValueChange={setTaskModuleId}>
-                <SelectTrigger data-testid="select-task-module"><SelectValue placeholder="选择模块（可选）" /></SelectTrigger>
-                <SelectContent>
-                  {projectModules.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>{m.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">优先级</label>
-            <Select value={taskPriority} onValueChange={setTaskPriority}>
-              <SelectTrigger data-testid="select-task-priority"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="0">普通</SelectItem>
-                <SelectItem value="1">重要</SelectItem>
-                <SelectItem value="2">紧急</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">负责人（可多选）</label>
-            <div className="space-y-1.5 max-h-[160px] overflow-y-auto border rounded-md p-2">
-              {allUsers
-                .filter((u) => u.is_active !== false)
-                .map((u) => (
-                  <label
-                    key={u.id}
-                    className="flex items-center gap-2 py-1 px-1 rounded-md cursor-pointer hover-elevate"
-                  >
-                    <Checkbox
-                      checked={taskAssigneeIds.includes(u.id)}
-                      onCheckedChange={() => toggleAssignee(u.id)}
-                    />
-                    <span
-                      className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[10px] text-white"
-                      style={{ backgroundColor: u.color ?? "#888" }}
-                    >
-                      {(u.name ?? "?")[0]}
-                    </span>
-                    <span className="text-sm">{u.name}</span>
-                  </label>
-                ))}
-            </div>
+            <label className="text-sm font-medium">Target Date</label>
+            <Input
+              type="date"
+              value={targetDate}
+              onChange={(e) => setTargetDate(e.target.value)}
+            />
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
             <Button
-              onClick={() => createTaskMut.mutate()}
-              disabled={!canSubmit || createTaskMut.isPending}
-              data-testid="button-submit-task"
+              onClick={() => updateMutation.mutate()}
+              disabled={updateMutation.isPending || !name.trim()}
             >
-              {createTaskMut.isPending ? "创建中..." : "创建任务"}
+              {updateMutation.isPending ? "Saving..." : "Save"}
             </Button>
           </div>
         </div>
@@ -436,401 +194,342 @@ function AddTaskDialog({
   );
 }
 
-function LoadingSkeleton() {
+interface NewTaskModalProps {
+  projectId: number;
+  orgId: number;
+  creatorId: number;
+  users: User[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+function NewTaskModal({
+  projectId,
+  orgId,
+  creatorId,
+  users,
+  open,
+  onOpenChange,
+}: NewTaskModalProps) {
+  const { toast } = useToast();
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [priority, setPriority] = useState("medium");
+  const [assigneeId, setAssigneeId] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [dueDate, setDueDate] = useState("");
+
+  const createTaskMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/tasks", {
+        title,
+        description: description || null,
+        priority,
+        assigneeId: assigneeId ? parseInt(assigneeId) : null,
+        startDate: startDate ? new Date(startDate) : null,
+        dueDate: dueDate ? new Date(dueDate) : null,
+        type: "task",
+        status: "todo",
+        orgId,
+        projectId,
+        creatorId,
+        weight: 1,
+        progress: 0,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId.toString()] });
+      toast({ title: "Task created successfully" });
+      setTitle("");
+      setDescription("");
+      setPriority("medium");
+      setAssigneeId("");
+      setStartDate("");
+      setDueDate("");
+      onOpenChange(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to create task", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const canSubmit = title.trim().length > 0;
+
   return (
-    <div className="space-y-4 p-4">
-      <Skeleton className="h-10 w-64" />
-      <Skeleton className="h-24 w-full" />
-      <Skeleton className="h-6 w-32" />
-      <Skeleton className="h-16 w-full" />
-      <Skeleton className="h-16 w-full" />
-    </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create New Task</DialogTitle>
+          <DialogDescription>Add a new task to this project</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium">Title *</label>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Task title"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Description</label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Task description"
+              rows={3}
+              className="resize-none"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Priority</label>
+            <Select value={priority} onValueChange={setPriority}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="urgent">Urgent</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-sm font-medium">Assignee</label>
+            <Select value={assigneeId} onValueChange={setAssigneeId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select assignee" />
+              </SelectTrigger>
+              <SelectContent>
+                {users.map((user) => (
+                  <SelectItem key={user.id} value={user.id.toString()}>
+                    {user.displayName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-sm font-medium">Start Date</label>
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Due Date</label>
+            <Input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => createTaskMutation.mutate()}
+              disabled={createTaskMutation.isPending || !canSubmit}
+            >
+              {createTaskMutation.isPending ? "Creating..." : "Create Task"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 export default function ProjectDetail() {
-  const { user } = useAuth();
+  const [, params] = useRoute("/projects/:id");
   const [, setLocation] = useLocation();
-  const [, params] = useRoute("/project/:id");
   const { toast } = useToast();
-  const id = params?.id ?? "";
+  const id = params?.id;
 
   const [editOpen, setEditOpen] = useState(false);
-  const [completeOpen, setCompleteOpen] = useState(false);
-  const [addTaskOpen, setAddTaskOpen] = useState(false);
-  const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
 
-  const { data, isLoading } = useQuery<ProjectDetailResponse>({
+  const { data: projectData, isLoading: projectLoading } = useQuery<ProjectDetailResponse>({
     queryKey: ["/api/projects", id],
     enabled: !!id,
   });
 
-  const { data: usersData } = useQuery<User[]>({ queryKey: ["/api/users"] });
-  const allUsers = usersData ?? [];
-
-  const completeMut = useMutation({
-    mutationFn: async () => {
-      await apiRequest("POST", `/api/projects/${id}/complete`, {});
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      toast({ title: "项目已标记为完成" });
-      setCompleteOpen(false);
-    },
-    onError: (err: Error) => toast({ title: "操作失败", description: err.message, variant: "destructive" }),
+  const { data: usersData, isLoading: usersLoading } = useQuery<{ data: User[] }>({
+    queryKey: ["/api/users"],
   });
 
-  const tasksByModule = useMemo(() => {
-    if (!data) return {};
-    const grouped: Record<string, Task[]> = {};
-    for (const mod of data.modules) {
-      grouped[mod.id] = data.tasks.filter((t) => t.module_id === mod.id);
-    }
-    return grouped;
-  }, [data]);
+  const project = projectData?.data;
+  const tasks = project?.tasks || [];
+  const users = usersData?.data || [];
 
-  if (!user) {
-    setLocation("/");
-    return null;
-  }
-
-  if (!id) return null;
-
-  if (isLoading) {
+  if (projectLoading || usersLoading) {
     return (
-      <div className="flex flex-col h-screen bg-background pb-16 md:pb-0">
-        <header className="sticky top-0 z-50 flex items-center gap-2 px-3 md:px-4 py-2 md:py-3 border-b bg-background">
-          <Link href="/dashboard">
-            <Button variant="ghost" size="icon"><ArrowLeft className="w-4 h-4" /></Button>
-          </Link>
-          <Skeleton className="h-6 w-48" />
-        </header>
-        <LoadingSkeleton />
+      <div className="space-y-6 p-6">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-10 w-10" />
+          <Skeleton className="h-8 w-48" />
+        </div>
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-64 w-full" />
       </div>
     );
   }
 
-  if (!data) {
+  if (!project) {
     return (
-      <div className="flex flex-col h-screen bg-background items-center justify-center">
-        <p className="text-muted-foreground mb-4">项目未找到</p>
-        <Link href="/dashboard"><Button variant="outline">返回</Button></Link>
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <p className="text-muted-foreground mb-4">Project not found</p>
+          <Button onClick={() => setLocation("/projects")}>Back to Projects</Button>
+        </div>
       </div>
     );
   }
 
-  const { project, modules, tasks, assigneeMap, stats, unassignedTasks } = data;
-  const owner = allUsers.find((u) => u.id === project.owner_id);
-  const health = getProjectHealth(project, tasks);
-  const progressPercent = stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
-  const projectColor = project.color ?? "#3B82F6";
-
-  const canEdit = user.role === "ceo" || user.id === project.owner_id || user.id === project.created_by;
-  const canComplete = user.role === "ceo" || user.id === project.owner_id;
+  const owner = users.find((u) => u.id === project.ownerId);
 
   return (
-    <div className="flex flex-col h-screen bg-background pb-16 md:pb-0">
-      <header
-        className="sticky top-0 z-50 flex items-center justify-between gap-2 px-3 md:px-4 py-2 md:py-3 border-b bg-background"
-        data-testid="project-header"
-      >
-        <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
-          <Link href="/dashboard">
-            <Button variant="ghost" size="icon" data-testid="button-back">
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-          </Link>
-          <FolderOpen className="w-4 h-4 text-muted-foreground shrink-0" />
-          <h1 className="text-sm md:text-base font-medium truncate" data-testid="project-title">
-            {project.title}
+    <div className="space-y-6 p-6">
+      {/* Back button and header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setLocation("/projects")}
+            data-testid="btn-back-projects"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="text-3xl font-bold" data-testid="text-project-name">
+            {project.name}
           </h1>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {canEdit && project.status !== "completed" && (
-            <Button variant="outline" size="sm" onClick={() => setEditOpen(true)} data-testid="button-edit-project">
-              <Pencil className="w-3.5 h-3.5 mr-1" /> 编辑
-            </Button>
-          )}
-          {canComplete && project.status !== "completed" && (
-            <Button size="sm" onClick={() => setCompleteOpen(true)} data-testid="button-complete-project">
-              <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> 完成
-            </Button>
-          )}
-        </div>
-      </header>
+        <Button
+          onClick={() => setEditOpen(true)}
+          data-testid="btn-edit-project"
+        >
+          <Pencil className="h-4 w-4 mr-2" />
+          Edit
+        </Button>
+      </div>
 
-      <ScrollArea className="flex-1">
-        <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6">
-          <Card className="p-4 md:p-5" style={{ borderLeft: `4px solid ${projectColor}` }}>
-            <div className="space-y-3">
-              {project.objective && (
-                <div className="flex items-start gap-2">
-                  <Target className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
-                  <div>
-                    <span className="text-xs text-muted-foreground">目标</span>
-                    <p className="text-sm mt-0.5">{project.objective}</p>
-                  </div>
-                </div>
-              )}
-              {project.acceptance_criteria && (
-                <div className="flex items-start gap-2">
-                  <ClipboardCheck className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
-                  <div>
-                    <span className="text-xs text-muted-foreground">交付标准</span>
-                    <p className="text-sm mt-0.5">{project.acceptance_criteria}</p>
-                  </div>
-                </div>
-              )}
-              <div className="flex items-center gap-6 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <UserCircle className="w-4 h-4 text-muted-foreground shrink-0" />
-                  <span className="text-xs text-muted-foreground">负责人</span>
-                  <span className="text-sm">{owner?.name ?? "未指定"}</span>
-                </div>
-                {project.deadline && (
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <span className="text-xs text-muted-foreground">截止</span>
-                    <span className="text-sm">{project.deadline}</span>
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-6 flex-wrap">
-                <div className="flex items-center gap-3 flex-1 min-w-[200px]" data-testid="project-progress">
-                  <span className="text-xs text-muted-foreground shrink-0">进度</span>
-                  <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-300"
-                      style={{ width: `${progressPercent}%`, backgroundColor: projectColor }}
-                    />
-                  </div>
-                  <span className="text-xs font-medium shrink-0">{progressPercent}%</span>
-                </div>
-                <div className="flex items-center gap-2" data-testid="project-health">
-                  <span className="text-xs text-muted-foreground">状态</span>
-                  <Badge
-                    className="text-xs px-2 py-0.5 rounded-full font-medium border-0"
-                    style={{ backgroundColor: `${health.color}1A`, color: health.color }}
-                    variant="secondary"
-                  >
-                    {health.label}
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          {modules.length > 0 && (
-            <div>
-              <h2 className="text-sm font-medium mb-3">模块进度</h2>
-              <Card className="divide-y">
-                {modules.map((mod) => (
-                  <ModuleRow
-                    key={mod.id}
-                    mod={mod}
-                    tasks={tasksByModule[mod.id] ?? []}
-                    assigneeMap={assigneeMap}
-                    projectColor={projectColor}
-                    allUsers={allUsers}
-                  />
-                ))}
-              </Card>
-            </div>
-          )}
-
+      {/* Project info */}
+      <div className="bg-white rounded-lg border p-6 space-y-4">
+        {project.description && (
           <div>
-            <h2 className="text-sm font-medium mb-3">任务列表</h2>
-            {tasks.length === 0 ? (
-              <Card className="p-8 text-center">
-                <p className="text-sm text-muted-foreground mb-4">项目已创建！现在可以开始添加任务了。</p>
-                <Button onClick={() => setAddTaskOpen(true)} data-testid="button-add-task">
-                  <Plus className="w-4 h-4 mr-1" /> 添加第一个任务
-                </Button>
-              </Card>
-            ) : (
-              <div className="space-y-2">
-                {modules.map((mod) => {
-                  const modTasks = tasksByModule[mod.id] ?? [];
-                  if (modTasks.length === 0) return null;
-                  const modDone = modTasks.filter((t) => t.status === "done").length;
-                  const modProgress = modTasks.length > 0 ? Math.round((modDone / modTasks.length) * 100) : 0;
-                  const isExpanded = expandedModules[mod.id] ?? false;
-
-                  return (
-                    <Card key={mod.id} className="overflow-visible">
-                      <div
-                        className="flex items-center gap-3 p-3 cursor-pointer select-none hover-elevate rounded-md flex-wrap"
-                        onClick={() =>
-                          setExpandedModules((prev) => ({ ...prev, [mod.id]: !prev[mod.id] }))
-                        }
-                      >
-                        {isExpanded ? (
-                          <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                        )}
-                        <span className="text-sm font-medium">{mod.title}</span>
-                        <div className="flex-1 mx-2 min-w-[60px]">
-                          <div className="h-1 rounded-full bg-muted overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all"
-                              style={{ width: `${modProgress}%`, backgroundColor: projectColor }}
-                            />
-                          </div>
-                        </div>
-                        <span className="text-xs text-muted-foreground shrink-0">
-                          {modDone}/{modTasks.length}
-                        </span>
-                      </div>
-                      {isExpanded && (
-                        <div className="px-3 pb-3 space-y-1.5">
-                          {modTasks.map((task) => {
-                            const assignees = assigneeMap[task.id] ?? [];
-                            const deadlineInfo = task.deadline ? getDeadlineInfo(task.deadline, task.grace_deadline) : null;
-                            return (
-                              <div
-                                key={task.id}
-                                className="flex items-center gap-2 py-1.5 px-2 rounded-md hover-elevate flex-wrap"
-                                data-testid={`task-item-${task.id}`}
-                              >
-                                <span className="text-sm min-w-0 truncate flex-1">{task.title}</span>
-                                <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-                                  {assignees.map((u) => (
-                                    <div key={u.id} className="flex items-center gap-1">
-                                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: u.color ?? "#888" }} />
-                                      <span className="text-xs text-muted-foreground">{u.name}</span>
-                                    </div>
-                                  ))}
-                                  {deadlineInfo && (
-                                    <span className={cn("text-xs", deadlineInfo.color)}>{deadlineInfo.text}</span>
-                                  )}
-                                  <Badge
-                                    className={cn("text-xs px-2 py-0.5 rounded-full font-medium border-0", getStatusColor(task.status ?? "pending"))}
-                                    variant="secondary"
-                                  >
-                                    {getStatusLabel(task.status ?? "pending")}
-                                  </Badge>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </Card>
-                  );
-                })}
-
-                {unassignedTasks.length > 0 && (
-                  <Card className="overflow-visible">
-                    <div
-                      className="flex items-center gap-3 p-3 cursor-pointer select-none hover-elevate rounded-md flex-wrap"
-                      onClick={() =>
-                        setExpandedModules((prev) => ({ ...prev, _unassigned: !prev._unassigned }))
-                      }
-                    >
-                      {expandedModules._unassigned ? (
-                        <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                      )}
-                      <span className="text-sm font-medium">未分组任务</span>
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {unassignedTasks.length}
-                      </span>
-                    </div>
-                    {expandedModules._unassigned && (
-                      <div className="px-3 pb-3 space-y-1.5">
-                        {unassignedTasks.map((task) => {
-                          const assignees = assigneeMap[task.id] ?? [];
-                          const deadlineInfo = task.deadline ? getDeadlineInfo(task.deadline, task.grace_deadline) : null;
-                          return (
-                            <div
-                              key={task.id}
-                              className="flex items-center gap-2 py-1.5 px-2 rounded-md hover-elevate flex-wrap"
-                              data-testid={`task-item-${task.id}`}
-                            >
-                              <span className="text-sm min-w-0 truncate flex-1">{task.title}</span>
-                              <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-                                {assignees.map((u) => (
-                                  <div key={u.id} className="flex items-center gap-1">
-                                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: u.color ?? "#888" }} />
-                                    <span className="text-xs text-muted-foreground">{u.name}</span>
-                                  </div>
-                                ))}
-                                {deadlineInfo && (
-                                  <span className={cn("text-xs", deadlineInfo.color)}>{deadlineInfo.text}</span>
-                                )}
-                                <Badge
-                                  className={cn("text-xs px-2 py-0.5 rounded-full font-medium border-0", getStatusColor(task.status ?? "pending"))}
-                                  variant="secondary"
-                                >
-                                  {getStatusLabel(task.status ?? "pending")}
-                                </Badge>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </Card>
-                )}
-
-                <div className="pt-2">
-                  <Button variant="outline" size="sm" onClick={() => setAddTaskOpen(true)} data-testid="button-add-task">
-                    <Plus className="w-3.5 h-3.5 mr-1" /> 添加任务
-                  </Button>
-                </div>
-              </div>
-            )}
+            <h3 className="font-semibold mb-2">Description</h3>
+            <p className="text-muted-foreground">{project.description}</p>
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-sm text-muted-foreground">Status</p>
+            <Badge className={cn("mt-2", getProjectStatusColor(project.status))}>
+              {project.status}
+            </Badge>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Owner</p>
+            <p className="mt-2 font-medium">{owner?.displayName || "-"}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Start Date</p>
+            <p className="mt-2">{formatDate(project.startDate)}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Target Date</p>
+            <p className="mt-2">{formatDate(project.targetDate)}</p>
           </div>
         </div>
-      </ScrollArea>
+      </div>
 
-      {editOpen && (
-        <EditProjectDialog
-          project={project}
-          allUsers={allUsers}
-          open={editOpen}
-          onOpenChange={setEditOpen}
-        />
-      )}
-
-      <Dialog open={completeOpen} onOpenChange={setCompleteOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>确认完成</DialogTitle>
-            <DialogDescription className="sr-only">确认标记项目为已完成</DialogDescription>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            确认标记「{project.title}」为已完成？
-          </p>
-          <div className="flex justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => setCompleteOpen(false)}>取消</Button>
-            <Button onClick={() => completeMut.mutate()} disabled={completeMut.isPending}>
-              {completeMut.isPending ? "处理中..." : "确认完成"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {addTaskOpen && (
-        <AddTaskDialog
-          projectId={id}
-          projectModules={modules}
-          allUsers={allUsers}
-          open={addTaskOpen}
-          onOpenChange={setAddTaskOpen}
-        />
-      )}
-
-      {project.status !== "completed" && (
-        <div className="fixed bottom-6 right-6 z-40">
-          <Button onClick={() => setAddTaskOpen(true)} data-testid="button-add-task-floating">
-            <Plus className="w-4 h-4 mr-1" /> 添加任务
+      {/* Tasks section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold">Tasks</h2>
+          <Button
+            onClick={() => setNewTaskOpen(true)}
+            data-testid="btn-new-task"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            New Task
           </Button>
         </div>
-      )}
+
+        {/* Tasks table */}
+        <div className="bg-white rounded-lg border overflow-hidden">
+          {tasks.length > 0 ? (
+            <Table data-testid="project-task-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Title</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Priority</TableHead>
+                  <TableHead>Assignee</TableHead>
+                  <TableHead>Due Date</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tasks.map((task) => {
+                  const assignee = users.find((u) => u.id === task.assigneeId);
+                  return (
+                    <TableRow
+                      key={task.id}
+                      data-testid={`task-row-${task.id}`}
+                      className="cursor-pointer hover:bg-gray-50"
+                      onClick={() => setLocation(`/tasks/${task.id}`)}
+                    >
+                      <TableCell className="font-medium">{task.title}</TableCell>
+                      <TableCell>
+                        <Badge className={getTaskStatusColor(task.status)}>
+                          {task.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getPriorityColor(task.priority)}>
+                          {getPriorityLabel(task.priority)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{assignee?.displayName || "-"}</TableCell>
+                      <TableCell>{formatDate(task.dueDate)}</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="p-12 text-center">
+              <p className="text-muted-foreground mb-4">No tasks yet</p>
+              <Button
+                onClick={() => setNewTaskOpen(true)}
+                variant="outline"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Create First Task
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Modals */}
+      <EditProjectModal
+        project={project}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+      />
+      <NewTaskModal
+        projectId={project.id}
+        orgId={project.orgId}
+        creatorId={1} // Assuming current user ID is 1
+        users={users}
+        open={newTaskOpen}
+        onOpenChange={setNewTaskOpen}
+      />
     </div>
   );
 }

@@ -1,1094 +1,225 @@
-import { useState, useMemo, useRef } from "react";
-import { useLocation, Link } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { useAuth } from "@/lib/auth";
-import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
-import { cn, getStatusColor, getStatusLabel, getPriorityLabel, getDeadlineInfo } from "@/lib/utils";
-import type { Task, Phase, User, Project } from "@shared/schema";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Textarea } from "@/components/ui/textarea";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  LogOut, Lock, Save, ExternalLink, RefreshCw, Bell, MessageSquare, Paperclip,
-  Plus, Trash2, BarChart3, Award, Zap, Download, X, ChevronDown, ChevronRight,
-  CheckSquare, Send, Building2, GanttChart, FolderKanban
-} from "lucide-react";
-import logoImg from '@assets/AD5CCB66-F553-4B90-AFBC-EEA51B534333_1771683834711.png';
+import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import type { Task, Project } from "@shared/schema";
 
-type AssigneeMap = Record<string, User[]>;
-interface TasksResponse { tasks: Task[]; assigneeMap: AssigneeMap; }
-interface NotifData { notifications: Array<{ id: number; user_id: string; task_id: string | null; type: string; title: string; content: string | null; is_read: boolean; created_at: string | null }>; unreadCount: number; }
-interface CommentData { id: number; task_id: string; user_id: string; content: string; created_at: string | null; }
-interface AttachmentData { id: number; task_id: string; user_id: string; filename: string; filepath: string; filesize: number | null; mime_type: string | null; created_at: string | null; }
+function Dashboard() {
+  const [, navigate] = useLocation();
 
-function NotificationBell() {
-  const [open, setOpen] = useState(false);
-  const { data: notifData, isLoading } = useQuery<NotifData>({
-    queryKey: ["/api/notifications"],
-    refetchInterval: 30000,
+  const { data: tasksResponse, isLoading: tasksLoading } = useQuery<{ data: Task[] }>({
+    queryKey: ["/api/tasks"],
   });
 
-  const markReadMut = useMutation({
-    mutationFn: async (id: number) => { await apiRequest("PATCH", `/api/notifications/${id}/read`, {}); },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/notifications"] }),
+  const { data: projectsResponse, isLoading: projectsLoading } = useQuery<{ data: Project[] }>({
+    queryKey: ["/api/projects"],
   });
 
-  const markAllReadMut = useMutation({
-    mutationFn: async () => { await apiRequest("POST", "/api/notifications/read-all", {}); },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/notifications"] }),
-  });
+  const tasks = tasksResponse?.data ?? [];
+  const projects = projectsResponse?.data ?? [];
 
-  const unread = notifData?.unreadCount ?? 0;
-  const notifs = notifData?.notifications ?? [];
+  const isLoading = tasksLoading || projectsLoading;
 
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case "deadline": case "overdue": return "text-red-500";
-      case "urge": return "text-orange-500";
-      case "comment": return "text-blue-500";
-      case "unblock": return "text-green-500";
-      case "status": return "text-purple-500";
-      case "eval": return "text-indigo-500";
-      default: return "text-muted-foreground";
+  // Helper to get project name by ID
+  const getProjectName = (projectId: number) => {
+    const project = projects.find((p) => p.id === projectId);
+    return project?.name ?? "Unknown";
+  };
+
+  // Calculate stats
+  const totalTasks = tasks.length;
+  const inProgressCount = tasks.filter((t) => t.status === "in_progress").length;
+  const completedCount = tasks.filter((t) => t.status === "done").length;
+  
+  const now = new Date();
+  const overdueCount = tasks.filter((t) => {
+    if (t.status === "done" || t.status === "cancelled") return false;
+    if (!t.dueDate) return false;
+    const dueDate = new Date(t.dueDate);
+    return dueDate < now;
+  }).length;
+
+  // Get tasks assigned to userId=1
+  const myTasks = tasks.filter((t) => t.assigneeId === 1);
+
+  // Helper to format date as YYYY-MM-DD
+  const formatDate = (dateVal: Date | string | null) => {
+    if (!dateVal) return "";
+    const date = typeof dateVal === "string" ? new Date(dateVal) : dateVal;
+    return date.toISOString().split("T")[0];
+  };
+
+  // Helper to get status color classes
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "todo":
+        return "bg-gray-200 text-gray-700";
+      case "in_progress":
+        return "bg-yellow-200 text-yellow-700";
+      case "in_review":
+        return "bg-blue-200 text-blue-700";
+      case "done":
+        return "bg-green-200 text-green-700";
+      case "cancelled":
+        return "bg-gray-400 text-gray-800";
+      default:
+        return "bg-gray-200 text-gray-700";
     }
   };
 
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative" data-testid="button-notifications">
-          <Bell className="w-4 h-4" />
-          {unread > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center" data-testid="badge-unread-count">
-              {unread > 9 ? "9+" : unread}
-            </span>
-          )}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[360px] p-0" align="end">
-        <div className="flex items-center justify-between px-3 py-2 border-b">
-          <span className="text-sm font-medium">通知</span>
-          {unread > 0 && (
-            <Button variant="ghost" size="sm" className="text-xs" onClick={() => markAllReadMut.mutate()} data-testid="button-mark-all-read">
-              全部已读
-            </Button>
-          )}
-        </div>
-        <ScrollArea className="max-h-80">
-          {notifs.length === 0 ? (
-            <p className="text-[13px] text-muted-foreground text-center py-8">暂无数据</p>
-          ) : (
-            <div className="divide-y">
-              {notifs.map((n) => (
-                <div
-                  key={n.id}
-                  className={cn("px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors", !n.is_read && "bg-primary/5")}
-                  onClick={() => { if (!n.is_read) markReadMut.mutate(n.id); }}
-                  data-testid={`notif-item-${n.id}`}
-                >
-                  <div className="flex items-start gap-2">
-                    <div className={cn("w-1.5 h-1.5 rounded-full mt-1.5 shrink-0", !n.is_read ? "bg-primary" : "bg-transparent")} />
-                    <div className="min-w-0 flex-1">
-                      <p className={cn("text-xs leading-relaxed", getTypeIcon(n.type))}>{n.title}</p>
-                      {n.content && <p className="text-xs text-muted-foreground mt-0.5 truncate">{n.content}</p>}
-                      {n.created_at && <p className="text-[10px] text-muted-foreground mt-0.5">{new Date(n.created_at).toLocaleString("zh-CN")}</p>}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </ScrollArea>
-      </PopoverContent>
-    </Popover>
-  );
-}
+  // Helper to get status label
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "todo":
+        return "To Do";
+      case "in_progress":
+        return "In Progress";
+      case "in_review":
+        return "In Review";
+      case "done":
+        return "Done";
+      case "cancelled":
+        return "Cancelled";
+      default:
+        return status;
+    }
+  };
 
-function CommentSection({ taskId, allUsers }: { taskId: string; allUsers: User[] }) {
-  const { user } = useAuth();
-  const [newComment, setNewComment] = useState("");
+  // Helper to get priority color classes
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case "urgent":
+        return "bg-red-100 text-red-700";
+      case "high":
+        return "bg-orange-100 text-orange-700";
+      case "medium":
+        return "bg-blue-100 text-blue-700";
+      case "low":
+        return "bg-gray-100 text-gray-600";
+      default:
+        return "bg-gray-100 text-gray-600";
+    }
+  };
 
-  const { data: cmts = [] } = useQuery<CommentData[]>({
-    queryKey: ["/api/tasks", taskId, "comments"],
-  });
+  // Helper to get priority label
+  const getPriorityLabel = (priority: string) => {
+    switch (priority) {
+      case "urgent":
+        return "Urgent";
+      case "high":
+        return "High";
+      case "medium":
+        return "Medium";
+      case "low":
+        return "Low";
+      default:
+        return priority;
+    }
+  };
 
-  const addCommentMut = useMutation({
-    mutationFn: async (content: string) => { await apiRequest("POST", `/api/tasks/${taskId}/comments`, { content }); },
-    onSuccess: () => {
-      setNewComment("");
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks", taskId, "comments"] });
-    },
-  });
-
-  return (
-    <div>
-      <div className="flex items-center gap-1.5 mb-2">
-        <MessageSquare className="w-3.5 h-3.5 text-muted-foreground" />
-        <span className="text-xs text-muted-foreground font-medium">评论 ({cmts.length})</span>
+  if (isLoading) {
+    return (
+      <div className="p-6">
+        <div className="text-center text-gray-600">加载中...</div>
       </div>
-      {cmts.length > 0 && (
-        <div className="space-y-2 mb-3 max-h-40 overflow-y-auto">
-          {cmts.map((c) => {
-            const u = allUsers.find((u) => u.id === c.user_id);
-            return (
-              <div key={c.id} className="flex gap-2" data-testid={`comment-${c.id}`}>
-                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] text-white shrink-0" style={{ backgroundColor: u?.color ?? "#888" }}>
-                  {(u?.name ?? "?")[0]}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-medium">{u?.name ?? "未知"}</span>
-                    {c.created_at && <span className="text-[10px] text-muted-foreground">{new Date(c.created_at).toLocaleString("zh-CN")}</span>}
-                  </div>
-                  <p className="text-xs text-foreground mt-0.5">{c.content}</p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-      <div className="flex gap-2">
-        <Textarea
-          value={newComment}
-          onChange={(e) => setNewComment(e.target.value)}
-          placeholder="添加评论..."
-          className="text-xs resize-none"
-          rows={1}
-          data-testid={`input-comment-${taskId}`}
-        />
-        <Button
-          size="icon"
-          variant="ghost"
-          className="shrink-0"
-          disabled={!newComment.trim() || addCommentMut.isPending}
-          onClick={() => addCommentMut.mutate(newComment.trim())}
-          data-testid={`button-send-comment-${taskId}`}
-        >
-          <Send className="w-3.5 h-3.5" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function SubtaskSection({ taskId, allTasks }: { taskId: string; allTasks: Task[] }) {
-  const { user } = useAuth();
-  const { toast } = useToast();
-  const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
-  const [showAdd, setShowAdd] = useState(false);
-
-  const { data: subtasks = [] } = useQuery<Task[]>({
-    queryKey: ["/api/tasks", taskId, "subtasks"],
-  });
-
-  const canManage = user && (user.role === "ceo" || user.role === "admin" || user.role === "head");
-
-  const toggleMut = useMutation({
-    mutationFn: async ({ subId, done }: { subId: string; done: boolean }) => {
-      await apiRequest("PATCH", `/api/tasks/${taskId}/subtasks/${subId}`, { status: done ? "done" : "pending" });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks", taskId, "subtasks"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-    },
-    onError: (err: Error) => toast({ title: "更新失败", description: err.message, variant: "destructive" }),
-  });
-
-  const addMut = useMutation({
-    mutationFn: async (title: string) => { await apiRequest("POST", `/api/tasks/${taskId}/subtasks`, { title }); },
-    onSuccess: () => {
-      setNewSubtaskTitle("");
-      setShowAdd(false);
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks", taskId, "subtasks"] });
-    },
-    onError: (err: Error) => toast({ title: "添加失败", description: err.message, variant: "destructive" }),
-  });
-
-  const deleteMut = useMutation({
-    mutationFn: async (subId: string) => { await apiRequest("DELETE", `/api/tasks/${taskId}/subtasks/${subId}`); },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/tasks", taskId, "subtasks"] }),
-    onError: (err: Error) => toast({ title: "删除失败", description: err.message, variant: "destructive" }),
-  });
-
-  const doneCount = subtasks.filter((s) => s.status === "done").length;
-
-  if (subtasks.length === 0 && !canManage) return null;
+    );
+  }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5">
-          <CheckSquare className="w-3.5 h-3.5 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground font-medium">子任务 ({doneCount}/{subtasks.length})</span>
+    <div className="p-6 bg-gray-50 min-h-screen">
+      <h1 className="text-2xl font-bold text-gray-900 mb-8">Dashboard</h1>
+
+      {/* Stats Cards Row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        {/* Total Tasks */}
+        <div className="bg-white rounded-lg shadow-sm p-6" data-testid="stat-total">
+          <div className="text-gray-600 text-sm font-medium">Total Tasks</div>
+          <div className="text-3xl font-bold text-gray-900 mt-2">{totalTasks}</div>
         </div>
-        {canManage && (
-          <Button variant="ghost" size="sm" className="text-xs" onClick={() => setShowAdd(!showAdd)} data-testid={`button-add-subtask-${taskId}`}>
-            <Plus className="w-3 h-3 mr-1" /> 添加
-          </Button>
+
+        {/* In Progress */}
+        <div className="bg-white rounded-lg shadow-sm p-6" data-testid="stat-in-progress">
+          <div className="text-gray-600 text-sm font-medium">In Progress</div>
+          <div className="text-3xl font-bold text-yellow-600 mt-2">{inProgressCount}</div>
+        </div>
+
+        {/* Completed */}
+        <div className="bg-white rounded-lg shadow-sm p-6" data-testid="stat-completed">
+          <div className="text-gray-600 text-sm font-medium">Completed</div>
+          <div className="text-3xl font-bold text-green-600 mt-2">{completedCount}</div>
+        </div>
+
+        {/* Overdue */}
+        <div className="bg-white rounded-lg shadow-sm p-6" data-testid="stat-overdue">
+          <div className="text-gray-600 text-sm font-medium">Overdue</div>
+          <div className="text-3xl font-bold text-red-600 mt-2">{overdueCount}</div>
+        </div>
+      </div>
+
+      {/* My Tasks Table */}
+      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h2 className="text-lg font-bold text-gray-900">My Tasks</h2>
+        </div>
+
+        {myTasks.length === 0 ? (
+          <div className="px-6 py-8 text-center text-gray-500">No tasks assigned to you</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full" data-testid="my-tasks-table">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50">
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Title
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Project
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Priority
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Due Date
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {myTasks.map((task) => (
+                  <tr
+                    key={task.id}
+                    data-testid={`task-row-${task.id}`}
+                    onClick={() => navigate(`/tasks/${task.id}`)}
+                    className="hover:bg-gray-50 cursor-pointer transition-colors"
+                  >
+                    <td className="px-6 py-4 text-sm text-gray-900">{task.title}</td>
+                    <td className="px-6 py-4 text-sm text-gray-700">{getProjectName(task.projectId)}</td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
+                        {getStatusLabel(task.status)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      {task.priority ? (
+                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(task.priority)}`}>
+                          {getPriorityLabel(task.priority)}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-gray-500">—</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-700">
+                      {task.dueDate ? formatDate(task.dueDate) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
-      {subtasks.length > 0 && (
-        <div className="space-y-1">
-          {subtasks.map((st) => (
-            <div key={st.id} className="flex items-center gap-2 group" data-testid={`subtask-${st.id}`}>
-              <Checkbox
-                checked={st.status === "done"}
-                onCheckedChange={(checked) => toggleMut.mutate({ subId: st.id, done: !!checked })}
-                data-testid={`checkbox-subtask-${st.id}`}
-              />
-              <span className={cn("text-xs flex-1", st.status === "done" && "line-through text-muted-foreground")}>{st.title}</span>
-              {canManage && (
-                <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => deleteMut.mutate(st.id)} data-testid={`button-delete-subtask-${st.id}`}>
-                  <Trash2 className="w-3 h-3 text-muted-foreground" />
-                </Button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-      {showAdd && (
-        <div className="flex gap-2 mt-2">
-          <Input
-            value={newSubtaskTitle}
-            onChange={(e) => setNewSubtaskTitle(e.target.value)}
-            placeholder="子任务标题"
-            className="text-xs"
-            onKeyDown={(e) => { if (e.key === "Enter" && newSubtaskTitle.trim()) addMut.mutate(newSubtaskTitle.trim()); }}
-            data-testid={`input-new-subtask-${taskId}`}
-          />
-          <Button size="sm" className="text-xs" disabled={!newSubtaskTitle.trim()} onClick={() => addMut.mutate(newSubtaskTitle.trim())} data-testid={`button-confirm-subtask-${taskId}`}>
-            确定
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
 
-function AttachmentSection({ taskId }: { taskId: string }) {
-  const { user } = useAuth();
-  const { toast } = useToast();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const { data: atts = [] } = useQuery<AttachmentData[]>({
-    queryKey: ["/api/tasks", taskId, "attachments"],
-  });
-
-  const uploadMut = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch(`/api/tasks/${taskId}/attachments`, { method: "POST", body: formData, credentials: "include" });
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks", taskId, "attachments"] });
-      toast({ title: "文件已上传" });
-    },
-    onError: (err: Error) => toast({ title: "上传失败", description: err.message, variant: "destructive" }),
-  });
-
-  const deleteMut = useMutation({
-    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/attachments/${id}`); },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/tasks", taskId, "attachments"] }),
-    onError: (err: Error) => toast({ title: "删除失败", description: err.message, variant: "destructive" }),
-  });
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 20 * 1024 * 1024) {
-        toast({ title: "文件过大", description: "最大支持20MB", variant: "destructive" });
-        return;
-      }
-      uploadMut.mutate(file);
-    }
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  const formatSize = (bytes: number | null) => {
-    if (!bytes) return "";
-    if (bytes < 1024) return `${bytes}B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-  };
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5">
-          <Paperclip className="w-3.5 h-3.5 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground font-medium">附件 ({atts.length})</span>
-        </div>
-        <Button variant="ghost" size="sm" className="text-xs" onClick={() => fileInputRef.current?.click()} disabled={uploadMut.isPending} data-testid={`button-upload-${taskId}`}>
-          <Plus className="w-3 h-3 mr-1" /> {uploadMut.isPending ? "上传中..." : "上传"}
-        </Button>
-        <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} data-testid={`input-file-${taskId}`} />
-      </div>
-      {atts.length > 0 && (
-        <div className="space-y-1">
-          {atts.map((att) => (
-            <div key={att.id} className="flex items-center gap-2 group text-xs" data-testid={`attachment-${att.id}`}>
-              <Paperclip className="w-3 h-3 text-muted-foreground shrink-0" />
-              <span className="truncate flex-1">{att.filename}</span>
-              <span className="text-muted-foreground shrink-0">{formatSize(att.filesize)}</span>
-              <a href={`/api/attachments/${att.id}/download`} className="shrink-0" data-testid={`button-download-${att.id}`}>
-                <Download className="w-3 h-3 text-muted-foreground hover:text-foreground" />
-              </a>
-              {(att.user_id === user?.id || user?.role === "ceo" || user?.role === "admin") && (
-                <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100" onClick={() => deleteMut.mutate(att.id)} data-testid={`button-delete-attachment-${att.id}`}>
-                  <Trash2 className="w-3 h-3 text-muted-foreground" />
-                </Button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TaskCard({
-  task, assignees, allTasks, onClick,
-}: {
-  task: Task; assignees: User[]; allTasks: Task[]; onClick: () => void;
-}) {
-  const priority = getPriorityLabel(task.priority ?? 0);
-  const deadlineInfo = task.deadline ? getDeadlineInfo(task.deadline, task.grace_deadline) : null;
-
-  const isBlocked = useMemo(() => {
-    if (!task.depends_on) return false;
-    return task.depends_on.split(",").map((s) => s.trim()).filter(Boolean).some((id) => {
-      const dep = allTasks.find((t) => t.id === id);
-      return !dep || dep.status !== "done";
-    });
-  }, [task.depends_on, allTasks]);
-
-  return (
-    <div
-      className={cn(
-        "bg-card border border-border rounded-lg p-3 cursor-pointer transition-shadow duration-150 hover:shadow-md",
-        task.parent_id && "ml-6"
-      )}
-      style={{ borderLeft: `3px solid ${task.status === 'done' ? '#10B981' : task.status === 'active' ? '#3B82F6' : task.status === 'review' ? '#F59E0B' : '#9CA3AF'}` }}
-      onClick={onClick}
-      data-testid={`card-task-${task.id}`}
-    >
-      <div className="flex items-start justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
-          {isBlocked && <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
-          <span className="text-sm font-medium truncate" data-testid={`text-title-${task.id}`}>{task.title}</span>
-          {priority && <Badge className={cn("text-xs px-2 py-0.5 rounded-full font-medium border-0", priority.color)} variant="secondary">{priority.label}</Badge>}
-        </div>
-        <Badge className={cn("text-xs px-2 py-0.5 rounded-full font-medium border-0 shrink-0", getStatusColor(task.status ?? "pending"))} variant="secondary">{getStatusLabel(task.status ?? "pending")}</Badge>
-      </div>
-      <div className="flex items-center justify-between gap-2 mt-2 flex-wrap">
-        <div className="flex items-center gap-1 flex-wrap">
-          {assignees.map((u) => (
-            <div key={u.id} className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: u.color ?? "#888" }} />
-              <span className="text-xs text-muted-foreground">{u.name}</span>
-            </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {task.deliverable && <span className="text-xs text-muted-foreground truncate max-w-[120px]">{task.deliverable}</span>}
-          {deadlineInfo && <span className={cn("text-xs", deadlineInfo.color)}>{deadlineInfo.text}</span>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function TaskDetailDialog({
-  task, assignees, allTasks, allUsers, open, onOpenChange,
-}: {
-  task: Task; assignees: User[]; allTasks: Task[]; allUsers: User[]; open: boolean; onOpenChange: (open: boolean) => void;
-}) {
-  const { user } = useAuth();
-  const { toast } = useToast();
-  const [feishuLink, setFeishuLink] = useState(task.feishu_link ?? "");
-  const [feishuDirty, setFeishuDirty] = useState(false);
-
-  const { data: logs } = useQuery<Array<{ id: number; task_id: string; user_id: string | null; action: string; old_value: string | null; new_value: string | null; created_at: string | null }>>({
-    queryKey: ["/api/tasks", task.id, "logs"],
-    enabled: open,
-  });
-
-  const statusMutation = useMutation({
-    mutationFn: async (newStatus: string) => { await apiRequest("PATCH", `/api/tasks/${task.id}`, { status: newStatus }); },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-      toast({ title: "状态已更新" });
-    },
-    onError: (err: Error) => toast({ title: "更新失败", description: err.message, variant: "destructive" }),
-  });
-
-  const feishuMutation = useMutation({
-    mutationFn: async (link: string) => { await apiRequest("PATCH", `/api/tasks/${task.id}`, { feishu_link: link }); },
-    onSuccess: () => { setFeishuDirty(false); queryClient.invalidateQueries({ queryKey: ["/api/tasks"] }); toast({ title: "飞书链接已保存" }); },
-    onError: (err: Error) => toast({ title: "保存失败", description: err.message, variant: "destructive" }),
-  });
-
-  const urgeMutation = useMutation({
-    mutationFn: async () => { await apiRequest("POST", `/api/tasks/${task.id}/urge`, {}); },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks", task.id, "logs"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-      toast({ title: "催办已发送" });
-    },
-    onError: (err: Error) => toast({ title: "催办失败", description: err.message, variant: "destructive" }),
-  });
-
-  const isBlocked = useMemo(() => {
-    if (!task.depends_on) return false;
-    return task.depends_on.split(",").map((s) => s.trim()).filter(Boolean).some((id) => {
-      const dep = allTasks.find((t) => t.id === id);
-      return !dep || dep.status !== "done";
-    });
-  }, [task.depends_on, allTasks]);
-
-  const depTasks = useMemo(() => {
-    if (!task.depends_on) return [];
-    return task.depends_on.split(",").map((s) => s.trim()).filter(Boolean).map((id) => allTasks.find((t) => t.id === id)).filter(Boolean) as Task[];
-  }, [task.depends_on, allTasks]);
-
-  const canChangeStatus = useMemo(() => {
-    if (!user) return false;
-    if (user.role === "ceo" || user.role === "admin") return true;
-    const isAssignee = assignees.some((a) => a.id === user.id);
-    if (user.role === "head") return isAssignee || assignees.some((a) => a.dept === user.dept);
-    return isAssignee;
-  }, [user, assignees]);
-
-  const canUrge = user && (user.role === "ceo" || user.role === "admin") && task.status !== "done";
-  const reviewer = allUsers.find((u) => u.id === task.reviewer_id);
-  const deadlineInfo = task.deadline ? getDeadlineInfo(task.deadline, task.grace_deadline) : null;
-
-  const getNextAction = () => {
-    switch (task.status) {
-      case "pending": return { label: "开始任务", next: "active" };
-      case "active": return { label: "提交审核", next: "review" };
-      case "review": return { label: "标记完成", next: "done" };
-      case "done": return { label: "重新打开", next: "pending" };
-      default: return { label: "开始任务", next: "active" };
-    }
-  };
-
-  const action = getNextAction();
-  const isStartBlocked = task.status === "pending" && isBlocked;
-
-  const getLogLabel = (a: string) => {
-    switch (a) {
-      case "status_change": return "状态变更";
-      case "urge": return "催办";
-      case "system_urge": return "系统催办";
-      case "auto_unblock": return "自动解锁";
-      case "sync_update": return "同步更新";
-      case "comment": return "评论";
-      default: return a;
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-center justify-between gap-2">
-            <DialogTitle className="text-base font-medium" data-testid={`text-detail-title-${task.id}`}>{task.title}</DialogTitle>
-            {canUrge && (
-              <Button variant="outline" size="sm" className="shrink-0 text-orange-500 border-border hover:text-orange-600" onClick={() => urgeMutation.mutate()} disabled={urgeMutation.isPending} data-testid={`button-urge-${task.id}`}>
-                <Zap className="w-3.5 h-3.5 mr-1" /> {urgeMutation.isPending ? "催办中..." : "催办"}
-              </Button>
-            )}
-          </div>
-          <DialogDescription className="sr-only">任务详情</DialogDescription>
-        </DialogHeader>
-
-        {task.description && <p className="text-sm text-muted-foreground">{task.description}</p>}
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">状态:</span>
-              <Badge className={cn("text-xs px-2 py-0.5 rounded-full font-medium border-0", getStatusColor(task.status ?? "pending"))} variant="secondary">{getStatusLabel(task.status ?? "pending")}</Badge>
-            </div>
-            {canChangeStatus && (
-              <Button size="sm" disabled={isStartBlocked || statusMutation.isPending} onClick={() => statusMutation.mutate(action.next)} data-testid={`button-status-${task.id}`}>
-                {statusMutation.isPending ? "处理中..." : action.label}
-              </Button>
-            )}
-          </div>
-
-          {isStartBlocked && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted p-2 rounded-md">
-              <Lock className="w-4 h-4" /><span>前置任务未完成，无法开始</span>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <span className="text-xs text-muted-foreground">负责人</span>
-              <div className="flex flex-col gap-1 mt-1">
-                {assignees.map((u) => (
-                  <div key={u.id} className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: u.color ?? "#888" }} />
-                    <span className="text-sm">{u.name}</span>
-                  </div>
-                ))}
-                {assignees.length === 0 && <span className="text-sm text-muted-foreground">未分配</span>}
-              </div>
-            </div>
-            <div>
-              <span className="text-xs text-muted-foreground">审核人</span>
-              {reviewer ? (
-                <div className="flex items-center gap-1.5 mt-1">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: reviewer.color ?? "#888" }} />
-                  <span className="text-sm">{reviewer.name}</span>
-                </div>
-              ) : <p className="text-sm text-muted-foreground mt-1">未指定</p>}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <span className="text-xs text-muted-foreground">截止日期</span>
-              {deadlineInfo ? (
-                <p className={cn("text-sm mt-1", deadlineInfo.color)}>{task.deadline} ({deadlineInfo.text})</p>
-              ) : <p className="text-sm text-muted-foreground mt-1">未设置</p>}
-            </div>
-            {task.grace_deadline && (
-              <div>
-                <span className="text-xs text-muted-foreground">宽限截止</span>
-                <p className="text-sm mt-1">{task.grace_deadline}</p>
-              </div>
-            )}
-          </div>
-
-          {task.deliverable && (
-            <div>
-              <span className="text-xs text-muted-foreground">交付物</span>
-              <p className="text-sm mt-1">{task.deliverable}</p>
-            </div>
-          )}
-
-          <div>
-            <span className="text-xs text-muted-foreground">飞书链接</span>
-            <div className="flex items-center gap-2 mt-1">
-              <Input value={feishuLink} onChange={(e) => { setFeishuLink(e.target.value); setFeishuDirty(true); }} placeholder="粘贴飞书文档链接" data-testid={`input-feishu-${task.id}`} />
-              {feishuDirty && <Button size="icon" variant="ghost" onClick={() => feishuMutation.mutate(feishuLink)} disabled={feishuMutation.isPending} data-testid={`button-save-feishu-${task.id}`}><Save /></Button>}
-              {task.feishu_link && !feishuDirty && <Button size="icon" variant="ghost" asChild><a href={task.feishu_link} target="_blank" rel="noopener noreferrer" data-testid={`link-feishu-${task.id}`}><ExternalLink /></a></Button>}
-            </div>
-          </div>
-
-          {depTasks.length > 0 && (
-            <div>
-              <span className="text-xs text-muted-foreground">依赖任务</span>
-              <div className="flex flex-col gap-1 mt-1">
-                {depTasks.map((dep) => (
-                  <div key={dep.id} className="flex items-center gap-2">
-                    <Badge className={cn("text-xs px-2 py-0.5 rounded-full font-medium border-0", getStatusColor(dep.status ?? "pending"))} variant="secondary">{getStatusLabel(dep.status ?? "pending")}</Badge>
-                    <span className="text-sm">{dep.title}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {!task.parent_id && <SubtaskSection taskId={task.id} allTasks={allTasks} />}
-
-          <AttachmentSection taskId={task.id} />
-
-          <CommentSection taskId={task.id} allUsers={allUsers} />
-
-          {logs && logs.length > 0 && (
-            <div>
-              <span className="text-xs text-muted-foreground">操作日志</span>
-              <div className="mt-2 space-y-2">
-                {logs.map((log) => {
-                  const logUser = allUsers.find((u) => u.id === log.user_id);
-                  return (
-                    <div key={log.id} className="flex items-start gap-2 text-xs">
-                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground mt-1.5 shrink-0" />
-                      <div>
-                        <span className="font-medium">{logUser?.name ?? "系统"}</span>
-                        <span className="text-muted-foreground ml-1">{getLogLabel(log.action)}</span>
-                        {log.old_value && log.new_value && <span className="text-muted-foreground ml-1">{getStatusLabel(log.old_value)} → {getStatusLabel(log.new_value)}</span>}
-                        {!log.old_value && log.new_value && log.action !== "status_change" && <span className="text-muted-foreground ml-1">{log.new_value}</span>}
-                        {log.created_at && <span className="text-muted-foreground ml-2">{new Date(log.created_at).toLocaleString("zh-CN")}</span>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function PhaseSection({
-  phase, tasks, assigneeMap, allTasks, allUsers, selectedTask, onSelectTask, defaultCollapsed = false,
-}: {
-  phase: Phase; tasks: Task[]; assigneeMap: AssigneeMap; allTasks: Task[]; allUsers: User[]; selectedTask: Task | null; onSelectTask: (task: Task | null) => void; defaultCollapsed?: boolean;
-}) {
-  const [collapsed, setCollapsed] = useState(defaultCollapsed);
-  const parentTasks = tasks.filter((t) => !t.parent_id);
-  const subtasks = tasks.filter((t) => t.parent_id);
-
-  return (
-    <div className="mb-6">
-      <div
-        className="flex items-center justify-between gap-2 px-3 py-2 mb-2 flex-wrap cursor-pointer select-none"
-        style={{ borderLeft: `3px solid ${phase.color ?? "hsl(var(--primary))"}` }}
-        onClick={() => setCollapsed(!collapsed)}
-        data-testid={`toggle-phase-${phase.id}`}
-      >
-        <div className="flex items-center gap-1.5">
-          {collapsed ? <ChevronRight className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-          <span className="font-medium text-sm">{phase.label}</span>
-          <span className="text-xs text-muted-foreground">({tasks.length})</span>
-        </div>
-        {phase.date_range && <span className="text-xs text-muted-foreground">{phase.date_range}</span>}
-      </div>
-      {!collapsed && (
-        <div className="space-y-2">
-          {parentTasks.map((task) => (
-            <div key={task.id}>
-              <TaskCard task={task} assignees={assigneeMap[task.id] ?? []} allTasks={allTasks} onClick={() => onSelectTask(task)} />
-              {subtasks.filter((st) => st.parent_id === task.id).map((st) => (
-                <TaskCard key={st.id} task={st} assignees={assigneeMap[st.id] ?? []} allTasks={allTasks} onClick={() => onSelectTask(st)} />
-              ))}
-            </div>
-          ))}
-          {parentTasks.length === 0 && subtasks.length === 0 && <p className="text-[13px] text-muted-foreground text-center py-8">暂无数据</p>}
-        </div>
-      )}
-      {selectedTask && tasks.some((t) => t.id === selectedTask.id) && (
-        <TaskDetailDialog task={selectedTask} assignees={assigneeMap[selectedTask.id] ?? []} allTasks={allTasks} allUsers={allUsers} open={true} onOpenChange={(o) => { if (!o) onSelectTask(null); }} />
-      )}
-    </div>
-  );
-}
-
-function PersonSectionList({
-  users, grouped, assigneeMap, allTasks, allUsers, selectedTask, onSelectTask,
-}: {
-  users: User[]; grouped: Record<string, Task[]>; assigneeMap: AssigneeMap; allTasks: Task[]; allUsers: User[]; selectedTask: Task | null; onSelectTask: (task: Task | null) => void;
-}) {
-  return (
-    <>
-      {users.map((u) => {
-        const userTasks = grouped[u.id] ?? [];
-        if (userTasks.length === 0) return null;
-        return <PersonSection key={u.id} user={u} tasks={userTasks} assigneeMap={assigneeMap} allTasks={allTasks} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={onSelectTask} />;
-      })}
-    </>
-  );
-}
-
-function PersonSection({
-  user, tasks, assigneeMap, allTasks, allUsers, selectedTask, onSelectTask,
-}: {
-  user: User; tasks: Task[]; assigneeMap: AssigneeMap; allTasks: Task[]; allUsers: User[]; selectedTask: Task | null; onSelectTask: (task: Task | null) => void;
-}) {
-  const [collapsed, setCollapsed] = useState(true);
-
-  return (
-    <div className="mb-6">
-      <div
-        className="flex items-center gap-2 px-3 py-2 mb-2 cursor-pointer select-none"
-        style={{ borderLeft: `3px solid ${user.color ?? '#888'}` }}
-        onClick={() => setCollapsed(!collapsed)}
-        data-testid={`toggle-person-${user.id}`}
-      >
-        {collapsed ? <ChevronRight className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: user.color ?? "#888" }} />
-        <span className="font-medium text-sm">{user.name}</span>
-        {user.title && <span className="text-xs text-muted-foreground">{user.title}</span>}
-        <span className="text-xs text-muted-foreground">({tasks.length})</span>
-      </div>
-      {!collapsed && (
-        <div className="space-y-2">
-          {tasks.map((task) => (
-            <TaskCard key={task.id} task={task} assignees={assigneeMap[task.id] ?? []} allTasks={allTasks} onClick={() => onSelectTask(task)} />
-          ))}
-        </div>
-      )}
-      {selectedTask && tasks.some((t) => t.id === selectedTask.id) && (
-        <TaskDetailDialog task={selectedTask} assignees={assigneeMap[selectedTask.id] ?? []} allTasks={allTasks} allUsers={allUsers} open={true} onOpenChange={(o) => { if (!o) onSelectTask(null); }} />
-      )}
-    </div>
-  );
-}
-
-function ProjectSection({
-  project, tasks, assigneeMap, allTasks, allUsers, selectedTask, onSelectTask, defaultCollapsed = true,
-}: {
-  project: { id: string; title: string; color: string | null }; tasks: Task[]; assigneeMap: AssigneeMap; allTasks: Task[]; allUsers: User[]; selectedTask: Task | null; onSelectTask: (task: Task | null) => void; defaultCollapsed?: boolean;
-}) {
-  const [collapsed, setCollapsed] = useState(defaultCollapsed);
-  const doneCount = tasks.filter(t => t.status === 'done').length;
-  const progress = tasks.length > 0 ? Math.round((doneCount / tasks.length) * 100) : 0;
-
-  return (
-    <div className="mb-6">
-      <div
-        className="flex items-center justify-between gap-2 px-3 py-2 mb-2 flex-wrap cursor-pointer select-none"
-        style={{ borderLeft: `3px solid ${project.color ?? '#6B7280'}` }}
-        onClick={() => setCollapsed(!collapsed)}
-        data-testid={`toggle-project-${project.id}`}
-      >
-        <div className="flex items-center gap-1.5">
-          {collapsed ? <ChevronRight className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-          <FolderKanban className="w-3.5 h-3.5 text-muted-foreground" />
-          <span className="font-medium text-sm">{project.title}</span>
-          <span className="text-xs text-muted-foreground">({tasks.length})</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-16 h-1 bg-muted rounded-full overflow-hidden">
-            <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, backgroundColor: project.color ?? '#6B7280' }} />
-          </div>
-          <span className="text-xs text-muted-foreground">{progress}%</span>
-        </div>
-      </div>
-      {!collapsed && (
-        <div className="space-y-2">
-          {tasks.map((task) => (
-            <TaskCard key={task.id} task={task} assignees={assigneeMap[task.id] ?? []} allTasks={allTasks} onClick={() => onSelectTask(task)} />
-          ))}
-          {tasks.length === 0 && <p className="text-[13px] text-muted-foreground text-center py-8">暂无数据</p>}
-        </div>
-      )}
-      {selectedTask && tasks.some((t) => t.id === selectedTask.id) && (
-        <TaskDetailDialog task={selectedTask} assignees={assigneeMap[selectedTask.id] ?? []} allTasks={allTasks} allUsers={allUsers} open={true} onOpenChange={(o) => { if (!o) onSelectTask(null); }} />
-      )}
-    </div>
-  );
-}
-
-function LoadingSkeleton() {
-  return (
-    <div className="space-y-4 p-4">
-      {[1, 2, 3].map((i) => (
-        <div key={i} className="space-y-2">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export default function Dashboard() {
-  const { user, logout } = useAuth();
-  const [, setLocation] = useLocation();
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [personFilter, setPersonFilter] = useState("all");
-  const [projectFilter, setProjectFilter] = useState("all");
-  const [groupByProject, setGroupByProject] = useState(false);
-
-  if (!user) { setLocation("/"); return null; }
-
-  const isCeoOrAdmin = user.role === "ceo" || user.role === "admin";
-
-  const { data: myData, isLoading: myLoading } = useQuery<TasksResponse>({ queryKey: ["/api/tasks?view=mine"] });
-  const { data: allData, isLoading: allLoading } = useQuery<TasksResponse>({ queryKey: ["/api/tasks?view=all"] });
-  const { data: peopleData, isLoading: peopleLoading } = useQuery<TasksResponse>({ queryKey: ["/api/tasks?view=people"], enabled: isCeoOrAdmin });
-  const { data: phasesData } = useQuery<Phase[]>({ queryKey: ["/api/phases"] });
-  const { data: usersData } = useQuery<User[]>({ queryKey: ["/api/users"] });
-  const { data: projectsData } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
-
-  const phases = phasesData ?? [];
-  const allUsers = usersData ?? [];
-  const projects = projectsData ?? [];
-
-  const groupByPhase = (tasks: Task[]) => {
-    const grouped: Record<string, Task[]> = {};
-    for (const p of phases) grouped[p.id] = [];
-    grouped["_none"] = [];
-    for (const t of tasks) {
-      const key = t.phase && grouped[t.phase] !== undefined ? t.phase : "_none";
-      grouped[key].push(t);
-    }
-    return grouped;
-  };
-
-  const filteredAllTasks = useMemo(() => {
-    if (!allData) return [];
-    let filtered = allData.tasks;
-    if (statusFilter !== "all") filtered = filtered.filter((t) => t.status === statusFilter);
-    if (personFilter !== "all") filtered = filtered.filter((t) => (allData.assigneeMap[t.id] ?? []).some((a) => a.id === personFilter));
-    if (projectFilter !== "all") filtered = filtered.filter((t) => t.project_id === projectFilter);
-    return filtered;
-  }, [allData, statusFilter, personFilter, projectFilter]);
-
-  const groupByProjectFn = (tasks: Task[]) => {
-    const grouped: Record<string, Task[]> = {};
-    for (const t of tasks) {
-      const key = t.project_id ?? "_none";
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(t);
-    }
-    return grouped;
-  };
-
-  const groupByPerson = (tasks: Task[], aMap: AssigneeMap) => {
-    const grouped: Record<string, Task[]> = {};
-    for (const u of allUsers) grouped[u.id] = [];
-    for (const t of tasks) {
-      const assignees = aMap[t.id] ?? [];
-      if (assignees.length === 0) {
-        if (!grouped["_unassigned"]) grouped["_unassigned"] = [];
-        grouped["_unassigned"].push(t);
-      } else {
-        for (const a of assignees) {
-          if (!grouped[a.id]) grouped[a.id] = [];
-          grouped[a.id].push(t);
-        }
-      }
-    }
-    return grouped;
-  };
-
-  return (
-    <div className="flex flex-col h-screen bg-background pb-16 md:pb-0">
-      <header className="sticky top-0 z-50 flex items-center justify-between gap-2 px-3 md:px-4 py-2 md:py-3 border-b bg-background" data-testid="header">
-        <div className="flex items-center gap-2 shrink-0">
-          <img src={logoImg} alt="Deltapex" className="h-5 md:h-6 object-contain dark:invert" />
-          <span className="text-sm font-medium tracking-tight hidden sm:inline">任务中心</span>
-        </div>
-        <div className="flex items-center gap-1 md:gap-2">
-          <div className="hidden md:flex items-center gap-1 md:gap-2 overflow-x-auto">
-            <Link href="/projects">
-              <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-projects">
-                <FolderKanban className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">项目</span>
-              </Button>
-            </Link>
-            {isCeoOrAdmin && (
-              <Link href="/overview">
-                <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-overview">
-                  <BarChart3 className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">概览</span>
-                </Button>
-              </Link>
-            )}
-            {isCeoOrAdmin && (
-              <Link href="/evaluation">
-                <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-evaluation">
-                  <Award className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">考核</span>
-                </Button>
-              </Link>
-            )}
-            {isCeoOrAdmin && (
-              <Link href="/organization">
-                <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-organization">
-                  <Building2 className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">组织</span>
-                </Button>
-              </Link>
-            )}
-            {isCeoOrAdmin && (
-              <Link href="/gantt">
-                <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-gantt">
-                  <GanttChart className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">甘特图</span>
-                </Button>
-              </Link>
-            )}
-            {user.role === "ceo" && (
-              <Link href="/sync">
-                <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-sync">
-                  <RefreshCw className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">同步</span>
-                </Button>
-              </Link>
-            )}
-            {isCeoOrAdmin && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 px-2 md:px-3 shrink-0"
-                onClick={async () => {
-                  try {
-                    const res = await fetch("/api/export/excel", { credentials: "include" });
-                    if (!res.ok) throw new Error("Export failed");
-                    const blob = await res.blob();
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `Deltapex_任务导出_${new Date().toISOString().split("T")[0]}.xlsx`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                  } catch (err) {
-                  }
-                }}
-                data-testid="button-export-excel"
-              >
-                <Download className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">导出</span>
-              </Button>
-            )}
-          </div>
-          <NotificationBell />
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: user.color ?? "#888" }} />
-            <span className="text-xs md:text-sm font-medium" data-testid="text-username">{user.name}</span>
-          </div>
-          <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => logout()} data-testid="button-logout"><LogOut className="w-4 h-4" /></Button>
-        </div>
-      </header>
-
-      <Tabs defaultValue="mine" className="flex flex-col flex-1 min-h-0">
-        <div className="px-4 border-b">
-          <div className="flex gap-0" data-testid="tabs-list">
-            <TabsList className="bg-transparent h-auto p-0 gap-0 rounded-none">
-              <TabsTrigger value="mine" className="bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent" data-testid="tab-mine">我的任务</TabsTrigger>
-              <TabsTrigger value="all" className="bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent" data-testid="tab-all">全部任务</TabsTrigger>
-              {isCeoOrAdmin && <TabsTrigger value="people" className="bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent" data-testid="tab-people">人员视图</TabsTrigger>}
-            </TabsList>
-          </div>
-        </div>
-
-        <TabsContent value="mine" className="flex-1 min-h-0">
-          <ScrollArea className="h-full">
-            <div className="p-4">
-              {myLoading ? <LoadingSkeleton /> : !myData || myData.tasks.length === 0 ? (
-                <p className="text-[13px] text-muted-foreground text-center py-8" data-testid="text-empty-mine">暂无数据</p>
-              ) : (() => {
-                const grouped = groupByPhase(myData.tasks);
-                const allTasksList = myData.tasks;
-                return (
-                  <>
-                    {phases.map((phase) => grouped[phase.id]?.length ? (
-                      <PhaseSection key={phase.id} phase={phase} tasks={grouped[phase.id]} assigneeMap={myData.assigneeMap} allTasks={allTasksList} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} />
-                    ) : null)}
-                    {grouped["_none"]?.length > 0 && (
-                      <PhaseSection phase={{ id: "_none", label: "未分类", date_range: null, color: "#888", sort_order: 999 }} tasks={grouped["_none"]} assigneeMap={myData.assigneeMap} allTasks={allTasksList} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} />
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-          </ScrollArea>
-        </TabsContent>
-
-        <TabsContent value="all" className="flex-1 min-h-0">
-          <div className="flex items-center gap-2 px-4 py-2 border-b flex-wrap">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[120px] h-8 text-[13px]" data-testid="select-status-filter"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="pending">待开始</SelectItem>
-                <SelectItem value="active">进行中</SelectItem>
-                <SelectItem value="review">审核中</SelectItem>
-                <SelectItem value="done">已完成</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={personFilter} onValueChange={setPersonFilter}>
-              <SelectTrigger className="w-[120px] h-8 text-[13px]" data-testid="select-person-filter"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部人员</SelectItem>
-                {allUsers.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={projectFilter} onValueChange={setProjectFilter}>
-              <SelectTrigger className="w-[120px] h-8 text-[13px]" data-testid="select-project-filter"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部项目</SelectItem>
-                {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Button
-              variant={groupByProject ? "secondary" : "ghost"}
-              size="sm"
-              className="h-8 px-2 text-[13px] shrink-0"
-              onClick={() => setGroupByProject(!groupByProject)}
-              data-testid="button-toggle-group-project"
-            >
-              <FolderKanban className="w-3.5 h-3.5 mr-1" />
-              按项目
-            </Button>
-          </div>
-          <ScrollArea className="h-full">
-            <div className="p-4">
-              {allLoading ? <LoadingSkeleton /> : filteredAllTasks.length === 0 ? (
-                <p className="text-[13px] text-muted-foreground text-center py-8" data-testid="text-empty-all">暂无数据</p>
-              ) : (() => {
-                if (groupByProject) {
-                  const grouped = groupByProjectFn(filteredAllTasks);
-                  const allTasksList = allData?.tasks ?? [];
-                  const aMap = allData?.assigneeMap ?? {};
-                  return (
-                    <>
-                      {projects.map((p) => grouped[p.id]?.length ? (
-                        <ProjectSection key={p.id} project={p} tasks={grouped[p.id]} assigneeMap={aMap} allTasks={allTasksList} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} />
-                      ) : null)}
-                      {grouped["_none"]?.length > 0 && (
-                        <ProjectSection project={{ id: "_none", title: "未分组", color: "#888" }} tasks={grouped["_none"]} assigneeMap={aMap} allTasks={allTasksList} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} />
-                      )}
-                    </>
-                  );
-                } else {
-                  const grouped = groupByPhase(filteredAllTasks);
-                  const allTasksList = allData?.tasks ?? [];
-                  const aMap = allData?.assigneeMap ?? {};
-                  return (
-                    <>
-                      {phases.map((phase) => grouped[phase.id]?.length ? (
-                        <PhaseSection key={phase.id} phase={phase} tasks={grouped[phase.id]} assigneeMap={aMap} allTasks={allTasksList} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} defaultCollapsed={true} />
-                      ) : null)}
-                      {grouped["_none"]?.length > 0 && (
-                        <PhaseSection phase={{ id: "_none", label: "未分类", date_range: null, color: "#888", sort_order: 999 }} tasks={grouped["_none"]} assigneeMap={aMap} allTasks={allTasksList} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} defaultCollapsed={true} />
-                      )}
-                    </>
-                  );
-                }
-              })()}
-            </div>
-          </ScrollArea>
-        </TabsContent>
-
-        {isCeoOrAdmin && (
-          <TabsContent value="people" className="flex-1 min-h-0">
-            <ScrollArea className="h-full">
-              <div className="p-4">
-                {peopleLoading ? <LoadingSkeleton /> : !peopleData || peopleData.tasks.length === 0 ? (
-                  <p className="text-[13px] text-muted-foreground text-center py-8" data-testid="text-empty-people">暂无数据</p>
-                ) : (() => {
-                  const grouped = groupByPerson(peopleData.tasks, peopleData.assigneeMap);
-                  return (
-                    <>
-                      <PersonSectionList users={allUsers} grouped={grouped} assigneeMap={peopleData.assigneeMap} allTasks={peopleData.tasks} allUsers={allUsers} selectedTask={selectedTask} onSelectTask={setSelectedTask} />
-                      {grouped["_unassigned"]?.length > 0 && (
-                        <PersonSection
-                          user={{ id: "_unassigned", name: "未分配", role: "staff", invite_code: "", title: null, department: null, color: "#888" } as User}
-                          tasks={grouped["_unassigned"]}
-                          assigneeMap={peopleData.assigneeMap}
-                          allTasks={peopleData.tasks}
-                          allUsers={allUsers}
-                          selectedTask={selectedTask}
-                          onSelectTask={setSelectedTask}
-                        />
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
-            </ScrollArea>
-          </TabsContent>
-        )}
-      </Tabs>
-    </div>
-  );
-}
+export default Dashboard;
