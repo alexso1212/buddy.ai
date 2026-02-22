@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { AlertTriangle } from "lucide-react";
 import type { Task, Project, User } from "@shared/schema";
 import ParticipantAvatars from "@/components/ParticipantAvatars";
 
@@ -47,6 +48,8 @@ function Dashboard() {
     const dueDate = new Date(t.dueDate);
     return dueDate < now;
   }).length;
+
+  const needsReviewCount = tasks.filter((t) => t.needsReview).length;
 
   // Get tasks assigned to userId=1
   const myTasks = tasks.filter((t) => t.assigneeId === 1);
@@ -139,7 +142,7 @@ function Dashboard() {
       <h1 className="text-2xl font-bold text-foreground mb-8">仪表盘</h1>
 
       {/* Stats Cards Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
         {/* Total Tasks */}
         <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-total">
           <div className="text-muted-foreground text-sm font-medium">总任务数</div>
@@ -162,6 +165,12 @@ function Dashboard() {
         <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-overdue">
           <div className="text-muted-foreground text-sm font-medium">逾期</div>
           <div className="text-2xl md:text-3xl font-bold text-red-600 mt-2">{overdueCount}</div>
+        </div>
+
+        {/* Needs Review */}
+        <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-needs-review">
+          <div className="text-muted-foreground text-sm font-medium">待补充</div>
+          <div className="text-2xl md:text-3xl font-bold text-amber-600 mt-2">{needsReviewCount}</div>
         </div>
       </div>
 
@@ -211,7 +220,12 @@ function Dashboard() {
                         onClick={() => navigate(`/tasks/${task.id}`)}
                         className="hover:bg-muted/50 cursor-pointer transition-colors"
                       >
-                        <td className="px-6 py-4 text-sm text-foreground">{task.title}</td>
+                        <td className="px-6 py-4 text-sm text-foreground">
+                          <span className="flex items-center gap-1">
+                            {task.needsReview && <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />}
+                            {task.title}
+                          </span>
+                        </td>
                         <td className="px-6 py-4 text-sm text-muted-foreground">{getProjectName(task.projectId)}</td>
                         <td className="px-6 py-4">
                           <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
@@ -250,7 +264,10 @@ function Dashboard() {
                   className="p-4 cursor-pointer active:bg-muted/50 transition-colors"
                 >
                   {/* Title */}
-                  <div className="font-bold text-foreground mb-1">{task.title}</div>
+                  <div className="font-bold text-foreground mb-1 flex items-center gap-1">
+                    {task.needsReview && <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />}
+                    {task.title}
+                  </div>
 
                   {/* Project Name */}
                   <div className="text-xs text-muted-foreground mb-3">

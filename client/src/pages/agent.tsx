@@ -21,6 +21,8 @@ interface Message {
   actions?: ActionPayload[];
   confirmed?: boolean | null;
   actionConfirmed?: (boolean | null)[];
+  skipped?: boolean;
+  actionSkipped?: boolean[];
 }
 
 let msgCounter = 0;
@@ -95,6 +97,9 @@ export default function Agent() {
           confirmed: data.type === "confirm" ? null : undefined,
           actionConfirmed: data.type === "multi_confirm" && data.actions
             ? data.actions.map(() => null)
+            : undefined,
+          actionSkipped: data.type === "multi_confirm" && data.actions
+            ? data.actions.map(() => false)
             : undefined,
         };
         setMessages((prev) => [...prev, assistantMsg]);
@@ -184,6 +189,28 @@ export default function Agent() {
     setMessages((prev) => [...prev, sysMsg]);
   }, []);
 
+  const handleSkip = useCallback((messageId: string, actionIndex?: number) => {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== messageId) return m;
+        if (m.type === "multi_confirm" && actionIndex !== undefined && m.actionConfirmed && m.actionSkipped) {
+          const updatedConfirm = [...m.actionConfirmed];
+          const updatedSkip = [...m.actionSkipped];
+          updatedConfirm[actionIndex] = false;
+          updatedSkip[actionIndex] = true;
+          return { ...m, actionConfirmed: updatedConfirm, actionSkipped: updatedSkip };
+        }
+        return { ...m, confirmed: false, skipped: true };
+      })
+    );
+    const sysMsg: Message = {
+      id: nextId(),
+      role: "system",
+      content: "已跳过，该任务不会创建",
+    };
+    setMessages((prev) => [...prev, sysMsg]);
+  }, []);
+
   return (
     <div className="flex flex-col h-full -m-6" data-testid="agent-page">
       <div className="bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-4" data-testid="agent-header">
@@ -199,6 +226,7 @@ export default function Agent() {
               message={msg}
               onConfirm={handleConfirm}
               onReject={handleReject}
+              onSkip={handleSkip}
             />
           ))}
           {loading && (

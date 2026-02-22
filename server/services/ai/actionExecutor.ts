@@ -8,6 +8,7 @@ export async function executeAction(
 ): Promise<{ success: boolean; message: string; entity?: any }> {
   switch (actionType) {
     case 'create_task': {
+      const hasWarnings = Array.isArray(data.warnings) && data.warnings.length > 0;
       const newTask = await storage.createTask({
         orgId: 1,
         projectId: data.projectId,
@@ -23,6 +24,8 @@ export async function executeAction(
         progress: 0,
         parentTaskId: data.parentTaskId || null,
         tags: data.tags || null,
+        needsReview: hasWarnings,
+        warnings: hasWarnings ? JSON.stringify(data.warnings) : null,
       });
 
       await storage.createActivityLog({

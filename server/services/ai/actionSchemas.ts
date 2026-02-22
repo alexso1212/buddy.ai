@@ -12,6 +12,7 @@ export const createTaskSchema = z.object({
   weight: z.number().min(1).max(10).default(3),
   parentTaskId: z.number().optional(),
   tags: z.string().optional(),
+  warnings: z.array(z.string()).optional(),
 });
 
 export const updateTaskSchema = z.object({

@@ -6,6 +6,8 @@ import {
   Search,
   Check,
   X,
+  SkipForward,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,7 +24,9 @@ interface AiConfirmCardProps {
   action: ActionPayload;
   onConfirm: () => void;
   onReject: () => void;
+  onSkip?: () => void;
   confirmed: boolean | null;
+  skipped?: boolean;
   index?: number;
 }
 
@@ -78,7 +82,9 @@ export default function AiConfirmCard({
   action,
   onConfirm,
   onReject,
+  onSkip,
   confirmed,
+  skipped,
   index,
 }: AiConfirmCardProps) {
   const config = ACTION_CONFIG[action.actionType] || {
@@ -88,6 +94,7 @@ export default function AiConfirmCard({
   };
   const Icon = config.icon;
   const cardId = index !== undefined ? `confirm-card-${index}` : "confirm-card";
+  const warnings: string[] = Array.isArray(action.data.warnings) ? action.data.warnings : [];
 
   return (
     <div
@@ -108,7 +115,7 @@ export default function AiConfirmCard({
       <div className="px-4 py-3 space-y-2">
         <p className="text-sm text-foreground">{action.summary}</p>
         <div className="space-y-1">
-          {Object.entries(action.data).map(([key, val]) => {
+          {Object.entries(action.data).filter(([key]) => key !== 'warnings').map(([key, val]) => {
             if (val === null || val === undefined) return null;
             let displayVal: string;
             if (typeof val === 'object') {
@@ -132,8 +139,19 @@ export default function AiConfirmCard({
         </div>
       </div>
 
+      {warnings.length > 0 && (
+        <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-t border-amber-200 dark:border-amber-800">
+          {warnings.map((warning, i) => (
+            <div key={i} className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400 py-0.5">
+              <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              <span>{warning}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="px-4 py-3 border-t border-border">
-        {confirmed === null && (
+        {confirmed === null && !skipped && (
           <div className="flex items-center gap-2">
             <button
               onClick={onConfirm}
@@ -148,6 +166,21 @@ export default function AiConfirmCard({
               <Check className="w-3.5 h-3.5" />
               确认执行
             </button>
+            {onSkip && (
+              <button
+                onClick={onSkip}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5",
+                  "px-3 py-1.5 rounded-lg text-sm font-medium",
+                  "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400",
+                  "transition-colors duration-150"
+                )}
+                data-testid={index !== undefined ? `skip-action-${index}` : "skip-action"}
+              >
+                <SkipForward className="w-3.5 h-3.5" />
+                跳过
+              </button>
+            )}
             <button
               onClick={onReject}
               className={cn(
@@ -169,10 +202,16 @@ export default function AiConfirmCard({
             已执行
           </div>
         )}
-        {confirmed === false && (
+        {confirmed === false && !skipped && (
           <div className="flex items-center gap-1.5 text-red-500 dark:text-red-400 text-sm">
             <X className="w-4 h-4" />
             已取消
+          </div>
+        )}
+        {skipped && (
+          <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 text-sm">
+            <SkipForward className="w-4 h-4" />
+            已跳过
           </div>
         )}
       </div>

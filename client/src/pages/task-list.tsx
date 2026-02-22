@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Filter, ArrowUpDown } from "lucide-react";
+import { Filter, ArrowUpDown, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -428,7 +428,10 @@ export default function TaskList() {
     if (filterProject && filterProject !== "all" && task.projectId !== parseInt(filterProject)) {
       return false;
     }
-    if (filterStatus && filterStatus !== "all" && task.status !== filterStatus) {
+    if (filterStatus === "needs_review" && !task.needsReview) {
+      return false;
+    }
+    if (filterStatus && filterStatus !== "all" && filterStatus !== "needs_review" && task.status !== filterStatus) {
       return false;
     }
     if (filterAssignee && filterAssignee !== "all" && task.assigneeId !== parseInt(filterAssignee)) {
@@ -495,6 +498,7 @@ export default function TaskList() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">全部</SelectItem>
+            <SelectItem value="needs_review">待补充信息</SelectItem>
             {statusOptions.map((status) => (
               <SelectItem key={status} value={status}>
                 {status.replace(/_/g, " ")}
@@ -620,7 +624,12 @@ export default function TaskList() {
                       onClick={() => navigate(`/tasks/${task.id}`)}
                       className="cursor-pointer hover:bg-muted/50"
                     >
-                      <TableCell className="font-medium">{task.title}</TableCell>
+                      <TableCell className="font-medium">
+                        <span className="flex items-center gap-1">
+                          {task.needsReview && <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />}
+                          {task.title}
+                        </span>
+                      </TableCell>
                       <TableCell>{projectMap.get(task.projectId)?.name ?? "-"}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <StatusDropdown taskId={task.id} currentStatus={task.status} />
@@ -651,8 +660,9 @@ export default function TaskList() {
                   data-testid={`task-card-${task.id}`}
                   onClick={() => navigate(`/tasks/${task.id}`)}
                 >
-                  <div className="font-medium truncate" data-testid={`task-card-title-${task.id}`}>
-                    {task.title}
+                  <div className="font-medium flex items-center gap-1" data-testid={`task-card-title-${task.id}`}>
+                    {task.needsReview && <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />}
+                    <span className="truncate">{task.title}</span>
                   </div>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                     <span className="text-xs text-muted-foreground" data-testid={`task-card-project-${task.id}`}>

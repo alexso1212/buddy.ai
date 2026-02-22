@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Plus, Pencil, Trash2, MessageSquare, GitBranch, ListTree, Activity, Scale, Check, X as XIcon, Loader2, UserPlus, Users, AlertCircle } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, MessageSquare, GitBranch, ListTree, Activity, Scale, Check, X as XIcon, Loader2, UserPlus, Users, AlertCircle, AlertTriangle } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
 interface TaskDetailResponse {
@@ -430,6 +430,19 @@ export default function TaskDetail() {
     },
   });
 
+  const markReviewedMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("PATCH", `/api/tasks/${id}`, {
+        needsReview: false,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
+  });
+
   const getSuggestionForm = (userId: number) =>
     suggestionForms[userId] || { role: "participant", sync: false };
 
@@ -575,10 +588,44 @@ export default function TaskDetail() {
         ))}
       </div>
 
+      {task.needsReview && (
+        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-4" data-testid="needs-review-banner">
+          <div className="flex items-start gap-2 mb-2">
+            <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300">此任务有信息待补充</h3>
+              {task.warnings && (() => {
+                try {
+                  const warningList = JSON.parse(task.warnings);
+                  if (Array.isArray(warningList) && warningList.length > 0) {
+                    return (
+                      <ul className="mt-1 space-y-1">
+                        {warningList.map((w: string, i: number) => (
+                          <li key={i} className="text-xs text-amber-700 dark:text-amber-400">{w}</li>
+                        ))}
+                      </ul>
+                    );
+                  }
+                } catch {}
+                return null;
+              })()}
+            </div>
+          </div>
+          <button
+            onClick={() => markReviewedMutation.mutate()}
+            disabled={markReviewedMutation.isPending}
+            className="mt-2 px-4 py-1.5 rounded-lg text-sm font-medium bg-amber-500 text-white transition-colors duration-150 disabled:opacity-50"
+            data-testid="btn-mark-reviewed"
+          >
+            {markReviewedMutation.isPending ? "更新中..." : "标记为已完善"}
+          </button>
+        </div>
+      )}
+
       <Card className={`p-6 ${detailTab === "info" ? "" : "hidden md:block"}`}>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="space-y-3 flex-1 min-w-0">
-            <h1 className="text-2xl font-bold" data-testid="text-task-title">{task.title}</h1>
+            <h1 className="text-2xl font-bold" data-testid="text-task-title">{task.needsReview && <AlertTriangle className="inline w-6 h-6 text-amber-500 mr-1.5 align-text-bottom" />}{task.title}</h1>
             {task.description && (
               <p className="text-muted-foreground">{task.description}</p>
             )}

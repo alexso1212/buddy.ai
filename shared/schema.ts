@@ -105,6 +105,9 @@ export const tasks = pgTable('tasks', {
 
   tags: text('tags'),
 
+  needsReview: boolean('needs_review').default(false).notNull(),
+  warnings: text('warnings'),
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

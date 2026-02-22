@@ -125,6 +125,15 @@ Team task management system for Deltapex Education (financial education company)
 - 市场运营专员 → Apple, 唐张世涵
 - 交易策略分析师 → 刘建烨
 
+## needsReview Feature
+- **tasks** table has `needsReview` (boolean, default false) and `warnings` (text, JSON string array)
+- AI system prompt instructs to add warnings array to create_task data when info is incomplete
+- actionExecutor sets needsReview=true and serializes warnings to JSON when present
+- AiConfirmCard shows warnings in yellow section, has skip/confirm/cancel buttons
+- Dashboard: 5th stat card "待补充" (amber), ⚠️ icon on needsReview task titles
+- Task list: "待补充信息" filter option, ⚠️ icon on titles
+- Task detail: yellow banner with warnings + "标记为已完善" button (PATCHes needsReview=false)
+
 ## Recent Changes
 - 2026-02-22: V6 Complete backend rebuild - 8-table schema (serial IDs), full CRUD API, seed script, enriched GET endpoints (project owner, project tasks, task subtasks/deps/comments)
 - 2026-02-22: V6 Frontend rebuild - 7 pages with sidebar navigation, all CRUD operations, status color badges, filter bar, inline status change, subtasks/deps/comments on task detail

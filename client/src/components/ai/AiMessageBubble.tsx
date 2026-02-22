@@ -21,12 +21,15 @@ interface Message {
   actions?: ActionPayload[];
   confirmed?: boolean | null;
   actionConfirmed?: (boolean | null)[];
+  skipped?: boolean;
+  actionSkipped?: boolean[];
 }
 
 interface AiMessageBubbleProps {
   message: Message;
   onConfirm?: (messageId: string, actionIndex?: number) => void;
   onReject?: (messageId: string, actionIndex?: number) => void;
+  onSkip?: (messageId: string, actionIndex?: number) => void;
 }
 
 function MultiConfirmGroup({
@@ -35,12 +38,14 @@ function MultiConfirmGroup({
   hasUndecided,
   onConfirm,
   onReject,
+  onSkip,
 }: {
   message: Message;
   confirmStates: (boolean | null)[];
   hasUndecided: boolean;
   onConfirm: (messageId: string, actionIndex?: number) => void;
   onReject: (messageId: string, actionIndex?: number) => void;
+  onSkip?: (messageId: string, actionIndex?: number) => void;
 }) {
   const [confirmingAll, setConfirmingAll] = useState(false);
 
@@ -89,7 +94,9 @@ function MultiConfirmGroup({
             action={action}
             onConfirm={() => onConfirm(message.id, index)}
             onReject={() => onReject(message.id, index)}
+            onSkip={onSkip ? () => onSkip(message.id, index) : undefined}
             confirmed={confirmStates[index] ?? null}
+            skipped={message.actionSkipped?.[index] ?? false}
             index={index}
           />
         </div>
@@ -102,6 +109,7 @@ export default function AiMessageBubble({
   message,
   onConfirm,
   onReject,
+  onSkip,
 }: AiMessageBubbleProps) {
   if (message.role === "system") {
     const isSuccess = message.content.includes("成功") || message.content.includes("已");
@@ -160,7 +168,9 @@ export default function AiMessageBubble({
             action={message.action}
             onConfirm={() => onConfirm(message.id)}
             onReject={() => onReject(message.id)}
+            onSkip={onSkip ? () => onSkip(message.id) : undefined}
             confirmed={message.confirmed ?? null}
+            skipped={message.skipped ?? false}
           />
         </div>
       </div>
@@ -182,6 +192,7 @@ export default function AiMessageBubble({
         hasUndecided={hasUndecided}
         onConfirm={onConfirm}
         onReject={onReject}
+        onSkip={onSkip}
       />
     );
   }
