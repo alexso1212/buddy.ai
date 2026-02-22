@@ -455,7 +455,7 @@ export default function GanttChart() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col h-screen">
+      <div className="flex flex-col h-screen pb-16 md:pb-0">
         <div className="flex items-center gap-3 p-3 border-b flex-wrap">
           <Skeleton className="h-9 w-32" />
           <Skeleton className="h-9 w-32" />
@@ -850,7 +850,7 @@ export default function GanttChart() {
 
   if (isMobile) {
     return (
-      <div className="flex flex-col h-screen bg-background">
+      <div className="flex flex-col h-screen bg-background pb-16 md:pb-0">
         <div className="flex items-center gap-2 p-2 border-b">
           <Button
             size="icon"
@@ -1191,7 +1191,7 @@ export default function GanttChart() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-screen bg-background pb-16 md:pb-0">
       <div className="flex items-center gap-2 md:gap-3 p-2 md:p-3 border-b flex-wrap">
         <Button
           size="icon"

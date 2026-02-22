@@ -867,77 +867,79 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-screen bg-background pb-16 md:pb-0">
       <header className="sticky top-0 z-50 flex items-center justify-between gap-2 px-3 md:px-4 py-2 md:py-3 border-b bg-background" data-testid="header">
         <div className="flex items-center gap-2 shrink-0">
           <img src={logoImg} alt="Deltapex" className="h-5 md:h-6 object-contain dark:invert" />
           <span className="text-sm font-medium tracking-tight hidden sm:inline">任务中心</span>
         </div>
-        <div className="flex items-center gap-1 md:gap-2 overflow-x-auto">
-          <Link href="/projects">
-            <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-projects">
-              <FolderKanban className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">项目</span>
-            </Button>
-          </Link>
-          {isCeoOrAdmin && (
-            <Link href="/overview">
-              <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-overview">
-                <BarChart3 className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">概览</span>
+        <div className="flex items-center gap-1 md:gap-2">
+          <div className="hidden md:flex items-center gap-1 md:gap-2 overflow-x-auto">
+            <Link href="/projects">
+              <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-projects">
+                <FolderKanban className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">项目</span>
               </Button>
             </Link>
-          )}
-          {isCeoOrAdmin && (
-            <Link href="/evaluation">
-              <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-evaluation">
-                <Award className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">考核</span>
+            {isCeoOrAdmin && (
+              <Link href="/overview">
+                <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-overview">
+                  <BarChart3 className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">概览</span>
+                </Button>
+              </Link>
+            )}
+            {isCeoOrAdmin && (
+              <Link href="/evaluation">
+                <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-evaluation">
+                  <Award className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">考核</span>
+                </Button>
+              </Link>
+            )}
+            {isCeoOrAdmin && (
+              <Link href="/organization">
+                <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-organization">
+                  <Building2 className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">组织</span>
+                </Button>
+              </Link>
+            )}
+            {isCeoOrAdmin && (
+              <Link href="/gantt">
+                <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-gantt">
+                  <GanttChart className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">甘特图</span>
+                </Button>
+              </Link>
+            )}
+            {user.role === "ceo" && (
+              <Link href="/sync">
+                <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-sync">
+                  <RefreshCw className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">同步</span>
+                </Button>
+              </Link>
+            )}
+            {isCeoOrAdmin && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 md:px-3 shrink-0"
+                onClick={async () => {
+                  try {
+                    const res = await fetch("/api/export/excel", { credentials: "include" });
+                    if (!res.ok) throw new Error("Export failed");
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `Deltapex_任务导出_${new Date().toISOString().split("T")[0]}.xlsx`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  } catch (err) {
+                  }
+                }}
+                data-testid="button-export-excel"
+              >
+                <Download className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">导出</span>
               </Button>
-            </Link>
-          )}
-          {isCeoOrAdmin && (
-            <Link href="/organization">
-              <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-organization">
-                <Building2 className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">组织</span>
-              </Button>
-            </Link>
-          )}
-          {isCeoOrAdmin && (
-            <Link href="/gantt">
-              <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-gantt">
-                <GanttChart className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">甘特图</span>
-              </Button>
-            </Link>
-          )}
-          {user.role === "ceo" && (
-            <Link href="/sync">
-              <Button variant="ghost" size="sm" className="h-8 px-2 md:px-3 shrink-0" data-testid="link-sync">
-                <RefreshCw className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">同步</span>
-              </Button>
-            </Link>
-          )}
-          {isCeoOrAdmin && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2 md:px-3 shrink-0"
-              onClick={async () => {
-                try {
-                  const res = await fetch("/api/export/excel", { credentials: "include" });
-                  if (!res.ok) throw new Error("Export failed");
-                  const blob = await res.blob();
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `Deltapex_任务导出_${new Date().toISOString().split("T")[0]}.xlsx`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                } catch (err) {
-                }
-              }}
-              data-testid="button-export-excel"
-            >
-              <Download className="w-4 h-4 md:mr-1" /><span className="hidden md:inline">导出</span>
-            </Button>
-          )}
+            )}
+          </div>
           <NotificationBell />
           <div className="flex items-center gap-1.5 shrink-0">
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: user.color ?? "#888" }} />

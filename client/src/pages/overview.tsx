@@ -116,7 +116,7 @@ export default function Overview() {
     : 0;
 
   return (
-    <div className="flex flex-col h-screen" style={{ backgroundColor: '#FAFAF9' }} data-testid="page-overview">
+    <div className="flex flex-col h-screen pb-16 md:pb-0" style={{ backgroundColor: '#FAFAF9' }} data-testid="page-overview">
       <header
         className="sticky top-0 z-50 flex items-center justify-between gap-2 px-3 md:px-4 py-2 md:py-3 border-b bg-background"
         data-testid="header-overview"

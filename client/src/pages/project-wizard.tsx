@@ -325,7 +325,7 @@ export default function ProjectWizard() {
   const showNext = step < 5 && !showSkip;
 
   return (
-    <div className="min-h-screen bg-background relative flex flex-col">
+    <div className="min-h-screen bg-background relative flex flex-col pb-16 md:pb-0">
       <div
         className="fixed top-0 left-0 h-[2px] bg-primary transition-all duration-300 z-50"
         style={{ width: `${progress}%` }}

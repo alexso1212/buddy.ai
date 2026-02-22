@@ -340,7 +340,7 @@ export default function Organization() {
   const tabTriggerClass = "bg-transparent rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-normal text-muted-foreground data-[state=active]:text-foreground data-[state=active]:font-medium data-[state=active]:border-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent";
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-screen bg-background pb-16 md:pb-0">
       <header className="sticky top-0 z-50 flex items-center gap-2 px-3 md:px-4 py-2 md:py-3 border-b bg-background" data-testid="org-header">
         <Link href="/dashboard">
           <Button variant="ghost" size="icon" className="shrink-0" data-testid="button-back">

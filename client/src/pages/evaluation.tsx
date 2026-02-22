@@ -993,7 +993,7 @@ export default function Evaluation() {
   const users = allUsers ?? [];
 
   return (
-    <div className="flex flex-col h-screen bg-neutral-50 dark:bg-background">
+    <div className="flex flex-col h-screen bg-neutral-50 dark:bg-background pb-16 md:pb-0">
       <header className="sticky top-0 z-50 flex items-center justify-between gap-2 px-3 md:px-4 py-2 md:py-3 border-b bg-background" data-testid="header-evaluation">
         <div className="flex items-center gap-2">
           <Link href="/dashboard">
