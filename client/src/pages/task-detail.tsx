@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -12,7 +12,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Plus, Pencil, Trash2, MessageSquare, GitBranch, ListTree, Activity, Scale, Check, X as XIcon, Loader2, UserPlus, Users } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, MessageSquare, GitBranch, ListTree, Activity, Scale, Check, X as XIcon, Loader2, UserPlus, Users, AlertCircle } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface TaskDetailResponse {
   data: Task & { 
@@ -193,6 +194,34 @@ function VerdictCard({ verdict, onAccept, onOverride }: {
   );
 }
 
+function findMentionedUsers(
+  title: string,
+  description: string | null,
+  users: User[],
+  excludeIds: number[]
+): Array<{ user: User; snippet: string }> {
+  const text = `${title} ${description || ""}`;
+  const results: Array<{ user: User; snippet: string }> = [];
+  const excludeSet = new Set(excludeIds);
+
+  for (const user of users) {
+    if (excludeSet.has(user.id)) continue;
+    const name = user.displayName;
+    if (!name) continue;
+    const idx = text.toLowerCase().indexOf(name.toLowerCase());
+    if (idx === -1) continue;
+    const start = Math.max(0, idx - 10);
+    const end = Math.min(text.length, idx + name.length + 20);
+    const snippet =
+      (start > 0 ? "..." : "") +
+      text.slice(start, end) +
+      (end < text.length ? "..." : "");
+    results.push({ user, snippet });
+  }
+
+  return results;
+}
+
 export default function TaskDetail() {
   const [, params] = useRoute('/tasks/:id');
   const [, setLocation] = useLocation();
@@ -335,6 +364,41 @@ export default function TaskDetail() {
   const [participantUserId, setParticipantUserId] = useState("");
   const [participantRole, setParticipantRole] = useState("participant");
 
+  const [dismissedUserIds, setDismissedUserIds] = useState<number[]>([]);
+  const [confirmingUserId, setConfirmingUserId] = useState<number | null>(null);
+  const [suggestionForms, setSuggestionForms] = useState<Record<number, { role: string; sync: boolean }>>({});
+
+  useEffect(() => {
+    if (!id) return;
+    try {
+      const stored = localStorage.getItem(`dismissed-suggestions-${id}`);
+      if (stored) setDismissedUserIds(JSON.parse(stored));
+    } catch {}
+  }, [id]);
+
+  const suggestedUsers = useMemo(() => {
+    if (!task || users.length === 0) return [];
+    const existingParticipantIds = participants.map((p) => p.userId);
+    const excludeIds = [
+      ...existingParticipantIds,
+      ...dismissedUserIds,
+      task.creatorId,
+      ...(task.assigneeId ? [task.assigneeId] : []),
+    ];
+    return findMentionedUsers(task.title, task.description, users, excludeIds);
+  }, [task, users, participants, dismissedUserIds]);
+
+  const handleDismissSuggestion = (userId: number) => {
+    const updated = [...dismissedUserIds, userId];
+    setDismissedUserIds(updated);
+    if (id) {
+      localStorage.setItem(`dismissed-suggestions-${id}`, JSON.stringify(updated));
+    }
+    if (confirmingUserId === userId) {
+      setConfirmingUserId(null);
+    }
+  };
+
   const addParticipantMutation = useMutation({
     mutationFn: async ({ userId, role }: { userId: number; role: string }) => {
       await apiRequest("POST", `/api/tasks/${id}/participants`, { userId, role });
@@ -365,6 +429,36 @@ export default function TaskDetail() {
       toast({ title: "移除失败", description: err.message, variant: "destructive" });
     },
   });
+
+  const getSuggestionForm = (userId: number) =>
+    suggestionForms[userId] || { role: "participant", sync: false };
+
+  const updateSuggestionForm = (userId: number, patch: Partial<{ role: string; sync: boolean }>) => {
+    setSuggestionForms((prev) => ({
+      ...prev,
+      [userId]: { ...getSuggestionForm(userId), ...patch },
+    }));
+  };
+
+  const handleConfirmSuggestion = (userId: number) => {
+    const form = getSuggestionForm(userId);
+    addParticipantMutation.mutate(
+      { userId, role: form.role },
+      {
+        onSuccess: () => {
+          setConfirmingUserId(null);
+          setSuggestionForms((prev) => {
+            const next = { ...prev };
+            delete next[userId];
+            return next;
+          });
+          if (form.sync) {
+            toast({ title: "已添加并通知相关人员" });
+          }
+        },
+      }
+    );
+  };
 
   const handleJudge = async () => {
     if (!task || !task.assigneeId) return;
@@ -596,6 +690,95 @@ export default function TaskDetail() {
             </div>
           )}
         </div>
+
+        {suggestedUsers.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-amber-200 dark:border-amber-700" data-testid="suggested-participants">
+            <div className="flex items-center gap-1.5 mb-3">
+              <AlertCircle className="h-4 w-4 text-amber-500" />
+              <h3 className="text-sm font-semibold text-amber-700 dark:text-amber-400">智能识别到以下相关人员</h3>
+            </div>
+            <div className="space-y-2">
+              {suggestedUsers.map(({ user, snippet }) => (
+                <div
+                  key={user.id}
+                  className="rounded-md border border-amber-200 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/10 p-3"
+                  data-testid={`suggestion-${user.id}`}
+                >
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-medium ${["bg-blue-500","bg-green-500","bg-purple-500","bg-pink-500","bg-amber-500","bg-teal-500","bg-indigo-500","bg-rose-500"][user.id % 8]}`}>
+                      {user.avatarUrl ? (
+                        <img src={user.avatarUrl} alt={user.displayName} className="w-full h-full rounded-full object-cover" />
+                      ) : (
+                        (user.displayName || "?").charAt(0).toUpperCase()
+                      )}
+                    </div>
+                    <span className="font-medium text-sm">{user.displayName}</span>
+                    <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
+                    <span className="text-xs text-muted-foreground truncate max-w-[200px]">{snippet}</span>
+                    <div className="ml-auto flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-green-700 dark:text-green-400 border-green-300 dark:border-green-700"
+                        onClick={() => {
+                          setConfirmingUserId(confirmingUserId === user.id ? null : user.id);
+                        }}
+                        data-testid={`btn-confirm-suggestion-${user.id}`}
+                      >
+                        确认添加
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDismissSuggestion(user.id)}
+                        data-testid={`btn-dismiss-suggestion-${user.id}`}
+                      >
+                        忽略
+                      </Button>
+                    </div>
+                  </div>
+                  {confirmingUserId === user.id && (
+                    <div className="mt-3 pt-3 border-t border-amber-200 dark:border-amber-700 space-y-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs text-muted-foreground">角色:</span>
+                        <Select value={getSuggestionForm(user.id).role} onValueChange={(v) => updateSuggestionForm(user.id, { role: v })}>
+                          <SelectTrigger className="w-[120px] text-xs" data-testid={`select-role-suggestion-${user.id}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="participant">参与人</SelectItem>
+                            <SelectItem value="reviewer">审核人</SelectItem>
+                            <SelectItem value="observer">观察者</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id={`sync-notify-${user.id}`}
+                          checked={getSuggestionForm(user.id).sync}
+                          onCheckedChange={(checked) => updateSuggestionForm(user.id, { sync: checked === true })}
+                          data-testid={`checkbox-sync-${user.id}`}
+                        />
+                        <label htmlFor={`sync-notify-${user.id}`} className="text-xs cursor-pointer">
+                          同步通知该人员
+                        </label>
+                        <span className="text-xs text-muted-foreground">关闭则仅记录，不通知对方</span>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => handleConfirmSuggestion(user.id)}
+                        disabled={addParticipantMutation.isPending}
+                        data-testid={`btn-submit-suggestion-${user.id}`}
+                      >
+                        {addParticipantMutation.isPending ? "添加中..." : "确认"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </Card>
 
       <div className={detailTab === "info" ? "" : "hidden md:block"}>
