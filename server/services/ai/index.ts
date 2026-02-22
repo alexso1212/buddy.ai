@@ -51,7 +51,7 @@ export async function chat(
     .replace('{{projectList}}', formatProjectList(allProjects));
 
   const response = await client.chat.completions.create({
-    model: 'anthropic/claude-haiku-4-5-20241022',
+    model: 'anthropic/claude-3.5-haiku',
     max_tokens: 1024,
     messages: [
       { role: 'system', content: systemPrompt },
