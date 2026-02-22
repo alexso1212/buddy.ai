@@ -13,6 +13,17 @@ type TaskWithParticipants = Task & {
   }>;
 };
 
+interface StatsOverview {
+  totalTasks: number;
+  inProgressCount: number;
+  completedCount: number;
+  overdueCount: number;
+  needsReviewCount: number;
+  todayNew: number;
+  weekNew: number;
+  monthNew: number;
+}
+
 type AttentionReason = "overdue" | "due-soon" | "needs-review";
 
 interface AttentionTask {
@@ -31,29 +42,29 @@ function Dashboard() {
     queryKey: ["/api/projects"],
   });
 
+  const { data: statsResponse, isLoading: statsLoading } = useQuery<{ data: StatsOverview }>({
+    queryKey: ["/api/stats/overview"],
+  });
+
   const tasks = tasksResponse?.data ?? [];
   const projects = projectsResponse?.data ?? [];
+  const stats = statsResponse?.data ?? {
+    totalTasks: 0,
+    inProgressCount: 0,
+    completedCount: 0,
+    overdueCount: 0,
+    needsReviewCount: 0,
+    todayNew: 0,
+    weekNew: 0,
+    monthNew: 0,
+  };
 
-  const isLoading = tasksLoading || projectsLoading;
+  const isLoading = tasksLoading || projectsLoading || statsLoading;
 
   const getProjectName = (projectId: number) => {
     const project = projects.find((p) => p.id === projectId);
     return project?.name ?? "未知项目";
   };
-
-  const totalTasks = tasks.length;
-  const inProgressCount = tasks.filter((t) => t.status === "in_progress").length;
-  const completedCount = tasks.filter((t) => t.status === "done").length;
-
-  const now = new Date();
-  const overdueCount = tasks.filter((t) => {
-    if (t.status === "done" || t.status === "cancelled") return false;
-    if (!t.dueDate) return false;
-    const dueDate = new Date(t.dueDate);
-    return dueDate < now;
-  }).length;
-
-  const needsReviewCount = tasks.filter((t) => t.needsReview).length;
 
   const formatDate = (dateVal: Date | string | null) => {
     if (!dateVal) return "";
@@ -221,27 +232,43 @@ function Dashboard() {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
         <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-total">
           <div className="text-muted-foreground text-sm font-medium">总任务数</div>
-          <div className="text-2xl md:text-3xl font-bold text-foreground mt-2">{totalTasks}</div>
+          <div className="text-2xl md:text-3xl font-bold text-foreground mt-2">{stats.totalTasks}</div>
         </div>
 
         <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-in-progress">
           <div className="text-muted-foreground text-sm font-medium">进行中</div>
-          <div className="text-2xl md:text-3xl font-bold text-yellow-600 mt-2">{inProgressCount}</div>
+          <div className="text-2xl md:text-3xl font-bold text-yellow-600 mt-2">{stats.inProgressCount}</div>
         </div>
 
         <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-completed">
           <div className="text-muted-foreground text-sm font-medium">已完成</div>
-          <div className="text-2xl md:text-3xl font-bold text-green-600 mt-2">{completedCount}</div>
+          <div className="text-2xl md:text-3xl font-bold text-green-600 mt-2">{stats.completedCount}</div>
         </div>
 
         <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-overdue">
           <div className="text-muted-foreground text-sm font-medium">逾期</div>
-          <div className="text-2xl md:text-3xl font-bold text-red-600 mt-2">{overdueCount}</div>
+          <div className="text-2xl md:text-3xl font-bold text-red-600 mt-2">{stats.overdueCount}</div>
         </div>
 
         <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-needs-review">
           <div className="text-muted-foreground text-sm font-medium">待补充</div>
-          <div className="text-2xl md:text-3xl font-bold text-amber-600 mt-2">{needsReviewCount}</div>
+          <div className="text-2xl md:text-3xl font-bold text-amber-600 mt-2">{stats.needsReviewCount}</div>
+        </div>
+      </div>
+
+      {/* Time-based Stats Row */}
+      <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-today-new">
+          <div className="text-muted-foreground text-sm font-medium">今日新增</div>
+          <div className="text-2xl md:text-3xl font-bold text-blue-600 mt-2">{stats.todayNew}</div>
+        </div>
+        <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-week-new">
+          <div className="text-muted-foreground text-sm font-medium">本周新增</div>
+          <div className="text-2xl md:text-3xl font-bold text-indigo-600 mt-2">{stats.weekNew}</div>
+        </div>
+        <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-month-new">
+          <div className="text-muted-foreground text-sm font-medium">本月新增</div>
+          <div className="text-2xl md:text-3xl font-bold text-purple-600 mt-2">{stats.monthNew}</div>
         </div>
       </div>
 

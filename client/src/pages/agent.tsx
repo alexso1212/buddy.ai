@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
 import { Trash2 } from "lucide-react";
@@ -211,6 +211,10 @@ export default function Agent() {
           content: result.message,
         };
         setMessages((prev) => [...prev, sysMsg]);
+
+        queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/stats/overview"] });
       } catch (err: any) {
         const sysMsg: Message = {
           id: nextId(),

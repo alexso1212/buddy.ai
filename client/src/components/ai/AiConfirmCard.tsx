@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Plus,
   Edit,
@@ -87,6 +88,9 @@ export default function AiConfirmCard({
   skipped,
   index,
 }: AiConfirmCardProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const buttonsDisabled = isSubmitting || confirmed !== null || !!skipped;
+
   const config = ACTION_CONFIG[action.actionType] || {
     icon: Search,
     label: action.actionType,
@@ -154,26 +158,35 @@ export default function AiConfirmCard({
         {confirmed === null && !skipped && (
           <div className="flex items-center gap-2">
             <button
-              onClick={onConfirm}
+              onClick={() => {
+                setIsSubmitting(true);
+                Promise.resolve(onConfirm()).catch(() => {}).finally(() => {
+                  setTimeout(() => setIsSubmitting(false), 500);
+                });
+              }}
+              disabled={buttonsDisabled}
               className={cn(
                 "flex-1 flex items-center justify-center gap-1.5",
                 "px-3 py-1.5 rounded-lg text-sm font-medium",
                 "bg-emerald-500 text-white",
-                "transition-colors duration-150"
+                "transition-colors duration-150",
+                buttonsDisabled && "opacity-50 cursor-not-allowed"
               )}
               data-testid={index !== undefined ? `confirm-action-${index}` : "confirm-action"}
             >
               <Check className="w-3.5 h-3.5" />
-              确认执行
+              {isSubmitting ? "执行中..." : "确认执行"}
             </button>
             {onSkip && (
               <button
                 onClick={onSkip}
+                disabled={buttonsDisabled}
                 className={cn(
                   "flex-1 flex items-center justify-center gap-1.5",
                   "px-3 py-1.5 rounded-lg text-sm font-medium",
                   "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400",
-                  "transition-colors duration-150"
+                  "transition-colors duration-150",
+                  buttonsDisabled && "opacity-50 cursor-not-allowed"
                 )}
                 data-testid={index !== undefined ? `skip-action-${index}` : "skip-action"}
               >
@@ -183,11 +196,13 @@ export default function AiConfirmCard({
             )}
             <button
               onClick={onReject}
+              disabled={buttonsDisabled}
               className={cn(
                 "flex-1 flex items-center justify-center gap-1.5",
                 "px-3 py-1.5 rounded-lg text-sm font-medium",
                 "bg-muted text-muted-foreground",
-                "transition-colors duration-150"
+                "transition-colors duration-150",
+                buttonsDisabled && "opacity-50 cursor-not-allowed"
               )}
               data-testid={index !== undefined ? `reject-action-${index}` : "reject-action"}
             >

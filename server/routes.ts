@@ -1001,6 +1001,53 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // ===================== Stats Overview =====================
+  app.get("/api/stats/overview", async (req, res) => {
+    try {
+      const tasks = await storage.getTasks({});
+      const now = new Date();
+
+      const totalTasks = tasks.length;
+      const inProgressCount = tasks.filter(t => t.status === "in_progress").length;
+      const completedCount = tasks.filter(t => t.status === "done").length;
+      const overdueCount = tasks.filter(t => {
+        if (t.status === "done" || t.status === "cancelled") return false;
+        if (!t.dueDate) return false;
+        return new Date(t.dueDate) < now;
+      }).length;
+      const needsReviewCount = tasks.filter(t => t.needsReview).length;
+
+      const todayStart = new Date(now);
+      todayStart.setHours(0, 0, 0, 0);
+
+      const weekStart = new Date(todayStart);
+      const dayOfWeek = weekStart.getDay();
+      const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      weekStart.setDate(weekStart.getDate() - mondayOffset);
+
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const todayNew = tasks.filter(t => new Date(t.createdAt) >= todayStart).length;
+      const weekNew = tasks.filter(t => new Date(t.createdAt) >= weekStart).length;
+      const monthNew = tasks.filter(t => new Date(t.createdAt) >= monthStart).length;
+
+      return res.json({
+        data: {
+          totalTasks,
+          inProgressCount,
+          completedCount,
+          overdueCount,
+          needsReviewCount,
+          todayNew,
+          weekNew,
+          monthNew,
+        }
+      });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
   // ===================== AI Chat =====================
   app.post("/api/ai/chat", async (req, res) => {
     try {
