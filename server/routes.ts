@@ -1,6 +1,8 @@
 import type { Express } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
+import { chat as aiChat } from "./services/ai/index";
+import { executeAction } from "./services/ai/actionExecutor";
 import {
   insertOrganizationSchema,
   insertDepartmentSchema,
@@ -635,6 +637,48 @@ export async function registerRoutes(server: Server, app: Express) {
 
       return res.json({ data: { nodes, links, projects: projectsInfo } });
     } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== AI Chat =====================
+  app.post("/api/ai/chat", async (req, res) => {
+    try {
+      const { message, conversationHistory, currentUserId } = req.body;
+      if (!message || typeof message !== 'string') {
+        return res.status(400).json({ error: 'message is required' });
+      }
+
+      const userId = currentUserId || 1;
+      const user = await storage.getUserById(userId);
+      const userName = user?.displayName || 'Unknown';
+
+      const result = await aiChat(
+        message,
+        conversationHistory || [],
+        { currentUserId: userId, currentUserName: userName }
+      );
+
+      return res.json({ data: result });
+    } catch (e: any) {
+      console.error('AI Chat error:', e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/ai/confirm", async (req, res) => {
+    try {
+      const { actionType, data, currentUserId } = req.body;
+      if (!actionType || !data) {
+        return res.status(400).json({ error: 'actionType and data are required' });
+      }
+
+      const userId = currentUserId || 1;
+      const result = await executeAction(actionType, data, userId);
+
+      return res.json({ data: result });
+    } catch (e: any) {
+      console.error('AI Confirm error:', e);
       return res.status(500).json({ error: e.message });
     }
   });
