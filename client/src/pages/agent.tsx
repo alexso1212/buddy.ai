@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
+import { Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface ActionPayload {
   actionType: string;
@@ -25,31 +27,83 @@ interface Message {
   actionSkipped?: boolean[];
 }
 
+const STORAGE_KEY = "ai_chat_history";
+
+const defaultWelcomeMessage: Message = {
+  id: "msg-1-0",
+  role: "assistant",
+  content: "你好！我是 AI 助手，可以帮你管理任务、创建项目、查询进度。请告诉我你需要什么帮助？",
+  type: "text",
+};
+
 let msgCounter = 0;
 function nextId() {
   return `msg-${++msgCounter}-${Date.now()}`;
 }
 
+function restoreMsgCounter(msgs: Message[]) {
+  for (const m of msgs) {
+    const match = m.id.match(/^msg-(\d+)-/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > msgCounter) msgCounter = num;
+    }
+  }
+}
+
+function loadFromSession(): Message[] | null {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return null;
+}
+
 export default function Agent() {
-  // Agent page uses negative margins to fill the content area edge-to-edge
-  // since the parent <main> has p-6 padding
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: nextId(),
-      role: "assistant",
-      content: "你好！我是 AI 助手，可以帮你管理任务、创建项目、查询进度。请告诉我你需要什么帮助？",
-      type: "text",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const stored = loadFromSession();
+    if (stored) {
+      restoreMsgCounter(stored);
+      return stored;
+    }
+    msgCounter = 0;
+    return [{ ...defaultWelcomeMessage, id: nextId() }];
+  });
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const conversationHistory = useRef<{ role: string; content: string }[]>([]);
+
+  useEffect(() => {
+    const stored = loadFromSession();
+    if (stored) {
+      conversationHistory.current = stored
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ role: m.role, content: m.content }));
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    } catch {}
+  }, [messages]);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, loading]);
+
+  const handleClearChat = useCallback(() => {
+    msgCounter = 0;
+    const welcome: Message = { ...defaultWelcomeMessage, id: nextId() };
+    setMessages([welcome]);
+    conversationHistory.current = [];
+    sessionStorage.removeItem(STORAGE_KEY);
+  }, []);
 
   const handleSend = useCallback(
     async (text: string) => {
@@ -213,9 +267,20 @@ export default function Agent() {
 
   return (
     <div className="flex flex-col h-full -m-6" data-testid="agent-page">
-      <div className="bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-4" data-testid="agent-header">
-        <h1 className="text-xl font-bold text-white">AI 助手</h1>
-        <p className="text-sm text-white/70">智能任务管理助手，帮你高效管理工作</p>
+      <div className="bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-4 flex items-start justify-between gap-4" data-testid="agent-header">
+        <div>
+          <h1 className="text-xl font-bold text-white">AI 助手</h1>
+          <p className="text-sm text-white/70">智能任务管理助手，帮你高效管理工作</p>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          data-testid="btn-clear-chat"
+          onClick={handleClearChat}
+          className="text-white hover:bg-white/20 no-default-hover-elevate shrink-0 mt-1"
+        >
+          <Trash2 className="w-5 h-5" />
+        </Button>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto py-4" data-testid="agent-messages">

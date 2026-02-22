@@ -1,8 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, CheckCircle } from "lucide-react";
 import type { Task, Project, User } from "@shared/schema";
-import ParticipantAvatars from "@/components/ParticipantAvatars";
 
 type TaskWithParticipants = Task & {
   participants?: Array<{
@@ -13,6 +12,13 @@ type TaskWithParticipants = Task & {
     user: User | null;
   }>;
 };
+
+type AttentionReason = "overdue" | "due-soon" | "needs-review";
+
+interface AttentionTask {
+  task: TaskWithParticipants;
+  reasons: AttentionReason[];
+}
 
 function Dashboard() {
   const [, navigate] = useLocation();
@@ -30,17 +36,15 @@ function Dashboard() {
 
   const isLoading = tasksLoading || projectsLoading;
 
-  // Helper to get project name by ID
   const getProjectName = (projectId: number) => {
     const project = projects.find((p) => p.id === projectId);
     return project?.name ?? "未知项目";
   };
 
-  // Calculate stats
   const totalTasks = tasks.length;
   const inProgressCount = tasks.filter((t) => t.status === "in_progress").length;
   const completedCount = tasks.filter((t) => t.status === "done").length;
-  
+
   const now = new Date();
   const overdueCount = tasks.filter((t) => {
     if (t.status === "done" || t.status === "cancelled") return false;
@@ -51,17 +55,12 @@ function Dashboard() {
 
   const needsReviewCount = tasks.filter((t) => t.needsReview).length;
 
-  // Get tasks assigned to userId=1
-  const myTasks = tasks.filter((t) => t.assigneeId === 1);
-
-  // Helper to format date as YYYY-MM-DD
   const formatDate = (dateVal: Date | string | null) => {
     if (!dateVal) return "";
     const date = typeof dateVal === "string" ? new Date(dateVal) : dateVal;
     return date.toISOString().split("T")[0];
   };
 
-  // Helper to get status color classes
   const getStatusColor = (status: string) => {
     switch (status) {
       case "todo":
@@ -79,7 +78,6 @@ function Dashboard() {
     }
   };
 
-  // Helper to get status label
   const getStatusLabel = (status: string) => {
     switch (status) {
       case "todo":
@@ -97,7 +95,6 @@ function Dashboard() {
     }
   };
 
-  // Helper to get priority color classes
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case "urgent":
@@ -113,7 +110,6 @@ function Dashboard() {
     }
   };
 
-  // Helper to get priority label
   const getPriorityLabel = (priority: string) => {
     switch (priority) {
       case "urgent":
@@ -129,6 +125,86 @@ function Dashboard() {
     }
   };
 
+  const getAttentionTasks = (): AttentionTask[] => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dayAfterTomorrow = new Date(today);
+    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
+
+    const result: AttentionTask[] = [];
+
+    for (const task of tasks) {
+      const reasons: AttentionReason[] = [];
+      const isActive = task.status !== "done" && task.status !== "cancelled";
+
+      if (isActive && task.dueDate) {
+        const dueDate = new Date(task.dueDate);
+        dueDate.setHours(0, 0, 0, 0);
+        if (dueDate < today) {
+          reasons.push("overdue");
+        } else if (dueDate >= today && dueDate < dayAfterTomorrow) {
+          reasons.push("due-soon");
+        }
+      }
+
+      if (task.needsReview) {
+        reasons.push("needs-review");
+      }
+
+      if (reasons.length > 0) {
+        result.push({ task, reasons });
+      }
+    }
+
+    result.sort((a, b) => {
+      const aDate = a.task.dueDate ? new Date(a.task.dueDate).getTime() : Infinity;
+      const bDate = b.task.dueDate ? new Date(b.task.dueDate).getTime() : Infinity;
+      return aDate - bDate;
+    });
+
+    return result;
+  };
+
+  const attentionTasks = isLoading ? [] : getAttentionTasks();
+
+  const getRowIndicatorColor = (reasons: AttentionReason[]) => {
+    if (reasons.includes("overdue")) return "bg-red-500";
+    if (reasons.includes("due-soon")) return "bg-orange-500";
+    return "bg-amber-500";
+  };
+
+  const renderReasonTags = (reasons: AttentionReason[]) => (
+    <div className="flex flex-wrap gap-1">
+      {reasons.includes("overdue") && (
+        <span
+          data-testid="attention-tag-overdue"
+          className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300"
+        >
+          逾期
+        </span>
+      )}
+      {reasons.includes("due-soon") && (
+        <span
+          data-testid="attention-tag-due-soon"
+          className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300"
+        >
+          即将到期
+        </span>
+      )}
+      {reasons.includes("needs-review") && (
+        <span
+          data-testid="attention-tag-needs-review"
+          className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
+        >
+          <AlertTriangle className="w-3 h-3 inline-block mr-0.5 -mt-0.5" />
+          待补充
+        </span>
+      )}
+    </div>
+  );
+
   if (isLoading) {
     return (
       <div className="p-6">
@@ -143,55 +219,52 @@ function Dashboard() {
 
       {/* Stats Cards Row */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-        {/* Total Tasks */}
         <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-total">
           <div className="text-muted-foreground text-sm font-medium">总任务数</div>
           <div className="text-2xl md:text-3xl font-bold text-foreground mt-2">{totalTasks}</div>
         </div>
 
-        {/* In Progress */}
         <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-in-progress">
           <div className="text-muted-foreground text-sm font-medium">进行中</div>
           <div className="text-2xl md:text-3xl font-bold text-yellow-600 mt-2">{inProgressCount}</div>
         </div>
 
-        {/* Completed */}
         <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-completed">
           <div className="text-muted-foreground text-sm font-medium">已完成</div>
           <div className="text-2xl md:text-3xl font-bold text-green-600 mt-2">{completedCount}</div>
         </div>
 
-        {/* Overdue */}
         <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-overdue">
           <div className="text-muted-foreground text-sm font-medium">逾期</div>
           <div className="text-2xl md:text-3xl font-bold text-red-600 mt-2">{overdueCount}</div>
         </div>
 
-        {/* Needs Review */}
         <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-needs-review">
           <div className="text-muted-foreground text-sm font-medium">待补充</div>
           <div className="text-2xl md:text-3xl font-bold text-amber-600 mt-2">{needsReviewCount}</div>
         </div>
       </div>
 
-      {/* My Tasks Section */}
-      <div className="bg-card rounded-lg shadow-sm overflow-hidden">
+      {/* Needs Attention Section */}
+      <div className="bg-card rounded-lg shadow-sm overflow-hidden" data-testid="attention-section">
         <div className="px-6 py-4 border-b border-border">
-          <h2 className="text-lg font-bold text-foreground">我的任务</h2>
+          <h2 className="text-lg font-bold text-foreground">需要关注</h2>
         </div>
 
-        {myTasks.length === 0 ? (
-          <div className="px-6 py-8 text-center text-muted-foreground">
-            暂无分配给你的任务
+        {attentionTasks.length === 0 ? (
+          <div className="px-6 py-8 text-center text-muted-foreground flex items-center justify-center gap-2" data-testid="attention-empty">
+            <CheckCircle className="w-5 h-5 text-green-500" />
+            <span>一切正常，没有需要紧急处理的事项</span>
           </div>
         ) : (
           <>
             {/* Desktop Table View */}
             <div className="hidden md:block">
               <div className="overflow-x-auto">
-                <table className="w-full" data-testid="my-tasks-table">
+                <table className="w-full" data-testid="attention-table">
                   <thead>
                     <tr className="border-b border-border bg-muted">
+                      <th className="w-1 px-0" />
                       <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                         标题
                       </th>
@@ -205,26 +278,26 @@ function Dashboard() {
                         优先级
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                        相关人员
+                        截止日期
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                        截止日期
+                        原因
                       </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {myTasks.map((task) => (
+                    {attentionTasks.map(({ task, reasons }) => (
                       <tr
                         key={task.id}
-                        data-testid={`task-row-${task.id}`}
+                        data-testid={`attention-task-${task.id}`}
                         onClick={() => navigate(`/tasks/${task.id}`)}
                         className="hover:bg-muted/50 cursor-pointer transition-colors"
                       >
+                        <td className="w-1 px-0">
+                          <div className={`w-1 h-full min-h-[48px] ${getRowIndicatorColor(reasons)}`} />
+                        </td>
                         <td className="px-6 py-4 text-sm text-foreground">
-                          <span className="flex items-center gap-1">
-                            {task.needsReview && <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />}
-                            {task.title}
-                          </span>
+                          {task.title}
                         </td>
                         <td className="px-6 py-4 text-sm text-muted-foreground">{getProjectName(task.projectId)}</td>
                         <td className="px-6 py-4">
@@ -241,11 +314,11 @@ function Dashboard() {
                             <span className="text-sm text-muted-foreground">—</span>
                           )}
                         </td>
-                        <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                          <ParticipantAvatars participants={task.participants || []} />
-                        </td>
                         <td className="px-6 py-4 text-sm text-muted-foreground">
                           {task.dueDate ? formatDate(task.dueDate) : "—"}
+                        </td>
+                        <td className="px-6 py-4">
+                          {renderReasonTags(reasons)}
                         </td>
                       </tr>
                     ))}
@@ -256,48 +329,43 @@ function Dashboard() {
 
             {/* Mobile Card List View */}
             <div className="md:hidden divide-y divide-border">
-              {myTasks.map((task) => (
+              {attentionTasks.map(({ task, reasons }) => (
                 <div
                   key={task.id}
-                  data-testid={`task-card-${task.id}`}
+                  data-testid={`attention-task-${task.id}`}
                   onClick={() => navigate(`/tasks/${task.id}`)}
-                  className="p-4 cursor-pointer active:bg-muted/50 transition-colors"
+                  className="flex cursor-pointer active:bg-muted/50 transition-colors"
                 >
-                  {/* Title */}
-                  <div className="font-bold text-foreground mb-1 flex items-center gap-1">
-                    {task.needsReview && <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />}
-                    {task.title}
-                  </div>
+                  <div className={`w-1 flex-shrink-0 ${getRowIndicatorColor(reasons)}`} />
+                  <div className="flex-1 p-4">
+                    <div className="font-bold text-foreground mb-1">
+                      {task.title}
+                    </div>
 
-                  {/* Project Name */}
-                  <div className="text-xs text-muted-foreground mb-3">
-                    {getProjectName(task.projectId)}
-                  </div>
+                    <div className="text-xs text-muted-foreground mb-3">
+                      {getProjectName(task.projectId)}
+                    </div>
 
-                  {/* Status and Priority Badges Row */}
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
-                      {getStatusLabel(task.status)}
-                    </span>
-                    {task.priority && (
-                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(task.priority)}`}>
-                        {getPriorityLabel(task.priority)}
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
+                        {getStatusLabel(task.status)}
                       </span>
-                    )}
+                      {task.priority && (
+                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(task.priority)}`}>
+                          {getPriorityLabel(task.priority)}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      {task.dueDate && (
+                        <div className="text-xs text-muted-foreground">
+                          截止: {formatDate(task.dueDate)}
+                        </div>
+                      )}
+                      {renderReasonTags(reasons)}
+                    </div>
                   </div>
-
-                  {(task.participants?.length ?? 0) > 0 && (
-                    <div className="mt-2 mb-3" onClick={(e) => e.stopPropagation()}>
-                      <ParticipantAvatars participants={task.participants || []} />
-                    </div>
-                  )}
-
-                  {/* Due Date */}
-                  {task.dueDate && (
-                    <div className="text-xs text-muted-foreground">
-                      截止: {formatDate(task.dueDate)}
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
