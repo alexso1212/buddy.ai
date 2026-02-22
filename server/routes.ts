@@ -1735,7 +1735,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/projects", authMiddleware, async (req, res) => {
     try {
       const user = req.user!;
-      const projects = await storage.getVisibleProjects(user.id, user.role);
+      const projects = await storage.getVisibleProjects(user.id, user.role, user.dept_id ?? undefined);
       const projectsWithStats = await Promise.all(projects.map(async (p) => {
         const stats = await storage.getProjectTaskStats(p.id);
         const mods = await storage.getModulesByProjectId(p.id);
@@ -1756,7 +1756,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const userId = req.user!.id;
       const userRole = req.user!.role;
       if (userRole !== 'ceo') {
-        const visibleProjects = await storage.getVisibleProjects(userId, userRole);
+        const visibleProjects = await storage.getVisibleProjects(userId, userRole, req.user!.dept_id ?? undefined);
         if (!visibleProjects.some(p => p.id === project.id)) {
           return res.status(403).json({ message: "No access to this project" });
         }
@@ -1829,6 +1829,45 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         }
       }
 
+      const memberIds: string[] = Array.isArray(rawData.member_ids) ? rawData.member_ids : [];
+      const autoClaimIds = new Set<string>();
+
+      if (projectData.created_by) autoClaimIds.add(projectData.created_by);
+      if (projectData.owner_id) autoClaimIds.add(projectData.owner_id);
+
+      for (const memberId of memberIds) {
+        if (memberId === user.id) continue;
+        const isAutoClaimUser = autoClaimIds.has(memberId);
+        await storage.createTaskClaim({
+          project_id: project.id,
+          user_id: memberId,
+          status: isAutoClaimUser ? 'claimed' : 'pending',
+          claimed_at: isAutoClaimUser ? new Date() : undefined,
+        });
+      }
+
+      for (const autoId of autoClaimIds) {
+        if (!memberIds.includes(autoId)) {
+          await storage.createTaskClaim({
+            project_id: project.id,
+            user_id: autoId,
+            status: 'claimed',
+            claimed_at: new Date(),
+          });
+        }
+      }
+
+      for (const memberId of memberIds) {
+        if (autoClaimIds.has(memberId)) continue;
+        const project_title = projectData.title;
+        await storage.createNotification({
+          user_id: memberId,
+          type: 'claim_request',
+          title: `你被分配到项目「${project_title}」，请认领`,
+          content: `项目创建者 ${user.name} 邀请你参与此项目`,
+        });
+      }
+
       res.json(project);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -1853,6 +1892,35 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
 
       const updated = await storage.updateProject(id, patchData);
+
+      if (Array.isArray(req.body.member_ids)) {
+        const oldMembers = project.member_ids ?? [];
+        const newMembers = req.body.member_ids as string[];
+        const addedMembers = newMembers.filter((m: string) => !oldMembers.includes(m));
+
+        for (const memberId of addedMembers) {
+          const existingClaim = await storage.getClaimByProjectAndUser(id, memberId);
+          if (!existingClaim) {
+            const isAutoClaimUser = memberId === project.owner_id || memberId === project.created_by;
+            await storage.createTaskClaim({
+              project_id: id,
+              user_id: memberId,
+              status: isAutoClaimUser ? 'claimed' : 'pending',
+              claimed_at: isAutoClaimUser ? new Date() : undefined,
+            });
+
+            if (!isAutoClaimUser) {
+              await storage.createNotification({
+                user_id: memberId,
+                type: 'claim_request',
+                title: `你被分配到项目「${project.title}」，请认领`,
+                content: `${user.name} 邀请你参与此项目`,
+              });
+            }
+          }
+        }
+      }
+
       res.json(updated);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -1874,6 +1942,108 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         status: 'completed',
         completed_at: new Date(),
       });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ---- Task Claims ----
+  app.get("/api/claims/pending", authMiddleware, async (req, res) => {
+    try {
+      const user = req.user!;
+      const claims = await storage.getPendingClaimsWithProjects(user.id);
+      const ownerIds = [...new Set(claims.map(c => c.project.owner_id).filter(Boolean))] as string[];
+      const allUsers = await storage.getAllUsers();
+      const userMap: Record<string, string> = {};
+      for (const u of allUsers) {
+        userMap[u.id] = u.name;
+      }
+      const result = claims.map(c => ({
+        ...c,
+        ownerName: c.project.owner_id ? userMap[c.project.owner_id] || "未知" : "未指定",
+      }));
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/claims/:projectId", authMiddleware, async (req, res) => {
+    try {
+      const projectId = req.params.projectId as string;
+      const user = req.user!;
+      const project = await storage.getProjectById(projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+
+      if (user.id !== project.created_by && user.id !== project.owner_id && user.role !== 'ceo') {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const claims = await storage.getClaimsByProjectId(projectId);
+      res.json(claims);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/claims/:projectId/claim", authMiddleware, async (req, res) => {
+    try {
+      const projectId = req.params.projectId as string;
+      const user = req.user!;
+
+      const claim = await storage.getClaimByProjectAndUser(projectId, user.id);
+      if (!claim) return res.status(404).json({ message: "No claim found for this project" });
+      if (claim.status === 'claimed') return res.status(400).json({ message: "Already claimed" });
+
+      const updated = await storage.updateTaskClaim(claim.id, {
+        status: 'claimed',
+        claimed_at: new Date(),
+      });
+
+      const project = await storage.getProjectById(projectId);
+      if (project && project.created_by && project.created_by !== user.id) {
+        await storage.createNotification({
+          user_id: project.created_by,
+          type: 'claim_accepted',
+          title: `${user.name} 已认领项目「${project.title}」`,
+        });
+      }
+
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/claims/:projectId/reject", authMiddleware, async (req, res) => {
+    try {
+      const projectId = req.params.projectId as string;
+      const user = req.user!;
+      const { reason } = req.body;
+
+      if (!reason?.trim()) return res.status(400).json({ message: "Reason required" });
+
+      const claim = await storage.getClaimByProjectAndUser(projectId, user.id);
+      if (!claim) return res.status(404).json({ message: "No claim found for this project" });
+      if (claim.status !== 'pending') return res.status(400).json({ message: "Claim is not pending" });
+
+      const updated = await storage.updateTaskClaim(claim.id, {
+        status: 'rejected',
+        rejected_at: new Date(),
+        reject_reason: reason.trim(),
+      });
+
+      const project = await storage.getProjectById(projectId);
+      if (project && project.created_by && project.created_by !== user.id) {
+        await storage.createNotification({
+          user_id: project.created_by,
+          type: 'claim_rejected',
+          title: `${user.name} 拒绝了项目「${project.title}」`,
+          content: `原因：${reason.trim()}`,
+        });
+      }
+
       res.json(updated);
     } catch (e: any) {
       res.status(500).json({ message: e.message });

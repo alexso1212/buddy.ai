@@ -13,6 +13,8 @@ import {
   type OrgChange,
   type Project,
   type Module,
+  type TaskClaim,
+  type CrossDeptRequest,
   users,
   phases,
   tasks,
@@ -29,6 +31,8 @@ import {
   projects,
   modules,
   analysis_cache,
+  task_claims,
+  cross_dept_requests,
 } from "@shared/schema";
 import { eq, inArray, and, desc, sql, like, gte, lte, ne, count, asc, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -436,7 +440,7 @@ export class DatabaseStorage {
     id: string; title: string; description?: string; objective?: string;
     acceptance_criteria?: string; owner_id?: string; created_by?: string;
     deadline?: string; status?: string; priority?: number; scope?: string;
-    department_id?: string; color?: string; sort_order?: number;
+    department_id?: string; color?: string; sort_order?: number; member_ids?: string[];
   }): Promise<Project> {
     const [result] = await db.insert(projects).values(project).returning();
     return result;
@@ -452,28 +456,28 @@ export class DatabaseStorage {
     return result;
   }
 
-  async getVisibleProjects(userId: string, userRole: string): Promise<Project[]> {
+  async getVisibleProjects(userId: string, userRole: string, userDeptId?: string): Promise<Project[]> {
     if (userRole === 'ceo') {
       return db.select().from(projects).orderBy(asc(projects.sort_order));
     }
-    // Get projects where user is owner, creator, or assigned to a task in the project
-    const assignedProjectIds = await db
-      .selectDistinct({ project_id: tasks.project_id })
-      .from(tasks)
-      .innerJoin(task_assignees, eq(tasks.id, task_assignees.task_id))
-      .where(and(eq(task_assignees.user_id, userId), sql`${tasks.project_id} IS NOT NULL`));
-    
-    const projectIds = assignedProjectIds.map(r => r.project_id).filter(Boolean) as string[];
-    
-    const conditions = [
+
+    const claimedIds = await this.getClaimedProjectIds(userId);
+
+    const conditions: any[] = [
       eq(projects.owner_id, userId),
       eq(projects.created_by, userId),
-      sql`${userId} = ANY(${projects.member_ids})`,
     ];
-    if (projectIds.length > 0) {
-      conditions.push(inArray(projects.id, projectIds));
+
+    if (claimedIds.length > 0) {
+      conditions.push(inArray(projects.id, claimedIds));
     }
-    
+
+    if (userRole === 'head' && userDeptId) {
+      conditions.push(
+        and(eq(projects.scope, 'department'), eq(projects.department_id, userDeptId))
+      );
+    }
+
     return db.select().from(projects).where(or(...conditions)).orderBy(asc(projects.sort_order));
   }
 
@@ -520,6 +524,53 @@ export class DatabaseStorage {
 
   async getTasksByModuleId(moduleId: string): Promise<Task[]> {
     return db.select().from(tasks).where(eq(tasks.module_id, moduleId));
+  }
+
+  // ---- Task Claims ----
+  async createTaskClaim(claim: { project_id: string; user_id: string; status?: string; claimed_at?: Date }): Promise<TaskClaim> {
+    const [result] = await db.insert(task_claims).values(claim).returning();
+    return result;
+  }
+
+  async getClaimsByProjectId(projectId: string): Promise<TaskClaim[]> {
+    return db.select().from(task_claims).where(eq(task_claims.project_id, projectId));
+  }
+
+  async getClaimByProjectAndUser(projectId: string, userId: string): Promise<TaskClaim | undefined> {
+    const [result] = await db.select().from(task_claims).where(
+      and(eq(task_claims.project_id, projectId), eq(task_claims.user_id, userId))
+    );
+    return result;
+  }
+
+  async getClaimsByUserId(userId: string): Promise<TaskClaim[]> {
+    return db.select().from(task_claims).where(eq(task_claims.user_id, userId));
+  }
+
+  async updateTaskClaim(id: number, updates: Partial<{
+    status: string; claimed_at: Date; rejected_at: Date; reject_reason: string;
+    escalated_at: Date; escalated_to: string; escalation_result: string; escalation_note: string;
+    nudge_count: number; last_nudge_at: Date;
+  }>): Promise<TaskClaim | undefined> {
+    const [result] = await db.update(task_claims).set(updates).where(eq(task_claims.id, id)).returning();
+    return result;
+  }
+
+  async getPendingClaimsWithProjects(userId: string): Promise<(TaskClaim & { project: Project })[]> {
+    const rows = await db
+      .select({ claim: task_claims, project: projects })
+      .from(task_claims)
+      .innerJoin(projects, eq(task_claims.project_id, projects.id))
+      .where(and(eq(task_claims.user_id, userId), eq(task_claims.status, 'pending')))
+      .orderBy(desc(task_claims.created_at));
+    return rows.map(r => ({ ...r.claim, project: r.project }));
+  }
+
+  async getClaimedProjectIds(userId: string): Promise<string[]> {
+    const rows = await db.select({ project_id: task_claims.project_id })
+      .from(task_claims)
+      .where(and(eq(task_claims.user_id, userId), eq(task_claims.status, 'claimed')));
+    return rows.map(r => r.project_id);
   }
 }
 

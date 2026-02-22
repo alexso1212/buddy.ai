@@ -1,14 +1,20 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { FolderKanban, Plus, ArrowLeft, Calendar, User as UserIcon } from "lucide-react";
-import type { Project, User } from "@shared/schema";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { FolderKanban, Plus, ArrowLeft, Calendar, User as UserIcon, Bell, Check, X } from "lucide-react";
+import type { Project, User, TaskClaim } from "@shared/schema";
+
+type PendingClaim = TaskClaim & { project: Project; ownerName: string };
 
 function getProjectStatus(project: Project): { label: string; color: string } {
   if (project.status === "completed") {
@@ -31,6 +37,169 @@ function LoadingSkeleton() {
         <Skeleton key={i} className="h-40 rounded-lg" />
       ))}
     </div>
+  );
+}
+
+function PendingClaimsSection() {
+  const { toast } = useToast();
+  const [rejectProjectId, setRejectProjectId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+
+  const { data: pendingClaims } = useQuery<PendingClaim[]>({
+    queryKey: ["/api/claims/pending"],
+  });
+
+  const claimMutation = useMutation({
+    mutationFn: async (projectId: string) => {
+      await apiRequest("POST", `/api/claims/${projectId}/claim`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/claims/pending"] });
+      toast({ title: "认领成功", description: "项目已成功认领" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "认领失败", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async ({ projectId, reason }: { projectId: string; reason: string }) => {
+      await apiRequest("POST", `/api/claims/${projectId}/reject`, { reason });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/claims/pending"] });
+      setRejectProjectId(null);
+      setRejectReason("");
+      toast({ title: "已拒绝", description: "已成功拒绝该项目认领" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "拒绝失败", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const formatDeadline = (deadline: string | null) => {
+    if (!deadline) return null;
+    try {
+      return new Date(deadline).toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
+    } catch {
+      return deadline;
+    }
+  };
+
+  if (!pendingClaims || pendingClaims.length === 0) return null;
+
+  return (
+    <>
+      <div
+        className="mb-6 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20 p-4"
+        data-testid="section-pending-claims"
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+          <h2 className="text-sm font-medium text-amber-800 dark:text-amber-300">
+            待认领
+          </h2>
+          <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border-0">
+            {pendingClaims.length}
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {pendingClaims.map((claim) => {
+            const deadline = formatDeadline(claim.project.deadline);
+            return (
+              <Card
+                key={claim.id}
+                className="overflow-hidden"
+                data-testid={`card-pending-claim-${claim.project_id}`}
+              >
+                <div className="p-3 md:p-4">
+                  <h3 className="text-sm font-medium truncate mb-1" data-testid={`text-claim-title-${claim.project_id}`}>
+                    {claim.project.title}
+                  </h3>
+
+                  {claim.project.objective && (
+                    <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
+                      {claim.project.objective}
+                    </p>
+                  )}
+
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground mb-3 flex-wrap">
+                    <div className="flex items-center gap-1">
+                      <UserIcon className="w-3 h-3" />
+                      <span>{claim.ownerName}</span>
+                    </div>
+                    {deadline && (
+                      <div className="flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        <span>{deadline}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                      size="sm"
+                      onClick={() => claimMutation.mutate(claim.project_id)}
+                      disabled={claimMutation.isPending}
+                      data-testid={`button-claim-${claim.project_id}`}
+                    >
+                      <Check className="w-3.5 h-3.5 mr-1" />
+                      认领
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setRejectProjectId(claim.project_id)}
+                      disabled={rejectMutation.isPending}
+                      data-testid={`button-reject-${claim.project_id}`}
+                    >
+                      <X className="w-3.5 h-3.5 mr-1" />
+                      拒绝
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+
+      <Dialog open={!!rejectProjectId} onOpenChange={(open) => { if (!open) { setRejectProjectId(null); setRejectReason(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>拒绝认领</DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <Textarea
+              placeholder="请输入拒绝原因..."
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              data-testid="input-reject-reason"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRejectProjectId(null); setRejectReason(""); }} data-testid="button-reject-cancel">
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!rejectReason.trim() || rejectMutation.isPending}
+              onClick={() => {
+                if (rejectProjectId) {
+                  rejectMutation.mutate({ projectId: rejectProjectId, reason: rejectReason.trim() });
+                }
+              }}
+              data-testid="button-reject-confirm"
+            >
+              确认拒绝
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -108,6 +277,8 @@ export default function ProjectsPage() {
 
       <ScrollArea className="flex-1">
         <div className="p-4">
+          <PendingClaimsSection />
+
           {projectsLoading ? (
             <LoadingSkeleton />
           ) : sortedProjects.length === 0 ? (

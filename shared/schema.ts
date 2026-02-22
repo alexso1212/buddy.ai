@@ -193,6 +193,40 @@ export const org_changes = pgTable("org_changes", {
 });
 
 
+export const task_claims = pgTable("task_claims", {
+  id: serial("id").primaryKey(),
+  project_id: text("project_id").notNull().references(() => projects.id),
+  user_id: text("user_id").notNull().references(() => users.id),
+  status: text("status").default("pending"),
+  notified_at: timestamp("notified_at").defaultNow(),
+  claimed_at: timestamp("claimed_at"),
+  rejected_at: timestamp("rejected_at"),
+  reject_reason: text("reject_reason"),
+  escalated_at: timestamp("escalated_at"),
+  escalated_to: text("escalated_to").references(() => users.id),
+  escalation_result: text("escalation_result"),
+  escalation_note: text("escalation_note"),
+  nudge_count: integer("nudge_count").default(0),
+  last_nudge_at: timestamp("last_nudge_at"),
+  created_at: timestamp("created_at").defaultNow(),
+});
+
+export const cross_dept_requests = pgTable("cross_dept_requests", {
+  id: serial("id").primaryKey(),
+  project_id: text("project_id").notNull().references(() => projects.id),
+  requested_by: text("requested_by").notNull().references(() => users.id),
+  target_user_id: text("target_user_id").notNull().references(() => users.id),
+  target_dept_id: text("target_dept_id").references(() => departments.id),
+  status: text("status").default("pending"),
+  ceo_approved: boolean("ceo_approved"),
+  ceo_approved_at: timestamp("ceo_approved_at"),
+  dept_head_id: text("dept_head_id").references(() => users.id),
+  dept_head_approved: boolean("dept_head_approved"),
+  dept_head_approved_at: timestamp("dept_head_approved_at"),
+  reject_reason: text("reject_reason"),
+  created_at: timestamp("created_at").defaultNow(),
+});
+
 export const insertDepartmentSchema = createInsertSchema(departments).omit({
   created_at: true,
 });
@@ -314,3 +348,19 @@ export type Project = typeof projects.$inferSelect;
 
 export type InsertModule = z.infer<typeof insertModuleSchema>;
 export type Module = typeof modules.$inferSelect;
+
+export const insertTaskClaimSchema = createInsertSchema(task_claims).omit({
+  id: true,
+  created_at: true,
+});
+
+export const insertCrossDeptRequestSchema = createInsertSchema(cross_dept_requests).omit({
+  id: true,
+  created_at: true,
+});
+
+export type InsertTaskClaim = z.infer<typeof insertTaskClaimSchema>;
+export type TaskClaim = typeof task_claims.$inferSelect;
+
+export type InsertCrossDeptRequest = z.infer<typeof insertCrossDeptRequestSchema>;
+export type CrossDeptRequest = typeof cross_dept_requests.$inferSelect;
