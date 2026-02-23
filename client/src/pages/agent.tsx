@@ -551,11 +551,11 @@ function ConversationListView({
         >
           <div style={{
             height: 40,
-            background: 'linear-gradient(to top, rgba(30,29,26,0.85) 0%, transparent 100%)',
+            background: 'linear-gradient(to top, rgba(30,29,26,0.55) 0%, transparent 100%)',
           }} />
           <div style={{
             position: 'absolute', top: 40, left: 0, right: 0, bottom: 0,
-            background: 'rgba(30,29,26,0.85)',
+            background: 'rgba(30,29,26,0.55)',
           }} />
         </div>
 
@@ -565,12 +565,12 @@ function ConversationListView({
             ref={searchBarRef}
             style={{
               flex: 1, height: 44,
-              background: 'rgba(255, 255, 255, 0.08)',
-              backdropFilter: 'blur(24px) saturate(1.4) brightness(1.05)',
-              WebkitBackdropFilter: 'blur(24px) saturate(1.4) brightness(1.05)',
+              background: 'rgba(255, 255, 255, 0.04)',
+              backdropFilter: 'blur(40px) saturate(1.8) brightness(1.1)',
+              WebkitBackdropFilter: 'blur(40px) saturate(1.8) brightness(1.1)',
               borderRadius: 20,
-              border: '1px solid rgba(255,255,255,0.12)',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.15)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              boxShadow: 'inset 0 0.5px 0 rgba(255,255,255,0.12), inset 0 -0.5px 0 rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.1)',
               padding: '0 14px',
               display: 'flex', alignItems: 'center', gap: 8,
             }}
