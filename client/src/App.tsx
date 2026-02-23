@@ -1514,18 +1514,7 @@ function App() {
               position: 'absolute',
               top: 0, left: 0, right: 0,
               height: 108,
-              background: 'linear-gradient(to bottom, rgba(30,29,26,0.92) 0%, rgba(30,29,26,0.60) 50%, transparent 100%)',
-              backdropFilter: 'blur(20px) saturate(1.4) brightness(1.05)',
-              WebkitBackdropFilter: 'blur(20px) saturate(1.4) brightness(1.05)',
-              zIndex: 10,
-              pointerEvents: 'none',
-            }} />
-            <div className="md:hidden" style={{
-              position: 'absolute',
-              top: 0, left: 0, right: 0,
-              height: 108,
-              background: 'linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 40%, rgba(255,255,255,0.04) 60%, transparent 100%)',
-              borderBottom: '1px solid rgba(255,255,255,0.04)',
+              background: 'linear-gradient(to bottom, rgba(30,29,26,0.99) 0%, transparent 100%)',
               zIndex: 10,
               pointerEvents: 'none',
             }} />
