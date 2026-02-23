@@ -1388,13 +1388,25 @@ export async function registerRoutes(server: Server, app: Express) {
       const user = await storage.getUserById(userId);
       const userName = user?.displayName || 'Unknown';
 
+      let activeConvId = conversationId || null;
+
+      if (!activeConvId) {
+        const title = message.slice(0, 30) + (message.length > 30 ? '...' : '');
+        const newConv = await storage.createConversation({
+          title,
+          orgId,
+          userId,
+        });
+        activeConvId = newConv.id;
+      }
+
       let history = conversationHistory || [];
-      if (conversationId && history.length === 0) {
-        const conv = await storage.getConversationById(conversationId);
+      if (activeConvId && history.length === 0) {
+        const conv = await storage.getConversationById(activeConvId);
         if (conv && conv.orgId !== orgId) {
           return res.status(403).json({ error: 'Access denied to this conversation' });
         }
-        const dbMessages = await storage.getChatMessages(conversationId);
+        const dbMessages = await storage.getChatMessages(activeConvId);
         history = dbMessages
           .filter(m => m.role === 'user' || m.role === 'assistant')
           .map(m => ({ role: m.role, content: m.content }));
@@ -1417,7 +1429,7 @@ export async function registerRoutes(server: Server, app: Express) {
           await storage.createTokenUsage({
             orgId,
             userId,
-            conversationId: conversationId || null,
+            conversationId: activeConvId || null,
             model: result.tokenUsage.model,
             promptTokens: result.tokenUsage.promptTokens,
             completionTokens: result.tokenUsage.completionTokens,
@@ -1430,7 +1442,7 @@ export async function registerRoutes(server: Server, app: Express) {
         }
       }
 
-      return res.json({ data: result });
+      return res.json({ data: { ...result, conversationId: activeConvId } });
     } catch (e: any) {
       console.error('AI Chat error:', e);
       return res.status(500).json({ error: e.message });

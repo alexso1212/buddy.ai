@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation, useSearch } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
-import { Trash2, ListPlus, BarChart3, Users, CheckSquare } from "lucide-react";
+import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
@@ -44,6 +46,22 @@ interface Message {
   followUpSubmitted?: boolean;
 }
 
+interface Conversation {
+  id: number;
+  orgId: number;
+  userId: number | null;
+  title: string;
+  starred: boolean;
+  projectId: number | null;
+  projectName: string | null;
+  visibility: string;
+  systemPrompt: string | null;
+  isArchived: boolean;
+  lastMessageAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 const SUGGESTIONS = [
   { text: "创建新任务", icon: ListPlus },
   { text: "查看项目进度", icon: BarChart3 },
@@ -54,6 +72,266 @@ const SUGGESTIONS = [
 let msgCounter = 0;
 function nextId() {
   return `msg-${++msgCounter}-${Date.now()}`;
+}
+
+function formatRelativeTime(dateStr: string): string {
+  const now = new Date();
+  const date = new Date(dateStr);
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHour = Math.floor(diffMs / 3600000);
+
+  if (diffMin < 1) return "刚刚";
+  if (diffMin < 60) return `${diffMin}分钟前`;
+  if (diffHour < 24) return `${diffHour}小时前`;
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function groupConversationsByDate(conversations: Conversation[]): { label: string; items: Conversation[] }[] {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterdayStart = new Date(todayStart.getTime() - 86400000);
+
+  const today: Conversation[] = [];
+  const yesterday: Conversation[] = [];
+  const earlier: Conversation[] = [];
+
+  for (const conv of conversations) {
+    const d = new Date(conv.updatedAt);
+    if (d >= todayStart) {
+      today.push(conv);
+    } else if (d >= yesterdayStart) {
+      yesterday.push(conv);
+    } else {
+      earlier.push(conv);
+    }
+  }
+
+  const groups: { label: string; items: Conversation[] }[] = [];
+  if (today.length > 0) groups.push({ label: "今天", items: today });
+  if (yesterday.length > 0) groups.push({ label: "昨天", items: yesterday });
+  if (earlier.length > 0) groups.push({ label: "更早", items: earlier });
+  return groups;
+}
+
+function ConversationItem({
+  conv,
+  onSelect,
+  onArchive,
+}: {
+  conv: Conversation;
+  onSelect: (id: number) => void;
+  onArchive: (id: number) => void;
+}) {
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [swiped, setSwiped] = useState(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showArchive, setShowArchive] = useState(false);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    longPressTimer.current = setTimeout(() => {
+      setShowArchive(true);
+    }, 500);
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    const diffX = touchStartX.current - e.touches[0].clientX;
+    const diffY = Math.abs(e.touches[0].clientY - touchStartY.current);
+    if (diffY > 30) return;
+    if (diffX > 0) {
+      setSwipeOffset(Math.min(diffX, 100));
+    } else {
+      setSwipeOffset(0);
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    if (swipeOffset >= 80) {
+      setSwiped(true);
+      setSwipeOffset(80);
+    } else {
+      setSwiped(false);
+      setSwipeOffset(0);
+    }
+  }, [swipeOffset]);
+
+  const handleClick = useCallback(() => {
+    if (swiped || showArchive) {
+      setSwiped(false);
+      setShowArchive(false);
+      setSwipeOffset(0);
+      return;
+    }
+    onSelect(conv.id);
+  }, [swiped, showArchive, onSelect, conv.id]);
+
+  return (
+    <div
+      className="relative overflow-hidden group"
+      data-testid={`conv-item-${conv.id}`}
+    >
+      <div
+        className="absolute right-0 top-0 bottom-0 flex items-center justify-center"
+        style={{ width: 80 }}
+      >
+        <button
+          onClick={(e) => { e.stopPropagation(); onArchive(conv.id); }}
+          className="flex items-center justify-center gap-1.5 h-full w-full text-white text-sm font-medium"
+          style={{ background: '#ef4444' }}
+          data-testid={`btn-archive-${conv.id}`}
+        >
+          <Archive className="w-4 h-4" />
+          归档
+        </button>
+      </div>
+
+      <div
+        className="relative bg-[var(--bg-primary,hsl(var(--background)))] px-4 py-3 cursor-pointer transition-transform hover:bg-black/5 dark:hover:bg-white/5"
+        style={{
+          transform: `translateX(${-swipeOffset}px)`,
+          transition: swipeOffset === 0 || swiped ? 'transform 200ms ease' : 'none',
+          borderBottom: '1px solid var(--border-subtle)',
+        }}
+        onClick={handleClick}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        data-testid={`conv-row-${conv.id}`}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <span
+            className="text-sm text-[var(--text-primary)] truncate flex-1"
+            style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            data-testid={`conv-title-${conv.id}`}
+          >
+            {conv.title}
+          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <span
+              className="text-xs text-[var(--text-secondary)]"
+              data-testid={`conv-time-${conv.id}`}
+            >
+              {formatRelativeTime(conv.updatedAt)}
+            </span>
+            <button
+              onClick={(e) => { e.stopPropagation(); onArchive(conv.id); }}
+              className="hidden md:flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors invisible group-hover:visible"
+              data-testid={`btn-archive-hover-${conv.id}`}
+            >
+              <Archive className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {showArchive && (
+        <div
+          className="absolute inset-0 flex items-center justify-end bg-black/10 dark:bg-white/5"
+          onClick={() => setShowArchive(false)}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); onArchive(conv.id); setShowArchive(false); }}
+            className="flex items-center gap-1.5 mr-3 px-4 py-2 rounded-lg text-white text-sm font-medium"
+            style={{ background: '#ef4444' }}
+            data-testid={`btn-archive-longpress-${conv.id}`}
+          >
+            <Archive className="w-4 h-4" />
+            归档
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConversationListView({
+  onSelectConversation,
+  onNewConversation,
+}: {
+  onSelectConversation: (id: number) => void;
+  onNewConversation: () => void;
+}) {
+  const { toast } = useToast();
+
+  const { data, isLoading } = useQuery<{ data: Conversation[] }>({
+    queryKey: ['/api/conversations'],
+  });
+
+  const conversations = (data?.data || []).filter(c => !c.isArchived);
+
+  const handleArchive = useCallback(async (id: number) => {
+    try {
+      await apiRequest("PATCH", `/api/conversations/${id}`, { isArchived: true });
+      queryClient.invalidateQueries({ queryKey: ['/api/conversations'] });
+      toast({ title: "对话已归档" });
+    } catch (err: any) {
+      toast({ title: "归档失败", description: err.message, variant: "destructive" });
+    }
+  }, [toast]);
+
+  const groups = groupConversationsByDate(conversations);
+
+  return (
+    <div className="flex flex-col h-full" data-testid="conversation-list-view">
+      <div className="px-4 pt-4 pb-2">
+        <button
+          onClick={onNewConversation}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white font-medium text-sm transition-colors"
+          style={{ background: 'var(--brand)' }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--brand-hover, var(--brand))'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--brand)'; }}
+          data-testid="btn-new-conversation"
+        >
+          <Plus className="w-4 h-4" />
+          新对话
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto" data-testid="conversation-list">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-16" data-testid="conversations-loading">
+            <ThinkingAnimation size={36} label="加载中" />
+          </div>
+        ) : groups.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-3" data-testid="conversations-empty">
+            <MessageSquare className="w-10 h-10 text-[var(--text-secondary)] opacity-30" />
+            <span className="text-sm text-[var(--text-secondary)]">暂无对话</span>
+          </div>
+        ) : (
+          groups.map((group) => (
+            <div key={group.label} data-testid={`conv-group-${group.label}`}>
+              <div className="px-4 pt-4 pb-1">
+                <span className="text-xs font-medium text-[var(--text-secondary)]" data-testid={`conv-group-label-${group.label}`}>
+                  {group.label}
+                </span>
+              </div>
+              {group.items.map((conv) => (
+                <ConversationItem
+                  key={conv.id}
+                  conv={conv}
+                  onSelect={onSelectConversation}
+                  onArchive={handleArchive}
+                />
+              ))}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function Agent() {
@@ -68,12 +346,19 @@ export default function Agent() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const conversationHistory = useRef<{ role: string; content: string }[]>([]);
   const [activeConvSystemPrompt, setActiveConvSystemPrompt] = useState<string | undefined>();
+  const [convTitle, setConvTitle] = useState<string>("");
+  const [showChat, setShowChat] = useState(false);
+
+  const isDetailView = activeConvId !== null || messages.length > 0 || showChat;
 
   useEffect(() => {
     if (!activeConvId) {
-      setMessages([]);
-      conversationHistory.current = [];
-      setActiveConvSystemPrompt(undefined);
+      if (!showChat) {
+        setMessages([]);
+        conversationHistory.current = [];
+        setActiveConvSystemPrompt(undefined);
+        setConvTitle("");
+      }
       return;
     }
 
@@ -86,6 +371,9 @@ export default function Agent() {
           setActiveConvSystemPrompt(convJson.data.systemPrompt);
         } else {
           setActiveConvSystemPrompt(undefined);
+        }
+        if (convJson.data?.title) {
+          setConvTitle(convJson.data.title);
         }
 
         const res = await fetch(`/api/conversations/${activeConvId}/messages`);
@@ -167,20 +455,6 @@ export default function Agent() {
     async (text: string) => {
       let convId = activeConvId;
 
-      if (!convId) {
-        try {
-          const title = text.slice(0, 30) + (text.length > 30 ? '...' : '');
-          const res = await apiRequest("POST", "/api/conversations", { title });
-          const json = await res.json();
-          convId = json.data.id;
-          navigate(`/agent?conv=${convId}`, { replace: true });
-          queryClient.invalidateQueries({ queryKey: ['/api/conversations'] });
-        } catch (err) {
-          console.error('Failed to create conversation:', err);
-          return;
-        }
-      }
-
       const userMsg: Message = {
         id: nextId(),
         role: "user",
@@ -190,18 +464,30 @@ export default function Agent() {
       setMessages((prev) => [...prev, userMsg]);
       setLoading(true);
 
-      saveMessageToDB(convId!, userMsg);
       conversationHistory.current.push({ role: "user", content: text });
 
       try {
         const res = await apiRequest("POST", "/api/ai/chat", {
           message: text,
           conversationHistory: conversationHistory.current,
+          conversationId: convId || undefined,
           currentUserId: 1,
           systemPrompt: activeConvSystemPrompt || undefined,
         });
         const json = await res.json();
         const data = json.data;
+
+        if (data.conversationId && !convId) {
+          convId = data.conversationId;
+          const title = text.slice(0, 30) + (text.length > 30 ? '...' : '');
+          setConvTitle(title);
+          navigate(`/agent?conv=${convId}`, { replace: true });
+          queryClient.invalidateQueries({ queryKey: ['/api/conversations'] });
+        }
+
+        if (convId) {
+          saveMessageToDB(convId, userMsg);
+        }
 
         let assistantContent = "";
         if (data.type === "text") {
@@ -236,7 +522,7 @@ export default function Agent() {
             : undefined,
         };
         setMessages((prev) => [...prev, assistantMsg]);
-        saveMessageToDB(convId!, assistantMsg);
+        if (convId) saveMessageToDB(convId, assistantMsg);
       } catch (err: any) {
         const errorMsg: Message = {
           id: nextId(),
@@ -244,7 +530,7 @@ export default function Agent() {
           content: err.message || "请求失败，请稍后重试",
         };
         setMessages((prev) => [...prev, errorMsg]);
-        saveMessageToDB(convId!, errorMsg);
+        if (convId) saveMessageToDB(convId, errorMsg);
       } finally {
         setLoading(false);
       }
@@ -270,6 +556,7 @@ export default function Agent() {
           actionType: action.actionType,
           data: action.data,
           currentUserId: 1,
+          conversationId: activeConvId || undefined,
         });
         const json = await res.json();
         const result = json.data;
@@ -372,6 +659,7 @@ export default function Agent() {
         const res = await apiRequest("POST", "/api/ai/chat", {
           message: `用户已选择完成信息，请直接用这些数据创建确认卡片（不要再追问）：${JSON.stringify(mergedData)}`,
           conversationHistory: conversationHistory.current,
+          conversationId: activeConvId || undefined,
           currentUserId: 1,
           systemPrompt: activeConvSystemPrompt || undefined,
         });
@@ -427,10 +715,81 @@ export default function Agent() {
     [activeConvId, activeConvSystemPrompt, saveMessageToDB]
   );
 
+  const handleBack = useCallback(() => {
+    setMessages([]);
+    conversationHistory.current = [];
+    setConvTitle("");
+    setShowChat(false);
+    setActiveConvSystemPrompt(undefined);
+    navigate('/agent', { replace: true });
+  }, [navigate]);
+
+  const handleNewConversation = useCallback(() => {
+    setMessages([]);
+    conversationHistory.current = [];
+    setConvTitle("");
+    setActiveConvSystemPrompt(undefined);
+    setShowChat(true);
+    navigate('/agent', { replace: true });
+  }, [navigate]);
+
+  const handleSelectConversation = useCallback((id: number) => {
+    setShowChat(true);
+    navigate(`/agent?conv=${id}`, { replace: true });
+  }, [navigate]);
+
   const showWelcome = !activeConvId && messages.length === 0;
+
+  if (!isDetailView) {
+    return (
+      <div className="flex flex-col h-full bg-transparent" data-testid="agent-page">
+        <ConversationListView
+          onSelectConversation={handleSelectConversation}
+          onNewConversation={handleNewConversation}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-transparent" data-testid="agent-page">
+      {activeConvId && (
+        <div
+          className="flex items-center gap-3 px-3 py-2 shrink-0"
+          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+          data-testid="chat-header"
+        >
+          <button
+            onClick={handleBack}
+            className="flex items-center gap-1 text-sm text-[var(--text-secondary)] cursor-pointer"
+            data-testid="btn-back"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            返回
+          </button>
+          <span
+            className="flex-1 text-sm font-medium text-[var(--text-primary)] truncate text-center"
+            data-testid="text-conv-title"
+          >
+            {convTitle}
+          </span>
+          <div className="w-[52px]" />
+        </div>
+      )}
+
+      {!activeConvId && messages.length === 0 && (
+        <div className="flex items-center px-3 py-2 shrink-0">
+          <button
+            onClick={handleBack}
+            className="flex items-center gap-1 text-sm text-[var(--text-secondary)] cursor-pointer"
+            data-testid="btn-back-list"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            返回
+          </button>
+        </div>
+      )}
+
       {showWelcome ? (
         <div className="flex-1 flex flex-col items-center justify-center px-3">
           <div className="flex flex-col items-center gap-4 mb-8">
