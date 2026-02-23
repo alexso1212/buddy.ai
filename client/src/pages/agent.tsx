@@ -499,6 +499,100 @@ function ConversationListView({
   );
 }
 
+function BottomInputArea({ onSend, loading }: { onSend: (msg: string) => void; loading: boolean }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const bgRef = useRef<HTMLDivElement>(null);
+
+  const updateMask = useCallback(() => {
+    const container = containerRef.current;
+    const composer = composerRef.current;
+    const bg = bgRef.current;
+    if (!container || !composer || !bg) return;
+
+    const cRect = container.getBoundingClientRect();
+    const iRect = composer.getBoundingClientRect();
+
+    const x = iRect.left - cRect.left;
+    const y = iRect.top - cRect.top;
+    const w = iRect.width;
+    const h = iRect.height;
+    const r = 20;
+
+    const mask = `
+      url("data:image/svg+xml,${encodeURIComponent(
+        `<svg xmlns='http://www.w3.org/2000/svg' width='${cRect.width}' height='${cRect.height}'>` +
+        `<defs><mask id='m'>` +
+        `<rect width='100%' height='100%' fill='white'/>` +
+        `<rect x='${x}' y='${y}' width='${w}' height='${h}' rx='${r}' ry='${r}' fill='black'/>` +
+        `</mask></defs>` +
+        `<rect width='100%' height='100%' fill='white' mask='url(%23m)'/>` +
+        `</svg>`
+      )}")
+    `;
+    bg.style.maskImage = mask;
+    bg.style.maskSize = '100% 100%';
+    (bg.style as any).webkitMaskImage = mask;
+    (bg.style as any).webkitMaskSize = '100% 100%';
+  }, []);
+
+  useEffect(() => {
+    updateMask();
+    const observer = new ResizeObserver(updateMask);
+    if (containerRef.current) observer.observe(containerRef.current);
+    if (composerRef.current) observer.observe(composerRef.current);
+    window.addEventListener('resize', updateMask);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateMask);
+    };
+  }, [updateMask]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="absolute bottom-0 left-0 right-0"
+      style={{ zIndex: 10, pointerEvents: 'none' }}
+      data-testid="agent-input"
+    >
+      <div
+        ref={bgRef}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+        }}
+      >
+        <div style={{
+          height: 40,
+          background: 'linear-gradient(to top, rgba(30,29,26,0.85) 0%, transparent 100%)',
+        }} />
+        <div style={{
+          position: 'absolute',
+          top: 40,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(30,29,26,0.85)',
+        }} />
+      </div>
+
+      <div style={{ height: 40 }} />
+      <div style={{ pointerEvents: 'auto' }}>
+        <div className="max-w-3xl mx-auto px-3">
+          <div ref={composerRef}>
+            <AiInputBar onSend={onSend} loading={loading} />
+          </div>
+        </div>
+      </div>
+      <div style={{
+        height: 'calc(3.33vh + env(safe-area-inset-bottom, 0px))',
+        pointerEvents: 'none',
+      }} />
+    </div>
+  );
+}
+
 export default function Agent() {
   const [, navigate] = useLocation();
   const searchString = useSearch();
@@ -1010,32 +1104,7 @@ export default function Agent() {
         </div>
       )}
 
-      <div
-        className="absolute bottom-0 left-0 right-0"
-        style={{
-          zIndex: 10,
-          pointerEvents: 'none',
-        }}
-        data-testid="agent-input"
-      >
-        <div style={{
-          height: 40,
-          background: 'linear-gradient(to top, rgba(30,29,26,0.85) 0%, transparent 100%)',
-          pointerEvents: 'none',
-        }} />
-        <div style={{
-          pointerEvents: 'auto',
-        }}>
-          <div className="max-w-3xl mx-auto px-3">
-            <AiInputBar onSend={handleSend} loading={loading} />
-          </div>
-        </div>
-        <div style={{
-          height: 'calc(3.33vh + env(safe-area-inset-bottom, 0px))',
-          background: 'rgba(30,29,26,0.85)',
-          pointerEvents: 'none',
-        }} />
-      </div>
+      <BottomInputArea onSend={handleSend} loading={loading} />
     </div>
   );
 }
