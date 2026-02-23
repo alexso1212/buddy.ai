@@ -478,28 +478,35 @@ function ConversationListView({
     const h = sRect.height;
     const r = 20;
 
-    const mask = `url("data:image/svg+xml,${encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' width='${cRect.width}' height='${cRect.height}'>` +
-      `<defs><mask id='m'>` +
-      `<rect width='100%' height='100%' fill='white'/>` +
-      `<rect x='${x}' y='${y}' width='${w}' height='${h}' rx='${r}' ry='${r}' fill='black'/>` +
-      `</mask></defs>` +
-      `<rect width='100%' height='100%' fill='white' mask='url(%23m)'/>` +
-      `</svg>`
-    )}")`;
-    bg.style.maskImage = mask;
+    const canvas = document.createElement('canvas');
+    canvas.width = cRect.width;
+    canvas.height = cRect.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    ctx.fill();
+
+    const dataUrl = canvas.toDataURL();
+    bg.style.maskImage = `url(${dataUrl})`;
     bg.style.maskSize = '100% 100%';
-    (bg.style as any).webkitMaskImage = mask;
+    (bg.style as any).webkitMaskImage = `url(${dataUrl})`;
     (bg.style as any).webkitMaskSize = '100% 100%';
   }, []);
 
   useEffect(() => {
     updateSearchMask();
+    const timer = setTimeout(updateSearchMask, 100);
     const observer = new ResizeObserver(updateSearchMask);
     if (searchContainerRef.current) observer.observe(searchContainerRef.current);
     if (searchBarRef.current) observer.observe(searchBarRef.current);
     window.addEventListener('resize', updateSearchMask);
-    return () => { observer.disconnect(); window.removeEventListener('resize', updateSearchMask); };
+    return () => { clearTimeout(timer); observer.disconnect(); window.removeEventListener('resize', updateSearchMask); };
   }, [updateSearchMask]);
 
   return (
@@ -570,7 +577,7 @@ function ConversationListView({
               border: '1px solid rgba(255,255,255,0.15)',
               padding: '0 14px',
               display: 'flex', alignItems: 'center', gap: 8,
-              background: 'rgba(38, 38, 36, 0.60)',
+              background: 'rgba(38, 38, 36, 0.10)',
             }}
           >
             <Search size={16} color="#7A7874" />
