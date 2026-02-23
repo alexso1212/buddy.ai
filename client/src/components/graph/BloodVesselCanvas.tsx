@@ -4,6 +4,7 @@ interface Particle {
   linkIdx: number;
   t: number;
   baseT: number;
+  radius: number;
 }
 
 interface PipeStyle {
@@ -20,12 +21,12 @@ function getPipeStyle(srcStatus: string, tgtStatus: string): PipeStyle {
   switch (srcStatus) {
     case 'done':
       return tgtStatus === 'done'
-        ? { particleColor: '#10b981', baseColor: '#10b981', baseOpacity: 0.10, speed: 0.005, hasParticles: true, isBlocked: false, isDashed: false }
-        : { particleColor: '#e0ecff', baseColor: '#e0ecff', baseOpacity: 0.08, speed: 0.005, hasParticles: true, isBlocked: false, isDashed: false };
+        ? { particleColor: '#10b981', baseColor: '#10b981', baseOpacity: 0.10, speed: 0.010, hasParticles: true, isBlocked: false, isDashed: false }
+        : { particleColor: '#e0ecff', baseColor: '#e0ecff', baseOpacity: 0.08, speed: 0.010, hasParticles: true, isBlocked: false, isDashed: false };
     case 'in_progress':
-      return { particleColor: '#f59e0b', baseColor: '#f59e0b', baseOpacity: 0.08, speed: 0.002, hasParticles: true, isBlocked: false, isDashed: false };
+      return { particleColor: '#f59e0b', baseColor: '#f59e0b', baseOpacity: 0.08, speed: 0.004, hasParticles: true, isBlocked: false, isDashed: false };
     case 'in_review':
-      return { particleColor: '#3b82f6', baseColor: '#3b82f6', baseOpacity: 0.08, speed: 0.004, hasParticles: true, isBlocked: false, isDashed: false };
+      return { particleColor: '#3b82f6', baseColor: '#3b82f6', baseOpacity: 0.08, speed: 0.008, hasParticles: true, isBlocked: false, isDashed: false };
     case 'blocked':
       return { particleColor: '#ef4444', baseColor: '#ef4444', baseOpacity: 0.08, speed: 0, hasParticles: true, isBlocked: true, isDashed: false };
     default:
@@ -33,7 +34,7 @@ function getPipeStyle(srcStatus: string, tgtStatus: string): PipeStyle {
   }
 }
 
-const MAX_PARTICLES = 500;
+const MAX_PARTICLES = 1500;
 
 function initParticles(links: any[]): Particle[] {
   const particles: Particle[] = [];
@@ -44,12 +45,15 @@ function initParticles(links: any[]): Particle[] {
     if (!src || !tgt) continue;
     const style = getPipeStyle(src.status || '', tgt.status || '');
     if (!style.hasParticles) continue;
-    const count = 2 + Math.floor(Math.random() * 4);
+    const count = style.isBlocked
+      ? 15 + Math.floor(Math.random() * 6)
+      : 8 + Math.floor(Math.random() * 8);
     for (let j = 0; j < count && particles.length < MAX_PARTICLES; j++) {
       particles.push({
         linkIdx: i,
         t: style.isBlocked ? Math.random() * 0.15 : Math.random(),
         baseT: Math.random() * 0.15,
+        radius: 1 + Math.random() * 0.5,
       });
     }
   }
@@ -135,7 +139,7 @@ export default function BloodVesselCanvas({
 
         if (flowing) {
           const style = getPipeStyle(src.status || '', tgt.status || '');
-          opacity = 0.5;
+          opacity = style.baseOpacity;
           color = style.baseColor;
           lineWidth = 1.5;
           dashed = style.isDashed;
@@ -200,10 +204,10 @@ export default function BloodVesselCanvas({
 
           ctx.globalAlpha = pAlpha;
           ctx.shadowColor = style.particleColor;
-          ctx.shadowBlur = 10;
+          ctx.shadowBlur = 2 + p.radius * 0.5;
           ctx.fillStyle = style.particleColor;
           ctx.beginPath();
-          ctx.arc(px, py, 6, 0, Math.PI * 2);
+          ctx.arc(px, py, p.radius, 0, Math.PI * 2);
           ctx.fill();
         }
 
@@ -213,12 +217,6 @@ export default function BloodVesselCanvas({
 
       ctx.restore();
       ctx.globalAlpha = 1;
-
-      if (t % 60 === 0) {
-        const pipeCount = links.filter((l: any) => l.source?.x != null && l.target?.x != null).length;
-        const particleCount = flowing && k >= 0.3 ? particlesRef.current.filter((p: Particle) => p.linkIdx < links.length).length : 0;
-        console.log(`[BloodVessel] frame=${t} pipes=${pipeCount} particles=${particleCount} zoom=${k.toFixed(2)} bloodFlow=${flowing}`);
-      }
 
       animFrameRef.current = requestAnimationFrame(animate);
     }
