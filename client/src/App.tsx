@@ -1655,7 +1655,7 @@ function App() {
             </>
 
           <main
-            className="flex-1 overflow-auto ml-0 md:ml-[260px]"
+            className="flex-1 overflow-auto ml-0 md:ml-[260px] relative"
             data-testid="content-area"
           >
             <Router />

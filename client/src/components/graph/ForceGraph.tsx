@@ -239,7 +239,7 @@ export default function ForceGraph({ nodes, links, projects, onNodeClick }: Forc
       .attr("font-size", 11)
       .attr("text-anchor", "middle")
       .attr("dy", (d) => getRadius(d) + 14)
-      .attr("fill", "#374151")
+      .attr("fill", "#d1d5db")
       .attr("pointer-events", "none");
 
     function updateLabelVisibility() {
@@ -327,8 +327,15 @@ export default function ForceGraph({ nodes, links, projects, onNodeClick }: Forc
   }, [nodes, links, projects, onNodeClick, getRadius]);
 
   return (
-    <div ref={containerRef} style={{ width: "100%", height: "100%" }}>
-      <svg ref={svgRef} style={{ width: "100%", height: "100%" }} />
+    <div
+      ref={containerRef}
+      data-testid="graph-canvas"
+      style={{ width: '100%', height: '100%' }}
+    >
+      <svg
+        ref={svgRef}
+        style={{ width: '100%', height: '100%', display: 'block' }}
+      />
     </div>
   );
 }
