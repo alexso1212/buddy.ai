@@ -1024,14 +1024,17 @@ export default function Agent() {
           pointerEvents: 'none',
         }} />
         <div style={{
-          background: 'rgba(30,29,26,0.85)',
           pointerEvents: 'auto',
-          paddingBottom: 'calc(3.33vh + env(safe-area-inset-bottom, 0px))',
         }}>
           <div className="max-w-3xl mx-auto px-3">
             <AiInputBar onSend={handleSend} loading={loading} />
           </div>
         </div>
+        <div style={{
+          height: 'calc(3.33vh + env(safe-area-inset-bottom, 0px))',
+          background: 'rgba(30,29,26,0.85)',
+          pointerEvents: 'none',
+        }} />
       </div>
     </div>
   );
