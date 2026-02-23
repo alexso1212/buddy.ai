@@ -53,7 +53,7 @@ export default function AiInputBar({ onSend, loading }: AiInputBarProps) {
         data-testid="ai-composer"
       >
         <div style={{
-          background: 'rgba(52, 53, 51, 0.95)',
+          background: '#262624',
           borderRadius: 19,
           overflow: 'hidden',
         }}>
