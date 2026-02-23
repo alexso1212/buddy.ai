@@ -45,14 +45,18 @@ export default function AiInputBar({ onSend, loading }: AiInputBarProps) {
     <div style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <div
         style={{
-          background: 'rgba(44, 43, 40, 0.80)',
           borderRadius: 20,
-          border: '1px solid rgba(255,255,255,0.08)',
-          boxShadow: 'inset 0 0.5px 0 rgba(255,255,255,0.08)',
-          overflow: 'hidden',
+          position: 'relative' as const,
+          padding: 1,
+          background: 'linear-gradient(to bottom, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.12) 40%, rgba(255,255,255,0.06) 100%)',
         }}
         data-testid="ai-composer"
       >
+        <div style={{
+          background: 'rgba(44, 43, 40, 0.95)',
+          borderRadius: 19,
+          overflow: 'hidden',
+        }}>
         <textarea
           ref={textareaRef}
           value={value}
@@ -135,6 +139,7 @@ export default function AiInputBar({ onSend, loading }: AiInputBarProps) {
           >
             <ArrowUp className="w-4 h-4 text-white" strokeWidth={2.5} />
           </button>
+        </div>
         </div>
       </div>
     </div>
