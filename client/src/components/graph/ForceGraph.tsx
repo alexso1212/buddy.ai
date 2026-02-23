@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback } from "react";
 import * as d3 from "d3";
 import type { ColorByOption } from "./GraphSettings";
+import BloodVesselCanvas from "./BloodVesselCanvas";
 
 export interface GraphNode {
   id: number;
@@ -41,6 +42,7 @@ interface ForceGraphProps {
   links: GraphLink[];
   projects: ProjectInfo[];
   colorBy?: ColorByOption;
+  bloodFlow?: boolean;
   onNodeClick?: (node: GraphNode) => void;
 }
 
@@ -136,12 +138,14 @@ function truncate(str: string, max: number) {
   return str.slice(0, max) + "\u2026";
 }
 
-export default function ForceGraph({ nodes, links, projects, colorBy = 'department', onNodeClick }: ForceGraphProps) {
+export default function ForceGraph({ nodes, links, projects, colorBy = 'department', bloodFlow = true, onNodeClick }: ForceGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const simulationRef = useRef<d3.Simulation<SimNode, SimLink> | null>(null);
   const zoomTransformRef = useRef<d3.ZoomTransform>(d3.zoomIdentity);
   const colorByRef = useRef(colorBy);
+  const simLinksRef = useRef<any[]>([]);
+  const hoveredNodeIdRef = useRef<number | null>(null);
 
   const getRadius = useCallback((node: GraphNode) => 12 + node.weight * 4, []);
 
@@ -172,30 +176,6 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
 
     const defs = svg.append("defs");
 
-    defs.append("marker")
-      .attr("id", "arrow-blocking")
-      .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 20)
-      .attr("refY", 0)
-      .attr("markerWidth", 8)
-      .attr("markerHeight", 8)
-      .attr("orient", "auto")
-      .append("path")
-      .attr("d", "M0,-5L10,0L0,5")
-      .attr("fill", "#ef4444");
-
-    defs.append("marker")
-      .attr("id", "arrow-normal")
-      .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 20)
-      .attr("refY", 0)
-      .attr("markerWidth", 8)
-      .attr("markerHeight", 8)
-      .attr("orient", "auto")
-      .append("path")
-      .attr("d", "M0,-5L10,0L0,5")
-      .attr("fill", "#10b981");
-
     defs.append("filter")
       .attr("id", "brighten")
       .append("feComponentTransfer")
@@ -215,6 +195,8 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
     const simNodes: SimNode[] = nodes.map((n) => ({ ...n }));
     const simLinks: SimLink[] = links.map((l) => ({ ...l }));
 
+    simLinksRef.current = simLinks;
+
     const simulation = d3.forceSimulation<SimNode>(simNodes)
       .force(
         "link",
@@ -232,21 +214,8 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
 
     simulationRef.current = simulation;
 
-    const linkGroup = g.append("g").attr("class", "links");
     const nodeGroup = g.append("g").attr("class", "nodes");
     const labelGroup = g.append("g").attr("class", "labels");
-
-    const linkElements = linkGroup
-      .selectAll<SVGLineElement, SimLink>("line")
-      .data(simLinks)
-      .enter()
-      .append("line")
-      .attr("stroke", (d) => (d.isBlocking ? "#ef4444" : "#10b981"))
-      .attr("stroke-width", (d) => (d.isBlocking ? 3 : 1.5))
-      .attr("stroke-dasharray", (d) => (d.isBlocking ? "none" : "5,5"))
-      .attr("marker-end", (d) =>
-        d.isBlocking ? "url(#arrow-blocking)" : "url(#arrow-normal)"
-      );
 
     const nodeElements = nodeGroup
       .selectAll<SVGGElement, SimNode>("g")
@@ -314,6 +283,8 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
     }
 
     nodeElements.on("mouseover", function (_event, hoveredNode) {
+      hoveredNodeIdRef.current = hoveredNode.id;
+
       const connectedIds = new Set<number>();
       connectedIds.add(hoveredNode.id);
       simLinks.forEach((l) => {
@@ -331,18 +302,12 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
         return `translate(${d.x},${d.y}) scale(1.3)`;
       });
 
-      linkElements.attr("opacity", (l) => {
-        const srcId = typeof l.source === "object" ? l.source.id : l.source;
-        const tgtId = typeof l.target === "object" ? l.target.id : l.target;
-        return srcId === hoveredNode.id || tgtId === hoveredNode.id ? 1 : 0.2;
-      });
-
       labelElements.attr("opacity", (d) => (connectedIds.has(d.id) ? 1 : 0.2));
     });
 
     nodeElements.on("mouseout", function () {
+      hoveredNodeIdRef.current = null;
       nodeElements.attr("opacity", 1).attr("filter", "none");
-      linkElements.attr("opacity", 1);
       labelElements.attr("opacity", 1);
       nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
     });
@@ -363,12 +328,6 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
     svg.call(zoom);
 
     simulation.on("tick", () => {
-      linkElements
-        .attr("x1", (d: any) => d.source.x)
-        .attr("y1", (d: any) => d.source.y)
-        .attr("x2", (d: any) => d.target.x)
-        .attr("y2", (d: any) => d.target.y);
-
       nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
 
       labelElements
@@ -398,11 +357,17 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
     <div
       ref={containerRef}
       data-testid="graph-canvas"
-      style={{ width: '100%', height: '100%' }}
+      style={{ width: '100%', height: '100%', position: 'relative' }}
     >
+      <BloodVesselCanvas
+        simLinksRef={simLinksRef}
+        zoomTransformRef={zoomTransformRef}
+        hoveredNodeIdRef={hoveredNodeIdRef}
+        bloodFlow={bloodFlow}
+      />
       <svg
         ref={svgRef}
-        style={{ width: '100%', height: '100%', display: 'block' }}
+        style={{ position: 'relative', zIndex: 1, width: '100%', height: '100%', display: 'block' }}
       />
     </div>
   );

@@ -14,9 +14,11 @@ const COLOR_BY_OPTIONS: { value: ColorByOption; label: string }[] = [
 interface GraphSettingsProps {
   colorBy: ColorByOption;
   onColorByChange: (value: ColorByOption) => void;
+  bloodFlow: boolean;
+  onBloodFlowChange: (value: boolean) => void;
 }
 
-export default function GraphSettings({ colorBy, onColorByChange }: GraphSettingsProps) {
+export default function GraphSettings({ colorBy, onColorByChange, bloodFlow, onBloodFlowChange }: GraphSettingsProps) {
   const [isOpen, setIsOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -162,6 +164,51 @@ export default function GraphSettings({ colorBy, onColorByChange }: GraphSetting
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          <div style={{
+            padding: '12px 16px',
+            borderTop: '1px solid rgba(255,255,255,0.06)',
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <span style={{
+                fontSize: 13,
+                fontWeight: 500,
+                color: 'rgba(255,255,255,0.8)',
+              }}>
+                Blood flow
+              </span>
+              <button
+                onClick={() => onBloodFlowChange(!bloodFlow)}
+                data-testid="blood-flow-toggle"
+                style={{
+                  width: 36,
+                  height: 20,
+                  borderRadius: 10,
+                  border: 'none',
+                  background: bloodFlow ? '#AE5630' : 'rgba(255,255,255,0.15)',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  transition: 'background 200ms',
+                  padding: 0,
+                }}
+              >
+                <div style={{
+                  position: 'absolute',
+                  top: 2,
+                  left: bloodFlow ? 18 : 2,
+                  width: 16,
+                  height: 16,
+                  borderRadius: '50%',
+                  background: '#fff',
+                  transition: 'left 200ms',
+                }} />
+              </button>
             </div>
           </div>
         </div>

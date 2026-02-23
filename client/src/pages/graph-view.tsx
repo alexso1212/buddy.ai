@@ -74,6 +74,7 @@ function GraphOverlayControls() {
 
 export default function GraphView() {
   const [colorBy, setColorBy] = useState<ColorByOption>('department');
+  const [bloodFlow, setBloodFlow] = useState(true);
 
   const { data: response, isLoading } = useQuery<{ data: GraphData }>({
     queryKey: ['/api/graph/data'],
@@ -95,7 +96,12 @@ export default function GraphView() {
         }}
       >
         <GraphOverlayControls />
-        <GraphSettings colorBy={colorBy} onColorByChange={setColorBy} />
+        <GraphSettings
+          colorBy={colorBy}
+          onColorByChange={setColorBy}
+          bloodFlow={bloodFlow}
+          onBloodFlowChange={setBloodFlow}
+        />
         <div style={{ color: '#6b7280', fontSize: 14 }}>Loading graph data...</div>
       </div>
     );
@@ -116,13 +122,19 @@ export default function GraphView() {
       }}
     >
       <GraphOverlayControls />
-      <GraphSettings colorBy={colorBy} onColorByChange={setColorBy} />
+      <GraphSettings
+        colorBy={colorBy}
+        onColorByChange={setColorBy}
+        bloodFlow={bloodFlow}
+        onBloodFlowChange={setBloodFlow}
+      />
       {nodes.length > 0 ? (
         <ForceGraph
           nodes={nodes}
           links={links}
           projects={projects}
           colorBy={colorBy}
+          bloodFlow={bloodFlow}
         />
       ) : (
         <div
