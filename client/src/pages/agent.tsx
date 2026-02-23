@@ -452,7 +452,7 @@ function ConversationListView({
 
   return (
     <div className="relative h-full" data-testid="conversation-list-view">
-      <div className="absolute inset-0 overflow-y-auto" style={{ paddingTop: 16, paddingBottom: 'calc(120px + 3.33vh)' }} data-testid="conversation-list">
+      <div className="absolute inset-0 overflow-y-auto" style={{ paddingTop: 16, paddingBottom: 'calc(120px + 3.33vh)', overscrollBehavior: 'contain' }} data-testid="conversation-list">
         {isLoading || searching ? (
           <div className="flex items-center justify-center py-16" data-testid="conversations-loading">
             <ThinkingAnimation size={36} label={searching ? "搜索中" : "加载中"} />
@@ -1146,7 +1146,7 @@ export default function Agent() {
           className="absolute inset-0 overflow-y-auto"
           ref={scrollRef}
           data-testid="agent-messages"
-          style={{ paddingTop: 54, paddingBottom: 'calc(160px + 3.33vh)', WebkitOverflowScrolling: 'touch', scrollBehavior: 'smooth' }}
+          style={{ paddingTop: 54, paddingBottom: 'calc(160px + 3.33vh)', WebkitOverflowScrolling: 'touch', scrollBehavior: 'smooth', overscrollBehavior: 'contain' }}
         >
           
           <div className="max-w-3xl mx-auto">
