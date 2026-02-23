@@ -930,11 +930,17 @@ export default function Agent() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-transparent" data-testid="agent-page">
+    <div className="relative h-full bg-transparent" data-testid="agent-page">
       {activeConvId && (
         <div
-          className="flex items-center gap-3 px-3 py-2 shrink-0"
-          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+          className="absolute top-0 left-0 right-0 flex items-center gap-3 px-3 py-2"
+          style={{
+            background: 'rgba(45, 44, 40, 0.85)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            zIndex: 10,
+            borderBottom: '1px solid var(--border-subtle)',
+          }}
           data-testid="chat-header"
         >
           <button
@@ -956,7 +962,15 @@ export default function Agent() {
       )}
 
       {!activeConvId && messages.length === 0 && (
-        <div className="flex items-center px-3 py-2 shrink-0">
+        <div
+          className="absolute top-0 left-0 right-0 flex items-center px-3 py-2"
+          style={{
+            background: 'rgba(45, 44, 40, 0.85)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            zIndex: 10,
+          }}
+        >
           <button
             onClick={handleBack}
             className="flex items-center gap-1 text-sm text-[var(--text-secondary)] cursor-pointer"
@@ -969,7 +983,7 @@ export default function Agent() {
       )}
 
       {showWelcome ? (
-        <div className="flex-1 flex flex-col items-center justify-center px-3">
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-3" style={{ paddingTop: 44, paddingBottom: 80 }}>
           <div className="flex flex-col items-center gap-4 mb-8">
             <AgentLogo size={80} animate={true} glow={true} />
             <h1 className="font-serif text-2xl text-[var(--text-primary)]" data-testid="text-welcome-heading">有什么可以帮你的？</h1>
@@ -992,12 +1006,17 @@ export default function Agent() {
           </div>
         </div>
       ) : messagesLoading ? (
-        <div className="flex-1 flex items-center justify-center" data-testid="messages-loading">
+        <div className="absolute inset-0 flex items-center justify-center" data-testid="messages-loading">
           <ThinkingAnimation size={48} label="加载中" />
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto py-4 relative" ref={scrollRef} data-testid="agent-messages" style={{ WebkitOverflowScrolling: 'touch', scrollBehavior: 'smooth' }}>
-          <div className="absolute top-2 right-2 z-10">
+        <div
+          className="absolute inset-0 overflow-y-auto"
+          ref={scrollRef}
+          data-testid="agent-messages"
+          style={{ paddingTop: 44, paddingBottom: 80, WebkitOverflowScrolling: 'touch', scrollBehavior: 'smooth' }}
+        >
+          <div className="sticky top-0 right-0 z-[5] flex justify-end pr-2 pt-2">
             <Button
               variant="ghost"
               size="icon"
@@ -1028,7 +1047,16 @@ export default function Agent() {
         </div>
       )}
 
-      <div className="bg-transparent" data-testid="agent-input">
+      <div
+        className="absolute bottom-0 left-0 right-0"
+        style={{
+          background: 'rgba(45, 44, 40, 0.85)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          zIndex: 10,
+        }}
+        data-testid="agent-input"
+      >
         <div className="max-w-3xl mx-auto px-3 pb-[env(safe-area-inset-bottom)]">
           <AiInputBar onSend={handleSend} loading={loading} />
         </div>
