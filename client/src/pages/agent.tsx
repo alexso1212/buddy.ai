@@ -986,7 +986,7 @@ export default function Agent() {
           className="absolute inset-0 overflow-y-auto"
           ref={scrollRef}
           data-testid="agent-messages"
-          style={{ paddingTop: 54, paddingBottom: 'calc(160px + 16.67vh)', WebkitOverflowScrolling: 'touch', scrollBehavior: 'smooth' }}
+          style={{ paddingTop: 54, paddingBottom: 'calc(160px + 3.33vh)', WebkitOverflowScrolling: 'touch', scrollBehavior: 'smooth' }}
         >
           
           <div className="max-w-3xl mx-auto">
@@ -1026,7 +1026,7 @@ export default function Agent() {
         <div style={{
           background: 'rgba(30,29,26,0.99)',
           pointerEvents: 'auto',
-          paddingBottom: 'calc(16.67vh + env(safe-area-inset-bottom, 0px))',
+          paddingBottom: 'calc(3.33vh + env(safe-area-inset-bottom, 0px))',
         }}>
           <div className="max-w-3xl mx-auto px-3">
             <AiInputBar onSend={handleSend} loading={loading} />
