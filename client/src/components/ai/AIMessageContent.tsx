@@ -132,7 +132,7 @@ export default function AIMessageContent({ content }: AIMessageContentProps) {
                 padding: '2px 6px',
                 fontFamily: "var(--font-mono)",
                 fontSize: 14,
-                color: '#E8C89A',
+                color: 'var(--brand-icon)',
               }}>{children}</code>
             );
           },

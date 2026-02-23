@@ -45,9 +45,9 @@ export default function AiInputBar({ onSend, loading }: AiInputBarProps) {
     <div style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <div
         style={{
-          background: 'rgba(30,29,26,0.85)',
+          background: 'var(--bg-composer)',
           borderRadius: 20,
-          border: '1px solid rgba(255,255,255,0.08)',
+          border: '1px solid var(--border-medium)',
           overflow: 'hidden',
           backdropFilter: 'blur(16px)',
           WebkitBackdropFilter: 'blur(16px)',

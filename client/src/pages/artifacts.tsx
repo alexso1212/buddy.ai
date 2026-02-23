@@ -126,7 +126,7 @@ export default function Artifacts() {
                   opacity: tool.comingSoon ? 0.5 : isCreating ? 0.7 : 1,
                   transition: 'background 150ms, opacity 150ms',
                 }}
-                onMouseEnter={e => { if (!tool.comingSoon) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                onMouseEnter={e => { if (!tool.comingSoon) e.currentTarget.style.background = 'var(--elevate-2)'; }}
                 onMouseLeave={e => { e.currentTarget.style.background = ''; }}
                 data-testid={`tool-${tool.title}`}
               >
