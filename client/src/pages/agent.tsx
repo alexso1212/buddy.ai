@@ -551,11 +551,11 @@ function ConversationListView({
         >
           <div style={{
             height: 40,
-            background: 'linear-gradient(to top, rgba(30,29,26,0.85) 0%, transparent 100%)',
+            background: 'linear-gradient(to top, rgba(38,38,36,0.85) 0%, transparent 100%)',
           }} />
           <div style={{
             position: 'absolute', top: 40, left: 0, right: 0, bottom: 0,
-            background: 'rgba(30,29,26,0.85)',
+            background: 'rgba(38,38,36,0.85)',
           }} />
         </div>
 
@@ -683,7 +683,7 @@ function BottomInputArea({ onSend, loading }: { onSend: (msg: string) => void; l
       >
         <div style={{
           height: 40,
-          background: 'linear-gradient(to top, rgba(30,29,26,0.85) 0%, transparent 100%)',
+          background: 'linear-gradient(to top, rgba(38,38,36,0.85) 0%, transparent 100%)',
         }} />
         <div style={{
           position: 'absolute',
@@ -691,7 +691,7 @@ function BottomInputArea({ onSend, loading }: { onSend: (msg: string) => void; l
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(30,29,26,0.85)',
+          background: 'rgba(38,38,36,0.85)',
         }} />
       </div>
 
