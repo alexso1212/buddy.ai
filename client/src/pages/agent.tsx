@@ -565,7 +565,7 @@ function ConversationListView({
             ref={searchBarRef}
             style={{
               flex: 1, height: 44,
-              background: 'rgba(44, 43, 40, 0.50)',
+              background: 'rgba(44, 43, 40, 0.20)',
               backdropFilter: 'blur(16px)',
               WebkitBackdropFilter: 'blur(16px)',
               borderRadius: 20,
