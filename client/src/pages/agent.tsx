@@ -551,11 +551,11 @@ function ConversationListView({
         >
           <div style={{
             height: 40,
-            background: 'linear-gradient(to top, rgba(30,29,26,0.3) 0%, transparent 100%)',
+            background: 'linear-gradient(to top, rgba(30,29,26,0.85) 0%, transparent 100%)',
           }} />
           <div style={{
             position: 'absolute', top: 40, left: 0, right: 0, bottom: 0,
-            background: 'rgba(30,29,26,0.3)',
+            background: 'rgba(30,29,26,0.85)',
           }} />
         </div>
 
@@ -565,12 +565,11 @@ function ConversationListView({
             ref={searchBarRef}
             style={{
               flex: 1, height: 44,
-              background: 'rgba(255, 255, 255, 0.01)',
-              backdropFilter: 'blur(40px) saturate(1.8) brightness(1.15)',
-              WebkitBackdropFilter: 'blur(40px) saturate(1.8) brightness(1.15)',
+              background: 'rgba(44, 43, 40, 0.50)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
               borderRadius: 20,
-              border: '1px solid rgba(255,255,255,0.18)',
-              boxShadow: 'inset 0 0.5px 0 rgba(255,255,255,0.1), 0 1px 3px rgba(0,0,0,0.08)',
+              border: '1px solid rgba(255,255,255,0.08)',
               padding: '0 14px',
               display: 'flex', alignItems: 'center', gap: 8,
             }}
