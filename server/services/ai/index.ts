@@ -267,7 +267,7 @@ function formatTaskList(tasks: any[], users: any[]): string {
 export async function chat(
   message: string,
   conversationHistory: { role: string; content: string }[],
-  context: { currentUserId: number; currentUserName: string }
+  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string }
 ): Promise<ChatResponse> {
   const allUsers = await storage.getUsers();
   const allProjects = await storage.getProjects();
@@ -275,7 +275,7 @@ export async function chat(
 
   const activeTasks = allTasks.filter(t => t.status !== 'done' && t.status !== 'cancelled');
 
-  const systemPrompt = SYSTEM_PROMPT
+  const systemPrompt = (context.customSystemPrompt ? context.customSystemPrompt + '\n\n' : '') + SYSTEM_PROMPT
     .replace('{{currentUserId}}', String(context.currentUserId))
     .replace('{{currentUserName}}', context.currentUserName)
     .replace('{{currentTime}}', new Date().toISOString())

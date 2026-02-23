@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useLocation, useSearch } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
@@ -41,15 +42,6 @@ interface Message {
   followUpSubmitted?: boolean;
 }
 
-const STORAGE_KEY = "ai_chat_history";
-
-const defaultWelcomeMessage: Message = {
-  id: "msg-1-0",
-  role: "assistant",
-  content: "你好！我是 AI 助手，可以帮你管理任务、创建项目、查询进度。请告诉我你需要什么帮助？",
-  type: "text",
-};
-
 const SUGGESTIONS = [
   { text: "创建新任务", icon: ListPlus },
   { text: "查看项目进度", icon: BarChart3 },
@@ -62,55 +54,77 @@ function nextId() {
   return `msg-${++msgCounter}-${Date.now()}`;
 }
 
-function restoreMsgCounter(msgs: Message[]) {
-  for (const m of msgs) {
-    const match = m.id.match(/^msg-(\d+)-/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > msgCounter) msgCounter = num;
-    }
-  }
-}
-
-function loadFromSession(): Message[] | null {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch {}
-  return null;
-}
-
 export default function Agent() {
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const stored = loadFromSession();
-    if (stored) {
-      restoreMsgCounter(stored);
-      return stored;
-    }
-    msgCounter = 0;
-    return [{ ...defaultWelcomeMessage, id: nextId() }];
-  });
+  const [, navigate] = useLocation();
+  const searchString = useSearch();
+  const params = new URLSearchParams(searchString);
+  const activeConvId = params.get('conv') ? parseInt(params.get('conv')!) : null;
+
+  const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const [messagesLoading, setMessagesLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const conversationHistory = useRef<{ role: string; content: string }[]>([]);
+  const [activeConvSystemPrompt, setActiveConvSystemPrompt] = useState<string | undefined>();
 
   useEffect(() => {
-    const stored = loadFromSession();
-    if (stored) {
-      conversationHistory.current = stored
-        .filter((m) => m.role === "user" || m.role === "assistant")
-        .map((m) => ({ role: m.role, content: m.content }));
+    if (!activeConvId) {
+      setMessages([]);
+      conversationHistory.current = [];
+      setActiveConvSystemPrompt(undefined);
+      return;
     }
-  }, []);
 
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
-    } catch {}
-  }, [messages]);
+    setMessagesLoading(true);
+    (async () => {
+      try {
+        const convRes = await fetch(`/api/conversations/${activeConvId}`);
+        const convJson = await convRes.json();
+        if (convJson.data?.systemPrompt) {
+          setActiveConvSystemPrompt(convJson.data.systemPrompt);
+        } else {
+          setActiveConvSystemPrompt(undefined);
+        }
+
+        const res = await fetch(`/api/conversations/${activeConvId}/messages`);
+        const json = await res.json();
+        const dbMessages: any[] = json.data || [];
+
+        const converted: Message[] = dbMessages.map(m => {
+          const base: Message = {
+            id: `db-${m.id}`,
+            role: m.role as any,
+            content: m.content,
+            type: (m.type || 'text') as any,
+          };
+          if (m.metadata) {
+            try {
+              const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata;
+              if (meta.action) base.action = meta.action;
+              if (meta.actions) base.actions = meta.actions;
+              if (meta.followUp) base.followUp = meta.followUp;
+              if (meta.confirmed !== undefined) base.confirmed = meta.confirmed;
+              if (meta.actionConfirmed) base.actionConfirmed = meta.actionConfirmed;
+              if (meta.actionSkipped) base.actionSkipped = meta.actionSkipped;
+              if (meta.followUpSubmitted) base.followUpSubmitted = meta.followUpSubmitted;
+              if (meta.skipped) base.skipped = meta.skipped;
+            } catch {}
+          }
+          return base;
+        });
+
+        setMessages(converted);
+
+        conversationHistory.current = converted
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(m => ({ role: m.role, content: m.content }));
+      } catch (err) {
+        console.error('Failed to load messages:', err);
+      } finally {
+        setMessagesLoading(false);
+      }
+    })();
+  }, [activeConvId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -118,16 +132,53 @@ export default function Agent() {
     }
   }, [messages, loading]);
 
-  const handleClearChat = useCallback(() => {
-    msgCounter = 0;
-    const welcome: Message = { ...defaultWelcomeMessage, id: nextId() };
-    setMessages([welcome]);
-    conversationHistory.current = [];
-    sessionStorage.removeItem(STORAGE_KEY);
+  const saveMessageToDB = useCallback(async (conversationId: number, msg: Message) => {
+    try {
+      const metadata: Record<string, any> = {};
+      if (msg.action) metadata.action = msg.action;
+      if (msg.actions) metadata.actions = msg.actions;
+      if (msg.followUp) metadata.followUp = msg.followUp;
+      if (msg.confirmed !== undefined) metadata.confirmed = msg.confirmed;
+      if (msg.actionConfirmed) metadata.actionConfirmed = msg.actionConfirmed;
+      if (msg.actionSkipped) metadata.actionSkipped = msg.actionSkipped;
+      if (msg.followUpSubmitted) metadata.followUpSubmitted = msg.followUpSubmitted;
+      if (msg.skipped) metadata.skipped = msg.skipped;
+
+      await apiRequest("POST", `/api/conversations/${conversationId}/messages`, {
+        role: msg.role,
+        content: msg.content,
+        type: msg.type || 'text',
+        metadata: Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null,
+      });
+    } catch (err) {
+      console.error('Failed to save message:', err);
+    }
   }, []);
+
+  const handleClearChat = useCallback(() => {
+    setMessages([]);
+    conversationHistory.current = [];
+    navigate('/agent', { replace: true });
+  }, [navigate]);
 
   const handleSend = useCallback(
     async (text: string) => {
+      let convId = activeConvId;
+
+      if (!convId) {
+        try {
+          const title = text.slice(0, 30) + (text.length > 30 ? '...' : '');
+          const res = await apiRequest("POST", "/api/conversations", { title });
+          const json = await res.json();
+          convId = json.data.id;
+          navigate(`/agent?conv=${convId}`, { replace: true });
+          queryClient.invalidateQueries({ queryKey: ['/api/conversations'] });
+        } catch (err) {
+          console.error('Failed to create conversation:', err);
+          return;
+        }
+      }
+
       const userMsg: Message = {
         id: nextId(),
         role: "user",
@@ -137,6 +188,7 @@ export default function Agent() {
       setMessages((prev) => [...prev, userMsg]);
       setLoading(true);
 
+      saveMessageToDB(convId!, userMsg);
       conversationHistory.current.push({ role: "user", content: text });
 
       try {
@@ -144,6 +196,7 @@ export default function Agent() {
           message: text,
           conversationHistory: conversationHistory.current,
           currentUserId: 1,
+          systemPrompt: activeConvSystemPrompt || undefined,
         });
         const json = await res.json();
         const data = json.data;
@@ -181,6 +234,7 @@ export default function Agent() {
             : undefined,
         };
         setMessages((prev) => [...prev, assistantMsg]);
+        saveMessageToDB(convId!, assistantMsg);
       } catch (err: any) {
         const errorMsg: Message = {
           id: nextId(),
@@ -188,11 +242,12 @@ export default function Agent() {
           content: err.message || "请求失败，请稍后重试",
         };
         setMessages((prev) => [...prev, errorMsg]);
+        saveMessageToDB(convId!, errorMsg);
       } finally {
         setLoading(false);
       }
     },
-    []
+    [activeConvId, activeConvSystemPrompt, saveMessageToDB, navigate]
   );
 
   const handleConfirm = useCallback(
@@ -235,6 +290,7 @@ export default function Agent() {
           content: result.message,
         };
         setMessages((prev) => [...prev, sysMsg]);
+        if (activeConvId) saveMessageToDB(activeConvId, sysMsg);
 
         queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
         queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
@@ -246,9 +302,10 @@ export default function Agent() {
           content: err.message || "执行失败，请重试",
         };
         setMessages((prev) => [...prev, sysMsg]);
+        if (activeConvId) saveMessageToDB(activeConvId, sysMsg);
       }
     },
-    [messages]
+    [messages, activeConvId, saveMessageToDB]
   );
 
   const handleReject = useCallback((messageId: string, actionIndex?: number) => {
@@ -269,7 +326,8 @@ export default function Agent() {
       content: "已取消操作",
     };
     setMessages((prev) => [...prev, sysMsg]);
-  }, []);
+    if (activeConvId) saveMessageToDB(activeConvId, sysMsg);
+  }, [activeConvId, saveMessageToDB]);
 
   const handleSkip = useCallback((messageId: string, actionIndex?: number) => {
     setMessages((prev) =>
@@ -291,7 +349,8 @@ export default function Agent() {
       content: "已跳过，该任务不会创建",
     };
     setMessages((prev) => [...prev, sysMsg]);
-  }, []);
+    if (activeConvId) saveMessageToDB(activeConvId, sysMsg);
+  }, [activeConvId, saveMessageToDB]);
 
   const handleFollowUpSubmit = useCallback(
     async (messageId: string, mergedData: Record<string, any>) => {
@@ -312,6 +371,7 @@ export default function Agent() {
           message: `用户已选择完成信息，请直接用这些数据创建确认卡片（不要再追问）：${JSON.stringify(mergedData)}`,
           conversationHistory: conversationHistory.current,
           currentUserId: 1,
+          systemPrompt: activeConvSystemPrompt || undefined,
         });
         const json = await res.json();
         const data = json.data;
@@ -349,6 +409,7 @@ export default function Agent() {
             : undefined,
         };
         setMessages((prev) => [...prev, assistantMsg]);
+        if (activeConvId) saveMessageToDB(activeConvId, assistantMsg);
       } catch (err: any) {
         const errorMsg: Message = {
           id: nextId(),
@@ -356,24 +417,25 @@ export default function Agent() {
           content: err.message || "请求失败，请稍后重试",
         };
         setMessages((prev) => [...prev, errorMsg]);
+        if (activeConvId) saveMessageToDB(activeConvId, errorMsg);
       } finally {
         setLoading(false);
       }
     },
-    []
+    [activeConvId, activeConvSystemPrompt, saveMessageToDB]
   );
 
-  const isWelcomeOnly = messages.length === 1 && messages[0].role === "assistant" && messages[0].content === defaultWelcomeMessage.content;
+  const showWelcome = !activeConvId && messages.length === 0;
 
   return (
     <div className="flex flex-col h-full bg-transparent" data-testid="agent-page">
-      {isWelcomeOnly ? (
+      {showWelcome ? (
         <div className="flex-1 flex flex-col items-center justify-center px-3">
           <div className="flex flex-col items-center gap-4 mb-8">
             <div className="w-12 h-12 rounded-full bg-brand flex items-center justify-center">
               <Sparkles className="w-6 h-6 text-white" />
             </div>
-            <h1 className="font-serif text-2xl text-[var(--text-primary)]">有什么可以帮你的？</h1>
+            <h1 className="font-serif text-2xl text-[var(--text-primary)]" data-testid="text-welcome-heading">有什么可以帮你的？</h1>
           </div>
           <div className="grid grid-cols-2 gap-3 w-full max-w-md">
             {SUGGESTIONS.map((s) => {
@@ -390,6 +452,34 @@ export default function Agent() {
                 </button>
               );
             })}
+          </div>
+        </div>
+      ) : messagesLoading ? (
+        <div className="flex-1 flex items-center justify-center" data-testid="messages-loading">
+          <div style={{ position: 'relative', width: 32, height: 32 }}>
+            <svg width="32" height="32" viewBox="0 0 32 32"
+              style={{ animation: 'buddySpin 1.2s linear infinite', position: 'absolute' }}>
+              <defs>
+                <linearGradient id="loadingGradMain" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#AE5630" stopOpacity="1" />
+                  <stop offset="100%" stopColor="#AE5630" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <circle cx="16" cy="16" r="14" fill="none"
+                stroke="url(#loadingGradMain)" strokeWidth="2"
+                strokeDasharray="66 22" strokeLinecap="round" />
+            </svg>
+            <div style={{
+              width: 20, height: 20,
+              borderRadius: '50%',
+              background: '#C4703F',
+              position: 'absolute',
+              top: '50%', left: '50%',
+              transform: 'translate(-50%, -50%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Sparkles className="w-2.5 h-2.5 text-white" />
+            </div>
           </div>
         </div>
       ) : (

@@ -13,6 +13,8 @@ import {
   insertTaskCommentSchema,
   insertTaskParticipantSchema,
   insertJobRoleSchema,
+  insertConversationSchema,
+  insertChatMessageSchema,
 } from "@shared/schema";
 import { judgeTaskAssignment } from "./services/ai/verdictService";
 
@@ -1256,10 +1258,85 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // ===================== Conversations =====================
+  app.get("/api/conversations", async (_req, res) => {
+    try {
+      const data = await storage.getConversations();
+      return res.json({ data });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/conversations/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const data = await storage.getConversationById(id);
+      if (!data) return res.status(404).json({ error: "Conversation not found" });
+      return res.json({ data });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/conversations", async (req, res) => {
+    try {
+      const parsed = insertConversationSchema.parse(req.body);
+      const data = await storage.createConversation(parsed);
+      return res.json({ data });
+    } catch (e: any) {
+      return res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/conversations/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const data = await storage.updateConversation(id, req.body);
+      if (!data) return res.status(404).json({ error: "Conversation not found" });
+      return res.json({ data });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/conversations/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteConversation(id);
+      return res.json({ data: { success: true } });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== Chat Messages =====================
+  app.get("/api/conversations/:id/messages", async (req, res) => {
+    try {
+      const conversationId = parseInt(req.params.id);
+      const data = await storage.getChatMessages(conversationId);
+      return res.json({ data });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/conversations/:id/messages", async (req, res) => {
+    try {
+      const conversationId = parseInt(req.params.id);
+      const messageData = { ...req.body, conversationId };
+      const parsed = insertChatMessageSchema.parse(messageData);
+      const data = await storage.createChatMessage(parsed);
+      return res.json({ data });
+    } catch (e: any) {
+      return res.status(400).json({ error: e.message });
+    }
+  });
+
   // ===================== AI Chat =====================
   app.post("/api/ai/chat", async (req, res) => {
     try {
-      const { message, conversationHistory, currentUserId } = req.body;
+      const { message, conversationHistory, currentUserId, systemPrompt } = req.body;
       if (!message || typeof message !== 'string') {
         return res.status(400).json({ error: 'message is required' });
       }
@@ -1271,7 +1348,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const result = await aiChat(
         message,
         conversationHistory || [],
-        { currentUserId: userId, currentUserName: userName }
+        { currentUserId: userId, currentUserName: userName, customSystemPrompt: systemPrompt || undefined }
       );
 
       return res.json({ data: result });

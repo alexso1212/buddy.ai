@@ -15,6 +15,8 @@ import {
   jobRoles,
   verdicts,
   notifications,
+  conversations,
+  chatMessages,
   type Organization,
   type Department,
   type User,
@@ -39,6 +41,10 @@ import {
   type InsertVerdict,
   type Notification,
   type InsertNotification,
+  type Conversation,
+  type ChatMessage,
+  type InsertConversation,
+  type InsertChatMessage,
 } from "@shared/schema";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -314,6 +320,44 @@ export class DatabaseStorage {
   async createManyNotifications(dataList: InsertNotification[]): Promise<Notification[]> {
     if (dataList.length === 0) return [];
     return db.insert(notifications).values(dataList).returning();
+  }
+  // ==================== Conversations ====================
+  async getConversations(): Promise<Conversation[]> {
+    return db.select().from(conversations).orderBy(desc(conversations.updatedAt));
+  }
+
+  async getConversationById(id: number): Promise<Conversation | undefined> {
+    const [result] = await db.select().from(conversations).where(eq(conversations.id, id));
+    return result;
+  }
+
+  async createConversation(data: InsertConversation): Promise<Conversation> {
+    const [result] = await db.insert(conversations).values(data).returning();
+    return result;
+  }
+
+  async updateConversation(id: number, data: Partial<InsertConversation>): Promise<Conversation | undefined> {
+    const [result] = await db.update(conversations).set({ ...data, updatedAt: new Date() }).where(eq(conversations.id, id)).returning();
+    return result;
+  }
+
+  async deleteConversation(id: number): Promise<void> {
+    await db.delete(conversations).where(eq(conversations.id, id));
+  }
+
+  // ==================== Chat Messages ====================
+  async getChatMessages(conversationId: number): Promise<ChatMessage[]> {
+    return db.select().from(chatMessages).where(eq(chatMessages.conversationId, conversationId)).orderBy(chatMessages.createdAt);
+  }
+
+  async createChatMessage(data: InsertChatMessage): Promise<ChatMessage> {
+    const [result] = await db.insert(chatMessages).values(data).returning();
+    await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, data.conversationId));
+    return result;
+  }
+
+  async deleteChatMessagesByConversation(conversationId: number): Promise<void> {
+    await db.delete(chatMessages).where(eq(chatMessages.conversationId, conversationId));
   }
 }
 

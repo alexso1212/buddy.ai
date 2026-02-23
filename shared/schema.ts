@@ -202,6 +202,34 @@ export const notifications = pgTable('notifications', {
 });
 
 // ============================================================
+// 12. conversations（AI 对话）
+// ============================================================
+export const conversations = pgTable('conversations', {
+  id: serial('id').primaryKey(),
+  title: varchar('title', { length: 500 }).notNull(),
+  starred: boolean('starred').default(false).notNull(),
+  projectId: integer('project_id').references(() => projects.id),
+  projectName: varchar('project_name', { length: 255 }),
+  visibility: varchar('visibility', { length: 50 }).notNull().default('private'),
+  systemPrompt: text('system_prompt'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ============================================================
+// 13. chat_messages（对话消息）
+// ============================================================
+export const chatMessages = pgTable('chat_messages', {
+  id: serial('id').primaryKey(),
+  conversationId: integer('conversation_id').references(() => conversations.id, { onDelete: 'cascade' }).notNull(),
+  role: varchar('role', { length: 50 }).notNull(),
+  content: text('content').notNull(),
+  type: varchar('type', { length: 50 }).notNull().default('text'),
+  metadata: text('metadata'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// ============================================================
 // Relations 定义
 // ============================================================
 
@@ -375,6 +403,21 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
   }),
 }));
 
+export const conversationsRelations = relations(conversations, ({ one, many }) => ({
+  project: one(projects, {
+    fields: [conversations.projectId],
+    references: [projects.id],
+  }),
+  messages: many(chatMessages),
+}));
+
+export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
+  conversation: one(conversations, {
+    fields: [chatMessages.conversationId],
+    references: [conversations.id],
+  }),
+}));
+
 // ============================================================
 // Insert Schemas & Types
 // ============================================================
@@ -471,3 +514,18 @@ export const insertNotificationSchema = createInsertSchema(notifications).omit({
 });
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notifications.$inferSelect;
+
+export const insertConversationSchema = createInsertSchema(conversations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertConversation = z.infer<typeof insertConversationSchema>;
+export type Conversation = typeof conversations.$inferSelect;
+
+export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
+export type ChatMessage = typeof chatMessages.$inferSelect;
