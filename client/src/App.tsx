@@ -1235,7 +1235,7 @@ function ModelSelector() {
   const current = AI_MODELS.find(m => m.id === selected) || AI_MODELS[0];
 
   return (
-    <div ref={dropRef} style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
+    <div ref={dropRef} style={{ position: 'relative' }}>
       <button
         onClick={() => setOpen(v => !v)}
         style={{
@@ -1274,7 +1274,7 @@ function ModelSelector() {
           top: '100%',
           left: '50%',
           transform: 'translateX(-50%)',
-          marginTop: 6,
+          marginTop: 8,
           background: 'rgba(45, 44, 40, 0.95)',
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
@@ -1461,51 +1461,84 @@ function App() {
       <div className="flex h-screen bg-[var(--bg-primary)]">
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} sidebarRef={sidebarRef} overlayRef={overlayRef} />
 
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <header className="md:hidden" style={{
-            height: 54,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0 8px',
-            background: isAgentPage ? 'rgba(30, 29, 26, 0.80)' : 'var(--bg-primary)',
-            backdropFilter: isAgentPage ? 'blur(16px)' : undefined,
-            WebkitBackdropFilter: isAgentPage ? 'blur(16px)' : undefined,
-            borderBottom: isAgentPage ? 'none' : '1px solid var(--border-subtle)',
-            flexShrink: 0,
-            position: isAgentPage ? 'absolute' : 'relative',
-            top: 0, left: 0, right: 0,
-            zIndex: isAgentPage ? 10 : undefined,
-          }} data-testid="top-bar">
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
-              width: 40, height: 40,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(255,255,255,0.07)',
-              border: '1px solid rgba(255,255,255,0.10)',
-              borderRadius: '50%',
-              cursor: 'pointer',
-              color: 'var(--text-primary)',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
-              transition: 'background 150ms',
-            }} data-testid="menu-toggle"
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
-            >
-              <Menu size={20} strokeWidth={1.8} />
-            </button>
-            {isAgentPage ? (
-              <ModelSelector />
-            ) : (
+        <div className="flex-1 flex flex-col overflow-hidden relative">
+          {!isAgentPage && (
+            <header className="md:hidden" style={{
+              height: 54,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0 8px',
+              background: 'var(--bg-primary)',
+              borderBottom: '1px solid var(--border-subtle)',
+              flexShrink: 0,
+              position: 'relative',
+            }} data-testid="top-bar">
+              <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
+                width: 40, height: 40,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'rgba(255,255,255,0.07)',
+                border: '1px solid rgba(255,255,255,0.10)',
+                borderRadius: '50%',
+                cursor: 'pointer',
+                color: 'var(--text-primary)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+                transition: 'background 150ms',
+              }} data-testid="menu-toggle"
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
+              >
+                <Menu size={20} strokeWidth={1.8} />
+              </button>
               <span style={{
                 position: 'absolute', left: '50%', transform: 'translateX(-50%)',
                 fontSize: 17, fontWeight: 600,
                 color: 'var(--text-primary)',
                 fontFamily: 'var(--font-sans)',
               }} data-testid="top-bar-title">Buddy</span>
-            )}
-            <div style={{ width: 40 }} />
-          </header>
+              <div style={{ width: 40 }} />
+            </header>
+          )}
+
+          {isAgentPage && (
+            <>
+              <div className="md:hidden" style={{
+                position: 'absolute',
+                top: 0, left: 0, right: 0,
+                height: 72,
+                background: 'linear-gradient(to bottom, var(--bg-primary) 0%, var(--bg-primary) 40%, transparent 100%)',
+                zIndex: 10,
+                pointerEvents: 'none',
+              }} />
+              <div className="md:hidden" style={{
+                position: 'absolute',
+                top: 8, left: 8, right: 8,
+                zIndex: 11,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }} data-testid="agent-top-controls">
+                <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
+                  width: 36, height: 36,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'rgba(255,255,255,0.07)',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  color: 'var(--text-primary)',
+                  transition: 'background 150ms',
+                }} data-testid="menu-toggle"
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
+                >
+                  <Menu size={18} strokeWidth={1.8} />
+                </button>
+                <ModelSelector />
+                <div style={{ width: 36 }} />
+              </div>
+            </>
+          )}
 
           <main
             className="flex-1 overflow-auto ml-0 md:ml-[260px]"
