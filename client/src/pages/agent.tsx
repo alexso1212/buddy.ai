@@ -816,8 +816,6 @@ export default function Agent() {
   const [convTitle, setConvTitle] = useState<string>("");
   const [showChat, setShowChat] = useState(false);
 
-  const isDetailView = activeConvId !== null || messages.length > 0 || showChat;
-
   useEffect(() => {
     if (!activeConvId) {
       setShowChat(false);
@@ -1227,32 +1225,7 @@ export default function Agent() {
     navigate('/agent', { replace: true });
   }, [navigate]);
 
-  const handleNewConversation = useCallback(() => {
-    setMessages([]);
-    conversationHistory.current = [];
-    setConvTitle("");
-    setActiveConvSystemPrompt(undefined);
-    setShowChat(true);
-    navigate('/agent', { replace: true });
-  }, [navigate]);
-
-  const handleSelectConversation = useCallback((id: number) => {
-    setShowChat(true);
-    navigate(`/agent?conv=${id}`, { replace: true });
-  }, [navigate]);
-
-  const showWelcome = !activeConvId && messages.length === 0;
-
-  if (!isDetailView) {
-    return (
-      <div className="flex flex-col h-full bg-transparent" data-testid="agent-page">
-        <ConversationListView
-          onSelectConversation={handleSelectConversation}
-          onNewConversation={handleNewConversation}
-        />
-      </div>
-    );
-  }
+  const showWelcome = !activeConvId && messages.length === 0 && !showChat;
 
   return (
     <div className="relative h-full bg-transparent" data-testid="agent-page">
