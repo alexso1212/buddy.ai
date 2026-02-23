@@ -463,7 +463,7 @@ function ConversationListView({
 
   return (
     <div className="relative h-full" data-testid="conversation-list-view">
-      <div className="absolute inset-0 overflow-y-auto" style={{ paddingTop: 16, paddingBottom: 'calc(120px + 3.33vh)', overscrollBehavior: 'contain' }} data-testid="conversation-list">
+      <div className="absolute inset-0 overflow-y-auto" style={{ paddingTop: 16, paddingBottom: 'calc(16px + 3.33vh)', overscrollBehavior: 'contain' }} data-testid="conversation-list">
         {isLoading || searching ? (
           <div className="flex items-center justify-center py-16" data-testid="conversations-loading">
             <ThinkingAnimation size={36} label={searching ? "搜索中" : "加载中"} />
@@ -519,7 +519,7 @@ function ConversationListView({
               border: '1px solid rgba(255,255,255,0.15)',
               padding: '0 14px',
               display: 'flex', alignItems: 'center', gap: 8,
-              background: 'transparent',
+              background: 'rgba(38, 38, 36, 0.60)',
             }}
           >
             <Search size={16} color="#7A7874" />
