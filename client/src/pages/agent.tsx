@@ -505,7 +505,7 @@ function ConversationListView({
       >
         <div style={{
           height: 40,
-          background: 'linear-gradient(to top, rgba(38,38,36,0.85) 0%, transparent 100%)',
+          background: 'transparent',
           pointerEvents: 'none',
         }} />
 
@@ -519,7 +519,7 @@ function ConversationListView({
               border: '1px solid rgba(255,255,255,0.15)',
               padding: '0 14px',
               display: 'flex', alignItems: 'center', gap: 8,
-              background: 'rgba(38, 38, 36, 0.60)',
+              background: 'transparent',
             }}
           >
             <Search size={16} color="#7A7874" />
