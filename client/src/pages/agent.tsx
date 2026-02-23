@@ -382,11 +382,30 @@ function ConversationListView({
   }, [toast]);
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[] | null>(null);
+  const [searching, setSearching] = useState(false);
 
-  const filteredConversations = searchQuery
-    ? conversations.filter(c => c.title.toLowerCase().includes(searchQuery.toLowerCase()))
-    : conversations;
-  const filteredGroups = groupConversationsByDate(filteredConversations);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(searchQuery), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (!debouncedQuery.trim()) {
+      setSearchResults(null);
+      return;
+    }
+    setSearching(true);
+    fetch(`/api/conversations/search?q=${encodeURIComponent(debouncedQuery.trim())}`)
+      .then(r => r.json())
+      .then(json => setSearchResults(json.data || []))
+      .catch(() => setSearchResults([]))
+      .finally(() => setSearching(false));
+  }, [debouncedQuery]);
+
+  const displayConversations = searchResults !== null ? searchResults : conversations;
+  const filteredGroups = groupConversationsByDate(displayConversations);
 
   const searchBarRef = useRef<HTMLDivElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
@@ -434,9 +453,9 @@ function ConversationListView({
   return (
     <div className="relative h-full" data-testid="conversation-list-view">
       <div className="absolute inset-0 overflow-y-auto" style={{ paddingTop: 16, paddingBottom: 'calc(120px + 3.33vh)' }} data-testid="conversation-list">
-        {isLoading ? (
+        {isLoading || searching ? (
           <div className="flex items-center justify-center py-16" data-testid="conversations-loading">
-            <ThinkingAnimation size={36} label="加载中" />
+            <ThinkingAnimation size={36} label={searching ? "搜索中" : "加载中"} />
           </div>
         ) : filteredGroups.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3" data-testid="conversations-empty">

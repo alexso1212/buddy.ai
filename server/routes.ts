@@ -1310,6 +1310,17 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  app.get("/api/conversations/search", async (req, res) => {
+    try {
+      const q = String(req.query.q || '').trim();
+      if (!q) return res.json({ data: [] });
+      const data = await storage.searchConversations(req.orgId, q);
+      return res.json({ data });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/conversations/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);

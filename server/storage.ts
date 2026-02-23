@@ -1,6 +1,6 @@
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { eq, and, desc, or, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, or, inArray, sql, ilike } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import {
   organizations,
@@ -348,6 +348,37 @@ export class DatabaseStorage {
     await db.delete(tokenUsage).where(eq(tokenUsage.conversationId, id));
     await db.delete(chatMessages).where(eq(chatMessages.conversationId, id));
     await db.delete(conversations).where(eq(conversations.id, id));
+  }
+
+  async searchConversations(orgId: number, query: string): Promise<Conversation[]> {
+    const pattern = `%${query}%`;
+    const matchingByTitle = await db.select().from(conversations).where(
+      and(
+        eq(conversations.orgId, orgId),
+        eq(conversations.isArchived, false),
+        ilike(conversations.title, pattern)
+      )
+    );
+
+    const matchingByContent = await db
+      .selectDistinct({ conversation: conversations })
+      .from(chatMessages)
+      .innerJoin(conversations, eq(chatMessages.conversationId, conversations.id))
+      .where(
+        and(
+          eq(conversations.orgId, orgId),
+          eq(conversations.isArchived, false),
+          ilike(chatMessages.content, pattern)
+        )
+      );
+
+    const allMap = new Map<number, Conversation>();
+    for (const c of matchingByTitle) allMap.set(c.id, c);
+    for (const row of matchingByContent) allMap.set(row.conversation.id, row.conversation);
+
+    return Array.from(allMap.values()).sort((a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
   }
 
   // ==================== Chat Messages ====================
