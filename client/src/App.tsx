@@ -1467,7 +1467,7 @@ function App() {
               position: 'absolute',
               top: 0, left: 0, right: 0,
               height: 64,
-              background: 'linear-gradient(to bottom, rgba(30,29,26,0.40) 0%, transparent 100%)',
+              background: 'linear-gradient(to bottom, rgba(30,29,26,0.80) 0%, transparent 100%)',
               zIndex: 10,
               pointerEvents: 'none',
             }} />
