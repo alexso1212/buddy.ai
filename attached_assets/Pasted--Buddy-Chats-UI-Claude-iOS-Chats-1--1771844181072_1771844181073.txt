@@ -1,0 +1,292 @@
+# Buddy Chats 页面 UI 修复指令
+
+# 基于 Claude iOS Chats 页面截图的逐项对比修复
+
+-----
+
+# 差异总览
+
+```
+❌ 1. 顶部有巨大橙色「＋ 新对话」按钮              → 删除，新建移到底部右下角
+❌ 2. 对话项没有时间戳                             → 加 "49 minutes ago" 相对时间
+❌ 3. 对话项右侧没有 > 箭头                        → 加上
+❌ 4. 底部没有搜索栏和新建按钮                      → 加 Search 搜索框 + 橙色 ＋ 按钮
+❌ 5. 有「今天」日期分组标签                        → 删除，用每条自带的相对时间
+❌ 6. 选中项有橙色背景 + 「归档」按钮               → 改为淡色边框高亮
+❌ 7. 顶栏左侧是汉堡菜单 ≡                        → 改为筛选图标
+❌ 8. 对话标题字号偏小                             → 加大到 17px
+❌ 9. 列表项间距太紧                               → 加大 padding
+```
+
+-----
+
+# STEP 1：删除顶部大橙色按钮
+
+删除全宽的橙色「＋ 新对话」按钮。新建对话入口移到底部（STEP 4）。
+
+-----
+
+# STEP 2：修复顶栏
+
+## 当前：
+
+```
+  ≡          Buddy
+```
+
+## 目标（Claude 风格）：
+
+```
+  (⫏)         Chats
+```
+
+|属性         |精确值                                            |
+|-----------|-----------------------------------------------|
+|高度         |`52px`                                         |
+|背景         |`var(--bg-primary)` (#2B2A27)                  |
+|底部边框       |无                                              |
+|**左侧**     |筛选图标 Lucide `ListFilter`，`22px`，`#ECECEC`      |
+|按钮样式       |`40×40px`，背景 `rgba(255,255,255,0.08)`，圆角 `10px`|
+|margin-left|`16px`                                         |
+|**中间**     |“Chats”，`17px`，`600`，`#ECECEC`，Sans-serif      |
+|**右侧**     |无按钮                                            |
+
+-----
+
+# STEP 3：修复对话列表项
+
+## 3.1 单个列表项结构
+
+```
+  任务看板功能全却难以坚持使用的原因
+  49 minutes ago                         >
+```
+
+```jsx
+function ChatListItem({ conversation, isSelected, onPress, onLongPress }) {
+  return (
+    <button
+      onClick={onPress}
+      onTouchStart={e => startLongPress(e, conversation)}
+      onTouchEnd={endLongPress}
+      style={{
+        width: '100%',
+        padding: '16px 16px 16px 20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        background: isSelected ? 'rgba(255,255,255,0.06)' : 'transparent',
+        border: isSelected ? '1px solid rgba(255,255,255,0.1)' : '1px solid transparent',
+        borderRadius: isSelected ? 12 : 0,
+        margin: isSelected ? '2px 8px' : '0',
+        cursor: 'pointer',
+        textAlign: 'left',
+        transition: 'background 150ms',
+      }}
+    >
+      {/* 左侧：标题 + 时间 */}
+      <div style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
+        <div style={{
+          fontSize: 17,
+          fontWeight: 400,
+          color: '#ECECEC',
+          lineHeight: 1.35,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}>
+          {conversation.title}
+        </div>
+        <div style={{
+          fontSize: 14,
+          color: '#7A7874',
+          marginTop: 4,
+        }}>
+          {getRelativeTime(conversation.updatedAt)}
+        </div>
+      </div>
+
+      {/* 右侧：箭头 */}
+      <ChevronRightIcon size={18} color="#4A4A47" strokeWidth={1.5} />
+    </button>
+  );
+}
+```
+
+## 3.2 相对时间函数
+
+```typescript
+function getRelativeTime(timestamp: number): string {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+  if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+  if (days < 7) return `${days} day${days > 1 ? 's' : ''} ago`;
+  if (days < 30) return `${Math.floor(days / 7)} week${Math.floor(days / 7) > 1 ? 's' : ''} ago`;
+  return `${Math.floor(days / 30)} month${Math.floor(days / 30) > 1 ? 's' : ''} ago`;
+}
+```
+
+## 3.3 删除的东西
+
+- 删除「今天」「昨天」等日期分组标签
+- 删除选中项的橙色背景
+- 删除「归档」按钮
+
+-----
+
+# STEP 4：添加底部固定栏
+
+```
+┌──────────────────────────────────────┐
+│  🔍 Search                    (＋)   │
+└──────────────────────────────────────┘
+```
+
+```jsx
+function ChatsBottomBar({ onSearch, onNewChat }) {
+  const [searchQuery, setSearchQuery] = useState('');
+
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: 0, left: 0, right: 0,
+      padding: '10px 16px',
+      paddingBottom: 'calc(10px + env(safe-area-inset-bottom))',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+      background: 'var(--bg-primary)',
+    }}>
+      {/* 搜索框 — 胶囊形 */}
+      <div style={{
+        flex: 1, height: 40,
+        background: 'rgba(255,255,255,0.08)',
+        borderRadius: 20,
+        padding: '0 14px',
+        display: 'flex', alignItems: 'center', gap: 8,
+      }}>
+        <SearchIcon size={16} color="#7A7874" />
+        <input
+          value={searchQuery}
+          onChange={e => { setSearchQuery(e.target.value); onSearch(e.target.value); }}
+          placeholder="Search"
+          style={{
+            flex: 1, border: 'none', outline: 'none',
+            background: 'transparent',
+            fontSize: 15, color: '#ECECEC',
+          }}
+        />
+      </div>
+
+      {/* 新建按钮 — 44px 圆形橙色 */}
+      <button onClick={onNewChat} style={{
+        width: 44, height: 44, borderRadius: '50%',
+        background: '#AE5630', border: 'none',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexShrink: 0, cursor: 'pointer',
+      }}>
+        <PlusIcon size={22} color="#FFFFFF" strokeWidth={2} />
+      </button>
+    </div>
+  );
+}
+```
+
+列表底部加 padding 防遮挡：`padding-bottom: 80px;`
+
+-----
+
+# STEP 5：长按菜单修复
+
+参考 Claude 截图（图三）：
+
+|属性     |精确值                                       |
+|-------|------------------------------------------|
+|背景     |`#3C3B37`                                 |
+|圆角     |`14px`                                    |
+|阴影     |`0 8px 32px rgba(0,0,0,0.35)`             |
+|padding|`8px 0`                                   |
+|最小宽度   |`200px`                                   |
+|动画     |`scale(0.95→1) + opacity`，`180ms ease-out`|
+|每项高度   |`44px`                                    |
+|padding|`0 18px`                                  |
+|图标     |`18px`，间距 `14px`                          |
+|文字     |`16px`，`400`                              |
+|Delete |图标和文字 `#E5534B` 红色                        |
+
+菜单项（中文版）：
+
+```
+  📁 移到项目
+  ⭐ 收藏 / 取消收藏
+  ✏️  重命名
+  ──────────
+  🗑 删除          ← 红色
+```
+
+-----
+
+# 给 Replit 的执行 Prompt
+
+```
+请修复 Chats 对话列表页面(/agent)的 UI，对照 Claude iOS Chats 页面。
+
+===== 删除 =====
+1. 删除顶部全宽橙色「＋ 新对话」按钮
+2. 删除「今天」「昨天」日期分组标签
+3. 删除选中项的橙色高亮背景和「归档」按钮
+
+===== 顶栏 =====
+4. 左侧改为筛选图标（Lucide ListFilter），22px，放在 40×40 按钮里，背景 rgba(255,255,255,0.08)，圆角 10px
+5. 中间标题改为 "Chats"，17px，600字重
+6. 右侧不放按钮
+
+===== 对话列表项 =====
+7. 每条显示两行：标题 17px #ECECEC + 相对时间 14px #7A7874（marginTop 4px）
+8. 右侧加 > 箭头（Lucide ChevronRight，18px，#4A4A47 极淡）
+9. padding: 16px 16px 16px 20px
+10. 项与项之间不加分隔线
+11. 选中态：背景 rgba(255,255,255,0.06)，边框 1px solid rgba(255,255,255,0.1)，圆角 12px，margin 2px 8px
+
+===== 底部固定栏 =====
+12. 固定在底部，padding 10px 16px + safe-area-inset-bottom
+13. 左侧搜索框：高 40px，胶囊形圆角 20px，背景 rgba(255,255,255,0.08)，placeholder "Search"
+14. 右侧：44px 圆形，背景 #AE5630，白色 + 图标 22px
+15. 间距 12px
+16. 搜索实时过滤对话列表
+17. 列表底部加 padding-bottom: 80px 防遮挡
+
+===== 相对时间 =====
+18. 实现函数：<1分钟→"just now"，<1小时→"X minutes ago"，<24小时→"X hours ago"，<7天→"X days ago"，<30天→"X weeks ago"，其余→"X months ago"
+
+===== 长按菜单 =====
+19. 背景 #3C3B37，圆角 14px，阴影 0 8px 32px rgba(0,0,0,0.35)
+20. 每项 44px 高，图标 18px，文字 16px，间距 14px
+21. 菜单项：移到项目 / 收藏(取消收藏) / 重命名 / 删除
+22. 删除的图标和文字为红色 #E5534B
+23. 出现动画 scale(0.95→1) + opacity，180ms
+
+请逐项实现，不遗漏。
+```
+
+-----
+
+# 检查清单
+
+```
+□ 没有顶部大橙色按钮
+□ 没有日期分组标签
+□ 没有归档按钮
+□ 顶栏左侧筛选图标（带灰底），中间 "Chats"
+□ 对话项：标题 17px + 时间 14px + 右侧 > 箭头
+□ 选中项有淡色边框圆角包裹
+□ 底部有搜索框 + 橙色 ＋ 按钮
+□ 搜索可过滤
+□ 长按弹出菜单，Delete 红色
+```

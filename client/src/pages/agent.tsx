@@ -5,7 +5,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
-import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Archive, MoreHorizontal, Pencil, X, Check } from "lucide-react";
+import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Archive, MoreHorizontal, Pencil, X, Check, ListFilter, ChevronRight, Search } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -101,21 +101,28 @@ function formatRelativeTime(dateStr: string): string {
   const diffMs = now.getTime() - date.getTime();
   const diffMin = Math.floor(diffMs / 60000);
   const diffHour = Math.floor(diffMs / 3600000);
+  const diffDay = Math.floor(diffMs / 86400000);
 
-  if (diffMin < 1) return "刚刚";
-  if (diffMin < 60) return `${diffMin}分钟前`;
-  if (diffHour < 24) return `${diffHour}小时前`;
-  return `${date.getMonth() + 1}/${date.getDate()}`;
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin} minute${diffMin > 1 ? 's' : ''} ago`;
+  if (diffHour < 24) return `${diffHour} hour${diffHour > 1 ? 's' : ''} ago`;
+  if (diffDay < 7) return `${diffDay} day${diffDay > 1 ? 's' : ''} ago`;
+  if (diffDay < 30) return `${Math.floor(diffDay / 7)} week${Math.floor(diffDay / 7) > 1 ? 's' : ''} ago`;
+  return `${Math.floor(diffDay / 30)} month${Math.floor(diffDay / 30) > 1 ? 's' : ''} ago`;
 }
 
 function groupConversationsByDate(conversations: Conversation[]): { label: string; items: Conversation[] }[] {
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterdayStart = new Date(todayStart.getTime() - 86400000);
+  const sevenDaysAgo = new Date(todayStart.getTime() - 7 * 86400000);
+  const thirtyDaysAgo = new Date(todayStart.getTime() - 30 * 86400000);
 
   const today: Conversation[] = [];
   const yesterday: Conversation[] = [];
-  const earlier: Conversation[] = [];
+  const prev7: Conversation[] = [];
+  const prev30: Conversation[] = [];
+  const monthBuckets: Record<string, Conversation[]> = {};
 
   for (const conv of conversations) {
     const d = new Date(conv.updatedAt);
@@ -123,26 +130,44 @@ function groupConversationsByDate(conversations: Conversation[]): { label: strin
       today.push(conv);
     } else if (d >= yesterdayStart) {
       yesterday.push(conv);
+    } else if (d >= sevenDaysAgo) {
+      prev7.push(conv);
+    } else if (d >= thirtyDaysAgo) {
+      prev30.push(conv);
     } else {
-      earlier.push(conv);
+      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      const key = `${monthNames[d.getMonth()]} ${d.getFullYear()}`;
+      if (!monthBuckets[key]) monthBuckets[key] = [];
+      monthBuckets[key].push(conv);
     }
   }
 
   const groups: { label: string; items: Conversation[] }[] = [];
-  if (today.length > 0) groups.push({ label: "今天", items: today });
-  if (yesterday.length > 0) groups.push({ label: "昨天", items: yesterday });
-  if (earlier.length > 0) groups.push({ label: "更早", items: earlier });
+  if (today.length > 0) groups.push({ label: "Today", items: today });
+  if (yesterday.length > 0) groups.push({ label: "Yesterday", items: yesterday });
+  if (prev7.length > 0) groups.push({ label: "Previous 7 Days", items: prev7 });
+  if (prev30.length > 0) groups.push({ label: "Previous 30 Days", items: prev30 });
+  const sortedMonths = Object.keys(monthBuckets).sort((a, b) => {
+    const da = new Date(monthBuckets[a][0].updatedAt);
+    const db = new Date(monthBuckets[b][0].updatedAt);
+    return db.getTime() - da.getTime();
+  });
+  for (const key of sortedMonths) {
+    groups.push({ label: key, items: monthBuckets[key] });
+  }
   return groups;
 }
 
 function ConversationItem({
   conv,
+  isSelected,
   onSelect,
   onArchive,
   onRename,
   onDelete,
 }: {
   conv: Conversation;
+  isSelected: boolean;
   onSelect: (id: number) => void;
   onArchive: (id: number) => void;
   onRename: (id: number, title: string) => void;
@@ -221,38 +246,27 @@ function ConversationItem({
       className="relative overflow-hidden group"
       data-testid={`conv-item-${conv.id}`}
     >
-      {/* Swipe-to-reveal actions (mobile only) */}
-      <div
-        className="absolute right-0 top-0 bottom-0 flex items-center md:hidden"
-        style={{ width: 80 }}
-      >
-        <button
-          onClick={(e) => { e.stopPropagation(); onArchive(conv.id); }}
-          className="flex items-center justify-center gap-1 h-full w-full text-[var(--text-secondary)] text-xs"
-          style={{ background: 'var(--bg-tertiary, hsl(var(--muted)))' }}
-          data-testid={`btn-archive-swipe-${conv.id}`}
-        >
-          <Archive className="w-4 h-4" strokeWidth={1.5} />
-          <span>归档</span>
-        </button>
-      </div>
-
-      <div
-        className="relative bg-[var(--bg-primary,hsl(var(--background)))] px-3 py-2.5 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 rounded-lg mx-2 my-0.5"
-        style={{
-          transform: `translateX(${-swipeOffset}px)`,
-          transition: swipeOffset === 0 || swiped ? 'transform 200ms ease' : 'none',
-        }}
+      <button
         onClick={handleClick}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
+        style={{
+          width: '100%',
+          padding: '16px 16px 16px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: isSelected ? 'rgba(255,255,255,0.06)' : 'transparent',
+          border: isSelected ? '1px solid rgba(255,255,255,0.1)' : '1px solid transparent',
+          borderRadius: isSelected ? 12 : 0,
+          margin: isSelected ? '2px 8px' : '0',
+          cursor: 'pointer',
+          textAlign: 'left' as const,
+          transition: 'background 150ms',
+        }}
         data-testid={`conv-row-${conv.id}`}
       >
-        <div className="flex items-center justify-between gap-2">
+        <div style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
           {isRenaming ? (
-            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
               <input
                 ref={renameInputRef}
                 value={renameValue}
@@ -262,69 +276,95 @@ function ConversationItem({
                   if (e.key === 'Escape') cancelRename();
                 }}
                 onBlur={confirmRename}
-                className="text-sm bg-transparent border-b border-[var(--text-secondary)] text-[var(--text-primary)] outline-none flex-1 min-w-0 py-0.5"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  fontSize: 17,
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: '1px solid var(--text-secondary)',
+                  color: '#ECECEC',
+                  outline: 'none',
+                  width: '100%',
+                  padding: '0 0 2px 0',
+                }}
                 data-testid={`conv-rename-input-${conv.id}`}
               />
             </div>
           ) : (
-            <span
-              className="text-sm text-[var(--text-primary)] truncate flex-1"
-              data-testid={`conv-title-${conv.id}`}
-            >
-              {conv.title}
-            </span>
+            <>
+              <div style={{
+                fontSize: 17,
+                fontWeight: 400,
+                color: '#ECECEC',
+                lineHeight: 1.35,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }} data-testid={`conv-title-${conv.id}`}>
+                {conv.title}
+              </div>
+              <div style={{
+                fontSize: 14,
+                color: '#7A7874',
+                marginTop: 4,
+              }} data-testid={`conv-time-${conv.id}`}>
+                {formatRelativeTime(conv.updatedAt)}
+              </div>
+            </>
           )}
-          <div className="flex items-center shrink-0">
-            {!isRenaming && (
-              <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    onClick={(e) => e.stopPropagation()}
-                    className="items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/10 transition-colors hidden md:flex opacity-0 group-hover:opacity-100"
-                    data-testid={`btn-conv-menu-${conv.id}`}
-                  >
-                    <MoreHorizontal className="w-4 h-4" strokeWidth={1.5} />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  side="bottom"
-                  sideOffset={4}
-                  className="w-44 border-white/10 rounded-xl shadow-xl p-1"
-                  style={{ background: 'rgba(45,44,40,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
-                  data-testid={`conv-menu-${conv.id}`}
-                >
-                  <DropdownMenuItem
-                    onClick={(e) => { e.stopPropagation(); startRename(); }}
-                    className="flex items-center gap-2.5 px-3 py-2 text-sm text-[#e5e5e5] rounded-lg cursor-pointer hover:bg-white/10 focus:bg-white/10"
-                    data-testid={`btn-rename-${conv.id}`}
-                  >
-                    <Pencil className="w-4 h-4" strokeWidth={1.5} />
-                    重命名
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={(e) => { e.stopPropagation(); onArchive(conv.id); }}
-                    className="flex items-center gap-2.5 px-3 py-2 text-sm text-[#e5e5e5] rounded-lg cursor-pointer hover:bg-white/10 focus:bg-white/10"
-                    data-testid={`btn-archive-${conv.id}`}
-                  >
-                    <Archive className="w-4 h-4" strokeWidth={1.5} />
-                    归档
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator className="bg-[#3a3a3a] my-1" />
-                  <DropdownMenuItem
-                    onClick={(e) => { e.stopPropagation(); onDelete(conv.id); }}
-                    className="flex items-center gap-2.5 px-3 py-2 text-sm text-[#ef4444] rounded-lg cursor-pointer hover:bg-white/10 focus:bg-white/10"
-                    data-testid={`btn-delete-${conv.id}`}
-                  >
-                    <Trash2 className="w-4 h-4" strokeWidth={1.5} />
-                    删除
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
         </div>
-      </div>
+
+        <div className="flex items-center gap-1 shrink-0">
+          {!isRenaming && (
+            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  onClick={(e) => e.stopPropagation()}
+                  className="items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/10 transition-colors hidden md:flex opacity-0 group-hover:opacity-100"
+                  data-testid={`btn-conv-menu-${conv.id}`}
+                >
+                  <MoreHorizontal className="w-4 h-4" strokeWidth={1.5} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                side="bottom"
+                sideOffset={4}
+                className="w-44 border-white/10 rounded-xl shadow-xl p-1"
+                style={{ background: 'rgba(45,44,40,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
+                data-testid={`conv-menu-${conv.id}`}
+              >
+                <DropdownMenuItem
+                  onClick={(e) => { e.stopPropagation(); startRename(); }}
+                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-[#e5e5e5] rounded-lg cursor-pointer hover:bg-white/10 focus:bg-white/10"
+                  data-testid={`btn-rename-${conv.id}`}
+                >
+                  <Pencil className="w-4 h-4" strokeWidth={1.5} />
+                  重命名
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => { e.stopPropagation(); onArchive(conv.id); }}
+                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-[#e5e5e5] rounded-lg cursor-pointer hover:bg-white/10 focus:bg-white/10"
+                  data-testid={`btn-archive-${conv.id}`}
+                >
+                  <Archive className="w-4 h-4" strokeWidth={1.5} />
+                  归档
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="bg-[#3a3a3a] my-1" />
+                <DropdownMenuItem
+                  onClick={(e) => { e.stopPropagation(); onDelete(conv.id); }}
+                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-[#ef4444] rounded-lg cursor-pointer hover:bg-white/10 focus:bg-white/10"
+                  data-testid={`btn-delete-${conv.id}`}
+                >
+                  <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                  删除
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          <ChevronRight size={18} color="#4A4A47" strokeWidth={1.5} />
+        </div>
+      </button>
     </div>
   );
 }
@@ -374,39 +414,55 @@ function ConversationListView({
     }
   }, [toast]);
 
-  const groups = groupConversationsByDate(conversations);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredConversations = searchQuery
+    ? conversations.filter(c => c.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    : conversations;
+  const filteredGroups = groupConversationsByDate(filteredConversations);
 
   return (
     <div className="flex flex-col h-full" data-testid="conversation-list-view">
-      <div className="px-4 pt-4 pb-2">
+      <div style={{
+        height: 52,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 16px',
+        flexShrink: 0,
+      }}>
         <button
-          onClick={onNewConversation}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white font-medium text-sm transition-colors"
-          style={{ background: 'var(--brand)' }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--brand-hover, var(--brand))'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--brand)'; }}
-          data-testid="btn-new-conversation"
+          style={{
+            width: 40, height: 40,
+            background: 'rgba(255,255,255,0.08)',
+            borderRadius: 10,
+            border: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+          data-testid="btn-filter"
         >
-          <Plus className="w-4 h-4" />
-          新对话
+          <ListFilter size={22} color="#ECECEC" strokeWidth={1.5} />
         </button>
+        <span style={{ fontSize: 17, fontWeight: 600, color: '#ECECEC', fontFamily: 'sans-serif' }}>Chats</span>
+        <div style={{ width: 40 }} />
       </div>
 
-      <div className="flex-1 overflow-y-auto" data-testid="conversation-list">
+      <div className="flex-1 overflow-y-auto" style={{ paddingBottom: 80 }} data-testid="conversation-list">
         {isLoading ? (
           <div className="flex items-center justify-center py-16" data-testid="conversations-loading">
             <ThinkingAnimation size={36} label="加载中" />
           </div>
-        ) : groups.length === 0 ? (
+        ) : filteredGroups.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3" data-testid="conversations-empty">
             <MessageSquare className="w-10 h-10 text-[var(--text-secondary)] opacity-30" />
-            <span className="text-sm text-[var(--text-secondary)]">暂无对话</span>
+            <span className="text-sm text-[var(--text-secondary)]">{searchQuery ? '无匹配结果' : '暂无对话'}</span>
           </div>
         ) : (
-          groups.map((group) => (
+          filteredGroups.map((group) => (
             <div key={group.label} data-testid={`conv-group-${group.label}`}>
-              <div className="px-4 pt-4 pb-1">
-                <span className="text-xs font-medium text-[var(--text-secondary)]" data-testid={`conv-group-label-${group.label}`}>
+              <div style={{ padding: '20px 20px 8px 20px' }}>
+                <span style={{ fontSize: 14, fontWeight: 400, color: '#7A7874', fontFamily: 'sans-serif' }} data-testid={`conv-group-label-${group.label}`}>
                   {group.label}
                 </span>
               </div>
@@ -414,6 +470,7 @@ function ConversationListView({
                 <ConversationItem
                   key={conv.id}
                   conv={conv}
+                  isSelected={false}
                   onSelect={onSelectConversation}
                   onArchive={handleArchive}
                   onRename={handleRename}
@@ -423,6 +480,52 @@ function ConversationListView({
             </div>
           ))
         )}
+      </div>
+
+      <div style={{
+        position: 'sticky',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        padding: '10px 16px',
+        paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        background: 'var(--bg-primary)',
+      }} data-testid="chats-bottom-bar">
+        <div style={{
+          flex: 1, height: 40,
+          background: 'rgba(255,255,255,0.08)',
+          borderRadius: 20,
+          padding: '0 14px',
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <Search size={16} color="#7A7874" />
+          <input
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search"
+            style={{
+              flex: 1, border: 'none', outline: 'none',
+              background: 'transparent',
+              fontSize: 15, color: '#ECECEC',
+            }}
+            data-testid="input-search-chats"
+          />
+        </div>
+        <button
+          onClick={onNewConversation}
+          style={{
+            width: 44, height: 44, borderRadius: '50%',
+            background: '#AE5630', border: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0, cursor: 'pointer',
+          }}
+          data-testid="btn-new-conversation"
+        >
+          <Plus size={22} color="#FFFFFF" strokeWidth={2} />
+        </button>
       </div>
     </div>
   );
