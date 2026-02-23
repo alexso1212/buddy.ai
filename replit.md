@@ -6,6 +6,17 @@ Depai Task Center is a comprehensive team task management system designed for De
 ## User Preferences
 I prefer iterative development with clear, concise explanations at each step. I want to be asked before major architectural changes or significant code refactoring. For UI/UX, I prioritize a clean, modern aesthetic with a consistent design system. I also value detailed progress updates and transparent communication regarding any challenges or decisions.
 
+### Transparent Overlay & Floating Input Design Pattern
+All pages with a top bar and/or bottom input area must follow this pattern:
+- **Top bar:** Absolute positioned gradient overlay, height 108px, `linear-gradient(to bottom, rgba(30,29,26,0.99) 0%, transparent 100%)`, `pointerEvents: 'none'` on the gradient, interactive elements inside get `pointerEvents: 'auto'`. On agent page shows ModelSelector in center; other pages show "Buddy" title.
+- **Bottom input area:** Three-layer structure:
+  1. **Gradient transition** (40px): `linear-gradient(to top, rgba(30,29,26,0.85) 0%, transparent 100%)` — only at the boundary between content and the bar.
+  2. **Input box zone** (no background plate): The background plate is masked/cut out using an SVG mask that precisely matches the input box shape (borderRadius: 20px), so text scrolling behind the input box is visible through it.
+  3. **Bottom padding** below the input: `rgba(30,29,26,0.85)` with height `calc(3.33vh + env(safe-area-inset-bottom))`.
+- **Input box itself:** `rgba(44, 43, 40, 0.50)` (50% opacity) with `backdropFilter: blur(16px)`, `border: 1px solid rgba(255,255,255,0.08)`, `borderRadius: 20`.
+- **Key principle:** The input box should appear to "float" over the content. Text scrolling behind the input box should be faintly visible through it. The gradient only exists at the content/bar boundary; beyond that, opacity is uniform.
+- **Apply this pattern** to every page that has a top bar and/or a text input area at the bottom.
+
 ## System Architecture
 The application is built with an Express.js backend, a React (TypeScript) frontend utilizing Vite, and PostgreSQL with Drizzle ORM for data persistence. Tailwind CSS and shadcn/ui components are used for styling and UI elements, while `wouter` handles frontend routing.
 
