@@ -570,7 +570,7 @@ function ConversationListView({
               border: '1px solid rgba(255,255,255,0.15)',
               padding: '0 14px',
               display: 'flex', alignItems: 'center', gap: 8,
-              background: '#343533',
+              background: 'rgba(38, 38, 36, 0.60)',
             }}
           >
             <Search size={16} color="#7A7874" />
