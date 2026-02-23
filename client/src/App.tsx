@@ -575,8 +575,58 @@ function Sidebar({
         <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
           {renderGroupHeader('企业管理', Building2, enterpriseOpen, () => setEnterpriseOpen(v => !v), 'button-toggle-enterprise')}
           <CollapsibleContent isOpen={enterpriseOpen}>
-            <div>
-              {ENTERPRISE_NAV.map(renderNavItem)}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '2px 4px',
+              padding: '2px 12px 6px 12px',
+            }}>
+              {ENTERPRISE_NAV.map((item) => {
+                const Icon = item.icon;
+                const active = item.path ? isActive(item.path) : false;
+                const testId = item.path ? `nav-${item.path.slice(1)}` : `nav-${item.label.toLowerCase()}`;
+                const inner = (
+                  <div
+                    style={{
+                      height: 36,
+                      padding: '0 12px',
+                      borderRadius: 10,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      background: active
+                        ? 'linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%)'
+                        : 'transparent',
+                      border: active ? '1px solid rgba(255,255,255,0.10)' : '1px solid transparent',
+                      cursor: 'pointer',
+                      transition: 'all 150ms ease',
+                    }}
+                    onMouseEnter={e => {
+                      if (!active) {
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                        e.currentTarget.style.border = '1px solid rgba(255,255,255,0.05)';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      if (!active) {
+                        e.currentTarget.style.background = 'transparent';
+                        e.currentTarget.style.border = '1px solid transparent';
+                      }
+                    }}
+                    data-testid={testId}
+                  >
+                    <Icon size={16} color="#ECECEC" strokeWidth={1.5} />
+                    <span style={{ fontSize: 14, fontWeight: 400, color: '#ECECEC' }}>{item.label}</span>
+                  </div>
+                );
+                return item.path ? (
+                  <Link key={item.label} href={item.path} onClick={onClose} style={{ textDecoration: 'none' }}>
+                    {inner}
+                  </Link>
+                ) : (
+                  <div key={item.label} onClick={() => toast({ title: '即将推出' })}>{inner}</div>
+                );
+              })}
             </div>
           </CollapsibleContent>
 
