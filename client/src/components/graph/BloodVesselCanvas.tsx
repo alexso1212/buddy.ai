@@ -135,7 +135,7 @@ export default function BloodVesselCanvas({
 
         if (flowing) {
           const style = getPipeStyle(src.status || '', tgt.status || '');
-          opacity = style.baseOpacity;
+          opacity = 0.5;
           color = style.baseColor;
           lineWidth = 1.5;
           dashed = style.isDashed;
@@ -203,7 +203,7 @@ export default function BloodVesselCanvas({
           ctx.shadowBlur = 10;
           ctx.fillStyle = style.particleColor;
           ctx.beginPath();
-          ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+          ctx.arc(px, py, 6, 0, Math.PI * 2);
           ctx.fill();
         }
 
@@ -213,6 +213,12 @@ export default function BloodVesselCanvas({
 
       ctx.restore();
       ctx.globalAlpha = 1;
+
+      if (t % 60 === 0) {
+        const pipeCount = links.filter((l: any) => l.source?.x != null && l.target?.x != null).length;
+        const particleCount = flowing && k >= 0.3 ? particlesRef.current.filter((p: Particle) => p.linkIdx < links.length).length : 0;
+        console.log(`[BloodVessel] frame=${t} pipes=${pipeCount} particles=${particleCount} zoom=${k.toFixed(2)} bloodFlow=${flowing}`);
+      }
 
       animFrameRef.current = requestAnimationFrame(animate);
     }

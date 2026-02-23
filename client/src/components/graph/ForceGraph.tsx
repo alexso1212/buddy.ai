@@ -147,7 +147,7 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
   const simLinksRef = useRef<any[]>([]);
   const hoveredNodeIdRef = useRef<number | null>(null);
 
-  const getRadius = useCallback((node: GraphNode) => 12 + node.weight * 4, []);
+  const getRadius = useCallback((node: GraphNode) => 6 + node.weight * 2, []);
 
   useEffect(() => {
     colorByRef.current = colorBy;
