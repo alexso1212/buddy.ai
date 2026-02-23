@@ -778,6 +778,12 @@ export async function registerRoutes(server: Server, app: Express) {
       const now = new Date();
       const filteredIds = new Set(filteredTasks.map(t => t.id));
 
+      const projectColorMap = new Map<number, string>();
+      const projectIds = Array.from(new Set(filteredTasks.map(t => t.projectId)));
+      projectIds.forEach((pid, idx) => {
+        projectColorMap.set(pid, projectColors[idx % projectColors.length]);
+      });
+
       const nodes = filteredTasks.map(t => {
         const project = projectMap.get(t.projectId);
         const assignee = t.assigneeId ? userMap.get(t.assigneeId) : null;
@@ -792,6 +798,7 @@ export async function registerRoutes(server: Server, app: Express) {
           progress: t.progress,
           projectId: t.projectId,
           projectName: project?.name ?? '',
+          projectColor: projectColorMap.get(t.projectId) ?? defaultDeptColor,
           deptId: nodeDeptId,
           deptColor: dept?.color ?? defaultDeptColor,
           assigneeId: t.assigneeId,

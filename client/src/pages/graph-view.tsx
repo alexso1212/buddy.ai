@@ -1,35 +1,12 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Menu } from "lucide-react";
 import ForceGraph from "@/components/graph/ForceGraph";
+import type { GraphNode, GraphLink, ProjectInfo } from "@/components/graph/ForceGraph";
+import GraphSettings from "@/components/graph/GraphSettings";
+import type { ColorByOption } from "@/components/graph/GraphSettings";
 
-interface GraphNode {
-  id: number;
-  title: string;
-  status: string;
-  priority: string;
-  weight: number;
-  progress: number;
-  projectId: number;
-  projectName: string;
-  deptId: number | null;
-  deptColor: string;
-  assigneeId: number | null;
-  assigneeName: string | null;
-  dueDate: string | null;
-  isOverdue: boolean;
-  type: string;
-  parentTaskId: number | null;
-  hasSubtasks: boolean;
-}
-
-interface GraphLink {
-  source: number | any;
-  target: number | any;
-  type: string;
-  isBlocking: boolean;
-}
-
-interface ProjectInfo {
+interface DeptInfo {
   id: number;
   name: string;
   color: string;
@@ -39,6 +16,7 @@ interface GraphData {
   nodes: GraphNode[];
   links: GraphLink[];
   projects: ProjectInfo[];
+  departments: DeptInfo[];
 }
 
 function GraphOverlayControls() {
@@ -95,6 +73,8 @@ function GraphOverlayControls() {
 }
 
 export default function GraphView() {
+  const [colorBy, setColorBy] = useState<ColorByOption>('department');
+
   const { data: response, isLoading } = useQuery<{ data: GraphData }>({
     queryKey: ['/api/graph/data'],
   });
@@ -115,6 +95,7 @@ export default function GraphView() {
         }}
       >
         <GraphOverlayControls />
+        <GraphSettings colorBy={colorBy} onColorByChange={setColorBy} />
         <div style={{ color: '#6b7280', fontSize: 14 }}>Loading graph data...</div>
       </div>
     );
@@ -135,11 +116,13 @@ export default function GraphView() {
       }}
     >
       <GraphOverlayControls />
+      <GraphSettings colorBy={colorBy} onColorByChange={setColorBy} />
       {nodes.length > 0 ? (
         <ForceGraph
           nodes={nodes}
           links={links}
           projects={projects}
+          colorBy={colorBy}
         />
       ) : (
         <div

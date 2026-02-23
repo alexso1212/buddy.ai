@@ -1,7 +1,8 @@
 import { useRef, useEffect, useCallback } from "react";
 import * as d3 from "d3";
+import type { ColorByOption } from "./GraphSettings";
 
-interface GraphNode {
+export interface GraphNode {
   id: number;
   title: string;
   status: string;
@@ -10,6 +11,7 @@ interface GraphNode {
   progress: number;
   projectId: number;
   projectName: string;
+  projectColor: string;
   deptId: number | null;
   deptColor: string;
   assigneeId: number | null;
@@ -21,14 +23,14 @@ interface GraphNode {
   hasSubtasks: boolean;
 }
 
-interface GraphLink {
+export interface GraphLink {
   source: number | any;
   target: number | any;
   type: string;
   isBlocking: boolean;
 }
 
-interface ProjectInfo {
+export interface ProjectInfo {
   id: number;
   name: string;
   color: string;
@@ -38,6 +40,7 @@ interface ForceGraphProps {
   nodes: GraphNode[];
   links: GraphLink[];
   projects: ProjectInfo[];
+  colorBy?: ColorByOption;
   onNodeClick?: (node: GraphNode) => void;
 }
 
@@ -45,6 +48,50 @@ interface SimNode extends GraphNode, d3.SimulationNodeDatum {}
 interface SimLink extends d3.SimulationLinkDatum<SimNode> {
   type: string;
   isBlocking: boolean;
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  todo: '#9ca3af',
+  in_progress: '#f59e0b',
+  in_review: '#3b82f6',
+  blocked: '#ef4444',
+  done: '#10b981',
+  cancelled: '#6b7280',
+};
+
+const PRIORITY_COLORS: Record<string, string> = {
+  critical: '#ef4444',
+  high: '#f59e0b',
+  medium: '#3b82f6',
+  low: '#9ca3af',
+};
+
+const ASSIGNEE_PALETTE = [
+  '#FF6B35', '#4ECDC4', '#45B7D1', '#96CEB4',
+  '#FFEAA7', '#DDA0DD', '#F08080', '#87CEEB',
+];
+
+function hashAssigneeColor(assigneeId: number): string {
+  return ASSIGNEE_PALETTE[assigneeId % ASSIGNEE_PALETTE.length];
+}
+
+const FALLBACK_COLOR = '#9ca3af';
+
+function getNodeColor(node: GraphNode, colorBy: ColorByOption): string {
+  switch (colorBy) {
+    case 'department':
+      return node.deptColor || FALLBACK_COLOR;
+    case 'project':
+      return node.projectColor || FALLBACK_COLOR;
+    case 'status':
+      return STATUS_COLORS[node.status] || FALLBACK_COLOR;
+    case 'priority':
+      return PRIORITY_COLORS[node.priority] || FALLBACK_COLOR;
+    case 'assignee':
+      return node.assigneeId ? hashAssigneeColor(node.assigneeId) : FALLBACK_COLOR;
+    default:
+      return FALLBACK_COLOR;
+  }
 }
 
 function clusterForce(nodes: SimNode[], alpha: number) {
@@ -89,13 +136,26 @@ function truncate(str: string, max: number) {
   return str.slice(0, max) + "\u2026";
 }
 
-export default function ForceGraph({ nodes, links, projects, onNodeClick }: ForceGraphProps) {
+export default function ForceGraph({ nodes, links, projects, colorBy = 'department', onNodeClick }: ForceGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const simulationRef = useRef<d3.Simulation<SimNode, SimLink> | null>(null);
   const zoomTransformRef = useRef<d3.ZoomTransform>(d3.zoomIdentity);
+  const colorByRef = useRef(colorBy);
 
   const getRadius = useCallback((node: GraphNode) => 12 + node.weight * 4, []);
+
+  useEffect(() => {
+    colorByRef.current = colorBy;
+    if (!svgRef.current) return;
+    const svg = d3.select(svgRef.current);
+    svg.selectAll<SVGGElement, SimNode>("g.nodes g").each(function (d) {
+      const fillColor = getNodeColor(d, colorBy);
+      const el = d3.select(this);
+      el.select("circle").attr("fill", fillColor);
+      el.select("rect").attr("fill", fillColor);
+    });
+  }, [colorBy]);
 
   useEffect(() => {
     if (!svgRef.current || !containerRef.current || nodes.length === 0) return;
@@ -215,7 +275,7 @@ export default function ForceGraph({ nodes, links, projects, onNodeClick }: Forc
     nodeElements.each(function (d) {
       const el = d3.select(this);
       const r = getRadius(d);
-      const fillColor = d.deptColor || "#9ca3af";
+      const fillColor = getNodeColor(d, colorByRef.current);
 
       if (d.type === "milestone") {
         el.append("rect")
