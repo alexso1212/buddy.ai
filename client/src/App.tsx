@@ -1209,6 +1209,8 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const [location] = useLocation();
+  const isAgentPage = location === '/agent' || location.startsWith('/agent?');
   
   const dragRef = useRef({
     isDragging: false,
@@ -1329,6 +1331,12 @@ function App() {
     };
   }, [sidebarOpen]);
 
+  useEffect(() => {
+    const handleOpenSidebar = () => setSidebarOpen(true);
+    window.addEventListener('open-sidebar', handleOpenSidebar);
+    return () => window.removeEventListener('open-sidebar', handleOpenSidebar);
+  }, []);
+
   return (
     <ThemeProvider>
     <QueryClientProvider client={queryClient}>
@@ -1336,42 +1344,44 @@ function App() {
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} sidebarRef={sidebarRef} overlayRef={overlayRef} />
 
         <div className="flex-1 flex flex-col overflow-hidden">
-          <header className="md:hidden" style={{
-            height: 54,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0 8px',
-            background: 'var(--bg-primary)',
-            borderBottom: '1px solid var(--border-subtle)',
-            flexShrink: 0,
-            position: 'relative',
-          }} data-testid="top-bar">
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
-              width: 40, height: 40,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(255,255,255,0.07)',
-              border: '1px solid rgba(255,255,255,0.10)',
-              borderRadius: '50%',
-              cursor: 'pointer',
-              color: 'var(--text-primary)',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
-              transition: 'background 150ms',
-            }} data-testid="menu-toggle"
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
-            >
-              <Menu size={20} strokeWidth={1.8} />
-            </button>
-            <span style={{
-              position: 'absolute', left: '50%', transform: 'translateX(-50%)',
-              fontSize: 17, fontWeight: 600,
-              color: 'var(--text-primary)',
-              fontFamily: 'var(--font-sans)',
-            }} data-testid="top-bar-title">Buddy</span>
-            <div style={{ width: 40 }} />
-          </header>
+          {!isAgentPage && (
+            <header className="md:hidden" style={{
+              height: 54,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0 8px',
+              background: 'var(--bg-primary)',
+              borderBottom: '1px solid var(--border-subtle)',
+              flexShrink: 0,
+              position: 'relative',
+            }} data-testid="top-bar">
+              <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
+                width: 40, height: 40,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'rgba(255,255,255,0.07)',
+                border: '1px solid rgba(255,255,255,0.10)',
+                borderRadius: '50%',
+                cursor: 'pointer',
+                color: 'var(--text-primary)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+                transition: 'background 150ms',
+              }} data-testid="menu-toggle"
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
+              >
+                <Menu size={20} strokeWidth={1.8} />
+              </button>
+              <span style={{
+                position: 'absolute', left: '50%', transform: 'translateX(-50%)',
+                fontSize: 17, fontWeight: 600,
+                color: 'var(--text-primary)',
+                fontFamily: 'var(--font-sans)',
+              }} data-testid="top-bar-title">Buddy</span>
+              <div style={{ width: 40 }} />
+            </header>
+          )}
 
           <main
             className="flex-1 overflow-auto ml-0 md:ml-[260px]"

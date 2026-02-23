@@ -5,7 +5,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
-import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Archive, MoreHorizontal, Pencil, X, Check, ListFilter, ChevronRight, Search } from "lucide-react";
+import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Archive, MoreHorizontal, Pencil, X, Check, ListFilter, ChevronRight, Search, Menu } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -952,12 +952,20 @@ export default function Agent() {
       {showWelcome ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center px-3" style={{ paddingBottom: 80 }}>
           <button
-            onClick={handleBack}
-            className="absolute top-3 left-3 flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer z-[5]"
-            data-testid="btn-back-welcome"
+            onClick={() => window.dispatchEvent(new Event('open-sidebar'))}
+            className="absolute top-3 left-3 z-[5] md:hidden"
+            style={{
+              width: 36, height: 36,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(255,255,255,0.07)',
+              border: '1px solid rgba(255,255,255,0.10)',
+              borderRadius: '50%',
+              cursor: 'pointer',
+              color: 'var(--text-primary)',
+            }}
+            data-testid="btn-menu-welcome"
           >
-            <ArrowLeft className="w-4 h-4" />
-            返回
+            <Menu size={18} strokeWidth={1.8} />
           </button>
           <div className="flex flex-col items-center gap-4 mb-8">
             <AgentLogo size={80} animate={true} glow={true} />
@@ -993,13 +1001,22 @@ export default function Agent() {
         >
           <div className="sticky top-0 z-[5] flex items-center justify-between px-2 pt-2">
             <button
-              onClick={handleBack}
-              className="flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-              data-testid="btn-back"
+              onClick={() => window.dispatchEvent(new Event('open-sidebar'))}
+              className="md:hidden"
+              style={{
+                width: 36, height: 36,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'rgba(255,255,255,0.07)',
+                border: '1px solid rgba(255,255,255,0.10)',
+                borderRadius: '50%',
+                cursor: 'pointer',
+                color: 'var(--text-primary)',
+              }}
+              data-testid="btn-menu-chat"
             >
-              <ArrowLeft className="w-4 h-4" />
-              返回
+              <Menu size={18} strokeWidth={1.8} />
             </button>
+            <div className="hidden md:block" />
             <Button
               variant="ghost"
               size="icon"
