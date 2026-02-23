@@ -460,54 +460,6 @@ function ConversationListView({
   const filteredGroups = groupConversationsByDate(displayConversations);
 
   const searchBarRef = useRef<HTMLDivElement>(null);
-  const searchContainerRef = useRef<HTMLDivElement>(null);
-  const searchBgRef = useRef<HTMLDivElement>(null);
-
-  const updateSearchMask = useCallback(() => {
-    const container = searchContainerRef.current;
-    const searchBar = searchBarRef.current;
-    const bg = searchBgRef.current;
-    if (!container || !searchBar || !bg) return;
-
-    const cRect = container.getBoundingClientRect();
-    const sRect = searchBar.getBoundingClientRect();
-
-    const x = sRect.left - cRect.left;
-    const y = sRect.top - cRect.top;
-    const w = sRect.width;
-    const h = sRect.height;
-    const r = 20;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = cRect.width;
-    canvas.height = cRect.height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, r);
-    ctx.fill();
-
-    const dataUrl = canvas.toDataURL();
-    bg.style.maskImage = `url(${dataUrl})`;
-    bg.style.maskSize = '100% 100%';
-    (bg.style as any).webkitMaskImage = `url(${dataUrl})`;
-    (bg.style as any).webkitMaskSize = '100% 100%';
-  }, []);
-
-  useEffect(() => {
-    updateSearchMask();
-    const timer = setTimeout(updateSearchMask, 100);
-    const observer = new ResizeObserver(updateSearchMask);
-    if (searchContainerRef.current) observer.observe(searchContainerRef.current);
-    if (searchBarRef.current) observer.observe(searchBarRef.current);
-    window.addEventListener('resize', updateSearchMask);
-    return () => { clearTimeout(timer); observer.disconnect(); window.removeEventListener('resize', updateSearchMask); };
-  }, [updateSearchMask]);
 
   return (
     <div className="relative h-full" data-testid="conversation-list-view">
@@ -547,26 +499,16 @@ function ConversationListView({
       </div>
 
       <div
-        ref={searchContainerRef}
         className="absolute bottom-0 left-0 right-0"
         style={{ zIndex: 10, pointerEvents: 'none' }}
         data-testid="chats-bottom-bar"
       >
-        <div
-          ref={searchBgRef}
-          style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
-        >
-          <div style={{
-            height: 40,
-            background: 'linear-gradient(to top, rgba(38,38,36,0.85) 0%, transparent 100%)',
-          }} />
-          <div style={{
-            position: 'absolute', top: 40, left: 0, right: 0, bottom: 0,
-            background: 'rgba(38,38,36,0.85)',
-          }} />
-        </div>
+        <div style={{
+          height: 40,
+          background: 'linear-gradient(to top, rgba(38,38,36,0.85) 0%, transparent 100%)',
+          pointerEvents: 'none',
+        }} />
 
-        <div style={{ height: 40 }} />
         <div style={{ pointerEvents: 'auto', padding: '0 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
           <div
             ref={searchBarRef}
@@ -577,7 +519,7 @@ function ConversationListView({
               border: '1px solid rgba(255,255,255,0.15)',
               padding: '0 14px',
               display: 'flex', alignItems: 'center', gap: 8,
-              background: 'rgba(38, 38, 36, 0.10)',
+              background: 'rgba(38, 38, 36, 0.40)',
             }}
           >
             <Search size={16} color="#7A7874" />
