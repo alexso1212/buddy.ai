@@ -1,18 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
-import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Archive, MoreHorizontal, Pencil, X, Check, ListFilter, ChevronRight, Search } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Pencil, X, Check, ListFilter, ChevronRight, Search, Star, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
@@ -211,10 +205,19 @@ function ConversationItem({
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(conv.title);
   const renameInputRef = useRef<HTMLInputElement>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [highlighted, setHighlighted] = useState(false);
+  const itemRef = useRef<HTMLDivElement>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchMoved = useRef(false);
+  const longPressTriggered = useRef(false);
 
   const handleClick = useCallback(() => {
     if (isRenaming) return;
+    if (longPressTriggered.current) {
+      longPressTriggered.current = false;
+      return;
+    }
     onSelect(conv.id);
   }, [isRenaming, onSelect, conv.id]);
 
@@ -241,13 +244,136 @@ function ConversationItem({
     setTimeout(() => { cancellingRef.current = false; }, 50);
   }, [conv.title]);
 
+  const closeMenu = useCallback(() => {
+    setContextMenu(null);
+    setHighlighted(false);
+    setTimeout(() => { longPressTriggered.current = false; }, 50);
+  }, []);
+
+  const openContextMenu = useCallback((clientX: number, clientY: number) => {
+    const rect = itemRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const menuHeight = 220;
+    const menuWidth = 220;
+    let x = clientX;
+    let y = rect.top - menuHeight - 8;
+    if (y < 8) {
+      y = rect.bottom + 8;
+    }
+    if (x + menuWidth > window.innerWidth - 8) {
+      x = window.innerWidth - menuWidth - 8;
+    }
+    if (x < 8) x = 8;
+    setHighlighted(true);
+    setContextMenu({ x, y });
+    navigator.vibrate?.(10);
+    if (itemRef.current) {
+      itemRef.current.style.transform = 'scale(1.02)';
+      setTimeout(() => {
+        if (itemRef.current) itemRef.current.style.transform = 'scale(1)';
+      }, 150);
+    }
+  }, []);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isRenaming) return;
+    openContextMenu(e.clientX, e.clientY);
+  }, [isRenaming, openContextMenu]);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (isRenaming) return;
+    touchMoved.current = false;
+    const touch = e.touches[0];
+    const tx = touch.clientX;
+    const ty = touch.clientY;
+    longPressTimer.current = setTimeout(() => {
+      if (!touchMoved.current) {
+        longPressTriggered.current = true;
+        openContextMenu(tx, ty);
+      }
+    }, 400);
+  }, [isRenaming, openContextMenu]);
+
+  const handleTouchMove = useCallback(() => {
+    touchMoved.current = true;
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    if (longPressTriggered.current) {
+      e.preventDefault();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleScroll = () => closeMenu();
+    window.addEventListener('scroll', handleScroll, true);
+    return () => window.removeEventListener('scroll', handleScroll, true);
+  }, [contextMenu, closeMenu]);
+
+  const handleStar = useCallback(async () => {
+    closeMenu();
+    try {
+      await apiRequest("PATCH", `/api/conversations/${conv.id}`, { starred: !conv.starred });
+      queryClient.invalidateQueries({ queryKey: ['/api/conversations'] });
+    } catch {}
+  }, [conv.id, conv.starred, closeMenu]);
+
+  const menuItems = [
+    {
+      icon: FolderOpen,
+      label: "Add to project",
+      color: "#ffffff",
+      testId: `ctx-add-project-${conv.id}`,
+      action: () => { closeMenu(); console.log('Add to project', conv.id); },
+    },
+    {
+      icon: Star,
+      label: conv.starred ? "Unstar" : "Star",
+      color: "#ffffff",
+      testId: `ctx-star-${conv.id}`,
+      action: handleStar,
+    },
+    {
+      icon: Pencil,
+      label: "Rename",
+      color: "#ffffff",
+      testId: `ctx-rename-${conv.id}`,
+      action: () => { closeMenu(); startRename(); },
+    },
+    {
+      icon: Trash2,
+      label: "Delete",
+      color: "#ef4444",
+      testId: `ctx-delete-${conv.id}`,
+      action: () => { closeMenu(); onDelete(conv.id); },
+    },
+  ];
+
   return (
     <div
-      className="relative overflow-hidden group"
+      ref={itemRef}
+      className="relative"
+      style={{ transition: 'transform 150ms ease' }}
       data-testid={`conv-item-${conv.id}`}
     >
       <div
         onClick={handleClick}
+        onContextMenu={handleContextMenu}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
         role="button"
         tabIndex={0}
         style={{
@@ -256,13 +382,19 @@ function ConversationItem({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          background: isSelected ? 'rgba(255,255,255,0.06)' : 'transparent',
+          background: highlighted
+            ? 'rgba(0,0,0,0.85)'
+            : isSelected
+              ? 'rgba(255,255,255,0.06)'
+              : 'transparent',
           border: isSelected ? '1px solid rgba(255,255,255,0.1)' : '1px solid transparent',
-          borderRadius: isSelected ? 12 : 0,
+          borderRadius: highlighted ? 16 : isSelected ? 12 : 0,
           margin: isSelected ? '2px 8px' : '0',
           cursor: 'pointer',
           textAlign: 'left' as const,
-          transition: 'background 150ms',
+          transition: 'background 150ms, border-radius 150ms',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
         }}
         data-testid={`conv-row-${conv.id}`}
       >
@@ -333,57 +465,66 @@ function ConversationItem({
           )}
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
-          {!isRenaming && (
-            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  onClick={(e) => e.stopPropagation()}
-                  className="items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/10 transition-colors hidden md:flex opacity-0 group-hover:opacity-100"
-                  data-testid={`btn-conv-menu-${conv.id}`}
-                >
-                  <MoreHorizontal className="w-4 h-4" strokeWidth={1.5} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                side="bottom"
-                sideOffset={4}
-                className="w-44 border-white/10 rounded-xl shadow-xl p-1"
-                style={{ background: 'rgba(45,44,40,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
-                data-testid={`conv-menu-${conv.id}`}
-              >
-                <DropdownMenuItem
-                  onClick={(e) => { e.stopPropagation(); startRename(); }}
-                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-[#e5e5e5] rounded-lg cursor-pointer hover:bg-white/10 focus:bg-white/10"
-                  data-testid={`btn-rename-${conv.id}`}
-                >
-                  <Pencil className="w-4 h-4" strokeWidth={1.5} />
-                  重命名
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={(e) => { e.stopPropagation(); onArchive(conv.id); }}
-                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-[#e5e5e5] rounded-lg cursor-pointer hover:bg-white/10 focus:bg-white/10"
-                  data-testid={`btn-archive-${conv.id}`}
-                >
-                  <Archive className="w-4 h-4" strokeWidth={1.5} />
-                  归档
-                </DropdownMenuItem>
-                <DropdownMenuSeparator className="bg-[#3a3a3a] my-1" />
-                <DropdownMenuItem
-                  onClick={(e) => { e.stopPropagation(); onDelete(conv.id); }}
-                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-[#ef4444] rounded-lg cursor-pointer hover:bg-white/10 focus:bg-white/10"
-                  data-testid={`btn-delete-${conv.id}`}
-                >
-                  <Trash2 className="w-4 h-4" strokeWidth={1.5} />
-                  删除
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+        <div className="flex items-center shrink-0">
           <ChevronRight size={18} color="#4A4A47" strokeWidth={1.5} />
         </div>
       </div>
+
+      {contextMenu && createPortal(
+        <>
+          <div
+            onClick={closeMenu}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.3)',
+              zIndex: 9998,
+            }}
+            data-testid={`ctx-backdrop-${conv.id}`}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              left: contextMenu.x,
+              top: contextMenu.y,
+              width: 220,
+              background: 'rgba(30, 29, 26, 0.95)',
+              backdropFilter: 'blur(40px)',
+              WebkitBackdropFilter: 'blur(40px)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 16,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+              zIndex: 9999,
+              overflow: 'hidden',
+            }}
+            data-testid={`ctx-menu-${conv.id}`}
+          >
+            {menuItems.map((item) => (
+              <div
+                key={item.testId}
+                onClick={(e) => { e.stopPropagation(); item.action(); }}
+                style={{
+                  padding: '14px 18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  cursor: 'pointer',
+                  fontSize: 16,
+                  color: item.color,
+                  transition: 'background 100ms',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                data-testid={item.testId}
+              >
+                <item.icon size={18} strokeWidth={1.5} />
+                {item.label}
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
     </div>
   );
 }
