@@ -21,8 +21,8 @@ const claudeSimpleClient = new OpenAI({
   timeout: 30000,
 });
 
-const COMPLEX_MODELS = ['claude-opus-4-20250514'];
-const SIMPLE_MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-4-20250514'];
+const COMPLEX_MODELS = ['claude-opus-4-6'];
+const SIMPLE_MODELS = ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-sonnet-4-20250514'];
 
 function getClientForModel(model: string): OpenAI {
   if (COMPLEX_MODELS.includes(model)) return claudeComplexClient;
@@ -534,7 +534,7 @@ export async function chat(
     .replace('{{doneTasks}}', String(allTasks.filter(t => t.status === 'done').length))
     .replace('{{overdueTasks}}', String(allTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'done' && t.status !== 'cancelled').length));
 
-  const modelName = context.model || 'claude-sonnet-4-20250514';
+  const modelName = context.model || 'claude-sonnet-4-6';
   const aiClient = getClientForModel(modelName);
   const response = await aiClient.chat.completions.create({
     model: modelName,
@@ -706,7 +706,7 @@ export async function generateProjectTasks(
   projectDescription: string,
   context: { currentUserId: number; currentUserName: string }
 ): Promise<{ tasks: { title: string; description?: string; priority: string; type: string }[]; tokenUsage?: ChatResponse['tokenUsage'] }> {
-  const genModel = 'claude-sonnet-4-20250514';
+  const genModel = 'claude-sonnet-4-6';
   const genClient = getClientForModel(genModel);
   const response = await genClient.chat.completions.create({
     model: genModel,
@@ -740,7 +740,7 @@ export async function generateProjectTasks(
   });
 
   const usage = response.usage;
-  const modelName = 'claude-sonnet-4-20250514';
+  const modelName = 'claude-sonnet-4-6';
   const tokenInfo = usage ? {
     model: modelName,
     promptTokens: usage.prompt_tokens ?? 0,

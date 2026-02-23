@@ -232,7 +232,7 @@ export async function judgeTaskAssignment(
   
   const prompt = buildVerdictPrompt(task, targetUser, allUsers);
   
-  const modelName = 'claude-sonnet-4-20250514';
+  const modelName = 'claude-sonnet-4-6';
   const response = await client.chat.completions.create({
     model: modelName,
     max_tokens: 2048,
