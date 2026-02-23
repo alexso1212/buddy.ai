@@ -86,10 +86,10 @@ export default {
           offline: "rgb(156 163 175)",
         },
         brand: {
-          DEFAULT: '#AE5630',
-          hover: '#C4633A',
-          light: '#F0DDD4',
-          dark: '#8B4526',
+          DEFAULT: '#D4A27F',
+          hover: '#E8C5A8',
+          light: '#F0E3D6',
+          dark: '#C4845C',
         },
         page: {
           light: '#F5F5F0',

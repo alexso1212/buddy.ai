@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { Check, Sparkles } from "lucide-react";
+import { Check } from "lucide-react";
 import AiConfirmCard from "./AiConfirmCard";
 import AiFollowUpCard from "./AiFollowUpCard";
 import AIMessageContent from "./AIMessageContent";
+import AgentLogo from "@/components/AgentLogo";
 
 interface ActionPayload {
   actionType: string;
@@ -50,15 +51,7 @@ interface AiMessageBubbleProps {
 }
 
 function BrandLogo() {
-  return (
-    <div
-      className="flex items-center justify-center flex-shrink-0"
-      style={{ width: 20, height: 20, borderRadius: '50%', background: '#C4703F' }}
-      data-testid="brand-logo"
-    >
-      <Sparkles className="w-2.5 h-2.5 text-white" />
-    </div>
-  );
+  return <AgentLogo size={28} animate={false} glow={false} />;
 }
 
 function MultiConfirmGroup({

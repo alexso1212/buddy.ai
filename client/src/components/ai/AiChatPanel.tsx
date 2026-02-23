@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Minus, X, Sparkles } from "lucide-react";
+import { Minus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import AiMessageBubble from "./AiMessageBubble";
 import AiInputBar from "./AiInputBar";
+import AgentLogo from "@/components/AgentLogo";
+import ThinkingAnimation from "@/components/ThinkingAnimation";
 
 interface ActionPayload {
   actionType: string;
@@ -240,16 +242,7 @@ export default function AiChatPanel({ onClose }: AiChatPanelProps) {
         ))}
         {loading && (
           <div className="flex justify-start px-4 mb-6">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center flex-shrink-0" style={{ width: 20, height: 20, borderRadius: '50%', background: '#C4703F' }}>
-                <Sparkles className="w-2.5 h-2.5 text-white" />
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 bg-[var(--text-secondary)] rounded-full animate-bounce [animation-delay:0ms]" />
-                <span className="w-2 h-2 bg-[var(--text-secondary)] rounded-full animate-bounce [animation-delay:150ms]" />
-                <span className="w-2 h-2 bg-[var(--text-secondary)] rounded-full animate-bounce [animation-delay:300ms]" />
-              </div>
-            </div>
+            <ThinkingAnimation size={32} />
           </div>
         )}
       </div>

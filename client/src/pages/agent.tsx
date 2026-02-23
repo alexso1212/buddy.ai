@@ -3,8 +3,10 @@ import { useLocation, useSearch } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
-import { Trash2, Sparkles, ListPlus, BarChart3, Users, CheckSquare } from "lucide-react";
+import { Trash2, ListPlus, BarChart3, Users, CheckSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import AgentLogo from "@/components/AgentLogo";
+import ThinkingAnimation from "@/components/ThinkingAnimation";
 
 interface ActionPayload {
   actionType: string;
@@ -432,9 +434,7 @@ export default function Agent() {
       {showWelcome ? (
         <div className="flex-1 flex flex-col items-center justify-center px-3">
           <div className="flex flex-col items-center gap-4 mb-8">
-            <div className="w-12 h-12 rounded-full bg-brand flex items-center justify-center">
-              <Sparkles className="w-6 h-6 text-white" />
-            </div>
+            <AgentLogo size={80} animate={true} glow={true} />
             <h1 className="font-serif text-2xl text-[var(--text-primary)]" data-testid="text-welcome-heading">有什么可以帮你的？</h1>
           </div>
           <div className="grid grid-cols-2 gap-3 w-full max-w-md">
@@ -456,31 +456,7 @@ export default function Agent() {
         </div>
       ) : messagesLoading ? (
         <div className="flex-1 flex items-center justify-center" data-testid="messages-loading">
-          <div style={{ position: 'relative', width: 32, height: 32 }}>
-            <svg width="32" height="32" viewBox="0 0 32 32"
-              style={{ animation: 'buddySpin 1.2s linear infinite', position: 'absolute' }}>
-              <defs>
-                <linearGradient id="loadingGradMain" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#AE5630" stopOpacity="1" />
-                  <stop offset="100%" stopColor="#AE5630" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <circle cx="16" cy="16" r="14" fill="none"
-                stroke="url(#loadingGradMain)" strokeWidth="2"
-                strokeDasharray="66 22" strokeLinecap="round" />
-            </svg>
-            <div style={{
-              width: 20, height: 20,
-              borderRadius: '50%',
-              background: '#C4703F',
-              position: 'absolute',
-              top: '50%', left: '50%',
-              transform: 'translate(-50%, -50%)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Sparkles className="w-2.5 h-2.5 text-white" />
-            </div>
-          </div>
+          <ThinkingAnimation size={48} label="加载中" />
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto py-4 relative" ref={scrollRef} data-testid="agent-messages" style={{ WebkitOverflowScrolling: 'touch', scrollBehavior: 'smooth' }}>
@@ -508,42 +484,7 @@ export default function Agent() {
             ))}
             {loading && (
               <div className="flex justify-start px-3 mb-6" data-testid="ai-loading">
-                <div>
-                  <div style={{ position: 'relative', width: 32, height: 32, marginBottom: 10 }}>
-                    <svg width="32" height="32" viewBox="0 0 32 32"
-                      style={{ animation: 'buddySpin 1.2s linear infinite', position: 'absolute' }}>
-                      <defs>
-                        <linearGradient id="loadingGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                          <stop offset="0%" stopColor="#AE5630" stopOpacity="1" />
-                          <stop offset="100%" stopColor="#AE5630" stopOpacity="0" />
-                        </linearGradient>
-                      </defs>
-                      <circle cx="16" cy="16" r="14" fill="none"
-                        stroke="url(#loadingGrad)" strokeWidth="2"
-                        strokeDasharray="66 22" strokeLinecap="round" />
-                    </svg>
-                    <div style={{
-                      width: 20, height: 20,
-                      borderRadius: '50%',
-                      background: '#C4703F',
-                      position: 'absolute',
-                      top: '50%', left: '50%',
-                      transform: 'translate(-50%, -50%)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <Sparkles className="w-2.5 h-2.5 text-white" />
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {[0, 1, 2].map(i => (
-                      <span key={i} style={{
-                        width: 6, height: 6, borderRadius: '50%',
-                        background: 'var(--text-secondary)',
-                        animation: `buddyDotPulse 1.4s ease-in-out ${i * 0.15}s infinite`,
-                      }} />
-                    ))}
-                  </div>
-                </div>
+                <ThinkingAnimation size={36} />
               </div>
             )}
           </div>
