@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { cn } from "@/lib/utils";
+import { ChevronLeft, ChevronRight, X, Check, AlertCircle } from "lucide-react";
 import AiStepQuestion from "./AiStepQuestion";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
-import { Check, AlertCircle } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
 interface StepOption {
@@ -45,11 +44,16 @@ interface AiGuidedCreationProps {
   completed?: boolean;
 }
 
+function stripEmoji(text: string): string {
+  return text.replace(/^[^\u0000-\u007F]+\s*/g, '').replace(/^[\u2600-\u27BF\uD83C-\uDBFF\uDC00-\uDFFF\uFE0F\u200D\u20E3]+\s*/g, '').trim() || text.trim();
+}
+
 export default function AiGuidedCreation({
   followUp,
   onComplete,
   completed,
 }: AiGuidedCreationProps) {
+  const [dismissed, setDismissed] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [answers, setAnswers] = useState<StepAnswer[]>([]);
   const [dynamicSteps, setDynamicSteps] = useState<StepQuestion[]>([...(followUp.steps || [])]);
@@ -58,6 +62,8 @@ export default function AiGuidedCreation({
   const [newProjectMode, setNewProjectMode] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
+  const [slideDirection, setSlideDirection] = useState<'forward' | 'backward'>('forward');
+  const [animationKey, setAnimationKey] = useState(0);
   const completedRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
@@ -124,7 +130,7 @@ export default function AiGuidedCreation({
       const newAnswer: StepAnswer = {
         field: 'projectId',
         value: project.id,
-        displayLabel: `📁 ${project.name}（新建）`,
+        displayLabel: `${project.name}（新建）`,
       };
       setAnswers(prev => [...prev, newAnswer]);
 
@@ -140,6 +146,8 @@ export default function AiGuidedCreation({
 
       setNewProjectMode(false);
       setNewProjectName("");
+      setSlideDirection('forward');
+      setAnimationKey(prev => prev + 1);
       setCurrentStepIndex(prev => prev + 1);
     } catch (err: any) {
       console.error('[GuidedCreation] 创建项目失败:', err);
@@ -190,6 +198,8 @@ export default function AiGuidedCreation({
       }
     }
 
+    setSlideDirection('forward');
+    setAnimationKey(prev => prev + 1);
     setCurrentStepIndex((prev) => prev + 1);
   };
 
@@ -204,8 +214,40 @@ export default function AiGuidedCreation({
     };
 
     setAnswers((prev) => [...prev, newAnswer]);
+    setSlideDirection('forward');
+    setAnimationKey(prev => prev + 1);
     setCurrentStepIndex((prev) => prev + 1);
   };
+
+  const handlePrevStep = () => {
+    if (currentStepIndex <= 0) return;
+    setAnswers(prev => prev.slice(0, -1));
+    setSlideDirection('backward');
+    setAnimationKey(prev => prev + 1);
+    setCurrentStepIndex(prev => prev - 1);
+  };
+
+  const handleNextStep = () => {
+    if (currentStepIndex >= totalSteps - 1) return;
+    if (currentStepIndex >= answers.length) return;
+    setSlideDirection('forward');
+    setAnimationKey(prev => prev + 1);
+    setCurrentStepIndex(prev => prev + 1);
+  };
+
+  const handleClose = () => {
+    setDismissed(true);
+  };
+
+  const currentStep = dynamicSteps[currentStepIndex];
+  const canGoBack = currentStepIndex > 0;
+  const canGoForward = currentStepIndex < totalSteps - 1 && currentStepIndex < answers.length;
+
+  const slideAnimationStyle = slideDirection === 'forward'
+    ? 'wizardSlideForward'
+    : 'wizardSlideBackward';
+
+  if (dismissed) return null;
 
   return (
     <div
@@ -225,16 +267,116 @@ export default function AiGuidedCreation({
           from { opacity: 0; transform: translateY(20px); }
           to { opacity: 1; transform: translateY(0); }
         }
+        @keyframes wizardSlideForward {
+          from { opacity: 0; transform: translateX(15px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes wizardSlideBackward {
+          from { opacity: 0; transform: translateX(-15px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
       `}</style>
 
-      {!allDone && !completed && !newProjectMode && dynamicSteps[currentStepIndex] && (
-        <AiStepQuestion
-          step={dynamicSteps[currentStepIndex]}
-          stepNumber={currentStepIndex + 1}
-          totalSteps={totalSteps}
-          onSelect={handleSelect}
-          onSkip={handleSkip}
-        />
+      {!allDone && !completed && (
+        <div
+          style={{
+            height: 48,
+            padding: '0 16px',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+          data-testid="wizard-nav-bar"
+        >
+          <button
+            onClick={handlePrevStep}
+            disabled={!canGoBack}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 4,
+              cursor: canGoBack ? 'pointer' : 'default',
+              opacity: canGoBack ? 1 : 0.3,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            data-testid="wizard-prev-btn"
+          >
+            <ChevronLeft style={{ width: 20, height: 20, color: '#9A9893' }} />
+          </button>
+          <span
+            style={{
+              fontSize: 14,
+              color: '#9A9893',
+              margin: '0 4px',
+              userSelect: 'none',
+            }}
+            data-testid="wizard-step-indicator"
+          >
+            {currentStepIndex + 1} of {totalSteps}
+          </span>
+          <button
+            onClick={handleNextStep}
+            disabled={!canGoForward}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 4,
+              cursor: canGoForward ? 'pointer' : 'default',
+              opacity: canGoForward ? 1 : 0.3,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            data-testid="wizard-next-btn"
+          >
+            <ChevronRight style={{ width: 20, height: 20, color: '#9A9893' }} />
+          </button>
+          <button
+            onClick={handleClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 4,
+              cursor: 'pointer',
+              marginLeft: 'auto',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            data-testid="wizard-close-btn"
+          >
+            <X style={{ width: 20, height: 20, color: '#9A9893' }} />
+          </button>
+        </div>
+      )}
+
+      {!allDone && !completed && !newProjectMode && currentStep && (
+        <div
+          key={animationKey}
+          style={{ animation: `${slideAnimationStyle} 200ms ease-out` }}
+        >
+          <div
+            style={{
+              padding: '4px 20px 16px 20px',
+              fontSize: 18,
+              fontWeight: 500,
+              color: '#ECECEC',
+              lineHeight: 1.4,
+            }}
+            data-testid="wizard-step-title"
+          >
+            {stripEmoji(currentStep.label)}
+          </div>
+
+          <AiStepQuestion
+            step={currentStep}
+            stepNumber={currentStepIndex + 1}
+            totalSteps={totalSteps}
+            onSelect={handleSelect}
+            onSkip={handleSkip}
+          />
+        </div>
       )}
 
       {newProjectMode && !completed && (
