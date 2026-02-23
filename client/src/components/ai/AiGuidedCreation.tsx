@@ -42,6 +42,7 @@ interface AiGuidedCreationProps {
   followUp: GuidedFollowUpData;
   onComplete: (mergedData: Record<string, any>, creationType: string) => void;
   completed?: boolean;
+  onStepAnswer?: (stepLabel: string, answerLabel: string) => void;
 }
 
 function stripEmoji(text: string): string {
@@ -52,6 +53,7 @@ export default function AiGuidedCreation({
   followUp,
   onComplete,
   completed,
+  onStepAnswer,
 }: AiGuidedCreationProps) {
   const [dismissed, setDismissed] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -142,6 +144,10 @@ export default function AiGuidedCreation({
       };
       setAnswers(prev => [...prev, newAnswer]);
 
+      if (onStepAnswer) {
+        onStepAnswer(stripEmoji(dynamicSteps[currentStepIndex]?.label || '项目'), `${project.name}（新建）`);
+      }
+
       const nextStep = dynamicSteps[currentStepIndex + 1];
       if (nextStep && nextStep.field === 'parentTaskId') {
         const updated = [...dynamicSteps];
@@ -183,6 +189,10 @@ export default function AiGuidedCreation({
 
     const updatedAnswers = [...answers, newAnswer];
     setAnswers(updatedAnswers);
+
+    if (onStepAnswer) {
+      onStepAnswer(stripEmoji(step.label), displayLabel);
+    }
 
     if (step.field === 'projectId' && typeof value === 'number') {
       const nextStep = dynamicSteps[currentStepIndex + 1];
@@ -376,6 +386,32 @@ export default function AiGuidedCreation({
           >
             {stripEmoji(currentStep.label)}
           </div>
+
+          {answers.length > 0 && !allDone && !completed && (
+            <div style={{ padding: '0 20px 8px 20px' }}>
+              {answers.map((ans, idx) => (
+                <div key={idx} style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  marginBottom: 4,
+                }}>
+                  <div style={{
+                    background: 'rgba(174,86,48,0.15)',
+                    borderRadius: 12,
+                    padding: '6px 12px',
+                    fontSize: 13,
+                    color: '#ECECEC',
+                    maxWidth: '80%',
+                  }}>
+                    <span style={{ color: '#9A9893', fontSize: 12, marginRight: 6 }}>
+                      {stripEmoji(dynamicSteps[idx]?.label || '')}:
+                    </span>
+                    {ans.displayLabel}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           <AiStepQuestion
             step={currentStep}

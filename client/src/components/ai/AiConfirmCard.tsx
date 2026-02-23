@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 interface ActionPayload {
   actionType: string;
   data: Record<string, any>;
+  displayData?: Record<string, string>;
   summary: string;
   confidence?: number;
   missingFields?: string[];
@@ -64,7 +65,7 @@ const ACTION_CONFIG: Record<
 
 const DATA_LABELS: Record<string, string> = {
   title: "标题",
-  projectId: "项目ID",
+  projectId: "项目",
   assigneeId: "负责人",
   priority: "优先级",
   status: "状态",
@@ -118,7 +119,16 @@ export default function AiConfirmCard({
           {Object.entries(action.data).filter(([key]) => key !== 'warnings').map(([key, val]) => {
             if (val === null || val === undefined) return null;
             let displayVal: string;
-            if (typeof val === 'object') {
+            const dd = action.displayData;
+            if (key === 'projectId' && dd?.projectName) {
+              displayVal = dd.projectName;
+            } else if (key === 'assigneeId' && dd?.assigneeName) {
+              displayVal = dd.assigneeName;
+            } else if (key === 'priority' && dd?.priorityLabel) {
+              displayVal = dd.priorityLabel;
+            } else if (key === 'status' && dd?.statusLabel) {
+              displayVal = dd.statusLabel;
+            } else if (typeof val === 'object') {
               if (Array.isArray(val)) {
                 displayVal = val.map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(', ');
               } else {

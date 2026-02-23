@@ -806,6 +806,22 @@ export default function Agent() {
     if (activeConvId) saveMessageToDB(activeConvId, sysMsg);
   }, [activeConvId, saveMessageToDB]);
 
+  const handleStepAnswer = useCallback((stepLabel: string, answerLabel: string) => {
+    const stepMsg: Message = {
+      id: nextId(),
+      role: 'user',
+      content: `${stepLabel}: ${answerLabel}`,
+      type: 'text',
+    };
+    setMessages(prev => [...prev, stepMsg]);
+    // Auto scroll
+    setTimeout(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    }, 100);
+  }, []);
+
   const handleFollowUpSubmit = useCallback(
     async (messageId: string, mergedData: Record<string, any>, creationType?: string) => {
       console.log('[handleFollowUpSubmit] 收到数据:', JSON.stringify(mergedData, null, 2));
@@ -1036,6 +1052,7 @@ export default function Agent() {
                 onReject={handleReject}
                 onSkip={handleSkip}
                 onFollowUpSubmit={handleFollowUpSubmit}
+                onStepAnswer={handleStepAnswer}
               />
             ))}
             {loading && (

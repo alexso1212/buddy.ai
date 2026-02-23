@@ -62,6 +62,7 @@ interface AiMessageBubbleProps {
   onReject?: (messageId: string, actionIndex?: number) => void;
   onSkip?: (messageId: string, actionIndex?: number) => void;
   onFollowUpSubmit?: (messageId: string, mergedData: Record<string, any>, creationType?: string) => void;
+  onStepAnswer?: (stepLabel: string, answerLabel: string) => void;
 }
 
 function BrandLogo() {
@@ -221,6 +222,7 @@ export default function AiMessageBubble({
   onReject,
   onSkip,
   onFollowUpSubmit,
+  onStepAnswer,
 }: AiMessageBubbleProps) {
   if (message.role === "system") {
     const isSuccess = message.content.includes("成功") || message.content.includes("已");
@@ -336,6 +338,7 @@ export default function AiMessageBubble({
           followUp={message.followUp as any}
           onComplete={(mergedData, creationType) => onFollowUpSubmit(message.id, mergedData, creationType)}
           completed={message.followUpSubmitted}
+          onStepAnswer={onStepAnswer}
         />
       </div>
     );

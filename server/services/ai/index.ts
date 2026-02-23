@@ -361,6 +361,44 @@ function buildGuidedSteps(
   };
 }
 
+function buildDisplayData(data: Record<string, any>, users: any[], projects: any[]): Record<string, string> {
+  const display: Record<string, string> = {};
+
+  if (data.projectId && typeof data.projectId === 'number') {
+    const project = projects.find((p: any) => p.id === data.projectId);
+    if (project) display.projectName = project.name;
+  }
+
+  if (data.assigneeId && typeof data.assigneeId === 'number') {
+    const user = users.find((u: any) => u.id === data.assigneeId);
+    if (user) display.assigneeName = user.displayName || user.email;
+  }
+
+  const priorityMap: Record<string, string> = {
+    critical: '\u{1F534} \u7D27\u6025',
+    high: '\u{1F7E0} \u9AD8',
+    medium: '\u{1F7E1} \u4E2D',
+    low: '\u{1F7E2} \u4F4E',
+    none: '\u26AA \u65E0',
+  };
+  if (data.priority && priorityMap[data.priority]) {
+    display.priorityLabel = priorityMap[data.priority];
+  }
+
+  const statusMap: Record<string, string> = {
+    todo: '\u5F85\u529E',
+    in_progress: '\u8FDB\u884C\u4E2D',
+    done: '\u5DF2\u5B8C\u6210',
+    blocked: '\u5DF2\u963B\u585E',
+    cancelled: '\u5DF2\u53D6\u6D88',
+  };
+  if (data.status && statusMap[data.status]) {
+    display.statusLabel = statusMap[data.status];
+  }
+
+  return display;
+}
+
 function formatTeamMembers(users: { id: number; displayName: string; role: string; email: string }[]): string {
   return users.map(u => `- ID:${u.id} ${u.displayName}（${u.role}）${u.email}`).join('\n');
 }
@@ -622,6 +660,15 @@ export async function chat(
             };
           }
         }
+      }
+    }
+
+    if (parsed.type === 'confirm' && parsed.action) {
+      parsed.action.displayData = buildDisplayData(parsed.action.data, allUsers, allProjects);
+    }
+    if (parsed.type === 'multi_confirm' && parsed.actions) {
+      for (const action of parsed.actions) {
+        action.displayData = buildDisplayData(action.data, allUsers, allProjects);
       }
     }
 
