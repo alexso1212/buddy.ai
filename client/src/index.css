@@ -188,7 +188,7 @@
 /* ===== Light Mode（全部覆盖） ===== */
 .light {
   --bg-primary: #F5F5F0;
-  --bg-sidebar: #F5F5F0;
+  --bg-sidebar: #1E1D1A;
   --bg-composer: #FFFFFF;
   --bg-bubble: #DDD9CE;
   --bg-code: #F7F5F2;
@@ -201,9 +201,9 @@
   --border-medium: rgba(0, 0, 0, 0.15);
   --overlay: rgba(0, 0, 0, 0.3);
   --brand-icon: #AE5630;
-  --sidebar-active: rgba(0, 0, 0, 0.06);
-  --sidebar-hover: rgba(0, 0, 0, 0.03);
-  --section-title: #AE5630;
+  --sidebar-active: rgba(255, 255, 255, 0.08);
+  --sidebar-hover: rgba(255, 255, 255, 0.04);
+  --section-title: #C4703F;
   --button-outline: rgba(0,0,0, .10);
   --badge-outline: rgba(0,0,0, .05);
   --opaque-button-border-intensity: -8;
