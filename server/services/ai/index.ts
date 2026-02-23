@@ -523,9 +523,8 @@ export async function chat(
 
   const activeTasks = allTasks.filter(t => t.status !== 'done' && t.status !== 'cancelled');
 
-  const systemPrompt = 'You are Buddy, a helpful AI assistant. Respond naturally and helpfully to the user. Use the same language the user writes in.';
-
   const modelName = context.model || 'claude-sonnet-4-6';
+  const systemPrompt = `You are Buddy, a helpful AI assistant. Respond naturally and helpfully to the user. Use the same language the user writes in. You are currently running on the model: ${modelName}. When the user asks what model you are, tell them honestly.`;
   const aiClient = getClientForModel(modelName);
   const response = await aiClient.chat.completions.create({
     model: modelName,
