@@ -523,16 +523,7 @@ export async function chat(
 
   const activeTasks = allTasks.filter(t => t.status !== 'done' && t.status !== 'cancelled');
 
-  const systemPrompt = (context.customSystemPrompt ? context.customSystemPrompt + '\n\n' : '') + SYSTEM_PROMPT
-    .replace('{{currentUserId}}', String(context.currentUserId))
-    .replace('{{currentUserName}}', context.currentUserName)
-    .replace('{{currentTime}}', new Date().toISOString())
-    .replace('{{teamMembers}}', formatTeamMembers(allUsers))
-    .replace('{{projectList}}', formatProjectList(allProjects))
-    .replace('{{taskList}}', formatTaskList(activeTasks, allUsers))
-    .replace('{{totalTasks}}', String(allTasks.length))
-    .replace('{{doneTasks}}', String(allTasks.filter(t => t.status === 'done').length))
-    .replace('{{overdueTasks}}', String(allTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'done' && t.status !== 'cancelled').length));
+  const systemPrompt = 'You are Buddy, a helpful AI assistant. Respond naturally and helpfully to the user. Use the same language the user writes in.';
 
   const modelName = context.model || 'claude-sonnet-4-6';
   const aiClient = getClientForModel(modelName);
