@@ -158,6 +158,39 @@ function groupConversationsByDate(conversations: Conversation[]): { label: strin
   return groups;
 }
 
+function HighlightText({ text, query }: { text: string; query: string }) {
+  if (!query.trim()) return <>{text}</>;
+  const parts: { text: string; match: boolean }[] = [];
+  const lower = text.toLowerCase();
+  const lowerQ = query.toLowerCase();
+  let lastIdx = 0;
+  let idx = lower.indexOf(lowerQ);
+  while (idx !== -1) {
+    if (idx > lastIdx) parts.push({ text: text.slice(lastIdx, idx), match: false });
+    parts.push({ text: text.slice(idx, idx + query.length), match: true });
+    lastIdx = idx + query.length;
+    idx = lower.indexOf(lowerQ, lastIdx);
+  }
+  if (lastIdx < text.length) parts.push({ text: text.slice(lastIdx), match: false });
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.match ? (
+          <span key={i} style={{
+            background: '#1a1a1a',
+            color: '#ffffff',
+            padding: '1px 3px',
+            borderRadius: 3,
+            fontWeight: 500,
+          }}>{p.text}</span>
+        ) : (
+          <span key={i}>{p.text}</span>
+        )
+      )}
+    </>
+  );
+}
+
 function ConversationItem({
   conv,
   isSelected,
@@ -165,13 +198,15 @@ function ConversationItem({
   onArchive,
   onRename,
   onDelete,
+  searchQuery,
 }: {
-  conv: Conversation;
+  conv: Conversation & { matchSnippets?: string[] };
   isSelected: boolean;
   onSelect: (id: number) => void;
   onArchive: (id: number) => void;
   onRename: (id: number, title: string) => void;
   onDelete: (id: number) => void;
+  searchQuery?: string;
 }) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(conv.title);
@@ -268,8 +303,25 @@ function ConversationItem({
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
               }} data-testid={`conv-title-${conv.id}`}>
-                {conv.title}
+                {searchQuery ? <HighlightText text={conv.title} query={searchQuery} /> : conv.title}
               </div>
+              {searchQuery && conv.matchSnippets && conv.matchSnippets.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  {conv.matchSnippets.map((snippet, i) => (
+                    <div key={i} style={{
+                      fontSize: 13,
+                      color: '#9A9893',
+                      lineHeight: 1.5,
+                      marginTop: i > 0 ? 4 : 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }} data-testid={`conv-snippet-${conv.id}-${i}`}>
+                      <HighlightText text={snippet} query={searchQuery} />
+                    </div>
+                  ))}
+                </div>
+              )}
               <div style={{
                 fontSize: 14,
                 color: '#7A7874',
@@ -479,6 +531,7 @@ function ConversationListView({
                   onArchive={handleArchive}
                   onRename={handleRename}
                   onDelete={handleDelete}
+                  searchQuery={debouncedQuery}
                 />
               ))}
             </div>

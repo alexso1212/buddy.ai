@@ -350,7 +350,7 @@ export class DatabaseStorage {
     await db.delete(conversations).where(eq(conversations.id, id));
   }
 
-  async searchConversations(orgId: number, query: string): Promise<Conversation[]> {
+  async searchConversations(orgId: number, query: string): Promise<(Conversation & { matchSnippets?: string[] })[]> {
     const pattern = `%${query}%`;
     const matchingByTitle = await db.select().from(conversations).where(
       and(
@@ -360,8 +360,12 @@ export class DatabaseStorage {
       )
     );
 
-    const matchingByContent = await db
-      .selectDistinct({ conversation: conversations })
+    const matchingMessages = await db
+      .select({
+        conversationId: chatMessages.conversationId,
+        content: chatMessages.content,
+        role: chatMessages.role,
+      })
       .from(chatMessages)
       .innerJoin(conversations, eq(chatMessages.conversationId, conversations.id))
       .where(
@@ -370,11 +374,42 @@ export class DatabaseStorage {
           eq(conversations.isArchived, false),
           ilike(chatMessages.content, pattern)
         )
-      );
+      )
+      .orderBy(desc(chatMessages.createdAt));
 
-    const allMap = new Map<number, Conversation>();
-    for (const c of matchingByTitle) allMap.set(c.id, c);
-    for (const row of matchingByContent) allMap.set(row.conversation.id, row.conversation);
+    const convIdsFromMessages = [...new Set(matchingMessages.map(m => m.conversationId))];
+    const convsByContent = convIdsFromMessages.length > 0
+      ? await db.select().from(conversations).where(
+          and(
+            inArray(conversations.id, convIdsFromMessages),
+            eq(conversations.isArchived, false)
+          )
+        )
+      : [];
+
+    const snippetMap = new Map<number, string[]>();
+    for (const msg of matchingMessages) {
+      const existing = snippetMap.get(msg.conversationId) || [];
+      if (existing.length < 3) {
+        const lowerContent = msg.content.toLowerCase();
+        const lowerQuery = query.toLowerCase();
+        const idx = lowerContent.indexOf(lowerQuery);
+        if (idx !== -1) {
+          const start = Math.max(0, idx - 30);
+          const end = Math.min(msg.content.length, idx + query.length + 30);
+          const snippet = (start > 0 ? '...' : '') + msg.content.slice(start, end) + (end < msg.content.length ? '...' : '');
+          existing.push(snippet);
+        }
+        snippetMap.set(msg.conversationId, existing);
+      }
+    }
+
+    const allMap = new Map<number, Conversation & { matchSnippets?: string[] }>();
+    for (const c of matchingByTitle) allMap.set(c.id, { ...c, matchSnippets: snippetMap.get(c.id) });
+    for (const c of convsByContent) {
+      if (!allMap.has(c.id)) allMap.set(c.id, { ...c, matchSnippets: snippetMap.get(c.id) });
+      else if (snippetMap.has(c.id)) allMap.get(c.id)!.matchSnippets = snippetMap.get(c.id);
+    }
 
     return Array.from(allMap.values()).sort((a, b) =>
       new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
