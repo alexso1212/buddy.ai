@@ -565,11 +565,12 @@ function ConversationListView({
             ref={searchBarRef}
             style={{
               flex: 1, height: 44,
-              background: 'rgba(44, 43, 40, 0.20)',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
+              background: 'rgba(255, 255, 255, 0.08)',
+              backdropFilter: 'blur(24px) saturate(1.4) brightness(1.05)',
+              WebkitBackdropFilter: 'blur(24px) saturate(1.4) brightness(1.05)',
               borderRadius: 20,
-              border: '1px solid rgba(255,255,255,0.08)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.15)',
               padding: '0 14px',
               display: 'flex', alignItems: 'center', gap: 8,
             }}
