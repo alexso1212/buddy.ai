@@ -1,4 +1,4 @@
-import { Switch, Route, useLocation, Link } from "wouter";
+import { Switch, Route, useLocation, Link, Redirect } from "wouter";
 import { useState, useRef, useEffect } from "react";
 import { queryClient, apiRequest } from "./lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -60,7 +60,7 @@ const BUDDY_AI_NAV = [
 ];
 
 const ENTERPRISE_NAV = [
-  { label: '仪表盘', icon: LayoutDashboard, path: '/' },
+  { label: '仪表盘', icon: LayoutDashboard, path: '/dashboard' },
   { label: '图谱', icon: Network, path: '/graph' },
   { label: '项目', icon: FolderKanban, path: '/projects' },
   { label: '任务', icon: CheckSquare, path: '/tasks' },
@@ -309,7 +309,7 @@ function Sidebar({
   sidebarRef: React.RefObject<HTMLElement>;
   overlayRef: React.RefObject<HTMLDivElement>;
 }) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const [buddyAiOpen, setBuddyAiOpen] = useState(() => {
     try { const s = localStorage.getItem('sidebar_buddyAi'); return s !== null ? s === 'true' : true; } catch { return true; }
   });
@@ -347,14 +347,14 @@ function Sidebar({
   const [renameValue, setRenameValue] = useState('');
 
   const isActive = (path: string) => {
-    if (path === '/') return location === '/';
+    if (path === '/dashboard') return location === '/dashboard';
     return location.startsWith(path);
   };
 
   const renderNavItem = (item: { label: string; icon: typeof MessageSquare; path: string | null }, index: number) => {
     const Icon = item.icon;
     const active = item.path ? isActive(item.path) : false;
-    const testId = item.path === '/' ? 'nav-dashboard' : item.path ? `nav-${item.path.slice(1)}` : `nav-${item.label.toLowerCase()}`;
+    const testId = item.path === '/dashboard' ? 'nav-dashboard' : item.path ? `nav-${item.path.slice(1)}` : `nav-${item.label.toLowerCase()}`;
 
     const content = (
       <div
@@ -681,7 +681,7 @@ function Sidebar({
             }}
             onClick={() => {
               onClose();
-              window.location.href = '/agent';
+              navigate('/agent');
             }}
             data-testid="button-new-chat"
           >
@@ -1236,7 +1236,8 @@ function Sidebar({
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
+      <Route path="/"><Redirect to="/agent" /></Route>
+      <Route path="/dashboard" component={Dashboard} />
       <Route path="/graph" component={GraphView} />
       <Route path="/agent" component={Agent} />
       <Route path="/projects" component={ProjectList} />
