@@ -50,7 +50,11 @@ The system uses a 14-table PostgreSQL database schema, including `organizations`
 - **Mobile Optimization:** Responsive layouts with specific adaptations for smaller screens, such as swipeable task cards, compact stats, and tab navigation on detail pages.
 
 **AI Subsystem:**
-- **OpenAI SDK:** Utilizes OpenAI SDK with OpenRouter, leveraging models like `claude-sonnet-4` for various tasks.
+- **Dual Claude Direct API + OpenRouter:** Three OpenAI SDK clients route to different providers based on model selection:
+  - `CLAUDE_COMPLEX_API_KEY` → Anthropic direct API for complex models (Claude Opus 4)
+  - `CLAUDE_SIMPLE_API_KEY` → Anthropic direct API for simple models (Claude Sonnet 4, Claude Haiku 3.5)
+  - `AI_API_KEY` + `AI_BASE_URL` → OpenRouter for other models (GPT-4o, DeepSeek, etc.)
+- **Model routing:** `getClientForModel()` in `server/services/ai/index.ts` selects the correct client based on model ID.
 - **Contextual Prompts:** System prompts are dynamically generated with relevant team, project, and task context.
 - **Action Schemas:** Zod schemas define available AI actions (e.g., `create_task`, `update_task`, `query_tasks`, `create_project`, `add_comment`).
 - **Action Executor:** Processes and executes confirmed AI actions, logging their source as `ai_chat`.
@@ -59,7 +63,8 @@ The system uses a 14-table PostgreSQL database schema, including `organizations`
 
 ## External Dependencies
 - **PostgreSQL:** Primary database.
-- **OpenAI API (via OpenRouter):** For AI chat and verdict generation, using models like `claude-sonnet-4`.
+- **Anthropic Claude API (Direct):** Two API keys for complex (Opus) and simple (Sonnet/Haiku) models via OpenAI-compatible endpoint `https://api.anthropic.com/v1/`.
+- **OpenAI API (via OpenRouter):** Fallback for non-Claude models (GPT-4o, DeepSeek, etc.).
 - **Drizzle ORM:** TypeScript ORM for PostgreSQL.
 - **Express.js:** Web application framework for the backend.
 - **React:** Frontend JavaScript library.

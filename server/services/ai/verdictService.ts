@@ -1,10 +1,18 @@
 import OpenAI from 'openai';
 import { storage } from '../../storage';
 
-const client = new OpenAI({
+const claudeSimpleClient = new OpenAI({
+  baseURL: 'https://api.anthropic.com/v1/',
+  apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
+  timeout: 30000,
+});
+
+const openrouterClient = new OpenAI({
   baseURL: process.env.AI_BASE_URL,
   apiKey: process.env.AI_API_KEY,
 });
+
+const client = process.env.CLAUDE_SIMPLE_API_KEY ? claudeSimpleClient : openrouterClient;
 
 const VERDICT_SYSTEM_PROMPT = `你是一个企业权责判定专家。你的职责是客观、公正地判断一个任务分配给某个员工是否合理。
 

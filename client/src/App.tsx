@@ -1253,10 +1253,12 @@ function Router() {
 }
 
 const AI_MODELS = [
-  { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', short: 'Sonnet 4' },
-  { id: 'claude-3.5-sonnet', label: 'Claude 3.5 Sonnet', short: '3.5 Sonnet' },
-  { id: 'gpt-4o', label: 'GPT-4o', short: 'GPT-4o' },
-  { id: 'deepseek-chat', label: 'DeepSeek V3', short: 'DeepSeek' },
+  { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', short: 'Sonnet 4', tier: 'simple' },
+  { id: 'claude-opus-4-20250514', label: 'Claude Opus 4', short: 'Opus 4', tier: 'complex' },
+  { id: 'claude-haiku-3-5-20241022', label: 'Claude 3.5 Haiku', short: 'Haiku 3.5', tier: 'simple' },
+  { id: 'claude-3.5-sonnet', label: 'Claude 3.5 Sonnet', short: '3.5 Sonnet', tier: 'openrouter' },
+  { id: 'gpt-4o', label: 'GPT-4o', short: 'GPT-4o', tier: 'openrouter' },
+  { id: 'deepseek-chat', label: 'DeepSeek V3', short: 'DeepSeek', tier: 'openrouter' },
 ];
 
 function ModelSelector() {
@@ -1358,8 +1360,12 @@ function ModelSelector() {
               onMouseLeave={e => { if (m.id !== selected) e.currentTarget.style.background = 'transparent'; }}
               data-testid={`model-option-${m.id}`}
             >
-              <span style={{ fontSize: 14, color: m.id === selected ? '#C4703F' : '#ECECEC' }}>
-                {m.label}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 14, color: m.id === selected ? '#C4703F' : '#ECECEC' }}>
+                  {m.label}
+                </span>
+                {m.tier === 'complex' && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: 'rgba(174,86,48,0.25)', color: '#C4703F' }}>Pro</span>}
+                {m.tier === 'simple' && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>Direct</span>}
               </span>
               {m.id === selected && <Check size={16} color="#AE5630" />}
             </button>

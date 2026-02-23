@@ -3,11 +3,32 @@ import { SYSTEM_PROMPT } from './prompts';
 import { ACTION_SCHEMAS } from './actionSchemas';
 import { storage } from '../../storage';
 
-const client = new OpenAI({
+const openrouterClient = new OpenAI({
   baseURL: process.env.AI_BASE_URL,
   apiKey: process.env.AI_API_KEY,
   timeout: 30000,
 });
+
+const claudeComplexClient = new OpenAI({
+  baseURL: 'https://api.anthropic.com/v1/',
+  apiKey: process.env.CLAUDE_COMPLEX_API_KEY,
+  timeout: 60000,
+});
+
+const claudeSimpleClient = new OpenAI({
+  baseURL: 'https://api.anthropic.com/v1/',
+  apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
+  timeout: 30000,
+});
+
+const COMPLEX_MODELS = ['claude-opus-4-20250514'];
+const SIMPLE_MODELS = ['claude-haiku-3-5-20241022', 'claude-sonnet-4-20250514'];
+
+function getClientForModel(model: string): OpenAI {
+  if (COMPLEX_MODELS.includes(model)) return claudeComplexClient;
+  if (SIMPLE_MODELS.includes(model)) return claudeSimpleClient;
+  return openrouterClient;
+}
 
 interface ChatResponse {
   type: 'text' | 'confirm' | 'multi_confirm' | 'follow_up';
@@ -514,7 +535,8 @@ export async function chat(
     .replace('{{overdueTasks}}', String(allTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'done' && t.status !== 'cancelled').length));
 
   const modelName = context.model || 'claude-sonnet-4-20250514';
-  const response = await client.chat.completions.create({
+  const aiClient = getClientForModel(modelName);
+  const response = await aiClient.chat.completions.create({
     model: modelName,
     max_tokens: 4096,
     messages: [
@@ -684,8 +706,10 @@ export async function generateProjectTasks(
   projectDescription: string,
   context: { currentUserId: number; currentUserName: string }
 ): Promise<{ tasks: { title: string; description?: string; priority: string; type: string }[]; tokenUsage?: ChatResponse['tokenUsage'] }> {
-  const response = await client.chat.completions.create({
-    model: 'claude-sonnet-4-20250514',
+  const genModel = 'claude-sonnet-4-20250514';
+  const genClient = getClientForModel(genModel);
+  const response = await genClient.chat.completions.create({
+    model: genModel,
     max_tokens: 2048,
     messages: [
       {
