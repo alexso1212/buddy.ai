@@ -12,13 +12,13 @@ const openrouterClient = new OpenAI({
 const claudeComplexClient = new OpenAI({
   baseURL: 'https://api.anthropic.com/v1/',
   apiKey: process.env.CLAUDE_COMPLEX_API_KEY,
-  timeout: 60000,
+  timeout: 180000,
 });
 
 const claudeSimpleClient = new OpenAI({
   baseURL: 'https://api.anthropic.com/v1/',
   apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
-  timeout: 30000,
+  timeout: 90000,
 });
 
 const COMPLEX_MODELS = ['claude-opus-4-6'];
@@ -28,6 +28,14 @@ function getClientForModel(model: string): OpenAI {
   if (COMPLEX_MODELS.includes(model)) return claudeComplexClient;
   if (SIMPLE_MODELS.includes(model)) return claudeSimpleClient;
   return openrouterClient;
+}
+
+function getMaxTokensForModel(model: string): number {
+  if (model === 'claude-opus-4-6') return 128000;
+  if (model === 'claude-sonnet-4-6') return 64000;
+  if (model === 'claude-haiku-4-5-20251001') return 8192;
+  if (model === 'claude-sonnet-4-20250514') return 16384;
+  return 16384;
 }
 
 interface ChatResponse {
@@ -512,7 +520,7 @@ function formatTaskList(tasks: any[], users: any[]): string {
 export async function chat(
   message: string,
   conversationHistory: { role: string; content: string }[],
-  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string }
+  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean }
 ): Promise<ChatResponse> {
   const allUsers = await storage.getUsers();
   const allProjects = await storage.getProjects();
@@ -526,9 +534,10 @@ export async function chat(
   const modelName = context.model || 'claude-sonnet-4-6';
   const systemPrompt = `You are Buddy, a helpful AI assistant. Respond naturally and helpfully to the user. Use the same language the user writes in. You are currently running on the model: ${modelName}. When the user asks what model you are, tell them honestly.`;
   const aiClient = getClientForModel(modelName);
-  const response = await aiClient.chat.completions.create({
+
+  const requestParams: any = {
     model: modelName,
-    max_tokens: 4096,
+    max_tokens: getMaxTokensForModel(modelName),
     messages: [
       { role: 'system', content: systemPrompt },
       ...conversationHistory.map(msg => ({
@@ -537,7 +546,19 @@ export async function chat(
       })),
       { role: 'user', content: message },
     ],
-  });
+  };
+
+  const isClaudeModel = modelName.startsWith('claude-');
+  if (context.extendedThinking && isClaudeModel) {
+    requestParams.extra_body = {
+      thinking: {
+        type: 'enabled',
+        budget_tokens: modelName === 'claude-opus-4-6' ? 32000 : 16000,
+      }
+    };
+  }
+
+  const response = await aiClient.chat.completions.create(requestParams);
 
   const usage = response.usage;
   const tokenInfo: ChatResponse['tokenUsage'] = usage ? {

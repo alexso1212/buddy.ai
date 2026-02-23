@@ -1252,20 +1252,29 @@ function Router() {
   );
 }
 
-const AI_MODELS = [
-  { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', short: 'Sonnet 4.6', tier: 'simple' },
-  { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', short: 'Opus 4.6', tier: 'complex' },
-  { id: 'claude-haiku-4-5-20251001', label: 'Claude 4.5 Haiku', short: 'Haiku 4.5', tier: 'simple' },
-  { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', short: 'Sonnet 4', tier: 'simple' },
-  { id: 'gpt-4o', label: 'GPT-4o', short: 'GPT-4o', tier: 'openrouter' },
-  { id: 'deepseek-chat', label: 'DeepSeek V3', short: 'DeepSeek', tier: 'openrouter' },
+const PRIMARY_MODELS = [
+  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', desc: 'Most efficient for everyday tasks' },
+  { id: 'claude-opus-4-6', label: 'Opus 4.6', desc: 'Most capable for ambitious work' },
+  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', desc: 'Fastest for quick answers' },
 ];
+
+const MORE_MODELS = [
+  { id: 'claude-sonnet-4-20250514', label: 'Sonnet 4', desc: 'Previous generation' },
+  { id: 'gpt-4o', label: 'GPT-4o', desc: 'OpenAI flagship model' },
+  { id: 'deepseek-chat', label: 'DeepSeek V3', desc: 'Cost-effective alternative' },
+];
+
+const ALL_MODELS = [...PRIMARY_MODELS, ...MORE_MODELS];
 
 function ModelSelector() {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState(() => {
-    try { return localStorage.getItem('buddy_model') || AI_MODELS[0].id; } catch { return AI_MODELS[0].id; }
+    try { return localStorage.getItem('buddy_model') || ALL_MODELS[0].id; } catch { return ALL_MODELS[0].id; }
   });
+  const [extThinking, setExtThinking] = useState(() => {
+    try { return localStorage.getItem('buddy_extended_thinking') === 'true'; } catch { return false; }
+  });
+  const [moreOpen, setMoreOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1281,7 +1290,50 @@ function ModelSelector() {
     };
   }, [open]);
 
-  const current = AI_MODELS.find(m => m.id === selected) || AI_MODELS[0];
+  const current = ALL_MODELS.find(m => m.id === selected) || ALL_MODELS[0];
+
+  const selectModel = (m: typeof ALL_MODELS[0]) => {
+    setSelected(m.id);
+    try { localStorage.setItem('buddy_model', m.id); } catch {}
+    window.dispatchEvent(new CustomEvent('model-changed', { detail: m.id }));
+    setOpen(false);
+  };
+
+  const toggleExtThinking = () => {
+    const next = !extThinking;
+    setExtThinking(next);
+    try { localStorage.setItem('buddy_extended_thinking', String(next)); } catch {}
+    window.dispatchEvent(new CustomEvent('extended-thinking-changed', { detail: next }));
+  };
+
+  const renderModelRow = (m: typeof ALL_MODELS[0]) => (
+    <button
+      key={m.id}
+      onClick={() => selectModel(m)}
+      style={{
+        width: '100%',
+        padding: '12px 14px',
+        borderRadius: 10,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        background: 'transparent',
+        border: 'none',
+        cursor: 'pointer',
+        transition: 'background 150ms',
+        textAlign: 'left' as const,
+      }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+      data-testid={`model-option-${m.id}`}
+    >
+      <div>
+        <div style={{ fontSize: 15, color: m.id === selected ? '#C4703F' : '#ECECEC' }}>{m.label}</div>
+        <div style={{ fontSize: 12, color: '#7A7874', marginTop: 2 }}>{m.desc}</div>
+      </div>
+      {m.id === selected && <Check size={16} color="#AE5630" style={{ flexShrink: 0 }} />}
+    </button>
+  );
 
   return (
     <div ref={dropRef} style={{ position: 'relative' }}>
@@ -1306,12 +1358,12 @@ function ModelSelector() {
           fontSize: 15,
           fontWeight: 600,
           color: 'var(--text-primary)',
-        }}>{current.short}</span>
+        }}>{current.label}</span>
         <ChevronRight
           size={14}
           color="var(--text-secondary)"
           style={{
-            transform: open ? 'rotate(90deg)' : 'rotate(90deg)',
+            transform: open ? 'rotate(270deg)' : 'rotate(90deg)',
             transition: 'transform 200ms',
           }}
         />
@@ -1324,52 +1376,92 @@ function ModelSelector() {
           left: '50%',
           transform: 'translateX(-50%)',
           marginTop: 8,
-          background: 'rgba(45, 44, 40, 0.95)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          borderRadius: 12,
-          border: '1px solid rgba(255,255,255,0.08)',
-          padding: 4,
-          minWidth: 180,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          background: 'rgba(30, 29, 26, 0.95)',
+          backdropFilter: 'blur(40px)',
+          WebkitBackdropFilter: 'blur(40px)',
+          borderRadius: 16,
+          border: '1px solid rgba(255,255,255,0.10)',
+          padding: 6,
+          minWidth: 260,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
           zIndex: 50,
           animation: 'fadeIn 150ms ease-out',
         }} data-testid="model-selector-dropdown">
-          {AI_MODELS.map(m => (
-            <button
-              key={m.id}
-              onClick={() => {
-                setSelected(m.id);
-                try { localStorage.setItem('buddy_model', m.id); } catch {}
-                window.dispatchEvent(new CustomEvent('model-changed', { detail: m.id }));
-                setOpen(false);
-              }}
+          {PRIMARY_MODELS.map(renderModelRow)}
+
+          <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '4px 8px' }} />
+
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 10,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              transition: 'background 150ms',
+            }}
+            onClick={toggleExtThinking}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            data-testid="toggle-extended-thinking"
+          >
+            <div>
+              <div style={{ fontSize: 15, color: '#ECECEC' }}>Extended thinking</div>
+              <div style={{ fontSize: 12, color: '#7A7874', marginTop: 2 }}>Think longer for complex tasks</div>
+            </div>
+            <div style={{
+              width: 40,
+              height: 22,
+              borderRadius: 11,
+              background: extThinking ? '#AE5630' : 'rgba(255,255,255,0.15)',
+              position: 'relative',
+              transition: 'background 200ms',
+              flexShrink: 0,
+              marginLeft: 12,
+            }}>
+              <div style={{
+                width: 18,
+                height: 18,
+                borderRadius: '50%',
+                background: '#fff',
+                position: 'absolute',
+                top: 2,
+                left: extThinking ? 20 : 2,
+                transition: 'left 200ms',
+              }} />
+            </div>
+          </div>
+
+          <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '4px 8px' }} />
+
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 10,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              cursor: 'pointer',
+              transition: 'background 150ms',
+            }}
+            onClick={() => setMoreOpen(v => !v)}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            data-testid="btn-more-models"
+          >
+            <ChevronRight
+              size={16}
+              color="#ECECEC"
               style={{
-                width: '100%',
-                padding: '10px 14px',
-                borderRadius: 8,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                background: m.id === selected ? 'rgba(174, 86, 48, 0.15)' : 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'background 150ms',
+                transform: moreOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+                transition: 'transform 200ms',
               }}
-              onMouseEnter={e => { if (m.id !== selected) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-              onMouseLeave={e => { if (m.id !== selected) e.currentTarget.style.background = 'transparent'; }}
-              data-testid={`model-option-${m.id}`}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 14, color: m.id === selected ? '#C4703F' : '#ECECEC' }}>
-                  {m.label}
-                </span>
-                {m.tier === 'complex' && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: 'rgba(174,86,48,0.25)', color: '#C4703F' }}>Pro</span>}
-                {m.tier === 'simple' && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>Direct</span>}
-              </span>
-              {m.id === selected && <Check size={16} color="#AE5630" />}
-            </button>
-          ))}
+            />
+            <span style={{ fontSize: 15, color: '#ECECEC' }}>More models</span>
+          </div>
+
+          {moreOpen && MORE_MODELS.map(renderModelRow)}
         </div>
       )}
     </div>

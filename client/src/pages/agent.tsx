@@ -935,6 +935,7 @@ export default function Agent() {
 
       try {
         const selectedModel = (() => { try { return localStorage.getItem('buddy_model') || undefined; } catch { return undefined; } })();
+        const extendedThinking = (() => { try { return localStorage.getItem('buddy_extended_thinking') === 'true'; } catch { return false; } })();
         const res = await apiRequest("POST", "/api/ai/chat", {
           message: text,
           conversationHistory: conversationHistory.current,
@@ -942,6 +943,7 @@ export default function Agent() {
           currentUserId: 1,
           systemPrompt: activeConvSystemPrompt || undefined,
           model: selectedModel,
+          extendedThinking,
         });
         const json = await res.json();
         const data = json.data;
@@ -1154,6 +1156,7 @@ export default function Agent() {
       setLoading(true);
       try {
         const selectedModel2 = (() => { try { return localStorage.getItem('buddy_model') || undefined; } catch { return undefined; } })();
+        const extendedThinking2 = (() => { try { return localStorage.getItem('buddy_extended_thinking') === 'true'; } catch { return false; } })();
         const res = await apiRequest("POST", "/api/ai/chat", {
           message: chatMessage,
           conversationHistory: conversationHistory.current,
@@ -1161,6 +1164,7 @@ export default function Agent() {
           currentUserId: 1,
           systemPrompt: activeConvSystemPrompt || undefined,
           model: selectedModel2,
+          extendedThinking: extendedThinking2,
         });
         const json = await res.json();
         const data = json.data;
