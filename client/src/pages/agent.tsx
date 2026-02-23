@@ -388,35 +388,52 @@ function ConversationListView({
     : conversations;
   const filteredGroups = groupConversationsByDate(filteredConversations);
 
-  return (
-    <div className="flex flex-col h-full" data-testid="conversation-list-view">
-      <div style={{
-        height: 52,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 16px',
-        flexShrink: 0,
-        background: 'var(--bg-primary)',
-      }}>
-        <button
-          style={{
-            width: 40, height: 40,
-            background: 'rgba(255,255,255,0.08)',
-            borderRadius: 10,
-            border: 'none',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer',
-          }}
-          data-testid="btn-filter"
-        >
-          <ListFilter size={22} color="#ECECEC" strokeWidth={1.5} />
-        </button>
-        <span style={{ fontSize: 17, fontWeight: 600, color: '#ECECEC', fontFamily: 'sans-serif' }}>Chats</span>
-        <div style={{ width: 40 }} />
-      </div>
+  const searchBarRef = useRef<HTMLDivElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const searchBgRef = useRef<HTMLDivElement>(null);
 
-      <div className="flex-1 overflow-y-auto" style={{ paddingBottom: 80 }} data-testid="conversation-list">
+  const updateSearchMask = useCallback(() => {
+    const container = searchContainerRef.current;
+    const searchBar = searchBarRef.current;
+    const bg = searchBgRef.current;
+    if (!container || !searchBar || !bg) return;
+
+    const cRect = container.getBoundingClientRect();
+    const sRect = searchBar.getBoundingClientRect();
+
+    const x = sRect.left - cRect.left;
+    const y = sRect.top - cRect.top;
+    const w = sRect.width;
+    const h = sRect.height;
+    const r = 20;
+
+    const mask = `url("data:image/svg+xml,${encodeURIComponent(
+      `<svg xmlns='http://www.w3.org/2000/svg' width='${cRect.width}' height='${cRect.height}'>` +
+      `<defs><mask id='m'>` +
+      `<rect width='100%' height='100%' fill='white'/>` +
+      `<rect x='${x}' y='${y}' width='${w}' height='${h}' rx='${r}' ry='${r}' fill='black'/>` +
+      `</mask></defs>` +
+      `<rect width='100%' height='100%' fill='white' mask='url(%23m)'/>` +
+      `</svg>`
+    )}")`;
+    bg.style.maskImage = mask;
+    bg.style.maskSize = '100% 100%';
+    (bg.style as any).webkitMaskImage = mask;
+    (bg.style as any).webkitMaskSize = '100% 100%';
+  }, []);
+
+  useEffect(() => {
+    updateSearchMask();
+    const observer = new ResizeObserver(updateSearchMask);
+    if (searchContainerRef.current) observer.observe(searchContainerRef.current);
+    if (searchBarRef.current) observer.observe(searchBarRef.current);
+    window.addEventListener('resize', updateSearchMask);
+    return () => { observer.disconnect(); window.removeEventListener('resize', updateSearchMask); };
+  }, [updateSearchMask]);
+
+  return (
+    <div className="relative h-full" data-testid="conversation-list-view">
+      <div className="absolute inset-0 overflow-y-auto" style={{ paddingTop: 16, paddingBottom: 'calc(120px + 3.33vh)' }} data-testid="conversation-list">
         {isLoading ? (
           <div className="flex items-center justify-center py-16" data-testid="conversations-loading">
             <ThinkingAnimation size={36} label="加载中" />
@@ -450,50 +467,80 @@ function ConversationListView({
         )}
       </div>
 
-      <div style={{
-        position: 'sticky',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        padding: '10px 16px',
-        paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        background: 'var(--bg-primary)',
-      }} data-testid="chats-bottom-bar">
-        <div style={{
-          flex: 1, height: 40,
-          background: 'rgba(255,255,255,0.08)',
-          borderRadius: 20,
-          padding: '0 14px',
-          display: 'flex', alignItems: 'center', gap: 8,
-        }}>
-          <Search size={16} color="#7A7874" />
-          <input
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search"
-            style={{
-              flex: 1, border: 'none', outline: 'none',
-              background: 'transparent',
-              fontSize: 15, color: '#ECECEC',
-            }}
-            data-testid="input-search-chats"
-          />
-        </div>
-        <button
-          onClick={onNewConversation}
-          style={{
-            width: 44, height: 44, borderRadius: '50%',
-            background: '#AE5630', border: 'none',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0, cursor: 'pointer',
-          }}
-          data-testid="btn-new-conversation"
+      <div
+        ref={searchContainerRef}
+        className="absolute bottom-0 left-0 right-0"
+        style={{ zIndex: 10, pointerEvents: 'none' }}
+        data-testid="chats-bottom-bar"
+      >
+        <div
+          ref={searchBgRef}
+          style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
         >
-          <Plus size={22} color="#FFFFFF" strokeWidth={2} />
-        </button>
+          <div style={{
+            height: 40,
+            background: 'linear-gradient(to top, rgba(30,29,26,0.85) 0%, transparent 100%)',
+          }} />
+          <div style={{
+            position: 'absolute', top: 40, left: 0, right: 0, bottom: 0,
+            background: 'rgba(30,29,26,0.85)',
+          }} />
+        </div>
+
+        <div style={{ height: 40 }} />
+        <div style={{ pointerEvents: 'auto', padding: '0 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div
+            ref={searchBarRef}
+            style={{
+              flex: 1, height: 44,
+              background: 'rgba(44, 43, 40, 0.50)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              borderRadius: 20,
+              border: '1px solid rgba(255,255,255,0.08)',
+              padding: '0 14px',
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}
+          >
+            <Search size={16} color="#7A7874" />
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search"
+              style={{
+                flex: 1, border: 'none', outline: 'none',
+                background: 'transparent',
+                fontSize: 15, color: '#ECECEC',
+              }}
+              data-testid="input-search-chats"
+            />
+          </div>
+          <button
+            onClick={onNewConversation}
+            style={{
+              width: 44, height: 44, borderRadius: '50%',
+              background: 'linear-gradient(145deg, rgba(174,86,48,0.85) 0%, rgba(174,86,48,0.65) 100%)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              boxShadow: '0 2px 10px rgba(174,86,48,0.3), inset 0 1px 0 rgba(255,255,255,0.2)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0, cursor: 'pointer',
+              transition: 'all 200ms ease',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'linear-gradient(145deg, rgba(174,86,48,0.95) 0%, rgba(174,86,48,0.75) 100%)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'linear-gradient(145deg, rgba(174,86,48,0.85) 0%, rgba(174,86,48,0.65) 100%)'; }}
+            onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.92)')}
+            onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+            data-testid="btn-new-conversation"
+          >
+            <Plus size={22} color="#FFFFFF" strokeWidth={2} />
+          </button>
+        </div>
+        <div style={{
+          height: 'calc(3.33vh + env(safe-area-inset-bottom, 0px))',
+          pointerEvents: 'none',
+        }} />
       </div>
     </div>
   );

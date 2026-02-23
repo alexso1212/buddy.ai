@@ -1518,40 +1518,39 @@ function App() {
               zIndex: 10,
               pointerEvents: 'none',
             }} />
-              <div className="md:hidden" style={{
-                position: 'absolute',
-                top: 8, left: 8, right: 8,
-                zIndex: 11,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }} data-testid="top-controls">
-                <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
-                  width: 36, height: 36,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: 'rgba(255,255,255,0.07)',
-                  border: '1px solid rgba(255,255,255,0.10)',
-                  borderRadius: '50%',
-                  cursor: 'pointer',
-                  color: 'var(--text-primary)',
-                  transition: 'background 150ms',
-                }} data-testid="menu-toggle"
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
-                >
-                  <Menu size={18} strokeWidth={1.8} />
-                </button>
-                {isAgentPage ? (
-                  <ModelSelector />
-                ) : (
+              {!isAgentPage && (
+                <div className="md:hidden" style={{
+                  position: 'absolute',
+                  top: 8, left: 8, right: 8,
+                  zIndex: 11,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  pointerEvents: 'auto',
+                }} data-testid="top-controls">
+                  <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
+                    width: 36, height: 36,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'rgba(255,255,255,0.07)',
+                    border: '1px solid rgba(255,255,255,0.10)',
+                    borderRadius: '50%',
+                    cursor: 'pointer',
+                    color: 'var(--text-primary)',
+                    transition: 'background 150ms',
+                  }} data-testid="menu-toggle"
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
+                  >
+                    <Menu size={18} strokeWidth={1.8} />
+                  </button>
                   <span style={{
                     fontSize: 17, fontWeight: 600,
                     color: 'var(--text-primary)',
                     fontFamily: 'var(--font-sans)',
                   }} data-testid="top-bar-title">Buddy</span>
-                )}
-                <div style={{ width: 36 }} />
-              </div>
+                  <div style={{ width: 36 }} />
+                </div>
+              )}
             </>
 
           <main
