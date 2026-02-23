@@ -539,6 +539,15 @@ function ConversationListView({
         )}
       </div>
 
+      <svg width="0" height="0" style={{ position: 'absolute' }}>
+        <defs>
+          <filter id="glass-refract" x="-5%" y="-5%" width="110%" height="110%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.015" numOctaves="2" seed="42" result="noise" />
+            <feGaussianBlur in="noise" stdDeviation="1.5" result="blurred" />
+            <feDisplacementMap in="SourceGraphic" in2="blurred" scale="8" xChannelSelector="R" yChannelSelector="G" />
+          </filter>
+        </defs>
+      </svg>
       <div
         ref={searchContainerRef}
         className="absolute bottom-0 left-0 right-0"
@@ -565,13 +574,16 @@ function ConversationListView({
             ref={searchBarRef}
             style={{
               flex: 1, height: 44,
-              background: 'rgba(50, 49, 46, 0.15)',
-              backdropFilter: 'blur(30px) saturate(1.5) brightness(1.08)',
-              WebkitBackdropFilter: 'blur(30px) saturate(1.5) brightness(1.08)',
+              position: 'relative',
               borderRadius: 20,
-              border: '1px solid rgba(255,255,255,0.12)',
+              border: '1px solid rgba(255,255,255,0.15)',
               padding: '0 14px',
               display: 'flex', alignItems: 'center', gap: 8,
+              background: 'rgba(255, 255, 255, 0.06)',
+              backdropFilter: 'blur(30px) saturate(1.6) brightness(1.1)',
+              WebkitBackdropFilter: 'blur(30px) saturate(1.6) brightness(1.1)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.05), 0 2px 8px rgba(0,0,0,0.12)',
+              filter: 'url(#glass-refract)',
             }}
           >
             <Search size={16} color="#7A7874" />
