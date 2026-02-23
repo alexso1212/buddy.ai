@@ -173,50 +173,15 @@ function ConversationItem({
   onRename: (id: number, title: string) => void;
   onDelete: (id: number) => void;
 }) {
-  const touchStartX = useRef(0);
-  const touchStartY = useRef(0);
-  const [swipeOffset, setSwipeOffset] = useState(0);
-  const [swiped, setSwiped] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(conv.title);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
-  }, []);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    const diffX = touchStartX.current - e.touches[0].clientX;
-    const diffY = Math.abs(e.touches[0].clientY - touchStartY.current);
-    if (diffY > 30) return;
-    if (diffX > 0) {
-      setSwipeOffset(Math.min(diffX, 80));
-    } else {
-      setSwipeOffset(0);
-    }
-  }, []);
-
-  const handleTouchEnd = useCallback(() => {
-    if (swipeOffset >= 60) {
-      setSwiped(true);
-      setSwipeOffset(80);
-    } else {
-      setSwiped(false);
-      setSwipeOffset(0);
-    }
-  }, [swipeOffset]);
-
   const handleClick = useCallback(() => {
-    if (swiped) {
-      setSwiped(false);
-      setSwipeOffset(0);
-      return;
-    }
     if (isRenaming) return;
     onSelect(conv.id);
-  }, [swiped, isRenaming, onSelect, conv.id]);
+  }, [isRenaming, onSelect, conv.id]);
 
   const startRename = useCallback(() => {
     setRenameValue(conv.title);
@@ -246,8 +211,10 @@ function ConversationItem({
       className="relative overflow-hidden group"
       data-testid={`conv-item-${conv.id}`}
     >
-      <button
+      <div
         onClick={handleClick}
+        role="button"
+        tabIndex={0}
         style={{
           width: '100%',
           padding: '16px 16px 16px 20px',
@@ -364,7 +331,7 @@ function ConversationItem({
           )}
           <ChevronRight size={18} color="#4A4A47" strokeWidth={1.5} />
         </div>
-      </button>
+      </div>
     </div>
   );
 }
@@ -430,6 +397,7 @@ function ConversationListView({
         justifyContent: 'space-between',
         padding: '0 16px',
         flexShrink: 0,
+        background: 'var(--bg-primary)',
       }}>
         <button
           style={{
