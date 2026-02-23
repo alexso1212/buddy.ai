@@ -5,7 +5,14 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
-import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Archive } from "lucide-react";
+import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Archive, MoreHorizontal, Pencil, X, Check } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
@@ -132,47 +139,42 @@ function ConversationItem({
   conv,
   onSelect,
   onArchive,
+  onRename,
+  onDelete,
 }: {
   conv: Conversation;
   onSelect: (id: number) => void;
   onArchive: (id: number) => void;
+  onRename: (id: number, title: string) => void;
+  onDelete: (id: number) => void;
 }) {
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [swiped, setSwiped] = useState(false);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [showArchive, setShowArchive] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(conv.title);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
-    longPressTimer.current = setTimeout(() => {
-      setShowArchive(true);
-    }, 500);
   }, []);
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
     const diffX = touchStartX.current - e.touches[0].clientX;
     const diffY = Math.abs(e.touches[0].clientY - touchStartY.current);
     if (diffY > 30) return;
     if (diffX > 0) {
-      setSwipeOffset(Math.min(diffX, 100));
+      setSwipeOffset(Math.min(diffX, 80));
     } else {
       setSwipeOffset(0);
     }
   }, []);
 
   const handleTouchEnd = useCallback(() => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-    if (swipeOffset >= 80) {
+    if (swipeOffset >= 60) {
       setSwiped(true);
       setSwipeOffset(80);
     } else {
@@ -182,41 +184,64 @@ function ConversationItem({
   }, [swipeOffset]);
 
   const handleClick = useCallback(() => {
-    if (swiped || showArchive) {
+    if (swiped) {
       setSwiped(false);
-      setShowArchive(false);
       setSwipeOffset(0);
       return;
     }
+    if (isRenaming) return;
     onSelect(conv.id);
-  }, [swiped, showArchive, onSelect, conv.id]);
+  }, [swiped, isRenaming, onSelect, conv.id]);
+
+  const startRename = useCallback(() => {
+    setRenameValue(conv.title);
+    setIsRenaming(true);
+    setTimeout(() => renameInputRef.current?.focus(), 50);
+  }, [conv.title]);
+
+  const confirmRename = useCallback(() => {
+    if (cancellingRef.current) return;
+    if (renameValue.trim() && renameValue.trim() !== conv.title) {
+      onRename(conv.id, renameValue.trim());
+    }
+    setIsRenaming(false);
+  }, [renameValue, conv.title, conv.id, onRename]);
+
+  const cancellingRef = useRef(false);
+
+  const cancelRename = useCallback(() => {
+    cancellingRef.current = true;
+    setRenameValue(conv.title);
+    setIsRenaming(false);
+    setTimeout(() => { cancellingRef.current = false; }, 50);
+  }, [conv.title]);
 
   return (
     <div
       className="relative overflow-hidden group"
       data-testid={`conv-item-${conv.id}`}
     >
+      {/* Swipe-to-reveal actions (mobile only) */}
       <div
-        className="absolute right-0 top-0 bottom-0 flex items-center justify-center"
+        className="absolute right-0 top-0 bottom-0 flex items-center md:hidden"
         style={{ width: 80 }}
       >
         <button
           onClick={(e) => { e.stopPropagation(); onArchive(conv.id); }}
-          className="flex items-center justify-center gap-1.5 h-full w-full text-white text-sm font-medium"
-          style={{ background: '#ef4444' }}
-          data-testid={`btn-archive-${conv.id}`}
+          className="flex items-center justify-center gap-1 h-full w-full text-[var(--text-secondary)] text-xs"
+          style={{ background: 'var(--bg-tertiary, hsl(var(--muted)))' }}
+          data-testid={`btn-archive-swipe-${conv.id}`}
         >
-          <Archive className="w-4 h-4" />
-          归档
+          <Archive className="w-4 h-4" strokeWidth={1.5} />
+          <span>归档</span>
         </button>
       </div>
 
       <div
-        className="relative bg-[var(--bg-primary,hsl(var(--background)))] px-4 py-3 cursor-pointer transition-transform hover:bg-black/5 dark:hover:bg-white/5"
+        className="relative bg-[var(--bg-primary,hsl(var(--background)))] px-3 py-2.5 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 rounded-lg mx-2 my-0.5"
         style={{
           transform: `translateX(${-swipeOffset}px)`,
           transition: swipeOffset === 0 || swiped ? 'transform 200ms ease' : 'none',
-          borderBottom: '1px solid var(--border-subtle)',
         }}
         onClick={handleClick}
         onTouchStart={handleTouchStart}
@@ -225,48 +250,80 @@ function ConversationItem({
         onTouchCancel={handleTouchEnd}
         data-testid={`conv-row-${conv.id}`}
       >
-        <div className="flex items-center justify-between gap-3">
-          <span
-            className="text-sm text-[var(--text-primary)] truncate flex-1"
-            style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-            data-testid={`conv-title-${conv.id}`}
-          >
-            {conv.title}
-          </span>
-          <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center justify-between gap-2">
+          {isRenaming ? (
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              <input
+                ref={renameInputRef}
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') confirmRename();
+                  if (e.key === 'Escape') cancelRename();
+                }}
+                onBlur={confirmRename}
+                className="text-sm bg-transparent border-b border-[var(--text-secondary)] text-[var(--text-primary)] outline-none flex-1 min-w-0 py-0.5"
+                data-testid={`conv-rename-input-${conv.id}`}
+              />
+            </div>
+          ) : (
             <span
-              className="text-xs text-[var(--text-secondary)]"
-              data-testid={`conv-time-${conv.id}`}
+              className="text-sm text-[var(--text-primary)] truncate flex-1"
+              data-testid={`conv-title-${conv.id}`}
             >
-              {formatRelativeTime(conv.updatedAt)}
+              {conv.title}
             </span>
-            <button
-              onClick={(e) => { e.stopPropagation(); onArchive(conv.id); }}
-              className="hidden md:flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors invisible group-hover:visible"
-              data-testid={`btn-archive-hover-${conv.id}`}
-            >
-              <Archive className="w-3.5 h-3.5" />
-            </button>
+          )}
+          <div className="flex items-center shrink-0">
+            {!isRenaming && (
+              <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    onClick={(e) => e.stopPropagation()}
+                    className="items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/10 transition-colors hidden md:flex opacity-0 group-hover:opacity-100"
+                    data-testid={`btn-conv-menu-${conv.id}`}
+                  >
+                    <MoreHorizontal className="w-4 h-4" strokeWidth={1.5} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  side="bottom"
+                  sideOffset={4}
+                  className="w-44 bg-[#2a2a2a] border-[#3a3a3a] rounded-xl shadow-xl p-1"
+                  data-testid={`conv-menu-${conv.id}`}
+                >
+                  <DropdownMenuItem
+                    onClick={(e) => { e.stopPropagation(); startRename(); }}
+                    className="flex items-center gap-2.5 px-3 py-2 text-sm text-[#e5e5e5] rounded-lg cursor-pointer hover:bg-white/10 focus:bg-white/10"
+                    data-testid={`btn-rename-${conv.id}`}
+                  >
+                    <Pencil className="w-4 h-4" strokeWidth={1.5} />
+                    重命名
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={(e) => { e.stopPropagation(); onArchive(conv.id); }}
+                    className="flex items-center gap-2.5 px-3 py-2 text-sm text-[#e5e5e5] rounded-lg cursor-pointer hover:bg-white/10 focus:bg-white/10"
+                    data-testid={`btn-archive-${conv.id}`}
+                  >
+                    <Archive className="w-4 h-4" strokeWidth={1.5} />
+                    归档
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="bg-[#3a3a3a] my-1" />
+                  <DropdownMenuItem
+                    onClick={(e) => { e.stopPropagation(); onDelete(conv.id); }}
+                    className="flex items-center gap-2.5 px-3 py-2 text-sm text-[#ef4444] rounded-lg cursor-pointer hover:bg-white/10 focus:bg-white/10"
+                    data-testid={`btn-delete-${conv.id}`}
+                  >
+                    <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                    删除
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </div>
       </div>
-
-      {showArchive && (
-        <div
-          className="absolute inset-0 flex items-center justify-end bg-black/10 dark:bg-white/5"
-          onClick={() => setShowArchive(false)}
-        >
-          <button
-            onClick={(e) => { e.stopPropagation(); onArchive(conv.id); setShowArchive(false); }}
-            className="flex items-center gap-1.5 mr-3 px-4 py-2 rounded-lg text-white text-sm font-medium"
-            style={{ background: '#ef4444' }}
-            data-testid={`btn-archive-longpress-${conv.id}`}
-          >
-            <Archive className="w-4 h-4" />
-            归档
-          </button>
-        </div>
-      )}
     </div>
   );
 }
@@ -293,6 +350,26 @@ function ConversationListView({
       toast({ title: "对话已归档" });
     } catch (err: any) {
       toast({ title: "归档失败", description: err.message, variant: "destructive" });
+    }
+  }, [toast]);
+
+  const handleRename = useCallback(async (id: number, title: string) => {
+    try {
+      await apiRequest("PATCH", `/api/conversations/${id}`, { title });
+      queryClient.invalidateQueries({ queryKey: ['/api/conversations'] });
+      toast({ title: "已重命名" });
+    } catch (err: any) {
+      toast({ title: "重命名失败", description: err.message, variant: "destructive" });
+    }
+  }, [toast]);
+
+  const handleDelete = useCallback(async (id: number) => {
+    try {
+      await apiRequest("DELETE", `/api/conversations/${id}`);
+      queryClient.invalidateQueries({ queryKey: ['/api/conversations'] });
+      toast({ title: "对话已删除" });
+    } catch (err: any) {
+      toast({ title: "删除失败", description: err.message, variant: "destructive" });
     }
   }, [toast]);
 
@@ -338,6 +415,8 @@ function ConversationListView({
                   conv={conv}
                   onSelect={onSelectConversation}
                   onArchive={handleArchive}
+                  onRename={handleRename}
+                  onDelete={handleDelete}
                 />
               ))}
             </div>

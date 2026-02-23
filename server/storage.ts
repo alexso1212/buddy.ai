@@ -345,6 +345,8 @@ export class DatabaseStorage {
   }
 
   async deleteConversation(id: number): Promise<void> {
+    await db.delete(tokenUsage).where(eq(tokenUsage.conversationId, id));
+    await db.delete(chatMessages).where(eq(chatMessages.conversationId, id));
     await db.delete(conversations).where(eq(conversations.id, id));
   }
 
