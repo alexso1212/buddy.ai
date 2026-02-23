@@ -1255,7 +1255,7 @@ function Router() {
 const AI_MODELS = [
   { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', short: 'Sonnet 4', tier: 'simple' },
   { id: 'claude-opus-4-20250514', label: 'Claude Opus 4', short: 'Opus 4', tier: 'complex' },
-  { id: 'claude-haiku-3-5-20241022', label: 'Claude 3.5 Haiku', short: 'Haiku 3.5', tier: 'simple' },
+  { id: 'claude-haiku-4-5-20251001', label: 'Claude 4.5 Haiku', short: 'Haiku 4.5', tier: 'simple' },
   { id: 'claude-3.5-sonnet', label: 'Claude 3.5 Sonnet', short: '3.5 Sonnet', tier: 'openrouter' },
   { id: 'gpt-4o', label: 'GPT-4o', short: 'GPT-4o', tier: 'openrouter' },
   { id: 'deepseek-chat', label: 'DeepSeek V3', short: 'DeepSeek', tier: 'openrouter' },

@@ -22,7 +22,7 @@ const claudeSimpleClient = new OpenAI({
 });
 
 const COMPLEX_MODELS = ['claude-opus-4-20250514'];
-const SIMPLE_MODELS = ['claude-haiku-3-5-20241022', 'claude-sonnet-4-20250514'];
+const SIMPLE_MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-4-20250514'];
 
 function getClientForModel(model: string): OpenAI {
   if (COMPLEX_MODELS.includes(model)) return claudeComplexClient;
