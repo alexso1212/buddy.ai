@@ -361,15 +361,35 @@ function Sidebar({
         style={{
           height: 46,
           padding: '0 20px 0 28px',
+          margin: '2px 12px 2px 12px',
+          borderRadius: 12,
           display: 'flex',
           alignItems: 'center',
           gap: 14,
-          background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
+          background: active
+            ? 'linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%)'
+            : 'transparent',
+          border: active ? '1px solid rgba(255,255,255,0.10)' : '1px solid transparent',
+          boxShadow: active ? '0 2px 8px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.08)' : 'none',
+          backdropFilter: active ? 'blur(12px)' : 'none',
+          WebkitBackdropFilter: active ? 'blur(12px)' : 'none',
           cursor: 'pointer',
-          transition: 'background 150ms',
+          transition: 'all 200ms ease',
         }}
-        onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-        onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+        onMouseEnter={e => {
+          if (!active) {
+            e.currentTarget.style.background = 'linear-gradient(135deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.03) 100%)';
+            e.currentTarget.style.border = '1px solid rgba(255,255,255,0.06)';
+            e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.05)';
+          }
+        }}
+        onMouseLeave={e => {
+          if (!active) {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.border = '1px solid transparent';
+            e.currentTarget.style.boxShadow = 'none';
+          }
+        }}
         data-testid={testId}
       >
         <Icon size={20} color="#ECECEC" strokeWidth={1.5} />
@@ -403,14 +423,32 @@ function Sidebar({
           onTouchMove={() => clearTimeout(pressTimerRef.current)}
           style={{
             padding: convo.projectName ? '10px 16px' : '12px 16px',
-            margin: '0 8px 2px 16px',
-            borderRadius: 10,
-            background: selected ? 'rgba(255,255,255,0.08)' : 'transparent',
+            margin: '0 8px 2px 12px',
+            borderRadius: 12,
+            background: selected
+              ? 'linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%)'
+              : 'transparent',
+            border: selected ? '1px solid rgba(255,255,255,0.10)' : '1px solid transparent',
+            boxShadow: selected ? '0 2px 8px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.08)' : 'none',
+            backdropFilter: selected ? 'blur(12px)' : 'none',
+            WebkitBackdropFilter: selected ? 'blur(12px)' : 'none',
             cursor: 'pointer',
-            transition: 'background 150ms',
+            transition: 'all 200ms ease',
           }}
-          onMouseEnter={e => { if (!selected) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-          onMouseLeave={e => { if (!selected) e.currentTarget.style.background = selected ? 'rgba(255,255,255,0.08)' : 'transparent'; }}
+          onMouseEnter={e => {
+            if (!selected) {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.03) 100%)';
+              e.currentTarget.style.border = '1px solid rgba(255,255,255,0.06)';
+              e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.05)';
+            }
+          }}
+          onMouseLeave={e => {
+            if (!selected) {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.border = '1px solid transparent';
+              e.currentTarget.style.boxShadow = 'none';
+            }
+          }}
           data-testid={`convo-${convo.id}`}
         >
           <div style={{
@@ -620,18 +658,27 @@ function Sidebar({
               width: 40,
               height: 40,
               borderRadius: '50%',
-              background: '#AE5630',
-              border: 'none',
+              background: 'linear-gradient(145deg, rgba(174,86,48,0.85) 0%, rgba(174,86,48,0.65) 100%)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              boxShadow: '0 2px 10px rgba(174,86,48,0.3), inset 0 1px 0 rgba(255,255,255,0.2)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
               flexShrink: 0,
-              transition: 'transform 100ms',
+              transition: 'all 200ms ease',
             }}
-            onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.95)')}
+            onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.92)')}
             onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-            onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
+            onMouseLeave={e => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.background = 'linear-gradient(145deg, rgba(174,86,48,0.85) 0%, rgba(174,86,48,0.65) 100%)';
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'linear-gradient(145deg, rgba(174,86,48,0.95) 0%, rgba(174,86,48,0.75) 100%)';
+            }}
             onClick={() => {
               onClose();
               window.location.href = '/agent';
