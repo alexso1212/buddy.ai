@@ -570,10 +570,8 @@ function ConversationListView({
               border: '1px solid rgba(255,255,255,0.15)',
               padding: '0 14px',
               display: 'flex', alignItems: 'center', gap: 8,
-              background: 'rgba(255, 255, 255, 0.06)',
-              backdropFilter: 'blur(30px) saturate(1.6) brightness(1.1)',
-              WebkitBackdropFilter: 'blur(30px) saturate(1.6) brightness(1.1)',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.05), 0 2px 8px rgba(0,0,0,0.12)',
+              background: 'rgba(44, 43, 40, 0.45)',
+              boxShadow: 'inset 0 0.5px 0 rgba(255,255,255,0.08)',
             }}
           >
             <Search size={16} color="#7A7874" />
