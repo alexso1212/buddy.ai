@@ -657,6 +657,9 @@ export default function Agent() {
 
   const handleFollowUpSubmit = useCallback(
     async (messageId: string, mergedData: Record<string, any>, creationType?: string) => {
+      console.log('[handleFollowUpSubmit] 收到数据:', JSON.stringify(mergedData, null, 2));
+      console.log('[handleFollowUpSubmit] 创建类型:', creationType);
+
       setMessages((prev) =>
         prev.map((m) =>
           m.id === messageId ? { ...m, followUpSubmitted: true } : m
@@ -688,6 +691,7 @@ export default function Agent() {
         });
         const json = await res.json();
         const data = json.data;
+        console.log('[handleFollowUpSubmit] AI 响应:', data.type, data);
 
         let assistantContent = "";
         if (data.type === "text") {
