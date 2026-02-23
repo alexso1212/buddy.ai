@@ -1462,55 +1462,15 @@ function App() {
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} sidebarRef={sidebarRef} overlayRef={overlayRef} />
 
         <div className="flex-1 flex flex-col overflow-hidden relative">
-          {!isAgentPage && (
-            <header className="md:hidden" style={{
-              height: 54,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '0 8px',
-              background: 'var(--bg-primary)',
-              borderBottom: '1px solid var(--border-subtle)',
-              flexShrink: 0,
-              position: 'relative',
-            }} data-testid="top-bar">
-              <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
-                width: 40, height: 40,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: 'rgba(255,255,255,0.07)',
-                border: '1px solid rgba(255,255,255,0.10)',
-                borderRadius: '50%',
-                cursor: 'pointer',
-                color: 'var(--text-primary)',
-                backdropFilter: 'blur(8px)',
-                WebkitBackdropFilter: 'blur(8px)',
-                transition: 'background 150ms',
-              }} data-testid="menu-toggle"
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
-              >
-                <Menu size={20} strokeWidth={1.8} />
-              </button>
-              <span style={{
-                position: 'absolute', left: '50%', transform: 'translateX(-50%)',
-                fontSize: 17, fontWeight: 600,
-                color: 'var(--text-primary)',
-                fontFamily: 'var(--font-sans)',
-              }} data-testid="top-bar-title">Buddy</span>
-              <div style={{ width: 40 }} />
-            </header>
-          )}
-
-          {isAgentPage && (
-            <>
-              <div className="md:hidden" style={{
-                position: 'absolute',
-                top: 0, left: 0, right: 0,
-                height: 64,
-                background: 'linear-gradient(to bottom, rgba(30,29,26,0.35) 0%, transparent 100%)',
-                zIndex: 10,
-                pointerEvents: 'none',
-              }} />
+          <>
+            <div className="md:hidden" style={{
+              position: 'absolute',
+              top: 0, left: 0, right: 0,
+              height: 64,
+              background: 'linear-gradient(to bottom, rgba(30,29,26,0.20) 0%, transparent 100%)',
+              zIndex: 10,
+              pointerEvents: 'none',
+            }} />
               <div className="md:hidden" style={{
                 position: 'absolute',
                 top: 8, left: 8, right: 8,
@@ -1518,7 +1478,7 @@ function App() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-              }} data-testid="agent-top-controls">
+              }} data-testid="top-controls">
                 <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
                   width: 36, height: 36,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1534,11 +1494,18 @@ function App() {
                 >
                   <Menu size={18} strokeWidth={1.8} />
                 </button>
-                <ModelSelector />
+                {isAgentPage ? (
+                  <ModelSelector />
+                ) : (
+                  <span style={{
+                    fontSize: 17, fontWeight: 600,
+                    color: 'var(--text-primary)',
+                    fontFamily: 'var(--font-sans)',
+                  }} data-testid="top-bar-title">Buddy</span>
+                )}
                 <div style={{ width: 36 }} />
               </div>
             </>
-          )}
 
           <main
             className="flex-1 overflow-auto ml-0 md:ml-[260px]"
