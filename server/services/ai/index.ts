@@ -28,14 +28,21 @@ interface ChatResponse {
   }[];
   followUp?: {
     message: string;
+    creationType: 'task' | 'project';
     partialData: Record<string, any>;
-    questions: {
+    steps: {
+      step: number;
       field: string;
+      icon: string;
       label: string;
-      emoji: string;
-      options: { label: string; value: any }[];
-      allowCustom?: boolean;
+      options: { label: string; value: any; description?: string; icon?: string }[];
+      allowCustomInput: boolean;
+      customInputPlaceholder?: string;
+      allowSkip: boolean;
+      skipValue?: any;
+      inputType?: 'text' | 'date' | 'textarea';
     }[];
+    currentStep: number;
   };
   tokenUsage?: {
     model: string;
@@ -62,22 +69,34 @@ function getNextDayOfWeek(dayOfWeek: number): Date {
   return result;
 }
 
-function buildFollowUpResponse(
-  parsed: any,
-  allUsers: { id: number; displayName: string }[],
-  allProjects: { id: number; name: string }[],
-  currentUserId: number
-): ChatResponse {
-  const data = parsed.partialData || parsed.action?.data || {};
-  const aiQuestions: any[] = parsed.questions || [];
+function getEndOfMonth(): Date {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + 1, 0);
+}
 
-  const fieldEmojis: Record<string, { label: string; emoji: string }> = {
-    projectId: { label: '属于哪个项目？', emoji: '📁' },
-    assigneeId: { label: '谁负责？', emoji: '👤' },
-    priority: { label: '优先级？', emoji: '🔴' },
-    dueDate: { label: '截止日期？', emoji: '📅' },
-    type: { label: '任务类型？', emoji: '📋' },
-  };
+function getNextMonthFirst(): Date {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + 1, 1);
+}
+
+function formatDisplayDate(d: Date): string {
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function buildGuidedSteps(
+  creationType: 'task' | 'project',
+  partialData: Record<string, any>,
+  missingFields: string[],
+  message: string,
+  allUsers: any[],
+  allProjects: any[],
+  allTasks: any[],
+  currentUserId: number,
+  allDepartments: any[],
+  jobRoleMap: Map<number, any>
+): ChatResponse {
+  const steps: ChatResponse['followUp'] extends undefined ? never : NonNullable<ChatResponse['followUp']>['steps'] = [];
+  let stepNum = 1;
 
   const now = new Date();
   const today = formatDate(now);
@@ -88,95 +107,256 @@ function buildFollowUpResponse(
   const fridayStr = formatDate(friday);
   const monday = getNextDayOfWeek(1);
   const mondayStr = formatDate(monday);
+  const nextFriday = new Date(friday);
+  nextFriday.setDate(friday.getDate() + 7);
+  const nextFridayStr = formatDate(nextFriday);
+  const endOfMonth = getEndOfMonth();
+  const endOfMonthStr = formatDate(endOfMonth);
 
-  const optionGenerators: Record<string, () => { options: { label: string; value: any }[]; allowCustom?: boolean }> = {
-    projectId: () => ({
-      options: allProjects.map(p => ({ label: p.name, value: p.id })),
-    }),
-    assigneeId: () => {
-      const opts: { label: string; value: any }[] = [];
-      const currentUser = allUsers.find(u => u.id === currentUserId);
-      if (currentUser) {
-        opts.push({ label: '我自己', value: currentUser.id });
+  const buildUserOptions = () => {
+    const opts: { label: string; value: any; description?: string }[] = [];
+    const currentUser = allUsers.find((u: any) => u.id === currentUserId);
+    if (currentUser) {
+      const role = currentUser.jobRoleId ? jobRoleMap.get(currentUser.jobRoleId) : null;
+      opts.push({ label: '我自己', value: currentUser.id, description: role?.title || '' });
+    }
+    for (const u of allUsers) {
+      if (u.id !== currentUserId && u.isActive !== false) {
+        const role = u.jobRoleId ? jobRoleMap.get(u.jobRoleId) : null;
+        opts.push({ label: u.displayName, value: u.id, description: role?.title || '' });
       }
-      for (const u of allUsers) {
-        if (u.id !== currentUserId) {
-          opts.push({ label: u.displayName, value: u.id });
-        }
-      }
-      return { options: opts };
-    },
-    priority: () => ({
-      options: [
-        { label: '紧急', value: 'critical' },
-        { label: '高', value: 'high' },
-        { label: '中', value: 'medium' },
-        { label: '低', value: 'low' },
-      ],
-    }),
-    dueDate: () => ({
-      options: [
-        { label: '今天', value: today },
-        { label: '明天', value: tomorrowStr },
-        { label: '本周五', value: fridayStr },
-        { label: '下周一', value: mondayStr },
-      ],
-      allowCustom: true,
-    }),
-    type: () => ({
-      options: [
-        { label: '任务', value: 'task' },
-        { label: '里程碑', value: 'milestone' },
-      ],
-    }),
+    }
+    return opts;
   };
 
-  const questions: ChatResponse['followUp'] extends undefined ? never : NonNullable<ChatResponse['followUp']>['questions'] = [];
+  if (creationType === 'task') {
+    const taskFieldOrder = ['title', 'projectId', 'parentTaskId', 'assigneeId', 'dueDate', 'priority', 'weight', 'type', 'description', 'tags'];
+    const orderedFields = taskFieldOrder.filter(f => missingFields.includes(f));
 
-  if (aiQuestions.length > 0) {
-    for (const q of aiQuestions) {
-      if (data[q.field] !== undefined && data[q.field] !== null) continue;
-      const gen = optionGenerators[q.field];
-      if (gen) {
-        const { options, allowCustom } = gen();
-        questions.push({
-          field: q.field,
-          label: q.label || fieldEmojis[q.field]?.label || q.field,
-          emoji: q.emoji || fieldEmojis[q.field]?.emoji || '❓',
-          options,
-          allowCustom,
-        });
+    for (const field of orderedFields) {
+      const step: any = { step: stepNum++, field, options: [], allowCustomInput: false, allowSkip: false };
+
+      switch (field) {
+        case 'title':
+          step.icon = '📝';
+          step.label = '任务的标题是什么？';
+          step.allowCustomInput = true;
+          step.customInputPlaceholder = '输入任务标题';
+          step.allowSkip = false;
+          step.inputType = 'text';
+          break;
+
+        case 'projectId':
+          step.icon = '📁';
+          step.label = '属于哪个项目？';
+          step.options = allProjects
+            .filter((p: any) => p.status !== 'cancelled')
+            .map((p: any) => ({ label: p.name, value: p.id }));
+          step.options.push({ label: '➕ 创建新项目', value: 'new_project' });
+          step.options.push({ label: '📋 暂不归属项目', value: null });
+          step.allowCustomInput = true;
+          step.customInputPlaceholder = '输入项目名称搜索...';
+          step.allowSkip = false;
+          break;
+
+        case 'parentTaskId':
+          step.icon = '🏷️';
+          step.label = '这是独立任务还是子任务？';
+          step.options = [{ label: '独立任务 — 直接挂在项目下', value: null }];
+          if (partialData.projectId) {
+            const projectTasks = allTasks.filter((t: any) =>
+              t.projectId === partialData.projectId && !t.parentTaskId && t.status !== 'cancelled'
+            );
+            for (const t of projectTasks) {
+              step.options.push({ label: t.title, value: t.id, description: `${t.status} | 优先级: ${t.priority}` });
+            }
+          }
+          step.allowCustomInput = false;
+          step.allowSkip = true;
+          step.skipValue = null;
+          break;
+
+        case 'assigneeId':
+          step.icon = '👤';
+          step.label = '谁来负责？';
+          step.options = buildUserOptions();
+          step.allowCustomInput = true;
+          step.customInputPlaceholder = '输入名字...';
+          step.allowSkip = false;
+          break;
+
+        case 'dueDate':
+          step.icon = '📅';
+          step.label = '什么时候需要完成？';
+          step.options = [
+            { label: `今天 (${formatDisplayDate(now)})`, value: today },
+            { label: `明天 (${formatDisplayDate(tomorrow)})`, value: tomorrowStr },
+            { label: `本周五 (${formatDisplayDate(friday)})`, value: fridayStr },
+            { label: `下周一 (${formatDisplayDate(monday)})`, value: mondayStr },
+            { label: `下周五 (${formatDisplayDate(nextFriday)})`, value: nextFridayStr },
+            { label: `月底 (${formatDisplayDate(endOfMonth)})`, value: endOfMonthStr },
+            { label: '⏭️ 暂不确定，稍后补充', value: null },
+          ];
+          step.allowCustomInput = true;
+          step.inputType = 'date';
+          step.allowSkip = true;
+          step.skipValue = null;
+          break;
+
+        case 'priority':
+          step.icon = '🔴';
+          step.label = '紧急程度？';
+          step.options = [
+            { label: '🔴 紧急', value: 'critical', description: '立即处理，阻塞其他工作' },
+            { label: '🟠 高', value: 'high', description: '本周内需要重点推进' },
+            { label: '🔵 中', value: 'medium', description: '正常优先级' },
+            { label: '⚪ 低', value: 'low', description: '有空再处理' },
+          ];
+          step.allowSkip = true;
+          step.skipValue = 'medium';
+          break;
+
+        case 'weight':
+          step.icon = '⚖️';
+          step.label = '重要程度？（影响图谱节点大小，1-10）';
+          step.options = [
+            { label: '1-3 小事项', value: 2 },
+            { label: '4-6 一般', value: 5 },
+            { label: '7-8 重要', value: 8 },
+            { label: '9-10 核心', value: 10 },
+          ];
+          step.allowCustomInput = true;
+          step.customInputPlaceholder = '输入具体数值';
+          step.allowSkip = true;
+          step.skipValue = 3;
+          break;
+
+        case 'type':
+          step.icon = '📋';
+          step.label = '任务类型？';
+          step.options = [
+            { label: '任务', value: 'task' },
+            { label: '里程碑', value: 'milestone' },
+            { label: 'Bug', value: 'bug' },
+            { label: '需求', value: 'request' },
+          ];
+          step.allowSkip = true;
+          step.skipValue = 'task';
+          break;
+
+        case 'description':
+          step.icon = '📝';
+          step.label = '需要添加描述吗？';
+          step.allowCustomInput = true;
+          step.inputType = 'textarea';
+          step.customInputPlaceholder = '输入任务描述...';
+          step.allowSkip = true;
+          step.skipValue = null;
+          break;
+
+        case 'tags':
+          step.icon = '🏷️';
+          step.label = '添加标签？';
+          step.allowCustomInput = true;
+          step.customInputPlaceholder = '输入标签，用逗号分隔';
+          step.allowSkip = true;
+          step.skipValue = null;
+          break;
       }
+
+      steps.push(step);
     }
   } else {
-    const missingFields = ['projectId', 'assigneeId', 'dueDate', 'type'].filter(f => {
-      return data[f] === undefined || data[f] === null;
-    });
-    if (!data.priority && missingFields.length > 0) {
-      missingFields.push('priority');
-    }
-    for (const field of missingFields) {
-      const gen = optionGenerators[field];
-      if (gen) {
-        const info = fieldEmojis[field];
-        const { options, allowCustom } = gen();
-        questions.push({
-          field,
-          label: info?.label || field,
-          emoji: info?.emoji || '❓',
-          options,
-          allowCustom,
-        });
+    const projectFieldOrder = ['name', 'description', 'deptId', 'ownerId', 'startDate', 'targetDate'];
+    const orderedFields = projectFieldOrder.filter(f => missingFields.includes(f));
+
+    const nextMonthFirst = getNextMonthFirst();
+
+    const oneMonthLater = new Date(now);
+    oneMonthLater.setMonth(now.getMonth() + 1);
+    const twoMonthsLater = new Date(now);
+    twoMonthsLater.setMonth(now.getMonth() + 2);
+    const quarterEnd = new Date(now.getFullYear(), Math.ceil((now.getMonth() + 1) / 3) * 3, 0);
+    const halfYearLater = new Date(now);
+    halfYearLater.setMonth(now.getMonth() + 6);
+
+    for (const field of orderedFields) {
+      const step: any = { step: stepNum++, field, options: [], allowCustomInput: false, allowSkip: false };
+
+      switch (field) {
+        case 'name':
+          step.icon = '🏗️';
+          step.label = '项目名称是什么？';
+          step.allowCustomInput = true;
+          step.inputType = 'text';
+          step.allowSkip = false;
+          break;
+
+        case 'description':
+          step.icon = '📝';
+          step.label = '简单描述一下项目目标和背景：';
+          step.allowCustomInput = true;
+          step.inputType = 'textarea';
+          step.customInputPlaceholder = '输入项目描述';
+          step.allowSkip = true;
+          step.skipValue = null;
+          break;
+
+        case 'deptId':
+          step.icon = '🏢';
+          step.label = '属于哪个部门？';
+          step.options = allDepartments.map((d: any) => ({ label: d.name, value: d.id }));
+          step.allowCustomInput = true;
+          step.customInputPlaceholder = '输入部门名称...';
+          step.allowSkip = true;
+          break;
+
+        case 'ownerId':
+          step.icon = '👤';
+          step.label = '谁是项目负责人？';
+          step.options = buildUserOptions();
+          step.allowCustomInput = true;
+          step.allowSkip = false;
+          break;
+
+        case 'startDate':
+          step.icon = '📅';
+          step.label = '项目什么时候开始？';
+          step.options = [
+            { label: `今天 (${formatDisplayDate(now)})`, value: today },
+            { label: `下周一 (${formatDisplayDate(monday)})`, value: mondayStr },
+            { label: `下月1号 (${formatDisplayDate(nextMonthFirst)})`, value: formatDate(nextMonthFirst) },
+          ];
+          step.allowSkip = true;
+          step.inputType = 'date';
+          break;
+
+        case 'targetDate':
+          step.icon = '🎯';
+          step.label = '预计什么时候完成？';
+          step.options = [
+            { label: `1个月后 (${formatDisplayDate(oneMonthLater)})`, value: formatDate(oneMonthLater) },
+            { label: `2个月后 (${formatDisplayDate(twoMonthsLater)})`, value: formatDate(twoMonthsLater) },
+            { label: `季度末 (${formatDisplayDate(quarterEnd)})`, value: formatDate(quarterEnd) },
+            { label: `半年后 (${formatDisplayDate(halfYearLater)})`, value: formatDate(halfYearLater) },
+          ];
+          step.allowSkip = true;
+          step.inputType = 'date';
+          break;
       }
+
+      steps.push(step);
     }
   }
 
   return {
     type: 'follow_up',
     followUp: {
-      message: parsed.message || `需要确认几个信息：`,
-      partialData: data,
-      questions,
+      message: message || '需要确认几个信息：',
+      creationType,
+      partialData,
+      steps,
+      currentStep: 1,
     },
   };
 }
@@ -278,6 +458,9 @@ export async function chat(
   const allUsers = await storage.getUsers();
   const allProjects = await storage.getProjects();
   const allTasks = await storage.getTasks({});
+  const allDepartments = await storage.getDepartments();
+  const allJobRoles = await storage.getJobRoles();
+  const jobRoleMap = new Map(allJobRoles.map(r => [r.id, r]));
 
   const activeTasks = allTasks.filter(t => t.status !== 'done' && t.status !== 'cancelled');
 
@@ -332,9 +515,12 @@ export async function chat(
     }
 
     if (parsed.type === 'follow_up') {
-      const followUpResult = buildFollowUpResponse(parsed, allUsers, allProjects, context.currentUserId);
-      followUpResult.tokenUsage = tokenInfo;
-      return followUpResult;
+      const ct = parsed.creationType || 'task';
+      const pd = parsed.partialData || {};
+      const mf = parsed.missingFields || ['projectId', 'assigneeId', 'dueDate'];
+      const result = buildGuidedSteps(ct, pd, mf, parsed.message || '需要确认几个信息：', allUsers, allProjects, allTasks, context.currentUserId, allDepartments, jobRoleMap);
+      result.tokenUsage = tokenInfo;
+      return result;
     }
 
     if (parsed.type === 'confirm' && parsed.action) {
@@ -350,16 +536,19 @@ export async function chat(
           if (!validation.success) {
             const actionData = parsed.action.data || {};
             if (actionData.title) {
-              return buildFollowUpResponse(
-                {
-                  message: `好的，帮你创建「${actionData.title}」的任务，需要确认几个信息：`,
-                  partialData: actionData,
-                  questions: [],
-                },
-                allUsers,
-                allProjects,
-                context.currentUserId
+              const missingFields: string[] = [];
+              if (!actionData.projectId) missingFields.push('projectId');
+              if (!actionData.assigneeId) missingFields.push('assigneeId');
+              if (!actionData.dueDate) missingFields.push('dueDate');
+              const result = buildGuidedSteps(
+                'task',
+                actionData,
+                missingFields,
+                `好的，帮你创建「${actionData.title}」的任务，需要确认几个信息：`,
+                allUsers, allProjects, allTasks, context.currentUserId, allDepartments, jobRoleMap
               );
+              result.tokenUsage = tokenInfo;
+              return result;
             }
             return {
               type: 'text',
@@ -372,16 +561,19 @@ export async function chat(
           const actionData = parsed.action.data || {};
           const missingKey = ['projectId', 'assigneeId', 'dueDate'].some(f => !actionData[f]);
           if (missingKey && actionData.title) {
-            return buildFollowUpResponse(
-              {
-                message: `好的，帮你创建「${actionData.title}」的任务，需要确认几个信息：`,
-                partialData: actionData,
-                questions: [],
-              },
-              allUsers,
-              allProjects,
-              context.currentUserId
+            const missingFields: string[] = [];
+            if (!actionData.projectId) missingFields.push('projectId');
+            if (!actionData.assigneeId) missingFields.push('assigneeId');
+            if (!actionData.dueDate) missingFields.push('dueDate');
+            const result = buildGuidedSteps(
+              'task',
+              actionData,
+              missingFields,
+              `好的，帮你创建「${actionData.title}」的任务，需要确认几个信息：`,
+              allUsers, allProjects, allTasks, context.currentUserId, allDepartments, jobRoleMap
             );
+            result.tokenUsage = tokenInfo;
+            return result;
           }
         }
       }
@@ -437,5 +629,64 @@ export async function chat(
     return parsed;
   } catch {
     return { type: 'text', message: aiText, tokenUsage: tokenInfo };
+  }
+}
+
+export async function generateProjectTasks(
+  projectName: string,
+  projectDescription: string,
+  context: { currentUserId: number; currentUserName: string }
+): Promise<{ tasks: { title: string; description?: string; priority: string; type: string }[]; tokenUsage?: ChatResponse['tokenUsage'] }> {
+  const response = await client.chat.completions.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 2048,
+    messages: [
+      {
+        role: 'system',
+        content: `你是一个项目管理专家。用户正在创建一个新项目，请根据项目名称和描述，建议 3-8 个初始任务来拆解这个项目。
+
+输出格式为纯 JSON（不要用 markdown 包裹）：
+{
+  "tasks": [
+    { "title": "任务标题", "description": "简短描述", "priority": "medium", "type": "task" },
+    ...
+  ]
+}
+
+规则：
+- 每个任务标题应简洁明确
+- 任务应覆盖项目的主要工作模块
+- 按逻辑顺序排列
+- priority 从 critical/high/medium/low 中选择
+- type 一般用 "task"，关键节点用 "milestone"
+- 不要编造具体的人名或日期`
+      },
+      {
+        role: 'user',
+        content: `项目名称：${projectName}\n项目描述：${projectDescription || '暂无描述'}`
+      }
+    ],
+  });
+
+  const usage = response.usage;
+  const modelName = 'claude-sonnet-4-20250514';
+  const tokenInfo = usage ? {
+    model: modelName,
+    promptTokens: usage.prompt_tokens ?? 0,
+    completionTokens: usage.completion_tokens ?? 0,
+    totalTokens: usage.total_tokens ?? 0,
+  } : undefined;
+
+  let aiText = response.choices[0]?.message?.content || '';
+  const codeBlockMatch = aiText.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) {
+    aiText = codeBlockMatch[1].trim();
+  }
+
+  try {
+    const parsed = JSON.parse(aiText);
+    return { tasks: parsed.tasks || [], tokenUsage: tokenInfo };
+  } catch {
+    return { tasks: [], tokenUsage: tokenInfo };
   }
 }

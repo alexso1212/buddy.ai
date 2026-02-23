@@ -2,7 +2,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Check } from "lucide-react";
 import AiConfirmCard from "./AiConfirmCard";
-import AiFollowUpCard from "./AiFollowUpCard";
+import AiGuidedCreation from "./AiGuidedCreation";
 import AIMessageContent from "./AIMessageContent";
 import AgentLogo from "@/components/AgentLogo";
 
@@ -17,8 +17,22 @@ interface ActionPayload {
 
 interface FollowUpData {
   message: string;
+  creationType?: 'task' | 'project';
   partialData: Record<string, any>;
-  questions: {
+  steps?: {
+    step: number;
+    field: string;
+    icon: string;
+    label: string;
+    options: { label: string; value: any; description?: string; icon?: string }[];
+    allowCustomInput: boolean;
+    customInputPlaceholder?: string;
+    allowSkip: boolean;
+    skipValue?: any;
+    inputType?: 'text' | 'date' | 'textarea';
+  }[];
+  currentStep?: number;
+  questions?: {
     field: string;
     label: string;
     emoji: string;
@@ -47,7 +61,7 @@ interface AiMessageBubbleProps {
   onConfirm?: (messageId: string, actionIndex?: number) => void;
   onReject?: (messageId: string, actionIndex?: number) => void;
   onSkip?: (messageId: string, actionIndex?: number) => void;
-  onFollowUpSubmit?: (messageId: string, mergedData: Record<string, any>) => void;
+  onFollowUpSubmit?: (messageId: string, mergedData: Record<string, any>, creationType?: string) => void;
 }
 
 function BrandLogo() {
@@ -234,13 +248,24 @@ export default function AiMessageBubble({
   }
 
   if (message.type === "follow_up" && message.followUp && onFollowUpSubmit) {
+    const hasSteps = message.followUp.steps && message.followUp.steps.length > 0;
+    if (!hasSteps) {
+      return (
+        <div className="flex justify-start px-3 mb-6" style={{ animation: 'messageAppear 200ms ease-out' }} data-testid={`ai-message-${message.id}`}>
+          <div className="max-w-full">
+            <div className="mb-2"><BrandLogo /></div>
+            <AIMessageContent content={message.followUp.message || message.content} />
+          </div>
+        </div>
+      );
+    }
     return (
-      <div className="flex justify-start px-3 mb-6" style={{ animation: 'messageAppear 200ms ease-out' }} data-testid={`ai-message-${message.id}`}>
+      <div className="flex flex-col justify-start px-3 mb-6" style={{ animation: 'messageAppear 200ms ease-out' }} data-testid={`ai-message-${message.id}`}>
         <div className="max-w-[90%]">
-          <AiFollowUpCard
-            followUp={message.followUp}
-            onSubmit={(mergedData) => onFollowUpSubmit(message.id, mergedData)}
-            submitted={message.followUpSubmitted}
+          <AiGuidedCreation
+            followUp={message.followUp as any}
+            onComplete={(mergedData, creationType) => onFollowUpSubmit(message.id, mergedData, creationType)}
+            completed={message.followUpSubmitted}
           />
         </div>
       </div>

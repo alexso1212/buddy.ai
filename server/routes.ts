@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
-import { chat as aiChat } from "./services/ai/index";
+import { chat as aiChat, generateProjectTasks } from "./services/ai/index";
 import { executeAction } from "./services/ai/actionExecutor";
 import {
   insertOrganizationSchema,
@@ -1372,6 +1372,111 @@ export async function registerRoutes(server: Server, app: Express) {
       return res.json({ data });
     } catch (e: any) {
       return res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ===================== AI Guided Options =====================
+  app.get("/api/ai/guided-options", async (req, res) => {
+    try {
+      const { type, projectId } = req.query;
+
+      if (type === 'parentTasks' && projectId) {
+        const tasks = await storage.getTasks({ projectId: Number(projectId) });
+        const topLevelTasks = tasks.filter(t => !t.parentTaskId && t.status !== 'cancelled');
+        const options = topLevelTasks.map(t => ({
+          label: t.title,
+          value: t.id,
+          description: `${t.status} | 优先级: ${t.priority}`,
+        }));
+        return res.json({ data: options });
+      }
+
+      if (type === 'departments') {
+        const departments = await storage.getDepartments();
+        const options = departments.map(d => ({
+          label: d.name,
+          value: d.id,
+        }));
+        return res.json({ data: options });
+      }
+
+      if (type === 'users') {
+        const users = await storage.getUsers();
+        const jobRoles = await storage.getJobRoles();
+        const roleMap = new Map(jobRoles.map(r => [r.id, r]));
+        const options = users.filter(u => u.isActive).map(u => {
+          const role = u.jobRoleId ? roleMap.get(u.jobRoleId) : null;
+          return {
+            label: u.displayName,
+            value: u.id,
+            description: role?.title || '',
+          };
+        });
+        return res.json({ data: options });
+      }
+
+      if (type === 'projects') {
+        const projects = await storage.getProjects();
+        const options = projects.filter(p => p.status !== 'cancelled').map(p => ({
+          label: p.name,
+          value: p.id,
+          description: p.status,
+        }));
+        return res.json({ data: options });
+      }
+
+      return res.status(400).json({ error: 'Invalid type parameter' });
+    } catch (e: any) {
+      console.error('Guided options error:', e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== AI Decompose Project =====================
+  app.post("/api/ai/decompose-project", async (req, res) => {
+    try {
+      const { projectName, projectDescription } = req.body;
+      if (!projectName) {
+        return res.status(400).json({ error: 'projectName is required' });
+      }
+
+      const userId = req.currentUserId;
+      const user = await storage.getUserById(userId);
+      const userName = user?.displayName || 'Unknown';
+
+      const result = await generateProjectTasks(projectName, projectDescription || '', {
+        currentUserId: userId,
+        currentUserName: userName,
+      });
+
+      if (result.tokenUsage) {
+        const { calculateCost } = await import('./services/ai/tokenCost');
+        const cost = calculateCost(
+          result.tokenUsage.model,
+          result.tokenUsage.promptTokens,
+          result.tokenUsage.completionTokens
+        );
+        try {
+          await storage.createTokenUsage({
+            orgId: req.orgId,
+            userId,
+            conversationId: null,
+            model: result.tokenUsage.model,
+            promptTokens: result.tokenUsage.promptTokens,
+            completionTokens: result.tokenUsage.completionTokens,
+            totalTokens: result.tokenUsage.totalTokens,
+            costUsd: cost,
+            purpose: 'chat',
+          });
+        } catch (tokenErr) {
+          console.error('Failed to record token usage:', tokenErr);
+        }
+      }
+
+      return res.json({ data: result.tasks });
+    } catch (e: any) {
+      console.error('Project decompose error:', e);
+      return res.status(500).json({ error: e.message });
     }
   });
 

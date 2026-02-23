@@ -21,8 +21,22 @@ interface ActionPayload {
 
 interface FollowUpData {
   message: string;
+  creationType?: 'task' | 'project';
   partialData: Record<string, any>;
-  questions: {
+  steps?: {
+    step: number;
+    field: string;
+    icon: string;
+    label: string;
+    options: { label: string; value: any; description?: string; icon?: string }[];
+    allowCustomInput: boolean;
+    customInputPlaceholder?: string;
+    allowSkip: boolean;
+    skipValue?: any;
+    inputType?: 'text' | 'date' | 'textarea';
+  }[];
+  currentStep?: number;
+  questions?: {
     field: string;
     label: string;
     emoji: string;
@@ -642,22 +656,31 @@ export default function Agent() {
   }, [activeConvId, saveMessageToDB]);
 
   const handleFollowUpSubmit = useCallback(
-    async (messageId: string, mergedData: Record<string, any>) => {
+    async (messageId: string, mergedData: Record<string, any>, creationType?: string) => {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === messageId ? { ...m, followUpSubmitted: true } : m
         )
       );
 
+      let chatMessage: string;
+      if (creationType === 'task') {
+        chatMessage = `用户已通过引导式创建填写完所有信息，请直接生成确认卡片（不要再追问）。创建类型: 任务。数据: ${JSON.stringify(mergedData)}`;
+      } else if (creationType === 'project') {
+        chatMessage = `用户已通过引导式创建填写完所有信息，请直接生成确认卡片（不要再追问）。创建类型: 项目。数据: ${JSON.stringify(mergedData)}`;
+      } else {
+        chatMessage = `用户已选择完成信息，请直接用这些数据创建确认卡片（不要再追问）：${JSON.stringify(mergedData)}`;
+      }
+
       conversationHistory.current.push({
         role: "user",
-        content: `用户已选择完成信息：${JSON.stringify(mergedData)}`,
+        content: chatMessage,
       });
 
       setLoading(true);
       try {
         const res = await apiRequest("POST", "/api/ai/chat", {
-          message: `用户已选择完成信息，请直接用这些数据创建确认卡片（不要再追问）：${JSON.stringify(mergedData)}`,
+          message: chatMessage,
           conversationHistory: conversationHistory.current,
           conversationId: activeConvId || undefined,
           currentUserId: 1,
