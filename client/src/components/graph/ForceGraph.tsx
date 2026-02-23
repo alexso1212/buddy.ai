@@ -174,22 +174,6 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
       .attr("width", width)
       .attr("height", height);
 
-    const defs = svg.append("defs");
-
-    defs.append("filter")
-      .attr("id", "brighten")
-      .append("feComponentTransfer")
-      .selectAll("func")
-      .data(["feFuncR", "feFuncG", "feFuncB"])
-      .enter()
-      .each(function (tag) {
-        defs.select("#brighten feComponentTransfer")
-          .append(tag)
-          .attr("type", "linear")
-          .attr("slope", "1.4")
-          .attr("intercept", "0.1");
-      });
-
     const g = svg.append("g");
 
     const simNodes: SimNode[] = nodes.map((n) => ({ ...n }));
@@ -282,8 +266,11 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
       labelElements.attr("visibility", k < 0.5 ? "hidden" : "visible");
     }
 
+    const isHovering = { value: false };
+
     nodeElements.on("mouseover", function (_event, hoveredNode) {
       hoveredNodeIdRef.current = hoveredNode.id;
+      isHovering.value = true;
 
       const connectedIds = new Set<number>();
       connectedIds.add(hoveredNode.id);
@@ -294,9 +281,15 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
         if (tgtId === hoveredNode.id) connectedIds.add(Number(srcId));
       });
 
-      nodeElements
-        .attr("opacity", (d) => (connectedIds.has(d.id) ? 1 : 0.2))
-        .attr("filter", (d) => (d.id === hoveredNode.id ? "url(#brighten)" : "none"));
+      nodeElements.each(function (d) {
+        const el = d3.select(this);
+        el.style("opacity", connectedIds.has(d.id) ? 1 : 0.2);
+        if (d.id === hoveredNode.id) {
+          el.style("filter", "brightness(1.4)");
+        } else {
+          el.style("filter", "none");
+        }
+      });
       d3.select(this).attr("transform", function () {
         const d = d3.select<SVGGElement, SimNode>(this as SVGGElement).datum();
         return `translate(${d.x},${d.y}) scale(1.3)`;
@@ -307,7 +300,12 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
 
     nodeElements.on("mouseout", function () {
       hoveredNodeIdRef.current = null;
-      nodeElements.attr("opacity", 1).attr("filter", "none");
+      isHovering.value = false;
+      nodeElements.each(function (d) {
+        const el = d3.select(this);
+        el.style("opacity", null);
+        el.style("filter", null);
+      });
       labelElements.attr("opacity", 1);
       nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
     });
@@ -337,6 +335,26 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
 
     updateLabelVisibility();
 
+    let breathAnimFrame = 0;
+    function animateBreathing() {
+      const now = Date.now();
+      const breathVal = (Math.sin((now / 1000) * Math.PI) + 1) / 2;
+      const opacity = 0.6 + breathVal * 0.4;
+      const glowAlpha = 0.2 + breathVal * 0.5;
+      const glowSize = 6 + breathVal * 6;
+
+      nodeElements.each(function (d) {
+        if (d.status === 'blocked' && !isHovering.value) {
+          d3.select(this)
+            .style("opacity", opacity)
+            .style("filter", `drop-shadow(0 0 ${glowSize}px rgba(239,68,68,${glowAlpha}))`);
+        }
+      });
+
+      breathAnimFrame = requestAnimationFrame(animateBreathing);
+    }
+    breathAnimFrame = requestAnimationFrame(animateBreathing);
+
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width: w, height: h } = entry.contentRect;
@@ -349,6 +367,7 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
 
     return () => {
       simulation.stop();
+      cancelAnimationFrame(breathAnimFrame);
       resizeObserver.disconnect();
     };
   }, [nodes, links, projects, onNodeClick, getRadius]);
