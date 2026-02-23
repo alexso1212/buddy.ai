@@ -244,14 +244,14 @@ function ProjectPickerSheet({ convId, conversations, onClose, toast }: {
               }}
               data-testid={`project-option-${project.id}`}
             >
-              <FolderClosed size={18} color={project.id === currentProjectId ? '#D4A27F' : '#9A9893'} />
+              <FolderClosed size={18} color={project.id === currentProjectId ? '#AE5630' : '#9A9893'} />
               <span style={{
                 fontSize: 15, color: '#ECECEC',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 flex: 1,
               }}>{project.name}</span>
               {project.id === currentProjectId && (
-                <Check size={16} color="#D4A27F" />
+                <Check size={16} color="#AE5630" />
               )}
             </button>
           ))
@@ -558,7 +558,7 @@ function Sidebar({
                 <>
                   {starredConvs.length > 0 && (
                     <>
-                      <div style={{ padding: '20px 20px 8px 28px', fontSize: 14.5, fontWeight: 500, color: '#C4845C' }} data-testid="text-starred-label">
+                      <div style={{ padding: '20px 20px 8px 28px', fontSize: 14.5, fontWeight: 500, color: '#C4703F' }} data-testid="text-starred-label">
                         收藏
                       </div>
                       {starredConvs.map(renderConvoItem)}
@@ -566,7 +566,7 @@ function Sidebar({
                   )}
                   {recentConvs.length > 0 && (
                     <>
-                      <div style={{ padding: '20px 20px 8px 28px', fontSize: 14.5, fontWeight: 500, color: '#C4845C' }} data-testid="text-recents-label">
+                      <div style={{ padding: '20px 20px 8px 28px', fontSize: 14.5, fontWeight: 500, color: '#C4703F' }} data-testid="text-recents-label">
                         最近对话
                       </div>
                       {recentConvs.map(renderConvoItem)}
@@ -620,7 +620,7 @@ function Sidebar({
               width: 40,
               height: 40,
               borderRadius: '50%',
-              background: '#D4A27F',
+              background: '#AE5630',
               border: 'none',
               display: 'flex',
               alignItems: 'center',
@@ -776,7 +776,7 @@ function Sidebar({
                   width: 44,
                   height: 24,
                   borderRadius: 12,
-                  background: theme === 'dark' ? '#D4A27F' : 'rgba(255,255,255,0.2)',
+                  background: theme === 'dark' ? '#AE5630' : 'rgba(255,255,255,0.2)',
                   position: 'relative',
                   transition: 'background 200ms',
                   flexShrink: 0,
@@ -1083,7 +1083,7 @@ function Sidebar({
                 }}
                 style={{
                   padding: '8px 16px', borderRadius: 8,
-                  background: '#D4A27F',
+                  background: '#AE5630',
                   border: 'none', color: '#FFFFFF', fontSize: 14,
                   cursor: 'pointer',
                   fontWeight: 500,

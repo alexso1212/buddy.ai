@@ -132,11 +132,11 @@ export default function Artifacts() {
               >
                 <div style={{
                   width: 40, height: 40, borderRadius: 10,
-                  background: 'rgba(212, 162, 127, 0.12)',
+                  background: 'rgba(174, 86, 48, 0.12)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   flexShrink: 0,
                 }}>
-                  <ToolIcon size={20} color="#D4A27F" />
+                  <ToolIcon size={20} color="#AE5630" />
                 </div>
                 <div>
                   <div style={{
