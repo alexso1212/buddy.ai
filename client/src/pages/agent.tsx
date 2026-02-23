@@ -1020,11 +1020,13 @@ export default function Agent() {
       >
         <div style={{
           height: 40,
-          background: 'linear-gradient(to top, rgba(30,29,26,0.85) 0%, transparent 100%)',
+          background: 'linear-gradient(to top, rgba(30,29,26,0.65) 0%, transparent 100%)',
           pointerEvents: 'none',
         }} />
         <div style={{
-          background: 'rgba(30,29,26,0.85)',
+          background: 'rgba(30,29,26,0.65)',
+          backdropFilter: 'saturate(180%) blur(40px)',
+          WebkitBackdropFilter: 'saturate(180%) blur(40px)',
           pointerEvents: 'auto',
           paddingBottom: 'calc(3.33vh + env(safe-area-inset-bottom, 0px))',
         }}>
