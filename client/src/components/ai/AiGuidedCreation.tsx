@@ -113,12 +113,20 @@ export default function AiGuidedCreation({
     setCreatingProject(true);
     setError(null);
     try {
-      const res = await apiRequest("POST", "/api/projects", {
-        name: newProjectName.trim(),
-        orgId: 1,
-        ownerId: 1,
-        status: "active",
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newProjectName.trim(),
+          orgId: 1,
+          ownerId: 1,
+          status: "active",
+        }),
       });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || `HTTP ${res.status}`);
+      }
       const json = await res.json();
       const project = json.data;
       if (!project?.id) {
@@ -150,8 +158,8 @@ export default function AiGuidedCreation({
       setAnimationKey(prev => prev + 1);
       setCurrentStepIndex(prev => prev + 1);
     } catch (err: any) {
-      console.error('[GuidedCreation] 创建项目失败:', err);
-      setError(err.message || "创建项目失败");
+      console.error('[GuidedCreation] 创建项目失败:', err?.message || err);
+      setError(typeof err?.message === 'string' && err.message.length > 0 ? err.message : "创建项目失败，请重试");
     } finally {
       setCreatingProject(false);
     }
