@@ -201,10 +201,19 @@ ${allUsers.filter(u => u.id !== targetUser.id).map(u => `
 `;
 }
 
+export interface VerdictResultWithUsage extends VerdictResult {
+  tokenUsage?: {
+    model: string;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+}
+
 export async function judgeTaskAssignment(
   taskId: number,
   userId: number
-): Promise<VerdictResult> {
+): Promise<VerdictResultWithUsage> {
   const task = await buildTaskWithDetails(taskId);
   if (!task) throw new Error('Task not found');
   
@@ -215,8 +224,9 @@ export async function judgeTaskAssignment(
   
   const prompt = buildVerdictPrompt(task, targetUser, allUsers);
   
+  const modelName = 'claude-sonnet-4-20250514';
   const response = await client.chat.completions.create({
-    model: 'claude-sonnet-4-20250514',
+    model: modelName,
     max_tokens: 2048,
     temperature: 0.1,
     messages: [
@@ -233,6 +243,17 @@ export async function judgeTaskAssignment(
   if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
   cleaned = cleaned.trim();
   
-  const result: VerdictResult = JSON.parse(cleaned);
+  const result: VerdictResultWithUsage = JSON.parse(cleaned);
+
+  const usage = response.usage;
+  if (usage) {
+    result.tokenUsage = {
+      model: modelName,
+      promptTokens: usage.prompt_tokens ?? 0,
+      completionTokens: usage.completion_tokens ?? 0,
+      totalTokens: usage.total_tokens ?? 0,
+    };
+  }
+
   return result;
 }

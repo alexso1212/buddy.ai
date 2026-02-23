@@ -206,14 +206,35 @@ export const notifications = pgTable('notifications', {
 // ============================================================
 export const conversations = pgTable('conversations', {
   id: serial('id').primaryKey(),
+  orgId: integer('org_id').references(() => organizations.id).notNull().default(1),
+  userId: integer('user_id').references(() => users.id),
   title: varchar('title', { length: 500 }).notNull(),
   starred: boolean('starred').default(false).notNull(),
   projectId: integer('project_id').references(() => projects.id),
   projectName: varchar('project_name', { length: 255 }),
   visibility: varchar('visibility', { length: 50 }).notNull().default('private'),
   systemPrompt: text('system_prompt'),
+  isArchived: boolean('is_archived').default(false).notNull(),
+  lastMessageAt: timestamp('last_message_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ============================================================
+// 14. token_usage（Token 用量记录）
+// ============================================================
+export const tokenUsage = pgTable('token_usage', {
+  id: serial('id').primaryKey(),
+  orgId: integer('org_id').references(() => organizations.id).notNull(),
+  userId: integer('user_id').references(() => users.id),
+  conversationId: integer('conversation_id').references(() => conversations.id),
+  model: varchar('model', { length: 100 }).notNull(),
+  promptTokens: integer('prompt_tokens').notNull().default(0),
+  completionTokens: integer('completion_tokens').notNull().default(0),
+  totalTokens: integer('total_tokens').notNull().default(0),
+  costUsd: varchar('cost_usd', { length: 20 }),
+  purpose: varchar('purpose', { length: 50 }).notNull().default('chat'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
 // ============================================================
@@ -404,11 +425,35 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
 }));
 
 export const conversationsRelations = relations(conversations, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [conversations.orgId],
+    references: [organizations.id],
+  }),
+  user: one(users, {
+    fields: [conversations.userId],
+    references: [users.id],
+  }),
   project: one(projects, {
     fields: [conversations.projectId],
     references: [projects.id],
   }),
   messages: many(chatMessages),
+  tokenUsages: many(tokenUsage),
+}));
+
+export const tokenUsageRelations = relations(tokenUsage, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [tokenUsage.orgId],
+    references: [organizations.id],
+  }),
+  user: one(users, {
+    fields: [tokenUsage.userId],
+    references: [users.id],
+  }),
+  conversation: one(conversations, {
+    fields: [tokenUsage.conversationId],
+    references: [conversations.id],
+  }),
 }));
 
 export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
@@ -514,6 +559,13 @@ export const insertNotificationSchema = createInsertSchema(notifications).omit({
 });
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notifications.$inferSelect;
+
+export const insertTokenUsageSchema = createInsertSchema(tokenUsage).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertTokenUsage = z.infer<typeof insertTokenUsageSchema>;
+export type TokenUsage = typeof tokenUsage.$inferSelect;
 
 export const insertConversationSchema = createInsertSchema(conversations).omit({
   id: true,

@@ -45,6 +45,9 @@ import {
   type ChatMessage,
   type InsertConversation,
   type InsertChatMessage,
+  tokenUsage,
+  type TokenUsage,
+  type InsertTokenUsage,
 } from "@shared/schema";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -358,6 +361,85 @@ export class DatabaseStorage {
 
   async deleteChatMessagesByConversation(conversationId: number): Promise<void> {
     await db.delete(chatMessages).where(eq(chatMessages.conversationId, conversationId));
+  }
+
+  // ==================== Token Usage ====================
+  async createTokenUsage(data: InsertTokenUsage): Promise<TokenUsage> {
+    const [result] = await db.insert(tokenUsage).values(data).returning();
+    return result;
+  }
+
+  async getTokenUsageByOrg(orgId: number, since?: Date): Promise<TokenUsage[]> {
+    const conditions = [eq(tokenUsage.orgId, orgId)];
+    if (since) {
+      conditions.push(sql`${tokenUsage.createdAt} >= ${since}`);
+    }
+    return db.select().from(tokenUsage).where(and(...conditions)).orderBy(desc(tokenUsage.createdAt));
+  }
+
+  async getTokenUsageStats(orgId: number, since?: Date): Promise<{
+    totalPromptTokens: number;
+    totalCompletionTokens: number;
+    totalTokens: number;
+    totalCostUsd: string;
+    byPurpose: Record<string, { tokens: number; cost: string }>;
+    byUser: Record<number, { tokens: number; cost: string }>;
+  }> {
+    const conditions = [eq(tokenUsage.orgId, orgId)];
+    if (since) {
+      conditions.push(sql`${tokenUsage.createdAt} >= ${since}`);
+    }
+    const rows = await db.select().from(tokenUsage).where(and(...conditions));
+
+    let totalPromptTokens = 0;
+    let totalCompletionTokens = 0;
+    let totalTokens = 0;
+    let totalCost = 0;
+    const byPurpose: Record<string, { tokens: number; cost: number }> = {};
+    const byUser: Record<number, { tokens: number; cost: number }> = {};
+
+    for (const row of rows) {
+      totalPromptTokens += row.promptTokens;
+      totalCompletionTokens += row.completionTokens;
+      totalTokens += row.totalTokens;
+      const cost = parseFloat(row.costUsd || '0');
+      totalCost += cost;
+
+      if (!byPurpose[row.purpose]) byPurpose[row.purpose] = { tokens: 0, cost: 0 };
+      byPurpose[row.purpose].tokens += row.totalTokens;
+      byPurpose[row.purpose].cost += cost;
+
+      if (row.userId) {
+        if (!byUser[row.userId]) byUser[row.userId] = { tokens: 0, cost: 0 };
+        byUser[row.userId].tokens += row.totalTokens;
+        byUser[row.userId].cost += cost;
+      }
+    }
+
+    const formatPurpose: Record<string, { tokens: number; cost: string }> = {};
+    for (const [k, v] of Object.entries(byPurpose)) {
+      formatPurpose[k] = { tokens: v.tokens, cost: v.cost.toFixed(6) };
+    }
+    const formatUser: Record<number, { tokens: number; cost: string }> = {};
+    for (const [k, v] of Object.entries(byUser)) {
+      formatUser[Number(k)] = { tokens: v.tokens, cost: v.cost.toFixed(6) };
+    }
+
+    return {
+      totalPromptTokens,
+      totalCompletionTokens,
+      totalTokens,
+      totalCostUsd: totalCost.toFixed(6),
+      byPurpose: formatPurpose,
+      byUser: formatUser,
+    };
+  }
+
+  // ==================== Conversations (org-scoped) ====================
+  async getConversationsByOrg(orgId: number): Promise<Conversation[]> {
+    return db.select().from(conversations).where(
+      and(eq(conversations.orgId, orgId), eq(conversations.isArchived, false))
+    ).orderBy(desc(conversations.updatedAt));
   }
 }
 

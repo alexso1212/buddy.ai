@@ -10,7 +10,7 @@ I prefer iterative development with clear, concise explanations at each step. I 
 The application is built with an Express.js backend, a React (TypeScript) frontend utilizing Vite, and PostgreSQL with Drizzle ORM for data persistence. Tailwind CSS and shadcn/ui components are used for styling and UI elements, while `wouter` handles frontend routing.
 
 **Core Data Model:**
-The system uses an 11-table PostgreSQL database schema, including `organizations`, `departments`, `users`, `projects`, `tasks`, `task_dependencies`, `activity_logs`, `task_comments`, `job_roles`, `verdicts`, and `notifications`. All tables use serial integer IDs.
+The system uses a 14-table PostgreSQL database schema, including `organizations`, `departments`, `users`, `projects`, `tasks`, `task_dependencies`, `activity_logs`, `task_comments`, `job_roles`, `verdicts`, `notifications`, `conversations`, `chat_messages`, and `token_usage`. All tables use serial integer IDs.
 
 **Backend (API):**
 - **RESTful API:** Provides full CRUD operations for all entities, with unified `{data}/{error}` response formats.
@@ -18,6 +18,9 @@ The system uses an 11-table PostgreSQL database schema, including `organizations
 - **Activity Logging:** All mutations automatically generate entries in `activity_logs`.
 - **Role-Based Access Control:** Differentiates access for 'owner', 'admin', 'head', and 'member' roles.
 - **AI Integration:** Dedicated API endpoints for AI chat, action confirmation, verdict judgment, and assignment auto-judgment.
+- **Multi-Tenant Isolation:** `orgIsolation` middleware injects `orgId` and `currentUserId` into every request via headers (`x-org-id`, `x-user-id`), defaulting to org 1 / user 1. All API routes use `req.orgId` and `req.currentUserId` instead of hardcoded values.
+- **Token Usage Tracking:** Every AI call (chat, verdict) records prompt/completion tokens and cost to the `token_usage` table. `GET /api/token-usage/stats?period=7d|30d|90d` returns usage grouped by purpose and user.
+- **Conversation Persistence:** AI chat supports `conversationId` parameter; when provided, history is loaded from DB and messages are persisted. Confirm actions write system messages to chat history.
 
 **Frontend (UI/UX):**
 - **Single Page Application:** Built with React and `wouter` for routing.

@@ -18,8 +18,8 @@ import {
 } from "@shared/schema";
 import { judgeTaskAssignment } from "./services/ai/verdictService";
 
-function getActivityUserId(body: any): number {
-  return body?.userId ?? body?.creatorId ?? 1;
+function getActivityUserId(body: any, fallback: number = 1): number {
+  return body?.userId ?? body?.creatorId ?? fallback;
 }
 
 export async function registerRoutes(server: Server, app: Express) {
@@ -107,7 +107,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const org = await storage.createOrganization(parsed.data);
       await storage.createActivityLog({
         orgId: org.id,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "organization",
         entityId: org.id,
         action: "create",
@@ -137,7 +137,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const dept = await storage.createDepartment(parsed.data);
       await storage.createActivityLog({
         orgId: dept.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "department",
         entityId: dept.id,
         action: "create",
@@ -158,7 +158,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const updated = await storage.updateDepartment(id, req.body);
       await storage.createActivityLog({
         orgId: existing.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "department",
         entityId: id,
         action: "update",
@@ -179,7 +179,7 @@ export async function registerRoutes(server: Server, app: Express) {
       await storage.deleteDepartment(id);
       await storage.createActivityLog({
         orgId: existing.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "department",
         entityId: id,
         action: "delete",
@@ -209,7 +209,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const user = await storage.createUser(parsed.data);
       await storage.createActivityLog({
         orgId: user.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "user",
         entityId: user.id,
         action: "create",
@@ -230,7 +230,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const updated = await storage.updateUser(id, req.body);
       await storage.createActivityLog({
         orgId: existing.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "user",
         entityId: id,
         action: "update",
@@ -251,7 +251,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const updated = await storage.deleteUser(id);
       await storage.createActivityLog({
         orgId: existing.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "user",
         entityId: id,
         action: "delete",
@@ -295,7 +295,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const project = await storage.createProject(parsed.data);
       await storage.createActivityLog({
         orgId: project.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "project",
         entityId: project.id,
         action: "create",
@@ -316,7 +316,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const updated = await storage.updateProject(id, req.body);
       await storage.createActivityLog({
         orgId: existing.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "project",
         entityId: id,
         action: "update",
@@ -324,7 +324,7 @@ export async function registerRoutes(server: Server, app: Express) {
         source: "manual",
       });
       if (req.body.status && req.body.status !== existing.status) {
-        const triggerUserId = getActivityUserId(req.body);
+        const triggerUserId = getActivityUserId(req.body, req.currentUserId);
         const triggerUser = await storage.getUserById(triggerUserId);
         const triggerName = triggerUser?.displayName || '某人';
         const statusLabels: Record<string, string> = {
@@ -349,7 +349,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const existing = await storage.getProjectById(id);
       if (!existing) return res.status(404).json({ error: "Project not found" });
 
-      const triggerUserId = getActivityUserId(req.body);
+      const triggerUserId = getActivityUserId(req.body, req.currentUserId);
       const recipientIds = new Set<number>();
       if (existing.ownerId !== triggerUserId) recipientIds.add(existing.ownerId);
       const projectTasks = await storage.getTasks({ projectId: id });
@@ -455,7 +455,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const task = await storage.createTask(parsed.data);
       await storage.createActivityLog({
         orgId: task.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "task",
         entityId: task.id,
         action: "create",
@@ -476,7 +476,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const updated = await storage.updateTask(id, req.body);
       await storage.createActivityLog({
         orgId: existing.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "task",
         entityId: id,
         action: "update",
@@ -484,7 +484,7 @@ export async function registerRoutes(server: Server, app: Express) {
         source: "manual",
       });
       if (req.body.status && req.body.status !== existing.status) {
-        const triggerUserId = getActivityUserId(req.body);
+        const triggerUserId = getActivityUserId(req.body, req.currentUserId);
         const statusLabels: Record<string, string> = {
           todo: '待办', in_progress: '进行中', in_review: '审核中', done: '已完成', cancelled: '已取消'
         };
@@ -509,7 +509,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const existing = await storage.getTaskById(id);
       if (!existing) return res.status(404).json({ error: "Task not found" });
 
-      const triggerUserId = getActivityUserId(req.body);
+      const triggerUserId = getActivityUserId(req.body, req.currentUserId);
       const participants = await storage.getTaskParticipants(id);
       const recipientIds = new Set<number>();
       if (existing.assigneeId && existing.assigneeId !== triggerUserId) recipientIds.add(existing.assigneeId);
@@ -575,8 +575,8 @@ export async function registerRoutes(server: Server, app: Express) {
       const dep = await storage.createTaskDependency(parsed.data);
       const task = await storage.getTaskById(dep.taskId);
       await storage.createActivityLog({
-        orgId: task?.orgId ?? 1,
-        userId: getActivityUserId(req.body),
+        orgId: task?.orgId ?? req.orgId,
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "task_dependency",
         entityId: dep.id,
         action: "create",
@@ -595,8 +595,8 @@ export async function registerRoutes(server: Server, app: Express) {
       const task = await storage.getTaskById(id);
       await storage.deleteTaskDependency(id);
       await storage.createActivityLog({
-        orgId: task?.orgId ?? 1,
-        userId: getActivityUserId(req.body),
+        orgId: task?.orgId ?? req.orgId,
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "task_dependency",
         entityId: id,
         action: "delete",
@@ -629,8 +629,8 @@ export async function registerRoutes(server: Server, app: Express) {
       const comment = await storage.createTaskComment(parsed.data);
       const task = await storage.getTaskById(taskId);
       await storage.createActivityLog({
-        orgId: task?.orgId ?? 1,
-        userId: getActivityUserId(req.body),
+        orgId: task?.orgId ?? req.orgId,
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "task_comment",
         entityId: comment.id,
         action: "create",
@@ -671,7 +671,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const participant = await storage.addTaskParticipant(parsed.data);
       await storage.createActivityLog({
         orgId: task.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "task",
         entityId: taskId,
         action: "add_participant",
@@ -694,7 +694,7 @@ export async function registerRoutes(server: Server, app: Express) {
       await storage.removeTaskParticipantByTaskAndUser(taskId, userId);
       await storage.createActivityLog({
         orgId: task.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "task",
         entityId: taskId,
         action: "remove_participant",
@@ -903,7 +903,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const role = await storage.createJobRole(parsed.data);
       await storage.createActivityLog({
         orgId: role.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "job_role",
         entityId: role.id,
         action: "create",
@@ -924,7 +924,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const updated = await storage.updateJobRole(id, req.body);
       await storage.createActivityLog({
         orgId: existing.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "job_role",
         entityId: id,
         action: "update",
@@ -945,7 +945,7 @@ export async function registerRoutes(server: Server, app: Express) {
       await storage.deleteJobRole(id);
       await storage.createActivityLog({
         orgId: existing.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "job_role",
         entityId: id,
         action: "delete",
@@ -967,7 +967,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const updated = await storage.updateUser(id, { jobRoleId });
       await storage.createActivityLog({
         orgId: existing.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "user",
         entityId: id,
         action: "assign_job_role",
@@ -986,10 +986,12 @@ export async function registerRoutes(server: Server, app: Express) {
       const { taskId, userId, requestedBy } = req.body;
       if (!taskId || !userId) return res.status(400).json({ error: "taskId and userId are required" });
 
+      const orgId = req.orgId;
+      const reqUserId = requestedBy || req.currentUserId;
       const verdictResult = await judgeTaskAssignment(taskId, userId);
 
       const verdict = await storage.createVerdict({
-        orgId: 1,
+        orgId,
         taskId,
         userId,
         verdict: verdictResult.verdict,
@@ -998,17 +1000,36 @@ export async function registerRoutes(server: Server, app: Express) {
         matchedResponsibilities: JSON.stringify(verdictResult.matchedResponsibilities),
         suggestedAssignee: verdictResult.suggestedAssigneeId,
         suggestedReason: verdictResult.suggestedReason,
-        requestedBy: requestedBy || 1,
+        requestedBy: reqUserId,
         status: 'completed',
       });
+
+      if (verdictResult.tokenUsage) {
+        const { calculateCost } = await import('./services/ai/tokenCost');
+        const cost = calculateCost(verdictResult.tokenUsage.model, verdictResult.tokenUsage.promptTokens, verdictResult.tokenUsage.completionTokens);
+        try {
+          await storage.createTokenUsage({
+            orgId,
+            userId: reqUserId,
+            model: verdictResult.tokenUsage.model,
+            promptTokens: verdictResult.tokenUsage.promptTokens,
+            completionTokens: verdictResult.tokenUsage.completionTokens,
+            totalTokens: verdictResult.tokenUsage.totalTokens,
+            costUsd: cost,
+            purpose: 'verdict',
+          });
+        } catch (tokenErr) {
+          console.error('Failed to record verdict token usage:', tokenErr);
+        }
+      }
 
       const suggestedUser = verdictResult.suggestedAssigneeId
         ? await storage.getUserById(verdictResult.suggestedAssigneeId)
         : null;
 
       await storage.createActivityLog({
-        orgId: 1,
-        userId: requestedBy || 1,
+        orgId,
+        userId: reqUserId,
         entityType: "verdict",
         entityId: verdict.id,
         action: "judge",
@@ -1043,10 +1064,12 @@ export async function registerRoutes(server: Server, app: Express) {
       const { taskId, userId, requestedBy } = req.body;
       if (!taskId || !userId) return res.status(400).json({ error: "taskId and userId are required" });
 
+      const orgId = req.orgId;
+      const reqUserId = requestedBy || req.currentUserId;
       const verdictResult = await judgeTaskAssignment(taskId, userId);
 
       const verdict = await storage.createVerdict({
-        orgId: 1,
+        orgId,
         taskId,
         userId,
         verdict: verdictResult.verdict,
@@ -1055,9 +1078,28 @@ export async function registerRoutes(server: Server, app: Express) {
         matchedResponsibilities: JSON.stringify(verdictResult.matchedResponsibilities),
         suggestedAssignee: verdictResult.suggestedAssigneeId,
         suggestedReason: verdictResult.suggestedReason,
-        requestedBy: requestedBy || 1,
+        requestedBy: reqUserId,
         status: 'completed',
       });
+
+      if (verdictResult.tokenUsage) {
+        const { calculateCost } = await import('./services/ai/tokenCost');
+        const cost = calculateCost(verdictResult.tokenUsage.model, verdictResult.tokenUsage.promptTokens, verdictResult.tokenUsage.completionTokens);
+        try {
+          await storage.createTokenUsage({
+            orgId,
+            userId: reqUserId,
+            model: verdictResult.tokenUsage.model,
+            promptTokens: verdictResult.tokenUsage.promptTokens,
+            completionTokens: verdictResult.tokenUsage.completionTokens,
+            totalTokens: verdictResult.tokenUsage.totalTokens,
+            costUsd: cost,
+            purpose: 'verdict',
+          });
+        } catch (tokenErr) {
+          console.error('Failed to record verdict token usage:', tokenErr);
+        }
+      }
 
       return res.json({ data: verdict });
     } catch (e: any) {
@@ -1094,7 +1136,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const updated = await storage.updateVerdict(id, { status: 'accepted' });
       await storage.createActivityLog({
         orgId: existing.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "verdict",
         entityId: id,
         action: "accept",
@@ -1117,7 +1159,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const updated = await storage.updateVerdict(id, { status: 'overridden', overrideReason });
       await storage.createActivityLog({
         orgId: existing.orgId,
-        userId: getActivityUserId(req.body),
+        userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "verdict",
         entityId: id,
         action: "override",
@@ -1167,7 +1209,7 @@ export async function registerRoutes(server: Server, app: Express) {
   // ===================== Notifications =====================
   app.get("/api/notifications", async (req, res) => {
     try {
-      const userId = parseInt(req.query.userId as string) || 1;
+      const userId = parseInt(req.query.userId as string) || req.currentUserId;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
       const data = await storage.getNotificationsByUserId(userId, limit);
       const allUsers = await storage.getUsers();
@@ -1183,7 +1225,7 @@ export async function registerRoutes(server: Server, app: Express) {
 
   app.get("/api/notifications/unread-count", async (req, res) => {
     try {
-      const userId = parseInt(req.query.userId as string) || 1;
+      const userId = parseInt(req.query.userId as string) || req.currentUserId;
       const count = await storage.getUnreadNotificationCount(userId);
       return res.json({ data: { count } });
     } catch (e: any) {
@@ -1203,7 +1245,7 @@ export async function registerRoutes(server: Server, app: Express) {
 
   app.post("/api/notifications/mark-all-read", async (req, res) => {
     try {
-      const userId = req.body.userId || 1;
+      const userId = req.body.userId || req.currentUserId;
       await storage.markAllNotificationsRead(userId);
       return res.json({ data: { success: true } });
     } catch (e: any) {
@@ -1259,9 +1301,9 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // ===================== Conversations =====================
-  app.get("/api/conversations", async (_req, res) => {
+  app.get("/api/conversations", async (req, res) => {
     try {
-      const data = await storage.getConversations();
+      const data = await storage.getConversationsByOrg(req.orgId);
       return res.json({ data });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
@@ -1336,20 +1378,57 @@ export async function registerRoutes(server: Server, app: Express) {
   // ===================== AI Chat =====================
   app.post("/api/ai/chat", async (req, res) => {
     try {
-      const { message, conversationHistory, currentUserId, systemPrompt } = req.body;
+      const { message, conversationHistory, conversationId, currentUserId, systemPrompt } = req.body;
       if (!message || typeof message !== 'string') {
         return res.status(400).json({ error: 'message is required' });
       }
 
-      const userId = currentUserId || 1;
+      const orgId = req.orgId;
+      const userId = currentUserId || req.currentUserId;
       const user = await storage.getUserById(userId);
       const userName = user?.displayName || 'Unknown';
 
+      let history = conversationHistory || [];
+      if (conversationId && history.length === 0) {
+        const conv = await storage.getConversationById(conversationId);
+        if (conv && conv.orgId !== orgId) {
+          return res.status(403).json({ error: 'Access denied to this conversation' });
+        }
+        const dbMessages = await storage.getChatMessages(conversationId);
+        history = dbMessages
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(m => ({ role: m.role, content: m.content }));
+      }
+
       const result = await aiChat(
         message,
-        conversationHistory || [],
+        history,
         { currentUserId: userId, currentUserName: userName, customSystemPrompt: systemPrompt || undefined }
       );
+
+      if (result.tokenUsage) {
+        const { calculateCost } = await import('./services/ai/tokenCost');
+        const cost = calculateCost(
+          result.tokenUsage.model,
+          result.tokenUsage.promptTokens,
+          result.tokenUsage.completionTokens
+        );
+        try {
+          await storage.createTokenUsage({
+            orgId,
+            userId,
+            conversationId: conversationId || null,
+            model: result.tokenUsage.model,
+            promptTokens: result.tokenUsage.promptTokens,
+            completionTokens: result.tokenUsage.completionTokens,
+            totalTokens: result.tokenUsage.totalTokens,
+            costUsd: cost,
+            purpose: 'chat',
+          });
+        } catch (tokenErr) {
+          console.error('Failed to record token usage:', tokenErr);
+        }
+      }
 
       return res.json({ data: result });
     } catch (e: any) {
@@ -1360,17 +1439,61 @@ export async function registerRoutes(server: Server, app: Express) {
 
   app.post("/api/ai/confirm", async (req, res) => {
     try {
-      const { actionType, data, currentUserId } = req.body;
+      const { actionType, data, currentUserId, conversationId } = req.body;
       if (!actionType || !data) {
         return res.status(400).json({ error: 'actionType and data are required' });
       }
 
-      const userId = currentUserId || 1;
+      const userId = currentUserId || req.currentUserId;
       const result = await executeAction(actionType, data, userId);
+
+      if (conversationId) {
+        const conv = await storage.getConversationById(conversationId);
+        if (conv && conv.orgId !== req.orgId) {
+          return res.status(403).json({ error: 'Access denied to this conversation' });
+        }
+        try {
+          const summaryParts = [];
+          if (actionType === 'create_task') summaryParts.push(`创建任务「${data.title || ''}」`);
+          else if (actionType === 'update_task') summaryParts.push(`更新任务 #${data.id || ''}`);
+          else if (actionType === 'create_project') summaryParts.push(`创建项目「${data.name || ''}」`);
+          else if (actionType === 'add_comment') summaryParts.push(`添加评论`);
+          else summaryParts.push(`执行操作: ${actionType}`);
+
+          await storage.createChatMessage({
+            conversationId,
+            role: 'system',
+            content: `[操作已执行] ${summaryParts.join('，')}`,
+            type: 'action_result',
+            metadata: JSON.stringify({ actionType, result }),
+          });
+        } catch (msgErr) {
+          console.error('Failed to save system message:', msgErr);
+        }
+      }
 
       return res.json({ data: result });
     } catch (e: any) {
       console.error('AI Confirm error:', e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== Token Usage Stats =====================
+  app.get("/api/token-usage/stats", async (req, res) => {
+    try {
+      const orgId = req.orgId;
+      const period = (req.query.period as string) || '30d';
+
+      let since: Date | undefined;
+      const now = new Date();
+      if (period === '7d') since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      else if (period === '30d') since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      else if (period === '90d') since = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+      const stats = await storage.getTokenUsageStats(orgId, since);
+      return res.json({ data: stats });
+    } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }
   });

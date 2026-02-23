@@ -37,6 +37,12 @@ interface ChatResponse {
       allowCustom?: boolean;
     }[];
   };
+  tokenUsage?: {
+    model: string;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
 }
 
 function formatDate(d: Date): string {
@@ -299,6 +305,15 @@ export async function chat(
     ],
   });
 
+  const usage = response.usage;
+  const modelName = 'claude-sonnet-4-20250514';
+  const tokenInfo: ChatResponse['tokenUsage'] = usage ? {
+    model: modelName,
+    promptTokens: usage.prompt_tokens ?? 0,
+    completionTokens: usage.completion_tokens ?? 0,
+    totalTokens: usage.total_tokens ?? 0,
+  } : undefined;
+
   let aiText = response.choices[0]?.message?.content || '';
 
   const codeBlockMatch = aiText.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -311,19 +326,21 @@ export async function chat(
 
     if (!parsed.type || !['text', 'confirm', 'multi_confirm', 'follow_up'].includes(parsed.type)) {
       if (parsed.message && typeof parsed.message === 'string') {
-        return { type: 'text', message: parsed.message };
+        return { type: 'text', message: parsed.message, tokenUsage: tokenInfo };
       }
-      return { type: 'text', message: aiText };
+      return { type: 'text', message: aiText, tokenUsage: tokenInfo };
     }
 
     if (parsed.type === 'follow_up') {
-      return buildFollowUpResponse(parsed, allUsers, allProjects, context.currentUserId);
+      const followUpResult = buildFollowUpResponse(parsed, allUsers, allProjects, context.currentUserId);
+      followUpResult.tokenUsage = tokenInfo;
+      return followUpResult;
     }
 
     if (parsed.type === 'confirm' && parsed.action) {
       if (parsed.action.actionType && parsed.action.actionType.startsWith('query_')) {
         const result = await executeQuery(parsed.action.actionType, parsed.action.data || {});
-        return { type: 'text', message: result };
+        return { type: 'text', message: result, tokenUsage: tokenInfo };
       }
 
       if (parsed.action.actionType === 'create_task') {
@@ -416,8 +433,9 @@ export async function chat(
       }
     }
 
+    parsed.tokenUsage = tokenInfo;
     return parsed;
   } catch {
-    return { type: 'text', message: aiText };
+    return { type: 'text', message: aiText, tokenUsage: tokenInfo };
   }
 }
