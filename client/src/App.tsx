@@ -1205,6 +1205,124 @@ function Router() {
   );
 }
 
+const AI_MODELS = [
+  { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', short: 'Sonnet 4' },
+  { id: 'claude-3.5-sonnet', label: 'Claude 3.5 Sonnet', short: '3.5 Sonnet' },
+  { id: 'gpt-4o', label: 'GPT-4o', short: 'GPT-4o' },
+  { id: 'deepseek-chat', label: 'DeepSeek V3', short: 'DeepSeek' },
+];
+
+function ModelSelector() {
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState(() => {
+    try { return localStorage.getItem('buddy_model') || AI_MODELS[0].id; } catch { return AI_MODELS[0].id; }
+  });
+  const dropRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (dropRef.current && !dropRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    document.addEventListener('touchstart', handler as any);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('touchstart', handler as any);
+    };
+  }, [open]);
+
+  const current = AI_MODELS.find(m => m.id === selected) || AI_MODELS[0];
+
+  return (
+    <div ref={dropRef} style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '6px 12px',
+          borderRadius: 10,
+          background: open ? 'rgba(255,255,255,0.08)' : 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          transition: 'background 150ms',
+        }}
+        onMouseEnter={e => { if (!open) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+        onMouseLeave={e => { if (!open) e.currentTarget.style.background = 'transparent'; }}
+        data-testid="model-selector-trigger"
+      >
+        <span style={{
+          fontSize: 15,
+          fontWeight: 600,
+          color: 'var(--text-primary)',
+        }}>{current.short}</span>
+        <ChevronRight
+          size={14}
+          color="var(--text-secondary)"
+          style={{
+            transform: open ? 'rotate(90deg)' : 'rotate(90deg)',
+            transition: 'transform 200ms',
+          }}
+        />
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          marginTop: 6,
+          background: 'rgba(45, 44, 40, 0.95)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          borderRadius: 12,
+          border: '1px solid rgba(255,255,255,0.08)',
+          padding: 4,
+          minWidth: 180,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          zIndex: 50,
+          animation: 'fadeIn 150ms ease-out',
+        }} data-testid="model-selector-dropdown">
+          {AI_MODELS.map(m => (
+            <button
+              key={m.id}
+              onClick={() => {
+                setSelected(m.id);
+                try { localStorage.setItem('buddy_model', m.id); } catch {}
+                window.dispatchEvent(new CustomEvent('model-changed', { detail: m.id }));
+                setOpen(false);
+              }}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                borderRadius: 8,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: m.id === selected ? 'rgba(174, 86, 48, 0.15)' : 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'background 150ms',
+              }}
+              onMouseEnter={e => { if (m.id !== selected) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+              onMouseLeave={e => { if (m.id !== selected) e.currentTarget.style.background = 'transparent'; }}
+              data-testid={`model-option-${m.id}`}
+            >
+              <span style={{ fontSize: 14, color: m.id === selected ? '#C4703F' : '#ECECEC' }}>
+                {m.label}
+              </span>
+              {m.id === selected && <Check size={16} color="#AE5630" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
@@ -1344,44 +1462,50 @@ function App() {
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} sidebarRef={sidebarRef} overlayRef={overlayRef} />
 
         <div className="flex-1 flex flex-col overflow-hidden">
-          {!isAgentPage && (
-            <header className="md:hidden" style={{
-              height: 54,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '0 8px',
-              background: 'var(--bg-primary)',
-              borderBottom: '1px solid var(--border-subtle)',
-              flexShrink: 0,
-              position: 'relative',
-            }} data-testid="top-bar">
-              <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
-                width: 40, height: 40,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: 'rgba(255,255,255,0.07)',
-                border: '1px solid rgba(255,255,255,0.10)',
-                borderRadius: '50%',
-                cursor: 'pointer',
-                color: 'var(--text-primary)',
-                backdropFilter: 'blur(8px)',
-                WebkitBackdropFilter: 'blur(8px)',
-                transition: 'background 150ms',
-              }} data-testid="menu-toggle"
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
-              >
-                <Menu size={20} strokeWidth={1.8} />
-              </button>
+          <header className="md:hidden" style={{
+            height: 54,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 8px',
+            background: isAgentPage ? 'rgba(30, 29, 26, 0.80)' : 'var(--bg-primary)',
+            backdropFilter: isAgentPage ? 'blur(16px)' : undefined,
+            WebkitBackdropFilter: isAgentPage ? 'blur(16px)' : undefined,
+            borderBottom: isAgentPage ? 'none' : '1px solid var(--border-subtle)',
+            flexShrink: 0,
+            position: isAgentPage ? 'absolute' : 'relative',
+            top: 0, left: 0, right: 0,
+            zIndex: isAgentPage ? 10 : undefined,
+          }} data-testid="top-bar">
+            <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
+              width: 40, height: 40,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(255,255,255,0.07)',
+              border: '1px solid rgba(255,255,255,0.10)',
+              borderRadius: '50%',
+              cursor: 'pointer',
+              color: 'var(--text-primary)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              transition: 'background 150ms',
+            }} data-testid="menu-toggle"
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
+            >
+              <Menu size={20} strokeWidth={1.8} />
+            </button>
+            {isAgentPage ? (
+              <ModelSelector />
+            ) : (
               <span style={{
                 position: 'absolute', left: '50%', transform: 'translateX(-50%)',
                 fontSize: 17, fontWeight: 600,
                 color: 'var(--text-primary)',
                 fontFamily: 'var(--font-sans)',
               }} data-testid="top-bar-title">Buddy</span>
-              <div style={{ width: 40 }} />
-            </header>
-          )}
+            )}
+            <div style={{ width: 40 }} />
+          </header>
 
           <main
             className="flex-1 overflow-auto ml-0 md:ml-[260px]"

@@ -1483,7 +1483,7 @@ export async function registerRoutes(server: Server, app: Express) {
   // ===================== AI Chat =====================
   app.post("/api/ai/chat", async (req, res) => {
     try {
-      const { message, conversationHistory, conversationId, currentUserId, systemPrompt } = req.body;
+      const { message, conversationHistory, conversationId, currentUserId, systemPrompt, model } = req.body;
       if (!message || typeof message !== 'string') {
         return res.status(400).json({ error: 'message is required' });
       }
@@ -1520,7 +1520,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const result = await aiChat(
         message,
         history,
-        { currentUserId: userId, currentUserName: userName, customSystemPrompt: systemPrompt || undefined }
+        { currentUserId: userId, currentUserName: userName, customSystemPrompt: systemPrompt || undefined, model: model || undefined }
       );
 
       if (result.tokenUsage) {

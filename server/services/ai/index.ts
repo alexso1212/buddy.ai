@@ -491,7 +491,7 @@ function formatTaskList(tasks: any[], users: any[]): string {
 export async function chat(
   message: string,
   conversationHistory: { role: string; content: string }[],
-  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string }
+  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string }
 ): Promise<ChatResponse> {
   const allUsers = await storage.getUsers();
   const allProjects = await storage.getProjects();
@@ -513,8 +513,9 @@ export async function chat(
     .replace('{{doneTasks}}', String(allTasks.filter(t => t.status === 'done').length))
     .replace('{{overdueTasks}}', String(allTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'done' && t.status !== 'cancelled').length));
 
+  const modelName = context.model || 'claude-sonnet-4-20250514';
   const response = await client.chat.completions.create({
-    model: 'claude-sonnet-4-20250514',
+    model: modelName,
     max_tokens: 4096,
     messages: [
       { role: 'system', content: systemPrompt },
@@ -527,7 +528,6 @@ export async function chat(
   });
 
   const usage = response.usage;
-  const modelName = 'claude-sonnet-4-20250514';
   const tokenInfo: ChatResponse['tokenUsage'] = usage ? {
     model: modelName,
     promptTokens: usage.prompt_tokens ?? 0,

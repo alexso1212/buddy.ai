@@ -5,7 +5,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
-import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Archive, MoreHorizontal, Pencil, X, Check, ListFilter, ChevronRight, Search, Menu } from "lucide-react";
+import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Archive, MoreHorizontal, Pencil, X, Check, ListFilter, ChevronRight, Search } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -632,12 +632,14 @@ export default function Agent() {
       conversationHistory.current.push({ role: "user", content: text });
 
       try {
+        const selectedModel = (() => { try { return localStorage.getItem('buddy_model') || undefined; } catch { return undefined; } })();
         const res = await apiRequest("POST", "/api/ai/chat", {
           message: text,
           conversationHistory: conversationHistory.current,
           conversationId: convId || undefined,
           currentUserId: 1,
           systemPrompt: activeConvSystemPrompt || undefined,
+          model: selectedModel,
         });
         const json = await res.json();
         const data = json.data;
@@ -849,12 +851,14 @@ export default function Agent() {
 
       setLoading(true);
       try {
+        const selectedModel2 = (() => { try { return localStorage.getItem('buddy_model') || undefined; } catch { return undefined; } })();
         const res = await apiRequest("POST", "/api/ai/chat", {
           message: chatMessage,
           conversationHistory: conversationHistory.current,
           conversationId: activeConvId || undefined,
           currentUserId: 1,
           systemPrompt: activeConvSystemPrompt || undefined,
+          model: selectedModel2,
         });
         const json = await res.json();
         const data = json.data;
@@ -951,22 +955,7 @@ export default function Agent() {
 
       {showWelcome ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center px-3" style={{ paddingBottom: 80 }}>
-          <button
-            onClick={() => window.dispatchEvent(new Event('open-sidebar'))}
-            className="absolute top-3 left-3 z-[5] md:hidden"
-            style={{
-              width: 36, height: 36,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(255,255,255,0.07)',
-              border: '1px solid rgba(255,255,255,0.10)',
-              borderRadius: '50%',
-              cursor: 'pointer',
-              color: 'var(--text-primary)',
-            }}
-            data-testid="btn-menu-welcome"
-          >
-            <Menu size={18} strokeWidth={1.8} />
-          </button>
+          
           <div className="flex flex-col items-center gap-4 mb-8">
             <AgentLogo size={80} animate={true} glow={true} />
             <h1 className="font-serif text-2xl text-[var(--text-primary)]" data-testid="text-welcome-heading">有什么可以帮你的？</h1>
@@ -997,36 +986,9 @@ export default function Agent() {
           className="absolute inset-0 overflow-y-auto"
           ref={scrollRef}
           data-testid="agent-messages"
-          style={{ paddingTop: 12, paddingBottom: 80, WebkitOverflowScrolling: 'touch', scrollBehavior: 'smooth' }}
+          style={{ paddingTop: 54, paddingBottom: 80, WebkitOverflowScrolling: 'touch', scrollBehavior: 'smooth' }}
         >
-          <div className="sticky top-0 z-[5] flex items-center justify-between px-2 pt-2">
-            <button
-              onClick={() => window.dispatchEvent(new Event('open-sidebar'))}
-              className="md:hidden"
-              style={{
-                width: 36, height: 36,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: 'rgba(255,255,255,0.07)',
-                border: '1px solid rgba(255,255,255,0.10)',
-                borderRadius: '50%',
-                cursor: 'pointer',
-                color: 'var(--text-primary)',
-              }}
-              data-testid="btn-menu-chat"
-            >
-              <Menu size={18} strokeWidth={1.8} />
-            </button>
-            <div className="hidden md:block" />
-            <Button
-              variant="ghost"
-              size="icon"
-              data-testid="btn-clear-chat"
-              onClick={handleClearChat}
-              className="text-[var(--text-secondary)] no-default-hover-elevate"
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          </div>
+          
           <div className="max-w-3xl mx-auto">
             {messages.map((msg) => (
               <AiMessageBubble
