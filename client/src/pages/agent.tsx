@@ -1013,15 +1013,23 @@ export default function Agent() {
       <div
         className="absolute bottom-0 left-0 right-0"
         style={{
-          background: 'rgba(45, 44, 40, 0.55)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
           zIndex: 10,
+          pointerEvents: 'none',
         }}
         data-testid="agent-input"
       >
-        <div className="max-w-3xl mx-auto px-3 pb-[env(safe-area-inset-bottom)]">
-          <AiInputBar onSend={handleSend} loading={loading} />
+        <div style={{
+          height: 108,
+          background: 'linear-gradient(to top, rgba(30,29,26,0.99) 0%, transparent 100%)',
+          pointerEvents: 'none',
+        }} />
+        <div style={{
+          background: 'rgba(30,29,26,0.99)',
+          pointerEvents: 'auto',
+        }}>
+          <div className="max-w-3xl mx-auto px-3 pb-[env(safe-area-inset-bottom)]">
+            <AiInputBar onSend={handleSend} loading={loading} />
+          </div>
         </div>
       </div>
     </div>
