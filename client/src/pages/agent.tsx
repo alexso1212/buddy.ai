@@ -820,12 +820,11 @@ export default function Agent() {
 
   useEffect(() => {
     if (!activeConvId) {
-      if (!showChat) {
-        setMessages([]);
-        conversationHistory.current = [];
-        setActiveConvSystemPrompt(undefined);
-        setConvTitle("");
-      }
+      setShowChat(false);
+      setMessages([]);
+      conversationHistory.current = [];
+      setActiveConvSystemPrompt(undefined);
+      setConvTitle("");
       return;
     }
 
