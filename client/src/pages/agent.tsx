@@ -947,59 +947,18 @@ export default function Agent() {
 
   return (
     <div className="relative h-full bg-transparent" data-testid="agent-page">
-      {activeConvId && (
-        <div
-          className="absolute top-0 left-0 right-0 flex items-center gap-3 px-3 py-2"
-          style={{
-            background: 'rgba(45, 44, 40, 0.85)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
-            zIndex: 10,
-            borderBottom: '1px solid var(--border-subtle)',
-          }}
-          data-testid="chat-header"
-        >
-          <button
-            onClick={handleBack}
-            className="flex items-center gap-1 text-sm text-[var(--text-secondary)] cursor-pointer"
-            data-testid="btn-back"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            返回
-          </button>
-          <span
-            className="flex-1 text-sm font-medium text-[var(--text-primary)] truncate text-center"
-            data-testid="text-conv-title"
-          >
-            {convTitle}
-          </span>
-          <div className="w-[52px]" />
-        </div>
-      )}
-
-      {!activeConvId && messages.length === 0 && (
-        <div
-          className="absolute top-0 left-0 right-0 flex items-center px-3 py-2"
-          style={{
-            background: 'rgba(45, 44, 40, 0.85)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
-            zIndex: 10,
-          }}
-        >
-          <button
-            onClick={handleBack}
-            className="flex items-center gap-1 text-sm text-[var(--text-secondary)] cursor-pointer"
-            data-testid="btn-back-list"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            返回
-          </button>
-        </div>
-      )}
+      
 
       {showWelcome ? (
-        <div className="absolute inset-0 flex flex-col items-center justify-center px-3" style={{ paddingTop: 44, paddingBottom: 80 }}>
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-3" style={{ paddingBottom: 80 }}>
+          <button
+            onClick={handleBack}
+            className="absolute top-3 left-3 flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer z-[5]"
+            data-testid="btn-back-welcome"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            返回
+          </button>
           <div className="flex flex-col items-center gap-4 mb-8">
             <AgentLogo size={80} animate={true} glow={true} />
             <h1 className="font-serif text-2xl text-[var(--text-primary)]" data-testid="text-welcome-heading">有什么可以帮你的？</h1>
@@ -1030,9 +989,17 @@ export default function Agent() {
           className="absolute inset-0 overflow-y-auto"
           ref={scrollRef}
           data-testid="agent-messages"
-          style={{ paddingTop: 44, paddingBottom: 80, WebkitOverflowScrolling: 'touch', scrollBehavior: 'smooth' }}
+          style={{ paddingTop: 12, paddingBottom: 80, WebkitOverflowScrolling: 'touch', scrollBehavior: 'smooth' }}
         >
-          <div className="sticky top-0 right-0 z-[5] flex justify-end pr-2 pt-2">
+          <div className="sticky top-0 z-[5] flex items-center justify-between px-2 pt-2">
+            <button
+              onClick={handleBack}
+              className="flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+              data-testid="btn-back"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              返回
+            </button>
             <Button
               variant="ghost"
               size="icon"
@@ -1067,9 +1034,9 @@ export default function Agent() {
       <div
         className="absolute bottom-0 left-0 right-0"
         style={{
-          background: 'rgba(45, 44, 40, 0.85)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
+          background: 'rgba(45, 44, 40, 0.55)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
           zIndex: 10,
         }}
         data-testid="agent-input"
