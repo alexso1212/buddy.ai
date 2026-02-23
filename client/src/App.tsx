@@ -867,7 +867,9 @@ function Sidebar({
               left: Math.min(contextMenu.x, window.innerWidth - 220),
               top: Math.min(contextMenu.y, window.innerHeight - 200),
               zIndex: 70,
-              background: '#3C3B37',
+              background: 'rgba(45,44,40,0.85)',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
               borderRadius: 14,
               boxShadow: '0 8px 32px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.2)',
               padding: '6px 0',
@@ -1022,15 +1024,21 @@ function Sidebar({
             position: 'fixed', inset: 0, zIndex: 75,
             background: 'rgba(0,0,0,0.5)',
           }} />
+          <style>{`@keyframes slideUpIn { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`}</style>
           <div style={{
             position: 'fixed',
-            top: '50%', left: '50%',
-            transform: 'translate(-50%, -50%)',
+            bottom: 0, left: 0, right: 0,
             zIndex: 80,
-            background: '#3C3B37',
-            borderRadius: 16,
+            background: 'rgba(45,44,40,0.92)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            borderRadius: '16px 16px 0 0',
             padding: '24px 20px',
-            width: 'min(340px, 90vw)',
+            paddingBottom: 'max(24px, env(safe-area-inset-bottom))',
+            width: '100%',
+            maxWidth: 480,
+            margin: '0 auto',
+            animation: 'slideUpIn 250ms ease-out forwards',
           }}>
             <div style={{ fontSize: 17, fontWeight: 600, color: '#ECECEC', marginBottom: 16 }}>
               重命名对话
@@ -1101,16 +1109,22 @@ function Sidebar({
             position: 'fixed', inset: 0, zIndex: 75,
             background: 'rgba(0,0,0,0.5)',
           }} />
+          <style>{`@keyframes slideUpIn { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`}</style>
           <div style={{
             position: 'fixed',
-            top: '50%', left: '50%',
-            transform: 'translate(-50%, -50%)',
+            bottom: 0, left: 0, right: 0,
             zIndex: 80,
-            background: '#3C3B37',
-            borderRadius: 16,
+            background: 'rgba(45,44,40,0.92)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            borderRadius: '16px 16px 0 0',
             padding: '24px 20px',
-            width: 'min(340px, 90vw)',
+            paddingBottom: 'max(24px, env(safe-area-inset-bottom))',
+            width: '100%',
+            maxWidth: 480,
+            margin: '0 auto',
             textAlign: 'center' as const,
+            animation: 'slideUpIn 250ms ease-out forwards',
           }}>
             <div style={{ fontSize: 17, fontWeight: 600, color: '#ECECEC', marginBottom: 8 }}>
               确定删除？

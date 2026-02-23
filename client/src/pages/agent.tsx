@@ -290,7 +290,8 @@ function ConversationItem({
                   align="start"
                   side="bottom"
                   sideOffset={4}
-                  className="w-44 bg-[#2a2a2a] border-[#3a3a3a] rounded-xl shadow-xl p-1"
+                  className="w-44 border-white/10 rounded-xl shadow-xl p-1"
+                  style={{ background: 'rgba(45,44,40,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
                   data-testid={`conv-menu-${conv.id}`}
                 >
                   <DropdownMenuItem

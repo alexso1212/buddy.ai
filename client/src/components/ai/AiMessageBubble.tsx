@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { Check } from "lucide-react";
+import { Check, Copy, Share2, ThumbsUp, ThumbsDown } from "lucide-react";
 import AiConfirmCard from "./AiConfirmCard";
 import AiGuidedCreation from "./AiGuidedCreation";
 import AIMessageContent from "./AIMessageContent";
@@ -68,6 +68,75 @@ function BrandLogo() {
   return <AgentLogo size={28} animate={false} glow={false} />;
 }
 
+function AiReplyActions({ content }: { content: string }) {
+  const [liked, setLiked] = useState<boolean | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [content]);
+
+  const handleShare = useCallback(() => {
+    if (navigator.share) {
+      navigator.share({ text: content }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(content);
+    }
+  }, [content]);
+
+  return (
+    <div className="flex items-center gap-1 mt-2 ml-0.5" data-testid="ai-reply-actions">
+      <button
+        onClick={handleCopy}
+        className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+        title={copied ? "已复制" : "复制"}
+        data-testid="btn-copy-reply"
+      >
+        <Copy className="w-3.5 h-3.5" strokeWidth={1.5} />
+      </button>
+      <button
+        onClick={handleShare}
+        className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+        title="分享"
+        data-testid="btn-share-reply"
+      >
+        <Share2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+      </button>
+      <button
+        onClick={() => setLiked(liked === true ? null : true)}
+        className={cn(
+          "flex items-center justify-center w-7 h-7 rounded-md transition-colors",
+          liked === true
+            ? "text-[var(--text-primary)]"
+            : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5"
+        )}
+        style={liked === true ? { background: 'rgba(174,86,48,0.15)', color: 'var(--brand)' } : undefined}
+        title="有帮助"
+        data-testid="btn-like-reply"
+      >
+        <ThumbsUp className="w-3.5 h-3.5" strokeWidth={1.5} />
+      </button>
+      <button
+        onClick={() => setLiked(liked === false ? null : false)}
+        className={cn(
+          "flex items-center justify-center w-7 h-7 rounded-md transition-colors",
+          liked === false
+            ? "text-red-400"
+            : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5"
+        )}
+        style={liked === false ? { background: 'rgba(248,113,113,0.1)' } : undefined}
+        title="不太好"
+        data-testid="btn-dislike-reply"
+      >
+        <ThumbsDown className="w-3.5 h-3.5" strokeWidth={1.5} />
+      </button>
+    </div>
+  );
+}
+
 function MultiConfirmGroup({
   message,
   confirmStates,
@@ -108,6 +177,7 @@ function MultiConfirmGroup({
             <BrandLogo />
           </div>
           <AIMessageContent content={message.content} />
+          <AiReplyActions content={message.content} />
         </div>
       )}
       {hasUndecided && (
@@ -183,7 +253,7 @@ export default function AiMessageBubble({
         <div
           style={{
             maxWidth: '82%',
-            background: 'var(--bg-bubble)',
+            background: '#2F2F2F',
             borderRadius: 18,
             padding: '10px 14px',
             fontFamily: 'var(--font-sans)',
@@ -255,6 +325,7 @@ export default function AiMessageBubble({
           <div className="max-w-full">
             <div className="mb-2"><BrandLogo /></div>
             <AIMessageContent content={message.followUp.message || message.content} />
+            <AiReplyActions content={message.followUp.message || message.content} />
           </div>
         </div>
       );
@@ -283,6 +354,7 @@ export default function AiMessageBubble({
           <BrandLogo />
         </div>
         <AIMessageContent content={message.content} />
+        <AiReplyActions content={message.content} />
       </div>
     </div>
   );
