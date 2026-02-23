@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import AgentLogo from "@/components/AgentLogo";
-import AIMessageContent from "./AIMessageContent";
 import AiStepQuestion from "./AiStepQuestion";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
 import { Check, AlertCircle } from "lucide-react";
@@ -210,47 +208,38 @@ export default function AiGuidedCreation({
   };
 
   return (
-    <div className="flex flex-col gap-3" data-testid="guided-creation">
-      <div className="flex flex-col justify-start">
-        <div className="mb-2">
-          <AgentLogo size={28} animate={false} glow={false} />
-        </div>
-        <AIMessageContent content={followUp.message} />
-      </div>
+    <div
+      style={{
+        background: '#323230',
+        borderRadius: 16,
+        border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+        margin: '12px 16px',
+        overflow: 'hidden',
+        animation: 'wizardAppear 250ms ease-out',
+      }}
+      data-testid="guided-creation"
+    >
+      <style>{`
+        @keyframes wizardAppear {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
 
-      {answers.map((ans, idx) => (
-        <div
-          key={idx}
-          className="flex justify-end"
-          data-testid={`guided-answer-${ans.field}`}
-        >
-          <div
-            style={{
-              maxWidth: '82%',
-              background: 'var(--bg-bubble)',
-              borderRadius: 18,
-              padding: '10px 14px',
-              fontFamily: 'var(--font-sans)',
-              fontSize: 16,
-              lineHeight: 1.5,
-              color: 'var(--text-primary)',
-              wordBreak: 'break-word',
-            }}
-            className="whitespace-pre-wrap"
-          >
-            {dynamicSteps[idx]?.icon && <span className="mr-1">{dynamicSteps[idx].icon}</span>}
-            {ans.displayLabel}
-          </div>
-        </div>
-      ))}
+      {!allDone && !completed && !newProjectMode && dynamicSteps[currentStepIndex] && (
+        <AiStepQuestion
+          step={dynamicSteps[currentStepIndex]}
+          stepNumber={currentStepIndex + 1}
+          totalSteps={totalSteps}
+          onSelect={handleSelect}
+          onSkip={handleSkip}
+        />
+      )}
 
       {newProjectMode && !completed && (
-        <div
-          className="rounded-card bg-card border border-[var(--border-subtle)] px-4 py-3"
-          style={{ animation: 'messageAppear 200ms ease-out' }}
-          data-testid="new-project-input"
-        >
-          <div className="text-xs text-muted-foreground mb-2">🏗️ 输入新项目名称</div>
+        <div style={{ padding: '16px 20px' }} data-testid="new-project-input">
+          <div style={{ fontSize: 14, color: '#9A9893', marginBottom: 12 }}>输入新项目名称</div>
           <div className="flex items-center gap-1.5">
             <input
               type="text"
@@ -264,57 +253,80 @@ export default function AiGuidedCreation({
               }}
               disabled={creatingProject}
               placeholder="输入项目名称..."
-              className="border border-[var(--border-subtle)] bg-transparent text-sm px-3 py-1.5 rounded-full outline-none text-foreground placeholder:text-muted-foreground flex-1"
+              style={{
+                flex: 1,
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 10,
+                padding: '12px 14px',
+                fontSize: 16,
+                color: '#ECECEC',
+                outline: 'none',
+              }}
               autoFocus
               data-testid="input-new-project-name"
             />
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button
+              onClick={() => {
+                setNewProjectMode(false);
+                setNewProjectName("");
+              }}
+              disabled={creatingProject}
+              style={{
+                flex: 1,
+                height: 44,
+                borderRadius: 10,
+                background: 'rgba(255,255,255,0.06)',
+                border: 'none',
+                fontSize: 15,
+                color: '#9A9893',
+                cursor: 'pointer',
+              }}
+              data-testid="btn-cancel-new-project"
+            >
+              返回
+            </button>
             <button
               onClick={handleCreateProject}
               disabled={creatingProject || !newProjectName.trim()}
-              className={cn(
-                "rounded-full text-xs px-3 py-1.5 transition-colors duration-150 shrink-0",
-                newProjectName.trim() && !creatingProject
-                  ? "bg-brand text-white"
-                  : "bg-muted text-muted-foreground cursor-not-allowed"
-              )}
+              style={{
+                flex: 1,
+                height: 44,
+                borderRadius: 10,
+                background: '#AE5630',
+                border: 'none',
+                fontSize: 15,
+                fontWeight: 600,
+                color: '#FFFFFF',
+                cursor: newProjectName.trim() && !creatingProject ? 'pointer' : 'not-allowed',
+                opacity: newProjectName.trim() && !creatingProject ? 1 : 0.4,
+              }}
               data-testid="btn-create-project"
             >
               {creatingProject ? "创建中..." : "创建项目"}
             </button>
           </div>
-          <button
-            onClick={() => {
-              setNewProjectMode(false);
-              setNewProjectName("");
-            }}
-            disabled={creatingProject}
-            className="mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            data-testid="btn-cancel-new-project"
-          >
-            ← 返回选择已有项目
-          </button>
         </div>
       )}
 
-      {!allDone && !completed && !newProjectMode && dynamicSteps[currentStepIndex] && (
-        <AiStepQuestion
-          step={dynamicSteps[currentStepIndex]}
-          stepNumber={currentStepIndex + 1}
-          totalSteps={totalSteps}
-          onSelect={handleSelect}
-          onSkip={handleSkip}
-        />
-      )}
-
       {allDone && !completed && finishing && !error && (
-        <div className="flex items-center gap-2 px-2 py-3">
+        <div style={{ padding: '20px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <ThinkingAnimation size={24} label="组装中..." />
         </div>
       )}
 
       {error && (
         <div
-          className="flex items-center gap-1.5 text-red-500 dark:text-red-400 text-sm px-2 py-2 bg-red-50 dark:bg-red-900/20 rounded-card"
+          style={{
+            padding: '12px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            color: '#E5534B',
+            fontSize: 14,
+          }}
           data-testid="guided-error"
         >
           <AlertCircle className="w-4 h-4 shrink-0" />
@@ -324,7 +336,14 @@ export default function AiGuidedCreation({
 
       {completed && (
         <div
-          className="flex items-center gap-1.5 text-brand text-sm px-2 py-1"
+          style={{
+            padding: '16px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            color: '#AE5630',
+            fontSize: 14,
+          }}
           data-testid="guided-complete"
         >
           <Check className="w-4 h-4" />

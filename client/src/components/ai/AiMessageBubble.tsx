@@ -331,14 +331,12 @@ export default function AiMessageBubble({
       );
     }
     return (
-      <div className="flex flex-col justify-start px-3 mb-6" style={{ animation: 'messageAppear 200ms ease-out' }} data-testid={`ai-message-${message.id}`}>
-        <div className="max-w-[90%]">
-          <AiGuidedCreation
-            followUp={message.followUp as any}
-            onComplete={(mergedData, creationType) => onFollowUpSubmit(message.id, mergedData, creationType)}
-            completed={message.followUpSubmitted}
-          />
-        </div>
+      <div className="px-3 mb-6" style={{ animation: 'messageAppear 200ms ease-out' }} data-testid={`ai-message-${message.id}`}>
+        <AiGuidedCreation
+          followUp={message.followUp as any}
+          onComplete={(mergedData, creationType) => onFollowUpSubmit(message.id, mergedData, creationType)}
+          completed={message.followUpSubmitted}
+        />
       </div>
     );
   }
