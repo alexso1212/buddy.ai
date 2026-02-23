@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Menu } from "lucide-react";
 import ForceGraph from "@/components/graph/ForceGraph";
 
 interface GraphNode {
@@ -39,6 +40,59 @@ interface GraphData {
   projects: ProjectInfo[];
 }
 
+function GraphOverlayControls() {
+  return (
+    <>
+      <button
+        onClick={() => window.dispatchEvent(new Event('open-sidebar'))}
+        className="md:hidden"
+        style={{
+          position: 'fixed',
+          top: 16,
+          left: 16,
+          zIndex: 50,
+          width: 36,
+          height: 36,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(255,255,255,0.07)',
+          border: '1px solid rgba(255,255,255,0.10)',
+          borderRadius: '50%',
+          cursor: 'pointer',
+          color: 'rgba(255,255,255,0.85)',
+          transition: 'background 150ms',
+        }}
+        data-testid="graph-menu-toggle"
+        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
+        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
+      >
+        <Menu size={18} strokeWidth={1.8} />
+      </button>
+
+      <span
+        className="md:hidden"
+        style={{
+          position: 'fixed',
+          top: 16,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 50,
+          fontSize: 17,
+          fontWeight: 600,
+          color: 'rgba(255,255,255,0.6)',
+          fontFamily: 'var(--font-sans)',
+          pointerEvents: 'none',
+          userSelect: 'none',
+        }}
+        data-testid="graph-brand-title"
+      >
+        Buddy
+      </span>
+    </>
+  );
+}
+
 export default function GraphView() {
   const { data: response, isLoading } = useQuery<{ data: GraphData }>({
     queryKey: ['/api/graph/data'],
@@ -59,6 +113,7 @@ export default function GraphView() {
           justifyContent: 'center',
         }}
       >
+        <GraphOverlayControls />
         <div style={{ color: '#6b7280', fontSize: 14 }}>Loading graph data...</div>
       </div>
     );
@@ -78,6 +133,7 @@ export default function GraphView() {
         overflow: 'hidden',
       }}
     >
+      <GraphOverlayControls />
       {nodes.length > 0 ? (
         <ForceGraph
           nodes={nodes}

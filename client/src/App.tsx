@@ -1475,6 +1475,7 @@ function App() {
   const overlayRef = useRef<HTMLDivElement>(null);
   const [location] = useLocation();
   const isAgentPage = location === '/agent' || location.startsWith('/agent?');
+  const isGraphPage = location === '/graph' || location.startsWith('/graph?');
   
   const dragRef = useRef({
     isDragging: false,
@@ -1608,6 +1609,7 @@ function App() {
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} sidebarRef={sidebarRef} overlayRef={overlayRef} />
 
         <div className="flex-1 flex flex-col overflow-hidden relative">
+          {!isGraphPage && (
           <>
             <div className="md:hidden" style={{
               position: 'absolute',
@@ -1653,6 +1655,7 @@ function App() {
                 <div style={{ width: 36 }} />
               </div>
             </>
+          )}
 
           <main
             className="flex-1 overflow-auto ml-0 md:ml-[260px] relative"
