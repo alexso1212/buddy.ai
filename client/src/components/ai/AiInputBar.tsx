@@ -45,13 +45,13 @@ export default function AiInputBar({ onSend, loading }: AiInputBarProps) {
     <div style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <div
         style={{
-          background: 'linear-gradient(135deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 100%)',
+          background: 'linear-gradient(135deg, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0.05) 40%, rgba(255,255,255,0.08) 60%, rgba(255,255,255,0.03) 100%)',
           borderRadius: 20,
-          border: '1px solid rgba(255,255,255,0.12)',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(255,255,255,0.03)',
+          border: '1px solid rgba(255,255,255,0.15)',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.25), 0 0 0 0.5px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.15), inset 0 -1px 0 rgba(255,255,255,0.04)',
           overflow: 'hidden',
-          backdropFilter: 'blur(20px) saturate(1.2)',
-          WebkitBackdropFilter: 'blur(20px) saturate(1.2)',
+          backdropFilter: 'blur(24px) saturate(1.4) brightness(1.05)',
+          WebkitBackdropFilter: 'blur(24px) saturate(1.4) brightness(1.05)',
         }}
         data-testid="ai-composer"
       >
