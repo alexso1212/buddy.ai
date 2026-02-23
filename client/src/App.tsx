@@ -1506,8 +1506,8 @@ function App() {
               <div className="md:hidden" style={{
                 position: 'absolute',
                 top: 0, left: 0, right: 0,
-                height: 72,
-                background: 'linear-gradient(to bottom, var(--bg-primary) 0%, var(--bg-primary) 40%, transparent 100%)',
+                height: 64,
+                background: 'linear-gradient(to bottom, rgba(30,29,26,0.35) 0%, transparent 100%)',
                 zIndex: 10,
                 pointerEvents: 'none',
               }} />
