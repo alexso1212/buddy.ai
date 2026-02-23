@@ -11,6 +11,7 @@ interface GraphNode {
   projectId: number;
   projectName: string;
   deptId: number | null;
+  deptColor: string;
   assigneeId: number | null;
   assigneeName: string | null;
   dueDate: string | null;
@@ -39,15 +40,6 @@ interface ForceGraphProps {
   projects: ProjectInfo[];
   onNodeClick?: (node: GraphNode) => void;
 }
-
-const STATUS_COLORS: Record<string, string> = {
-  todo: '#9ca3af',
-  in_progress: '#f59e0b',
-  in_review: '#3b82f6',
-  blocked: '#ef4444',
-  done: '#10b981',
-  cancelled: '#6b7280',
-};
 
 interface SimNode extends GraphNode, d3.SimulationNodeDatum {}
 interface SimLink extends d3.SimulationLinkDatum<SimNode> {
@@ -144,6 +136,20 @@ export default function ForceGraph({ nodes, links, projects, onNodeClick }: Forc
       .attr("d", "M0,-5L10,0L0,5")
       .attr("fill", "#10b981");
 
+    defs.append("filter")
+      .attr("id", "brighten")
+      .append("feComponentTransfer")
+      .selectAll("func")
+      .data(["feFuncR", "feFuncG", "feFuncB"])
+      .enter()
+      .each(function (tag) {
+        defs.select("#brighten feComponentTransfer")
+          .append(tag)
+          .attr("type", "linear")
+          .attr("slope", "1.4")
+          .attr("intercept", "0.1");
+      });
+
     const g = svg.append("g");
 
     const simNodes: SimNode[] = nodes.map((n) => ({ ...n }));
@@ -209,7 +215,7 @@ export default function ForceGraph({ nodes, links, projects, onNodeClick }: Forc
     nodeElements.each(function (d) {
       const el = d3.select(this);
       const r = getRadius(d);
-      const fillColor = STATUS_COLORS[d.status] || "#9ca3af";
+      const fillColor = d.deptColor || "#9ca3af";
 
       if (d.type === "milestone") {
         el.append("rect")
@@ -257,7 +263,9 @@ export default function ForceGraph({ nodes, links, projects, onNodeClick }: Forc
         if (tgtId === hoveredNode.id) connectedIds.add(Number(srcId));
       });
 
-      nodeElements.attr("opacity", (d) => (connectedIds.has(d.id) ? 1 : 0.2));
+      nodeElements
+        .attr("opacity", (d) => (connectedIds.has(d.id) ? 1 : 0.2))
+        .attr("filter", (d) => (d.id === hoveredNode.id ? "url(#brighten)" : "none"));
       d3.select(this).attr("transform", function () {
         const d = d3.select<SVGGElement, SimNode>(this as SVGGElement).datum();
         return `translate(${d.x},${d.y}) scale(1.3)`;
@@ -273,7 +281,7 @@ export default function ForceGraph({ nodes, links, projects, onNodeClick }: Forc
     });
 
     nodeElements.on("mouseout", function () {
-      nodeElements.attr("opacity", 1);
+      nodeElements.attr("opacity", 1).attr("filter", "none");
       linkElements.attr("opacity", 1);
       labelElements.attr("opacity", 1);
       nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);

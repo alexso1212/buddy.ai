@@ -730,6 +730,8 @@ export async function registerRoutes(server: Server, app: Express) {
         '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#64748b',
       ];
 
+      const defaultDeptColor = '#9ca3af';
+
       // Get all tasks with filters
       const taskFilters: any = {};
       if (projectId) taskFilters.projectId = parseInt(projectId as string);
@@ -742,6 +744,10 @@ export async function registerRoutes(server: Server, app: Express) {
       // Get all projects for color mapping
       const allProjects = await storage.getProjects();
       const projectMap = new Map(allProjects.map(p => [p.id, p]));
+
+      // Get all departments for color mapping
+      const allDepartments = await storage.getDepartments();
+      const deptMap = new Map(allDepartments.map(d => [d.id, d]));
 
       // Get all users for assignee names
       const allUsers = await storage.getUsers();
@@ -775,6 +781,8 @@ export async function registerRoutes(server: Server, app: Express) {
       const nodes = filteredTasks.map(t => {
         const project = projectMap.get(t.projectId);
         const assignee = t.assigneeId ? userMap.get(t.assigneeId) : null;
+        const nodeDeptId = project?.deptId ?? null;
+        const dept = nodeDeptId ? deptMap.get(nodeDeptId) : null;
         return {
           id: t.id,
           title: t.title,
@@ -784,7 +792,8 @@ export async function registerRoutes(server: Server, app: Express) {
           progress: t.progress,
           projectId: t.projectId,
           projectName: project?.name ?? '',
-          deptId: project?.deptId ?? null,
+          deptId: nodeDeptId,
+          deptColor: dept?.color ?? defaultDeptColor,
           assigneeId: t.assigneeId,
           assigneeName: assignee?.displayName ?? null,
           dueDate: t.dueDate ? t.dueDate.toISOString() : null,
@@ -814,7 +823,13 @@ export async function registerRoutes(server: Server, app: Express) {
         color: projectColors[idx % projectColors.length],
       }));
 
-      return res.json({ data: { nodes, links, projects: projectsInfo } });
+      const deptIds = new Set(nodes.map(n => n.deptId).filter(Boolean));
+      const departmentsInfo = Array.from(deptIds).map(did => {
+        const d = deptMap.get(did!);
+        return { id: did!, name: d?.name ?? '', color: d?.color ?? defaultDeptColor };
+      });
+
+      return res.json({ data: { nodes, links, projects: projectsInfo, departments: departmentsInfo } });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }

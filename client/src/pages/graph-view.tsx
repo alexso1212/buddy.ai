@@ -12,6 +12,7 @@ interface GraphNode {
   projectId: number;
   projectName: string;
   deptId: number | null;
+  deptColor: string;
   assigneeId: number | null;
   assigneeName: string | null;
   dueDate: string | null;

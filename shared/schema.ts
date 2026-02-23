@@ -22,6 +22,7 @@ export const departments = pgTable('departments', {
   orgId: integer('org_id').references(() => organizations.id).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   description: text('description'),
+  color: varchar('color', { length: 7 }),
   parentDeptId: integer('parent_dept_id').references((): AnyPgColumn => departments.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
