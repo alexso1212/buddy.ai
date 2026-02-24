@@ -52,6 +52,7 @@ import {
   Search,
   Check,
   X,
+  MessageSquarePlus,
 } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 import { tapMotionProps, elasticDeformSmallProps, elasticDeformProps } from '@/hooks/use-tap-motion';
@@ -789,10 +790,10 @@ function Sidebar({
             {...elasticDeformProps}
             style={{
               display: 'flex', alignItems: 'center', cursor: 'pointer',
-              padding: '6px 14px 6px 6px',
-              borderRadius: 24,
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.08)',
+              padding: '5px 16px 5px 5px',
+              borderRadius: 100,
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.10)',
               transition: 'background 150ms ease',
             }}
             onClick={() => setSettingsOpen(true)}
@@ -800,14 +801,14 @@ function Sidebar({
           >
             <div
               style={{
-                width: 34,
-                height: 34,
+                width: 32,
+                height: 32,
                 borderRadius: '50%',
-                background: '#4A4A47',
+                background: '#000',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: 15,
+                fontSize: 14,
                 fontWeight: 600,
                 color: '#FFFFFF',
                 flexShrink: 0,
@@ -816,43 +817,34 @@ function Sidebar({
             >
               {authUser?.displayName?.charAt(0)?.toUpperCase() || 'U'}
             </div>
-            <span style={{ fontSize: 15.5, color: '#ECECEC', marginLeft: 10 }} data-testid="text-username">{authUser?.displayName || '用户'}</span>
+            <span style={{ fontSize: 15, fontWeight: 500, color: '#ECECEC', marginLeft: 10 }} data-testid="text-username">{authUser?.displayName || '用户'}</span>
           </div>
 
           <button
             {...tapMotionProps}
             style={{
-              width: 40,
-              height: 40,
+              width: 44,
+              height: 44,
               borderRadius: '50%',
-              background: 'linear-gradient(145deg, rgba(174,86,48,0.85) 0%, rgba(174,86,48,0.65) 100%)',
-              border: '1px solid rgba(255,255,255,0.15)',
-              boxShadow: '0 2px 10px rgba(174,86,48,0.3), inset 0 1px 0 rgba(255,255,255,0.2)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
+              background: '#AE5630',
+              border: 'none',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
               flexShrink: 0,
-              transition: 'all 200ms ease',
+              transition: 'transform 150ms ease, opacity 150ms ease',
             }}
             onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.92)')}
             onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-            onMouseLeave={e => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.background = 'linear-gradient(145deg, rgba(174,86,48,0.85) 0%, rgba(174,86,48,0.65) 100%)';
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = 'linear-gradient(145deg, rgba(174,86,48,0.95) 0%, rgba(174,86,48,0.75) 100%)';
-            }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
             onClick={() => {
               onClose();
               navigate('/agent');
             }}
             data-testid="button-new-chat"
           >
-            <Plus size={20} color="#FFFFFF" />
+            <MessageSquarePlus size={20} color="#FFFFFF" strokeWidth={2} />
           </button>
         </div>
       </aside>
