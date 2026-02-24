@@ -373,29 +373,36 @@ function Sidebar({
           display: 'flex',
           alignItems: 'center',
           gap: 14,
-          background: active
-            ? 'linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%)'
-            : 'transparent',
-          border: active ? '1px solid rgba(255,255,255,0.10)' : '1px solid transparent',
-          boxShadow: active ? '0 2px 8px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.08)' : 'none',
-          backdropFilter: active ? 'blur(12px)' : 'none',
-          WebkitBackdropFilter: active ? 'blur(12px)' : 'none',
+          background: active ? '#000' : 'transparent',
+          border: '1px solid transparent',
           cursor: 'pointer',
-          transition: 'all 200ms ease',
+          transition: 'background 150ms ease, transform 150ms ease',
         }}
         onMouseEnter={e => {
-          if (!active) {
-            e.currentTarget.style.background = 'linear-gradient(135deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.03) 100%)';
-            e.currentTarget.style.border = '1px solid rgba(255,255,255,0.06)';
-            e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.05)';
-          }
+          if (!active) e.currentTarget.style.background = 'rgba(0,0,0,0.4)';
         }}
         onMouseLeave={e => {
           if (!active) {
             e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.border = '1px solid transparent';
-            e.currentTarget.style.boxShadow = 'none';
+            e.currentTarget.style.transform = 'scale(1)';
           }
+        }}
+        onTouchStart={e => {
+          e.currentTarget.style.background = active ? '#000' : 'rgba(0,0,0,0.6)';
+          e.currentTarget.style.transform = 'scale(1.02)';
+          try { navigator.vibrate?.(6); } catch {}
+        }}
+        onTouchEnd={e => {
+          if (!active) e.currentTarget.style.background = 'transparent';
+          e.currentTarget.style.transform = 'scale(1)';
+        }}
+        onTouchMove={e => {
+          if (!active) e.currentTarget.style.background = 'transparent';
+          e.currentTarget.style.transform = 'scale(1)';
+        }}
+        onTouchCancel={e => {
+          if (!active) e.currentTarget.style.background = 'transparent';
+          e.currentTarget.style.transform = 'scale(1)';
         }}
         data-testid={testId}
       >
@@ -425,35 +432,41 @@ function Sidebar({
               if (navigator.vibrate) navigator.vibrate(10);
               setContextMenu({ convoId: String(convo.id), x: touch.clientX, y: touch.clientY });
             }, 500);
+            e.currentTarget.style.background = selected ? '#000' : 'rgba(0,0,0,0.6)';
+            e.currentTarget.style.transform = 'scale(1.02)';
+            try { navigator.vibrate?.(6); } catch {}
           }}
-          onTouchEnd={() => clearTimeout(pressTimerRef.current)}
-          onTouchMove={() => clearTimeout(pressTimerRef.current)}
+          onTouchEnd={(e) => {
+            clearTimeout(pressTimerRef.current);
+            if (!selected) e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
+          onTouchMove={(e) => {
+            clearTimeout(pressTimerRef.current);
+            if (!selected) e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
+          onTouchCancel={(e) => {
+            clearTimeout(pressTimerRef.current);
+            if (!selected) e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
           style={{
             padding: convo.projectName ? '10px 16px' : '12px 16px',
             margin: '0 8px 2px 12px',
             borderRadius: 12,
-            background: selected
-              ? 'linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%)'
-              : 'transparent',
-            border: selected ? '1px solid rgba(255,255,255,0.10)' : '1px solid transparent',
-            boxShadow: selected ? '0 2px 8px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.08)' : 'none',
-            backdropFilter: selected ? 'blur(12px)' : 'none',
-            WebkitBackdropFilter: selected ? 'blur(12px)' : 'none',
+            background: selected ? '#000' : 'transparent',
+            border: '1px solid transparent',
             cursor: 'pointer',
-            transition: 'all 200ms ease',
+            transition: 'background 150ms ease, transform 150ms ease',
           }}
           onMouseEnter={e => {
-            if (!selected) {
-              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.03) 100%)';
-              e.currentTarget.style.border = '1px solid rgba(255,255,255,0.06)';
-              e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.05)';
-            }
+            if (!selected) e.currentTarget.style.background = 'rgba(0,0,0,0.4)';
           }}
           onMouseLeave={e => {
             if (!selected) {
               e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.border = '1px solid transparent';
-              e.currentTarget.style.boxShadow = 'none';
+              e.currentTarget.style.transform = 'scale(1)';
             }
           }}
           data-testid={`convo-${convo.id}`}
@@ -602,24 +615,36 @@ function Sidebar({
                       display: 'flex',
                       alignItems: 'center',
                       gap: 10,
-                      background: active
-                        ? 'linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%)'
-                        : 'transparent',
-                      border: active ? '1px solid rgba(255,255,255,0.10)' : '1px solid transparent',
+                      background: active ? '#000' : 'transparent',
+                      border: '1px solid transparent',
                       cursor: 'pointer',
-                      transition: 'all 150ms ease',
+                      transition: 'background 150ms ease, transform 150ms ease',
                     }}
                     onMouseEnter={e => {
-                      if (!active) {
-                        e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
-                        e.currentTarget.style.border = '1px solid rgba(255,255,255,0.05)';
-                      }
+                      if (!active) e.currentTarget.style.background = 'rgba(0,0,0,0.4)';
                     }}
                     onMouseLeave={e => {
                       if (!active) {
                         e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.border = '1px solid transparent';
+                        e.currentTarget.style.transform = 'scale(1)';
                       }
+                    }}
+                    onTouchStart={e => {
+                      e.currentTarget.style.background = active ? '#000' : 'rgba(0,0,0,0.6)';
+                      e.currentTarget.style.transform = 'scale(1.04)';
+                      try { navigator.vibrate?.(6); } catch {}
+                    }}
+                    onTouchEnd={e => {
+                      if (!active) e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.transform = 'scale(1)';
+                    }}
+                    onTouchMove={e => {
+                      if (!active) e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.transform = 'scale(1)';
+                    }}
+                    onTouchCancel={e => {
+                      if (!active) e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.transform = 'scale(1)';
                     }}
                     data-testid={testId}
                   >
