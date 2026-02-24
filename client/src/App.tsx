@@ -1573,6 +1573,7 @@ function App() {
   const [location] = useLocation();
   const isAgentPage = location === '/agent' || location.startsWith('/agent?');
   const isGraphPage = location === '/graph' || location.startsWith('/graph?');
+  const isLoginPage = location === '/login' || location.startsWith('/login?');
   
   const dragRef = useRef({
     isDragging: false,
@@ -1704,10 +1705,10 @@ function App() {
     <ThemeProvider>
     <QueryClientProvider client={queryClient}>
       <div className="flex h-screen bg-[var(--bg-primary)]">
-        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} sidebarRef={sidebarRef} overlayRef={overlayRef} />
+        {!isLoginPage && <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} sidebarRef={sidebarRef} overlayRef={overlayRef} />}
 
         <div className="flex-1 flex flex-col overflow-hidden relative">
-          {!isGraphPage && (
+          {!isGraphPage && !isLoginPage && (
           <>
             <div className="md:hidden" style={{
               position: 'absolute',
@@ -1756,7 +1757,7 @@ function App() {
           )}
 
           <main
-            className="flex-1 overflow-auto ml-0 md:ml-[260px] relative"
+            className={`flex-1 overflow-auto relative ${isLoginPage ? 'ml-0' : 'ml-0 md:ml-[260px]'}`}
             data-testid="content-area"
           >
             <Router />
