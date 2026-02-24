@@ -609,7 +609,7 @@ function ConversationListView({
 
   return (
     <div className="relative h-full" data-testid="conversation-list-view">
-      <div className="absolute inset-0 overflow-y-auto" style={{ paddingTop: 16, paddingBottom: 'calc(16px + 3.33vh)', overscrollBehavior: 'contain' }} data-testid="conversation-list">
+      <div className="absolute inset-0 overflow-y-auto overflow-x-hidden" style={{ paddingTop: 16, paddingBottom: 'calc(16px + 3.33vh)', overscrollBehavior: 'contain', touchAction: 'pan-y' }} data-testid="conversation-list">
         {isLoading || searching ? (
           <div className="flex items-center justify-center py-16" data-testid="conversations-loading">
             <ThinkingAnimation size={36} label={searching ? "搜索中" : "加载中"} />
@@ -1464,7 +1464,7 @@ export default function Agent() {
   const showWelcome = !activeConvId && messages.length === 0 && !showChat;
 
   return (
-    <div className="relative h-full bg-transparent" data-testid="agent-page">
+    <div className="relative h-full bg-transparent overflow-x-hidden" style={{ touchAction: 'pan-y' }} data-testid="agent-page">
       
 
       {showWelcome ? (
@@ -1497,11 +1497,11 @@ export default function Agent() {
         </div>
       ) : (
         <div
-          className="absolute inset-0 overflow-y-auto"
+          className="absolute inset-0 overflow-y-auto overflow-x-hidden"
           ref={scrollRef}
           onScroll={handleScrollEvent}
           data-testid="agent-messages"
-          style={{ paddingTop: 54, paddingBottom: 'calc(160px + 3.33vh)', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}
+          style={{ paddingTop: 54, paddingBottom: 'calc(160px + 3.33vh)', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', touchAction: 'pan-y' }}
         >
           
           <div className="max-w-3xl mx-auto">
