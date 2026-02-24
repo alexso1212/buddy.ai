@@ -148,7 +148,7 @@ function BuddyLogo() {
         width: 32,
         height: 32,
         borderRadius: '50%',
-        background: 'linear-gradient(135deg, #E8C5A8 0%, #D4A27F 40%, #C4845C 100%)',
+        background: '#D4B896',
       }}
       data-testid="buddy-logo"
     />
@@ -355,7 +355,7 @@ export default function LoginPage() {
                 width: '100%',
                 height: 48,
                 borderRadius: 9999,
-                background: 'linear-gradient(135deg, #E8C5A8 0%, #D4A27F 40%, #C4845C 100%)',
+                background: '#D4B896',
                 color: '#1E1D1A',
                 fontSize: '15px',
                 fontWeight: 600,
@@ -470,7 +470,7 @@ export default function LoginPage() {
               width: '100%',
               height: 50,
               borderRadius: 9999,
-              background: 'linear-gradient(135deg, #E8C5A8 0%, #D4A27F 40%, #C4845C 100%)',
+              background: '#D4B896',
               color: '#1E1D1A',
               fontSize: '15px',
               fontWeight: 600,
