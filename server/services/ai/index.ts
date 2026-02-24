@@ -1090,3 +1090,30 @@ category 说明：
     console.error('Failed to extract memories:', err);
   }
 }
+
+export async function generateConversationTitle(
+  userMessage: string,
+  assistantReply: string
+): Promise<string> {
+  const client = claudeSimpleClient;
+  const truncatedUser = userMessage.slice(0, 500);
+  const truncatedAssistant = assistantReply.slice(0, 500);
+
+  const response = await client.chat.completions.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 60,
+    messages: [
+      {
+        role: 'system',
+        content: '根据用户和AI的对话，生成一个简短的对话标题（2-8个词）。直接输出标题文字，不要加引号、标点或解释。用对话的主要语言。'
+      },
+      {
+        role: 'user',
+        content: `用户: ${truncatedUser}\n\nAI: ${truncatedAssistant}`
+      }
+    ],
+  });
+
+  const title = (response.choices[0]?.message?.content || '').trim().slice(0, 50);
+  return title || userMessage.slice(0, 30);
+}

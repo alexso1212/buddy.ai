@@ -1057,11 +1057,13 @@ export default function Agent() {
                       : m
                   )
                 );
+              } else if (event.type === 'title' && event.title) {
+                setConvTitle(event.title);
+                queryClient.invalidateQueries({ queryKey: ['/api/conversations'] });
               } else if (event.type === 'start' && event.conversationId) {
                 if (!convId) {
                   convId = event.conversationId;
-                  const title = text.slice(0, 30) + (text.length > 30 ? '...' : '');
-                  setConvTitle(title);
+                  setConvTitle(text.slice(0, 30) + (text.length > 30 ? '...' : ''));
                   navigate(`/agent?conv=${convId}`, { replace: true });
                   queryClient.invalidateQueries({ queryKey: ['/api/conversations'] });
                 }

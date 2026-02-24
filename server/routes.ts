@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
-import { chat as aiChat, chatStream as aiChatStream, generateProjectTasks, extractMemories } from "./services/ai/index";
+import { chat as aiChat, chatStream as aiChatStream, generateProjectTasks, extractMemories, generateConversationTitle } from "./services/ai/index";
 import { executeAction } from "./services/ai/actionExecutor";
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
@@ -1830,11 +1830,13 @@ export async function registerRoutes(server: Server, app: Express) {
       const msgText = message || '';
 
       let activeConvId = conversationId || null;
+      let isNewConversation = false;
 
       if (!activeConvId) {
-        const title = (msgText || '附件消息').slice(0, 30) + ((msgText || '附件消息').length > 30 ? '...' : '');
+        isNewConversation = true;
+        const tempTitle = (msgText || '附件消息').slice(0, 30) + ((msgText || '附件消息').length > 30 ? '...' : '');
         const newConv = await storage.createConversation({
-          title,
+          title: tempTitle,
           orgId,
           userId,
         });
@@ -1959,6 +1961,19 @@ export async function registerRoutes(server: Server, app: Express) {
         }
       }
 
+      if (isNewConversation && activeConvId && fullText && !aborted) {
+        try {
+          const title = await Promise.race([
+            generateConversationTitle(msgText, fullText),
+            new Promise<string>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
+          ]);
+          await storage.updateConversation(activeConvId!, { title });
+          res.write(`data: ${JSON.stringify({ type: 'title', title })}\n\n`);
+        } catch (err) {
+          console.error('Title generation error:', err);
+        }
+      }
+
       res.end();
 
       extractMemories(
@@ -1992,11 +2007,13 @@ export async function registerRoutes(server: Server, app: Express) {
       const userName = user?.displayName || 'Unknown';
 
       let activeConvId = conversationId || null;
+      let isNewConversation = false;
 
       if (!activeConvId) {
-        const title = message.slice(0, 30) + (message.length > 30 ? '...' : '');
+        isNewConversation = true;
+        const tempTitle = message.slice(0, 30) + (message.length > 30 ? '...' : '');
         const newConv = await storage.createConversation({
-          title,
+          title: tempTitle,
           orgId,
           userId,
         });
@@ -2020,6 +2037,14 @@ export async function registerRoutes(server: Server, app: Express) {
         history,
         { currentUserId: userId, currentUserName: userName, customSystemPrompt: systemPrompt || undefined, model: model || undefined, extendedThinking: extendedThinking || false, orgId }
       );
+
+      if (isNewConversation && activeConvId && result.message) {
+        generateConversationTitle(message, result.message)
+          .then(async (title) => {
+            await storage.updateConversation(activeConvId!, { title });
+          })
+          .catch(err => console.error('Title generation error:', err));
+      }
 
       if (result.tokenUsage) {
         const { calculateCost } = await import('./services/ai/tokenCost');
