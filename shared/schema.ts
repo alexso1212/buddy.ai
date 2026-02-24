@@ -53,10 +53,12 @@ export const users = pgTable('users', {
   deptId: integer('dept_id').references(() => departments.id),
   jobRoleId: integer('job_role_id').references(() => jobRoles.id),
   email: varchar('email', { length: 255 }).notNull().unique(),
+  passwordHash: text('password_hash'),
   displayName: varchar('display_name', { length: 255 }).notNull(),
   avatarUrl: text('avatar_url'),
   role: varchar('role', { length: 50 }).notNull().default('member'),
   isActive: boolean('is_active').default(true).notNull(),
+  lastLoginAt: timestamp('last_login_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

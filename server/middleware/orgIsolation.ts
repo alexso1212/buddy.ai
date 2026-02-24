@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
 
 declare global {
   namespace Express {
@@ -9,15 +10,23 @@ declare global {
   }
 }
 
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key';
+
 export function orgIsolation(req: Request, _res: Response, next: NextFunction) {
-  const orgHeader = req.headers['x-org-id'];
-  const userHeader = req.headers['x-user-id'];
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number; orgId: number; role: string };
+      req.currentUserId = decoded.userId;
+      req.orgId = decoded.orgId;
+      return next();
+    } catch {
+    }
+  }
 
-  req.orgId = orgHeader ? parseInt(String(orgHeader), 10) : 1;
-  req.currentUserId = userHeader ? parseInt(String(userHeader), 10) : 1;
-
-  if (isNaN(req.orgId) || req.orgId < 1) req.orgId = 1;
-  if (isNaN(req.currentUserId) || req.currentUserId < 1) req.currentUserId = 1;
+  req.orgId = 0;
+  req.currentUserId = 0;
 
   next();
 }

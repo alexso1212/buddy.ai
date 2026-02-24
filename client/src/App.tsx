@@ -6,7 +6,9 @@ import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { AuthProvider, useAuth } from "@/lib/auth";
 import AgentLogo from "@/components/AgentLogo";
+import LoginPage from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import Notifications from "@/pages/notifications";
 import Agent from "@/pages/agent";
@@ -309,6 +311,7 @@ function Sidebar({
   sidebarRef: React.RefObject<HTMLElement>;
   overlayRef: React.RefObject<HTMLDivElement>;
 }) {
+  const { user: authUser, logout } = useAuth();
   const [location, navigate] = useLocation();
   const [buddyAiOpen, setBuddyAiOpen] = useState(() => {
     try { const s = localStorage.getItem('sidebar_buddyAi'); return s !== null ? s === 'true' : true; } catch { return true; }
@@ -698,9 +701,9 @@ function Sidebar({
               }}
               data-testid="img-avatar"
             >
-              A
+              {authUser?.displayName?.charAt(0)?.toUpperCase() || 'U'}
             </div>
-            <span style={{ fontSize: 15.5, color: '#ECECEC', marginLeft: 10 }} data-testid="text-username">Alexso</span>
+            <span style={{ fontSize: 15.5, color: '#ECECEC', marginLeft: 10 }} data-testid="text-username">{authUser?.displayName || '用户'}</span>
           </div>
 
           <button
@@ -790,11 +793,11 @@ function Sidebar({
                   flexShrink: 0,
                 }}
               >
-                A
+                {authUser?.displayName?.charAt(0)?.toUpperCase() || 'U'}
               </div>
               <div>
-                <div style={{ fontSize: 17, fontWeight: 600, color: '#ECECEC' }} data-testid="text-settings-username">Alexso</div>
-                <div style={{ fontSize: 14, color: '#9A9893' }} data-testid="text-settings-email">alexso@company.com</div>
+                <div style={{ fontSize: 17, fontWeight: 600, color: '#ECECEC' }} data-testid="text-settings-username">{authUser?.displayName || '用户'}</div>
+                <div style={{ fontSize: 14, color: '#9A9893' }} data-testid="text-settings-email">{authUser?.email || ''}</div>
               </div>
             </div>
 
@@ -935,7 +938,7 @@ function Sidebar({
               onClick={() => {
                 setSettingsOpen(false);
                 onClose();
-                toast({ title: '已退出登录' });
+                logout();
               }}
               data-testid="settings-item-logout"
             >
@@ -1283,22 +1286,66 @@ function Sidebar({
   );
 }
 
+function AuthGuard({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  const [, navigate] = useLocation();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate('/login');
+    }
+  }, [loading, user, navigate]);
+
+  if (loading) {
+    return (
+      <div style={{
+        height: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--bg-primary)',
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: 40, height: 40,
+            border: '3px solid rgba(174,86,48,0.3)',
+            borderTopColor: '#AE5630',
+            borderRadius: '50%',
+            animation: 'spin 0.8s linear infinite',
+          }} />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return null;
+  return <>{children}</>;
+}
+
 function Router() {
   return (
     <Switch>
-      <Route path="/"><Redirect to="/agent" /></Route>
-      <Route path="/dashboard" component={Dashboard} />
-      <Route path="/graph" component={GraphView} />
-      <Route path="/agent" component={Agent} />
-      <Route path="/projects" component={ProjectList} />
-      <Route path="/projects/:id" component={ProjectDetail} />
-      <Route path="/tasks" component={TaskList} />
-      <Route path="/tasks/:id" component={TaskDetail} />
-      <Route path="/team" component={Team} />
-      <Route path="/settings" component={Settings} />
-      <Route path="/notifications" component={Notifications} />
-      <Route path="/artifacts" component={Artifacts} />
-      <Route component={NotFound} />
+      <Route path="/login" component={LoginPage} />
+      <Route>
+        <AuthGuard>
+          <Switch>
+            <Route path="/"><Redirect to="/agent" /></Route>
+            <Route path="/dashboard" component={Dashboard} />
+            <Route path="/graph" component={GraphView} />
+            <Route path="/agent" component={Agent} />
+            <Route path="/projects" component={ProjectList} />
+            <Route path="/projects/:id" component={ProjectDetail} />
+            <Route path="/tasks" component={TaskList} />
+            <Route path="/tasks/:id" component={TaskDetail} />
+            <Route path="/team" component={Team} />
+            <Route path="/settings" component={Settings} />
+            <Route path="/notifications" component={Notifications} />
+            <Route path="/artifacts" component={Artifacts} />
+            <Route component={NotFound} />
+          </Switch>
+        </AuthGuard>
+      </Route>
     </Switch>
   );
 }
@@ -1653,6 +1700,7 @@ function App() {
   }, []);
 
   return (
+    <AuthProvider>
     <ThemeProvider>
     <QueryClientProvider client={queryClient}>
       <div className="flex h-screen bg-[var(--bg-primary)]">
@@ -1719,6 +1767,7 @@ function App() {
       <Toaster />
     </QueryClientProvider>
     </ThemeProvider>
+    </AuthProvider>
   );
 }
 

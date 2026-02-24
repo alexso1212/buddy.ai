@@ -3,6 +3,8 @@ import { type Server } from "http";
 import { storage } from "./storage";
 import { chat as aiChat, generateProjectTasks } from "./services/ai/index";
 import { executeAction } from "./services/ai/actionExecutor";
+import bcrypt from 'bcryptjs';
+import { authMiddleware, generateToken } from './middleware/auth';
 import {
   insertOrganizationSchema,
   insertDepartmentSchema,
@@ -89,6 +91,149 @@ export async function registerRoutes(server: Server, app: Express) {
 
     await storage.createManyNotifications(notificationData);
   }
+
+  // ===================== Auth =====================
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const { email, password, displayName } = req.body;
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!email || !emailRegex.test(email)) {
+        return res.status(400).json({ error: '请输入有效的邮箱地址' });
+      }
+      if (!password || password.length < 8) {
+        return res.status(400).json({ error: '密码至少需要8个字符' });
+      }
+      if (!displayName) {
+        return res.status(400).json({ error: '请输入显示名称' });
+      }
+
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ error: '该邮箱已被注册' });
+      }
+
+      const passwordHash = await bcrypt.hash(password, 10);
+      const org = await storage.createOrganization({ name: displayName + '的团队' });
+      const user = await storage.createUser({
+        orgId: org.id,
+        email,
+        passwordHash,
+        displayName,
+        role: 'owner',
+        isActive: true,
+      } as any);
+
+      const token = generateToken({ userId: user.id, orgId: user.orgId, role: user.role });
+      return res.status(201).json({
+        token,
+        user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, orgId: user.orgId, avatarUrl: user.avatarUrl },
+      });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.status(401).json({ error: '邮箱或密码错误' });
+      }
+
+      if (!user.passwordHash) {
+        return res.status(401).json({ error: '请先注册账户' });
+      }
+
+      const valid = await bcrypt.compare(password, user.passwordHash);
+      if (!valid) {
+        return res.status(401).json({ error: '邮箱或密码错误' });
+      }
+
+      await storage.updateUser(user.id, { lastLoginAt: new Date() } as any);
+
+      const token = generateToken({ userId: user.id, orgId: user.orgId, role: user.role });
+      return res.json({
+        token,
+        user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, orgId: user.orgId, avatarUrl: user.avatarUrl },
+      });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/auth/me", authMiddleware, async (req, res) => {
+    try {
+      const user = await storage.getUserById(req.currentUserId);
+      if (!user) {
+        return res.status(404).json({ error: '用户不存在' });
+      }
+
+      const orgs = await storage.getOrganizations();
+      const org = orgs.find(o => o.id === user.orgId);
+
+      return res.json({
+        user: {
+          id: user.id,
+          email: user.email,
+          displayName: user.displayName,
+          role: user.role,
+          orgId: user.orgId,
+          avatarUrl: user.avatarUrl,
+          orgName: org?.name,
+        },
+      });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/auth/profile", authMiddleware, async (req, res) => {
+    try {
+      const { displayName, avatarUrl } = req.body;
+      const data: any = {};
+      if (displayName !== undefined) data.displayName = displayName;
+      if (avatarUrl !== undefined) data.avatarUrl = avatarUrl;
+
+      const updated = await storage.updateUser(req.currentUserId, data);
+      return res.json({ user: updated });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/auth/password", authMiddleware, async (req, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+
+      if (!newPassword || newPassword.length < 8) {
+        return res.status(400).json({ error: '新密码至少需要8个字符' });
+      }
+
+      const user = await storage.getUserById(req.currentUserId);
+      if (!user) {
+        return res.status(404).json({ error: '用户不存在' });
+      }
+
+      if (!user.passwordHash) {
+        return res.status(400).json({ error: '当前账户未设置密码' });
+      }
+
+      const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!valid) {
+        return res.status(401).json({ error: '当前密码错误' });
+      }
+
+      const passwordHash = await bcrypt.hash(newPassword, 10);
+      await storage.updateUser(req.currentUserId, { passwordHash } as any);
+
+      return res.json({ message: '密码修改成功' });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
 
   // ===================== Organizations =====================
   app.get("/api/organizations", async (_req, res) => {

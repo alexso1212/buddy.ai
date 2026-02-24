@@ -108,7 +108,7 @@ interface SyncHistoryEntry {
 }
 
 export default function SyncPage() {
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [, navigate] = useLocation();
   const { toast } = useToast();
 

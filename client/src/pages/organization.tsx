@@ -300,7 +300,7 @@ function ApprovalCard({ change, users, isCeo }: { change: OrgChange; users: Safe
 }
 
 export default function Organization() {
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [, navigate] = useLocation();
   const [editDept, setEditDept] = useState<Department | null>(null);
   const [showNewDept, setShowNewDept] = useState(false);

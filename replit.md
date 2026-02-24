@@ -29,7 +29,8 @@ The system uses a 14-table PostgreSQL database schema, including `organizations`
 - **Activity Logging:** All mutations automatically generate entries in `activity_logs`.
 - **Role-Based Access Control:** Differentiates access for 'owner', 'admin', 'head', and 'member' roles.
 - **AI Integration:** Dedicated API endpoints for AI chat, action confirmation, verdict judgment, and assignment auto-judgment.
-- **Multi-Tenant Isolation:** `orgIsolation` middleware injects `orgId` and `currentUserId` into every request via headers (`x-org-id`, `x-user-id`), defaulting to org 1 / user 1. All API routes use `req.orgId` and `req.currentUserId` instead of hardcoded values.
+- **JWT Authentication:** Full user auth system with `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, `PUT /api/auth/profile`, `PUT /api/auth/password`. Uses bcryptjs for password hashing and jsonwebtoken for JWT (7-day expiry). Auth middleware (`server/middleware/auth.ts`) verifies JWT tokens.
+- **Multi-Tenant Isolation:** `orgIsolation` middleware first attempts JWT token parsing for `orgId`/`currentUserId`, falling back to `x-org-id`/`x-user-id` headers (defaulting to org 1 / user 1). All API routes use `req.orgId` and `req.currentUserId`.
 - **Token Usage Tracking:** Every AI call (chat, verdict) records prompt/completion tokens and cost to the `token_usage` table. `GET /api/token-usage/stats?period=7d|30d|90d` returns usage grouped by purpose and user.
 - **Conversation Persistence:** AI chat supports `conversationId` parameter; when provided, history is loaded from DB and messages are persisted. Confirm actions write system messages to chat history.
 

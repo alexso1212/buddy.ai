@@ -315,7 +315,7 @@ function ForceGraph({ data, filter, onSelectNode, selectedNode }: {
 }
 
 export default function Collaboration() {
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [, navigate] = useLocation();
   const [filter, setFilter] = useState("people");
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
