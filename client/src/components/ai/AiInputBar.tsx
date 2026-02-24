@@ -59,10 +59,12 @@ function AddToChatSheet({
   const currentStyleLabel = REPLY_STYLES.find(s => s.value === replyStyle)?.label || '正常';
 
   const handleFileSelect = (files: FileList | null) => {
-    if (!files) return;
+    if (!files || files.length === 0) return;
+    const fileArray = Array.from(files);
+    const totalFiles = fileArray.length;
     const newAttachments: Attachment[] = [];
     let processed = 0;
-    Array.from(files).forEach(file => {
+    fileArray.forEach(file => {
       const reader = new FileReader();
       reader.onload = () => {
         const base64 = (reader.result as string).split(',')[1];
@@ -76,7 +78,7 @@ function AddToChatSheet({
         };
         newAttachments.push(attachment);
         processed++;
-        if (processed === files.length) {
+        if (processed === totalFiles) {
           onAttach(newAttachments);
         }
       };
