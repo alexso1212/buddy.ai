@@ -1603,9 +1603,11 @@ function App() {
   const dragRef = useRef({
     isDragging: false,
     startX: 0,
+    startY: 0,
     startTime: 0,
     currentX: 0,
     type: '' as '' | 'open' | 'close',
+    directionLocked: '' as '' | 'horizontal' | 'vertical',
   });
   
   const sidebarWidth = 340;
@@ -1614,24 +1616,28 @@ function App() {
     const handleTouchStart = (e: TouchEvent) => {
       const touch = e.touches[0];
       const drag = dragRef.current;
+      drag.directionLocked = '';
       
       if (!sidebarOpen && touch.clientX < 25) {
         drag.isDragging = true;
         drag.startX = touch.clientX;
+        drag.startY = touch.clientY;
         drag.startTime = Date.now();
         drag.currentX = touch.clientX;
         drag.type = 'open';
+        drag.directionLocked = 'horizontal';
       }
       
       if (sidebarOpen && sidebarRef.current) {
         const rect = sidebarRef.current.getBoundingClientRect();
-        const edgeZone = 40;
-        if (touch.clientX > rect.right - edgeZone && touch.clientX <= rect.right + 30) {
+        if (touch.clientX < rect.right + 30) {
           drag.isDragging = true;
           drag.startX = touch.clientX;
+          drag.startY = touch.clientY;
           drag.startTime = Date.now();
           drag.currentX = touch.clientX;
           drag.type = 'close';
+          drag.directionLocked = '';
         }
       }
     };
@@ -1640,7 +1646,28 @@ function App() {
       const drag = dragRef.current;
       if (!drag.isDragging) return;
       
-      drag.currentX = e.touches[0].clientX;
+      const touchX = e.touches[0].clientX;
+      const touchY = e.touches[0].clientY;
+      
+      if (drag.type === 'close' && drag.directionLocked === '') {
+        const dx = Math.abs(touchX - drag.startX);
+        const dy = Math.abs(touchY - drag.startY);
+        const threshold = 8;
+        if (dx < threshold && dy < threshold) return;
+        if (dy > dx) {
+          drag.directionLocked = 'vertical';
+          drag.isDragging = false;
+          return;
+        }
+        drag.directionLocked = 'horizontal';
+      }
+      
+      if (drag.directionLocked === 'vertical') {
+        drag.isDragging = false;
+        return;
+      }
+      
+      drag.currentX = touchX;
       const deltaX = drag.currentX - drag.startX;
       
       const sidebar = sidebarRef.current;
