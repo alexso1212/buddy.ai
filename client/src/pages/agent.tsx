@@ -926,6 +926,11 @@ export default function Agent() {
 
   const handleSend = useCallback(
     async (text: string) => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+
       let convId = activeConvId;
 
       const userMsg: Message = {
@@ -1093,8 +1098,19 @@ export default function Agent() {
     [activeConvId, activeConvSystemPrompt, saveMessageToDB, navigate]
   );
 
+  const rebuildHistoryFromMessages = useCallback((msgs: Message[]) => {
+    conversationHistory.current = msgs
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+  }, []);
+
   const handleRegenerate = useCallback(
     (messageId: string) => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+
       const msgIndex = messages.findIndex((m) => m.id === messageId);
       if (msgIndex < 0) return;
 
@@ -1107,27 +1123,32 @@ export default function Agent() {
       }
       if (!lastUserMsg) return;
 
-      setMessages((prev) => prev.filter((m) => m.id !== messageId));
-      conversationHistory.current = conversationHistory.current.filter(
-        (m) => !(m.role === 'assistant' && m.content === messages[msgIndex].content)
-      );
+      const truncated = messages.slice(0, msgIndex);
+      setMessages(truncated);
+      rebuildHistoryFromMessages(truncated);
 
-      handleSend(lastUserMsg);
+      setTimeout(() => handleSend(lastUserMsg), 0);
     },
-    [messages, handleSend]
+    [messages, handleSend, rebuildHistoryFromMessages]
   );
 
   const handleEditMessage = useCallback(
     (messageId: string, newContent: string) => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+
       const msgIndex = messages.findIndex((m) => m.id === messageId);
       if (msgIndex < 0) return;
 
-      setMessages((prev) => prev.slice(0, msgIndex));
-      conversationHistory.current = conversationHistory.current.slice(0, msgIndex);
+      const truncated = messages.slice(0, msgIndex);
+      setMessages(truncated);
+      rebuildHistoryFromMessages(truncated);
 
-      handleSend(newContent);
+      setTimeout(() => handleSend(newContent), 0);
     },
-    [messages, handleSend]
+    [messages, handleSend, rebuildHistoryFromMessages]
   );
 
   const handleConfirm = useCallback(
@@ -1392,9 +1413,9 @@ export default function Agent() {
         >
           
           <div className="max-w-3xl mx-auto">
-            {messages.map((msg, idx) => {
+            {(() => {
               const lastAssistantIdx = messages.reduce((acc, m, i) => m.role === 'assistant' && !m.isStreaming ? i : acc, -1);
-              return (
+              return messages.map((msg, idx) => (
                 <AiMessageBubble
                   key={msg.id}
                   message={msg}
@@ -1407,8 +1428,8 @@ export default function Agent() {
                   onEditMessage={handleEditMessage}
                   isLastAssistant={idx === lastAssistantIdx}
                 />
-              );
-            })}
+              ));
+            })()}
             {loading && !messages.some(m => m.isStreaming) && (
               <div className="flex justify-start px-3 mb-6" data-testid="ai-loading">
                 <ThinkingAnimation size={36} />

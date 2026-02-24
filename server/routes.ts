@@ -1825,6 +1825,8 @@ export async function registerRoutes(server: Server, app: Express) {
       res.write(`data: ${JSON.stringify({ type: 'start', conversationId: activeConvId })}\n\n`);
 
       let fullText = '';
+      let aborted = false;
+      req.on('close', () => { aborted = true; });
 
       const generator = aiChatStream(
         message,
@@ -1833,7 +1835,7 @@ export async function registerRoutes(server: Server, app: Express) {
       );
 
       for await (const chunk of generator) {
-        if (req.socket?.destroyed) break;
+        if (aborted || req.socket?.destroyed) break;
 
         if (chunk.type === 'token' && chunk.content) {
           fullText += chunk.content;
