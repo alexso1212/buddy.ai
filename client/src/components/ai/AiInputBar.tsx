@@ -268,6 +268,8 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
   const [isFocused, setIsFocused] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
   const [glowPos, setGlowPos] = useState({ x: 0.5, y: 0.5 });
+  const [showGlow, setShowGlow] = useState(false);
+  const glowFadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composerWrapRef = useRef<HTMLDivElement>(null);
   const deformState = useRef({ pressed: false, moveHandler: null as ((e: PointerEvent) => void) | null });
@@ -310,6 +312,8 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
 
   const handleComposerPointerDown = useCallback((e: React.PointerEvent) => {
     setIsPressed(true);
+    setShowGlow(true);
+    if (glowFadeTimer.current) clearTimeout(glowFadeTimer.current);
     updateGlowPos(e.clientX, e.clientY);
     if (navigator.vibrate) navigator.vibrate(10);
     const el = composerWrapRef.current;
@@ -343,6 +347,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
       window.removeEventListener('pointermove', deformState.current.moveHandler);
       deformState.current.moveHandler = null;
     }
+    glowFadeTimer.current = setTimeout(() => setShowGlow(false), 600);
   }, []);
 
   const adjustHeight = useCallback(() => {
@@ -386,13 +391,15 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
             borderRadius: 20,
             position: 'relative' as const,
             padding: 1,
-            background: isPressed
-              ? `radial-gradient(ellipse at ${glowPos.x * 100}% ${glowPos.y * 100}%, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.3) 40%, rgba(255,255,255,0.12) 100%)`
-              : 'linear-gradient(to bottom, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.12) 40%, rgba(255,255,255,0.06) 100%)',
-            boxShadow: isPressed
-              ? `${(glowPos.x - 0.5) * 16}px ${(glowPos.y - 0.5) * 12}px 28px rgba(255,255,255,0.22), 0 0 20px rgba(255,255,255,0.12), inset ${(glowPos.x - 0.5) * 6}px ${(glowPos.y - 0.5) * 4}px 12px rgba(255,255,255,0.06)`
+            background: showGlow
+              ? `radial-gradient(ellipse 120px 80px at ${glowPos.x * 100}% ${glowPos.y * 100}%, rgba(255,255,255,${isPressed ? 0.65 : 0.4}) 0%, rgba(255,255,255,${isPressed ? 0.25 : 0.15}) 50%, rgba(255,255,255,0.08) 100%)`
+              : 'linear-gradient(to bottom, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.10) 40%, rgba(255,255,255,0.05) 100%)',
+            boxShadow: showGlow
+              ? `0 0 ${isPressed ? 24 : 14}px rgba(255,255,255,${isPressed ? 0.15 : 0.08})`
               : 'none',
-            transition: 'background 0.1s ease, box-shadow 0.1s ease',
+            transition: showGlow && !isPressed
+              ? 'background 0.5s ease, box-shadow 0.5s ease'
+              : 'background 0.05s ease, box-shadow 0.05s ease',
           }}
           onPointerDown={handleComposerPointerDown}
           onPointerUp={handleComposerPointerUp}
