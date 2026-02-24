@@ -119,7 +119,7 @@ function TypingSlogan() {
         style={{
           fontSize: '28px',
           fontWeight: 600,
-          color: 'white',
+          color: '#E8C5A8',
           letterSpacing: '0.02em',
         }}
       >
@@ -130,7 +130,7 @@ function TypingSlogan() {
           display: 'inline-block',
           width: '3px',
           height: '32px',
-          background: 'white',
+          background: '#D4A27F',
           marginLeft: '2px',
           opacity: showCursor ? 1 : 0,
           transition: 'opacity 0.1s',
@@ -148,7 +148,7 @@ function BuddyLogo() {
         width: 32,
         height: 32,
         borderRadius: '50%',
-        background: 'white',
+        background: 'linear-gradient(135deg, #E8C5A8 0%, #D4A27F 40%, #C4845C 100%)',
       }}
       data-testid="buddy-logo"
     />
@@ -268,7 +268,7 @@ export default function LoginPage() {
       <div
         style={{
           minHeight: '100dvh',
-          background: '#000',
+          background: 'var(--bg-sidebar)',
           display: 'flex',
           flexDirection: 'column',
           position: 'relative',
@@ -355,8 +355,8 @@ export default function LoginPage() {
                 width: '100%',
                 height: 48,
                 borderRadius: 9999,
-                background: 'white',
-                color: 'black',
+                background: 'linear-gradient(135deg, #E8C5A8 0%, #D4A27F 40%, #C4845C 100%)',
+                color: '#1E1D1A',
                 fontSize: '15px',
                 fontWeight: 600,
                 border: 'none',
@@ -394,7 +394,7 @@ export default function LoginPage() {
               data-testid="link-to-register"
               {...tapMotionProps}
             >
-              没有账户？<span style={{ color: 'white', textDecoration: 'underline' }}>注册</span>
+              没有账户？<span style={{ color: '#D4A27F', textDecoration: 'underline' }}>注册</span>
             </button>
           )}
           {view === 'register' && (
@@ -411,7 +411,7 @@ export default function LoginPage() {
               data-testid="link-to-login"
               {...tapMotionProps}
             >
-              已有账户？<span style={{ color: 'white', textDecoration: 'underline' }}>登录</span>
+              已有账户？<span style={{ color: '#D4A27F', textDecoration: 'underline' }}>登录</span>
             </button>
           )}
         </div>
@@ -423,7 +423,7 @@ export default function LoginPage() {
     <div
       style={{
         minHeight: '100dvh',
-        background: '#000',
+        background: 'var(--bg-sidebar)',
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
@@ -457,7 +457,7 @@ export default function LoginPage() {
           flexDirection: 'column',
           alignItems: 'center',
           gap: 10,
-          background: 'linear-gradient(to top, #000 60%, transparent 100%)',
+          background: 'linear-gradient(to top, var(--bg-sidebar) 60%, transparent 100%)',
           paddingTop: 40,
         }}
       >
@@ -470,8 +470,8 @@ export default function LoginPage() {
               width: '100%',
               height: 50,
               borderRadius: 9999,
-              background: 'white',
-              color: 'black',
+              background: 'linear-gradient(135deg, #E8C5A8 0%, #D4A27F 40%, #C4845C 100%)',
+              color: '#1E1D1A',
               fontSize: '15px',
               fontWeight: 600,
               border: 'none',
@@ -482,7 +482,7 @@ export default function LoginPage() {
               gap: 10,
             }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="black">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="#1E1D1A">
               <path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
             </svg>
             通过 Apple 继续
