@@ -61,6 +61,7 @@ interface Message {
   followUp?: FollowUpData;
   followUpSubmitted?: boolean;
   isStreaming?: boolean;
+  searchResults?: { title: string; url: string; content: string }[];
 }
 
 interface Conversation {
@@ -1006,6 +1007,7 @@ export default function Agent() {
             model: selectedModel,
             extendedThinking,
             replyStyle: replyStyle !== 'normal' ? replyStyle : undefined,
+            webSearchEnabled,
           }),
           signal: abortController.signal,
         });
@@ -1038,7 +1040,15 @@ export default function Agent() {
             try {
               const event = JSON.parse(jsonStr);
 
-              if (event.type === 'start' && event.conversationId) {
+              if (event.type === 'search_results' && event.results) {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMsgId
+                      ? { ...m, searchResults: event.results }
+                      : m
+                  )
+                );
+              } else if (event.type === 'start' && event.conversationId) {
                 if (!convId) {
                   convId = event.conversationId;
                   const title = text.slice(0, 30) + (text.length > 30 ? '...' : '');
@@ -1130,7 +1140,7 @@ export default function Agent() {
         abortControllerRef.current = null;
       }
     },
-    [activeConvId, activeConvSystemPrompt, saveMessageToDB, navigate, currentUserId, replyStyle]
+    [activeConvId, activeConvSystemPrompt, saveMessageToDB, navigate, currentUserId, replyStyle, webSearchEnabled]
   );
 
   const rebuildHistoryFromMessages = useCallback((msgs: Message[]) => {

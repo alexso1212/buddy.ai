@@ -22,6 +22,7 @@ import {
   insertUserMemorySchema,
 } from "@shared/schema";
 import { judgeTaskAssignment } from "./services/ai/verdictService";
+import { searchWeb } from "./services/ai/webSearch";
 
 function getActivityUserId(body: any, fallback: number = 1): number {
   return body?.userId ?? body?.creatorId ?? fallback;
@@ -1817,7 +1818,7 @@ export async function registerRoutes(server: Server, app: Express) {
   // ===================== AI Chat Stream =====================
   app.post("/api/ai/chat/stream", async (req, res) => {
     try {
-      const { message, conversationHistory, conversationId, currentUserId, systemPrompt, model, extendedThinking, replyStyle } = req.body;
+      const { message, conversationHistory, conversationId, currentUserId, systemPrompt, model, extendedThinking, replyStyle, webSearchEnabled } = req.body;
       if (!message || typeof message !== 'string') {
         return res.status(400).json({ error: 'message is required' });
       }
@@ -1873,6 +1874,32 @@ export async function registerRoutes(server: Server, app: Express) {
           casual: '请用轻松友好的语气对话，像朋友之间聊天一样。',
         };
         effectiveSystemPrompt = (effectiveSystemPrompt ? effectiveSystemPrompt + '\n' : '') + (styleMap[replyStyle] || '');
+      }
+
+      if (webSearchEnabled) {
+        try {
+          const searchResults = await searchWeb(message);
+          if (searchResults.results.length > 0 || searchResults.answer) {
+            let searchContext = `\n\n## 网页搜索结果\n用户开启了网页搜索，以下是与用户问题相关的网页搜索结果，请参考这些信息回答：\n`;
+            if (searchResults.answer) {
+              searchContext += `\n搜索摘要: ${searchResults.answer}\n`;
+            }
+            if (searchResults.results.length > 0) {
+              searchContext += `\n来源:\n`;
+              searchResults.results.forEach((r, i) => {
+                searchContext += `${i + 1}. ${r.title} - ${r.url}\n   ${r.content}\n`;
+              });
+            }
+            searchContext += `\n请在回答中适当引用这些来源，并注明信息来自网络搜索。`;
+            effectiveSystemPrompt = (effectiveSystemPrompt || '') + searchContext;
+
+            if (searchResults.results.length > 0) {
+              res.write(`data: ${JSON.stringify({ type: 'search_results', results: searchResults.results })}\n\n`);
+            }
+          }
+        } catch (searchErr) {
+          console.error('Web search failed:', searchErr);
+        }
       }
 
       const generator = aiChatStream(

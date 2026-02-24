@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { Check, Copy, Share2, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X } from "lucide-react";
+import { Check, Copy, Share2, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import AiConfirmCard from "./AiConfirmCard";
 import AiGuidedCreation from "./AiGuidedCreation";
 import AIMessageContent from "./AIMessageContent";
@@ -55,6 +55,7 @@ interface Message {
   followUp?: FollowUpData;
   followUpSubmitted?: boolean;
   isStreaming?: boolean;
+  searchResults?: { title: string; url: string; content: string }[];
 }
 
 interface AiMessageBubbleProps {
@@ -226,6 +227,75 @@ function MultiConfirmGroup({
           />
         </div>
       ))}
+    </div>
+  );
+}
+
+function SearchSourcesBar({ results }: { results: { title: string; url: string; content: string }[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!results || results.length === 0) return null;
+
+  const getFavicon = (url: string) => {
+    try {
+      const domain = new URL(url).hostname;
+      return `https://www.google.com/s2/favicons?domain=${domain}&sz=16`;
+    } catch {
+      return null;
+    }
+  };
+
+  return (
+    <div className="mb-3" data-testid="search-sources-bar">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-opacity opacity-90 hover:opacity-100"
+        style={{ color: 'var(--text-secondary)' }}
+        data-testid="toggle-sources"
+      >
+        <Globe className="w-3.5 h-3.5" strokeWidth={1.5} style={{ color: 'var(--brand)' }} />
+        <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>Sources</span>
+        <span style={{ color: 'var(--text-secondary)' }}>
+          {results.slice(0, 3).map(r => r.title.slice(0, 20) + (r.title.length > 20 ? '...' : '')).join(' \u00B7 ')}
+          {results.length > 3 && ` +${results.length - 3}`}
+        </span>
+        {expanded ? <ChevronUp className="w-3 h-3 ml-auto" /> : <ChevronDown className="w-3 h-3 ml-auto" />}
+      </button>
+
+      {expanded && (
+        <div
+          className="mt-1.5 rounded-lg overflow-hidden"
+          style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+        >
+          {results.map((r, i) => {
+            const favicon = getFavicon(r.url);
+            return (
+              <a
+                key={i}
+                href={r.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-start gap-2.5 px-3 py-2.5 transition-opacity opacity-90 hover:opacity-100"
+                style={{ textDecoration: 'none', borderBottom: i < results.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}
+                data-testid={`source-link-${i}`}
+              >
+                {favicon && (
+                  <img src={favicon} alt="" className="w-4 h-4 mt-0.5 rounded-sm shrink-0" style={{ opacity: 0.8 }} />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{r.title}</span>
+                    <ExternalLink className="w-3 h-3 shrink-0" style={{ color: 'var(--text-secondary)', opacity: 0.5 }} />
+                  </div>
+                  <div className="text-xs mt-0.5 line-clamp-2" style={{ color: 'var(--text-secondary)', opacity: 0.7, lineHeight: 1.4 }}>
+                    {r.content.slice(0, 120)}{r.content.length > 120 ? '...' : ''}
+                  </div>
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -441,6 +511,9 @@ export default function AiMessageBubble({
         <div className="mb-2">
           <BrandLogo />
         </div>
+        {message.searchResults && message.searchResults.length > 0 && (
+          <SearchSourcesBar results={message.searchResults} />
+        )}
         <div className={message.isStreaming ? 'streaming-cursor' : ''}>
           <AIMessageContent content={message.content} />
         </div>
