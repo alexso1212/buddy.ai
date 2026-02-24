@@ -534,7 +534,7 @@ function Sidebar({
           position: 'fixed',
           inset: 0,
           background: 'rgba(0,0,0,0.4)',
-          zIndex: 40,
+          zIndex: 45,
           opacity: isOpen ? 1 : 0,
           pointerEvents: isOpen ? 'auto' : 'none',
           transition: 'opacity 300ms',
@@ -1583,6 +1583,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [location] = useLocation();
   const isAgentPage = location === '/agent' || location.startsWith('/agent?');
   const isGraphPage = location === '/graph' || location.startsWith('/graph?');
@@ -1636,11 +1637,13 @@ function App() {
       
       sidebar.style.transition = 'none';
       overlay.style.transition = 'none';
-      
+      const content = contentRef.current;
+      if (content) content.style.transition = 'none';
       if (drag.type === 'open' && deltaX > 0) {
         const actualWidth = Math.min(sidebar.offsetWidth, sidebarWidth);
         const progress = Math.min(deltaX / actualWidth, 1);
         sidebar.style.transform = `translateX(${-actualWidth + deltaX}px)`;
+        if (content) content.style.transform = `translateX(${Math.min(deltaX, actualWidth)}px)`;
         overlay.style.opacity = String(progress * 0.4);
         overlay.style.pointerEvents = 'auto';
         overlay.style.display = 'block';
@@ -1649,6 +1652,7 @@ function App() {
       if (drag.type === 'close' && deltaX < 0) {
         const actualWidth = Math.min(sidebar.offsetWidth, sidebarWidth);
         sidebar.style.transform = `translateX(${deltaX}px)`;
+        if (content) content.style.transform = `translateX(${Math.max(actualWidth + deltaX, 0)}px)`;
         const progress = 1 + deltaX / actualWidth;
         overlay.style.opacity = String(Math.max(0, progress * 0.4));
       }
@@ -1668,16 +1672,21 @@ function App() {
       const velocity = Math.abs(deltaX) / elapsed;
       const actualWidth = Math.min(sidebar.offsetWidth, sidebarWidth);
       
-      sidebar.style.transition = 'transform 350ms cubic-bezier(0.32, 0.72, 0, 1)';
+      const content = contentRef.current;
+      const ease = 'transform 350ms cubic-bezier(0.32, 0.72, 0, 1)';
+      sidebar.style.transition = ease;
       overlay.style.transition = 'opacity 350ms ease';
+      if (content) content.style.transition = ease;
       
       if (drag.type === 'open') {
         if (deltaX > actualWidth * 0.3 || velocity > 0.5) {
           sidebar.style.transform = 'translateX(0)';
+          if (content) content.style.transform = `translateX(${actualWidth}px)`;
           overlay.style.opacity = '0.4';
           setSidebarOpen(true);
         } else {
           sidebar.style.transform = 'translateX(-100%)';
+          if (content) content.style.transform = 'translateX(0)';
           overlay.style.opacity = '0';
           setTimeout(() => { overlay.style.pointerEvents = 'none'; }, 350);
           setSidebarOpen(false);
@@ -1687,10 +1696,12 @@ function App() {
       if (drag.type === 'close') {
         if (deltaX < -actualWidth * 0.3 || velocity > 0.5) {
           sidebar.style.transform = 'translateX(-100%)';
+          if (content) content.style.transform = 'translateX(0)';
           overlay.style.opacity = '0';
           setSidebarOpen(false);
         } else {
           sidebar.style.transform = 'translateX(0)';
+          if (content) content.style.transform = `translateX(${actualWidth}px)`;
           overlay.style.opacity = '0.4';
         }
       }
@@ -1713,6 +1724,20 @@ function App() {
     return () => window.removeEventListener('open-sidebar', handleOpenSidebar);
   }, []);
 
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const isMobile = window.innerWidth < 768;
+    if (!isMobile) {
+      content.style.transform = '';
+      return;
+    }
+    const sidebar = sidebarRef.current;
+    const w = sidebar ? Math.min(sidebar.offsetWidth, 340) : Math.min(window.innerWidth * 0.82, 340);
+    content.style.transition = 'transform 350ms cubic-bezier(0.32, 0.72, 0, 1)';
+    content.style.transform = sidebarOpen ? `translateX(${w}px)` : 'translateX(0)';
+  }, [sidebarOpen]);
+
   return (
     <AuthProvider>
     <ThemeProvider>
@@ -1720,7 +1745,7 @@ function App() {
       <div className="flex bg-[var(--bg-primary)]" style={{ height: '100dvh' }}>
         {!isLoginPage && <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} sidebarRef={sidebarRef} overlayRef={overlayRef} />}
 
-        <div className="flex-1 flex flex-col overflow-hidden relative">
+        <div ref={contentRef} className="flex-1 flex flex-col overflow-hidden relative md:!transform-none">
           {!isGraphPage && !isLoginPage && (
           <>
             <div className="md:hidden" style={{
