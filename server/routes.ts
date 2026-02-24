@@ -1940,7 +1940,20 @@ export async function registerRoutes(server: Server, app: Express) {
               console.error('Failed to record token usage:', tokenErr);
             }
           }
-          res.write(`data: ${JSON.stringify({ type: 'done', fullText })}\n\n`);
+          let displayText = fullText;
+          const actionMatch = fullText.match(/<<<ACTIONS>>>\s*([\s\S]*?)\s*<<<END_ACTIONS>>>\s*$/);
+          if (actionMatch) {
+            displayText = fullText.slice(0, fullText.indexOf('<<<ACTIONS>>>')).trim();
+            try {
+              const actionData = JSON.parse(actionMatch[1].trim());
+              if (actionData && (actionData.action || actionData.actions)) {
+                res.write(`data: ${JSON.stringify({ type: 'action', ...actionData })}\n\n`);
+              }
+            } catch (parseErr) {
+              console.error('Failed to parse action block:', parseErr);
+            }
+          }
+          res.write(`data: ${JSON.stringify({ type: 'done', fullText: displayText })}\n\n`);
         } else if (chunk.type === 'error') {
           res.write(`data: ${JSON.stringify({ type: 'error', content: chunk.content })}\n\n`);
         }

@@ -518,7 +518,37 @@ ${contextBlock}
 - 基于上面的团队、项目、任务数据来回答问题，不要编造不存在的数据
 - 当用户问"你是什么模型"时，如实告知你运行在 ${modelName} 上
 - 回答要简洁专业，必要时引用具体的任务、项目或人员信息
-- 你可以帮助分析任务进度、工作负荷、项目风险等`;
+- 你可以帮助分析任务进度、工作负荷、项目风险等
+
+## 操作能力
+你具备在系统中创建任务、更新任务、创建项目、添加评论的能力。当用户要求你执行这些操作时（比如"帮我创建任务"、"把这些写入系统"、"从会议纪要提取任务"），你应该：
+
+1. 先用自然语言描述你要做什么
+2. 然后在回复末尾输出一个操作块，格式如下：
+
+<<<ACTIONS>>>
+{"type":"confirm","action":{"actionType":"create_task","data":{"title":"任务标题","projectId":1},"summary":"创建任务「任务标题」","confidence":0.9}}
+<<<END_ACTIONS>>>
+
+批量操作用 multi_confirm：
+<<<ACTIONS>>>
+{"type":"multi_confirm","actions":[{"actionType":"create_task","data":{"title":"任务1","projectId":1},"summary":"创建任务「任务1」","confidence":0.9},{"actionType":"create_task","data":{"title":"任务2","projectId":1},"summary":"创建任务「任务2」","confidence":0.8}]}
+<<<END_ACTIONS>>>
+
+可用的 actionType：
+- create_task: 需要 title(必填), projectId(必填), 可选 description, type(task/subtask/milestone/bug/request), status(todo), priority(critical/high/medium/low), assigneeId, dueDate, weight(1-10), parentTaskId, tags, warnings(数组)
+- update_task: 需要 taskId(必填), 可选 title, status, priority, assigneeId, dueDate, weight, progress, description
+- create_project: 需要 name(必填), 可选 description, deptId, startDate, targetDate
+- add_comment: 需要 taskId(必填), content(必填)
+
+重要规则：
+- projectId 必须是上面项目列表中存在的项目ID，不要编造
+- assigneeId 必须是上面团队成员中存在的用户ID
+- 如果用户没有指定项目，你需要先问用户要放到哪个项目
+- 从会议纪要等文档提取任务时，对信息不确定的字段添加 warnings 数组（如 "负责人未明确，已暂分给当前用户"）
+- confidence: 信息完整≥0.9，有推测0.7-0.8，严重缺失0.5-0.6
+- 操作块必须放在回复的最末尾，<<<ACTIONS>>> 和 <<<END_ACTIONS>>> 各占一行
+- 绝对不要对查询类请求（如"有什么任务"）输出操作块`;
   } else {
     prompt = SYSTEM_PROMPT
       .replace('{{currentUserId}}', String(context.currentUserId))

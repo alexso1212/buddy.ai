@@ -1027,6 +1027,7 @@ export default function Agent() {
         const decoder = new TextDecoder();
         let buffer = '';
         let fullText = '';
+        let pendingAction: any = null;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -1070,23 +1071,58 @@ export default function Agent() {
                       : m
                   )
                 );
+              } else if (event.type === 'action') {
+                pendingAction = event;
               } else if (event.type === 'done') {
                 const finalText = event.fullText || fullText;
                 conversationHistory.current.push({ role: "assistant", content: finalText });
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMsgId
-                      ? { ...m, content: finalText, isStreaming: false }
-                      : m
-                  )
-                );
-                if (convId) {
-                  saveMessageToDB(convId, {
-                    id: assistantMsgId,
-                    role: "assistant",
-                    content: finalText,
-                    type: "text",
-                  });
+
+                if (pendingAction) {
+                  const msgType = pendingAction.actions ? "multi_confirm" : "confirm";
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? {
+                            ...m,
+                            content: finalText,
+                            isStreaming: false,
+                            type: msgType,
+                            action: pendingAction.action || undefined,
+                            actions: pendingAction.actions || undefined,
+                            confirmed: pendingAction.action ? null : undefined,
+                            actionConfirmed: pendingAction.actions ? pendingAction.actions.map(() => null) : undefined,
+                          }
+                        : m
+                    )
+                  );
+                  if (convId) {
+                    saveMessageToDB(convId, {
+                      id: assistantMsgId,
+                      role: "assistant",
+                      content: finalText,
+                      type: msgType,
+                      action: pendingAction.action || undefined,
+                      actions: pendingAction.actions || undefined,
+                      confirmed: pendingAction.action ? null : undefined,
+                      actionConfirmed: pendingAction.actions ? pendingAction.actions.map(() => null) : undefined,
+                    });
+                  }
+                } else {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? { ...m, content: finalText, isStreaming: false }
+                        : m
+                    )
+                  );
+                  if (convId) {
+                    saveMessageToDB(convId, {
+                      id: assistantMsgId,
+                      role: "assistant",
+                      content: finalText,
+                      type: "text",
+                    });
+                  }
                 }
               } else if (event.type === 'error') {
                 throw new Error(event.content || 'Stream error');
