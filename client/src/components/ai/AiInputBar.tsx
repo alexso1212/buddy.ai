@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { ArrowUp, Plus, Square, X, Globe, Palette, FileText, Image, Camera } from "lucide-react";
+import { ArrowUp, Plus, Square, X, Globe, Palette, FileText, Image, Camera, Atom, FolderOpen, LayoutGrid, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface Attachment {
@@ -46,6 +46,7 @@ function AddToChatSheet({
   onAttach: (attachments: Attachment[]) => void;
 }) {
   const [showStylePicker, setShowStylePicker] = useState(false);
+  const [researchEnabled, setResearchEnabled] = useState(false);
   const cameraRef = useRef<HTMLInputElement>(null);
   const photosRef = useRef<HTMLInputElement>(null);
   const filesRef = useRef<HTMLInputElement>(null);
@@ -216,6 +217,30 @@ function AddToChatSheet({
               <div className="px-5 space-y-1">
                 <div
                   className="flex items-center justify-between px-4 py-3.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                  onClick={() => setResearchEnabled(!researchEnabled)}
+                  data-testid="toggle-research"
+                >
+                  <div className="flex items-center gap-3">
+                    <Atom className="w-5 h-5 text-[var(--text-secondary)]" strokeWidth={1.5} />
+                    <span className="text-sm text-[var(--text-primary)]">深度研究</span>
+                  </div>
+                  <div
+                    className="relative w-11 h-6 rounded-full transition-colors duration-200"
+                    style={{
+                      background: researchEnabled ? '#3B82F6' : 'rgba(255,255,255,0.15)',
+                    }}
+                  >
+                    <div
+                      className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
+                      style={{
+                        transform: researchEnabled ? 'translateX(22px)' : 'translateX(2px)',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div
+                  className="flex items-center justify-between px-4 py-3.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
                   onClick={() => onWebSearchToggle(!webSearchEnabled)}
                   data-testid="toggle-web-search"
                 >
@@ -226,7 +251,7 @@ function AddToChatSheet({
                   <div
                     className="relative w-11 h-6 rounded-full transition-colors duration-200"
                     style={{
-                      background: webSearchEnabled ? 'var(--brand)' : 'rgba(255,255,255,0.15)',
+                      background: webSearchEnabled ? '#3B82F6' : 'rgba(255,255,255,0.15)',
                     }}
                   >
                     <div
@@ -235,6 +260,20 @@ function AddToChatSheet({
                         transform: webSearchEnabled ? 'translateX(22px)' : 'translateX(2px)',
                       }}
                     />
+                  </div>
+                </div>
+
+                <div
+                  className="flex items-center justify-between px-4 py-3.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                  data-testid="btn-add-to-project"
+                >
+                  <div className="flex items-center gap-3">
+                    <FolderOpen className="w-5 h-5 text-[var(--text-secondary)]" strokeWidth={1.5} />
+                    <span className="text-sm text-[var(--text-primary)]">添加到项目</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm text-[var(--text-secondary)] max-w-[120px] truncate">未选择</span>
+                    <ChevronRight className="w-4 h-4 text-[var(--text-secondary)]" strokeWidth={2} />
                   </div>
                 </div>
 
@@ -249,8 +288,19 @@ function AddToChatSheet({
                   </div>
                   <div className="flex items-center gap-1">
                     <span className="text-sm text-[var(--text-secondary)]">{currentStyleLabel}</span>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--text-secondary)]"><polyline points="9 18 15 12 9 6"/></svg>
+                    <ChevronRight className="w-4 h-4 text-[var(--text-secondary)]" strokeWidth={2} />
                   </div>
+                </div>
+
+                <div
+                  className="flex items-center justify-between px-4 py-3.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                  data-testid="btn-manage-connectors"
+                >
+                  <div className="flex items-center gap-3">
+                    <LayoutGrid className="w-5 h-5 text-[var(--text-secondary)]" strokeWidth={1.5} />
+                    <span className="text-sm text-[var(--text-primary)]">管理连接器</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-[var(--text-secondary)]" strokeWidth={2} />
                 </div>
               </div>
             </>
