@@ -5,6 +5,7 @@ import { chat as aiChat, generateProjectTasks } from "./services/ai/index";
 import { executeAction } from "./services/ai/actionExecutor";
 import bcrypt from 'bcryptjs';
 import { authMiddleware, generateToken } from './middleware/auth';
+import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import {
   insertOrganizationSchema,
   insertDepartmentSchema,
@@ -25,6 +26,57 @@ function getActivityUserId(body: any, fallback: number = 1): number {
 }
 
 export async function registerRoutes(server: Server, app: Express) {
+  await setupAuth(app);
+  registerAuthRoutes(app);
+
+  app.get("/api/auth/oidc/complete", async (req: any, res) => {
+    try {
+      if (!req.user || !req.user.claims) {
+        return res.redirect('/login');
+      }
+
+      const claims = req.user.claims;
+      const sub = claims.sub;
+      const email = claims.email;
+      const firstName = claims.first_name || '';
+      const lastName = claims.last_name || '';
+      const displayName = [firstName, lastName].filter(Boolean).join(' ') || email || 'User';
+      const avatarUrl = claims.profile_image_url || null;
+
+      let user = await storage.getUserByProvider('oidc', sub);
+
+      if (!user && email) {
+        user = await storage.getUserByEmail(email);
+        if (user) {
+          await storage.updateUser(user.id, { authProvider: 'oidc', authProviderId: sub, avatarUrl: avatarUrl || user.avatarUrl } as any);
+        }
+      }
+
+      if (!user) {
+        const org = await storage.createOrganization({ name: displayName + '的团队' });
+        user = await storage.createUser({
+          orgId: org.id,
+          email: email || `oidc_${sub}@placeholder.local`,
+          displayName,
+          avatarUrl,
+          role: 'owner',
+          isActive: true,
+          authProvider: 'oidc',
+          authProviderId: sub,
+        } as any);
+      }
+
+      await storage.updateUser(user.id, { lastLoginAt: new Date(), avatarUrl: avatarUrl || user.avatarUrl } as any);
+
+      const token = generateToken({ userId: user.id, orgId: user.orgId, role: user.role });
+
+      return res.redirect(`/login?token=${encodeURIComponent(token)}`);
+    } catch (e: any) {
+      console.error('OIDC complete error:', e);
+      return res.redirect('/login?error=auth_failed');
+    }
+  });
+
   async function generateTeamNotifications(
     triggeredByUserId: number,
     entityType: 'task' | 'project',

@@ -59,6 +59,8 @@ export const users = pgTable('users', {
   role: varchar('role', { length: 50 }).notNull().default('member'),
   isActive: boolean('is_active').default(true).notNull(),
   lastLoginAt: timestamp('last_login_at'),
+  authProvider: varchar('auth_provider', { length: 50 }),
+  authProviderId: varchar('auth_provider_id', { length: 255 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -584,3 +586,5 @@ export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
 });
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type ChatMessage = typeof chatMessages.$inferSelect;
+
+export * from "./models/auth";

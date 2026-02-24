@@ -115,6 +115,13 @@ export class DatabaseStorage {
     return result;
   }
 
+  async getUserByProvider(provider: string, providerId: string): Promise<User | undefined> {
+    const [result] = await db.select().from(users).where(
+      and(eq(users.authProvider, provider), eq(users.authProviderId, providerId))
+    );
+    return result;
+  }
+
   async getProjects(): Promise<Project[]> {
     return db.select().from(projects);
   }
