@@ -46,7 +46,7 @@ html, body {
 
   /* ===== Dark Mode 自定义变量（默认模式） ===== */
   --bg-primary: #262624;
-  --bg-sidebar: #262624;
+  --bg-sidebar: #1A1918;
   --bg-composer: #2F2F2D;
   --bg-bubble: #323230;
   --bg-code: #1A1A18;
@@ -141,7 +141,7 @@ html, body {
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
   --bg-primary: #262624;
-  --bg-sidebar: #262624;
+  --bg-sidebar: #1A1918;
   --bg-composer: #2F2F2D;
   --bg-bubble: #323230;
   --bg-code: #1A1A18;
