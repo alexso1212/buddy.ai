@@ -152,6 +152,138 @@ function deptClusterForce(nodes: SimNode[], alpha: number) {
   }
 }
 
+interface OrbitState {
+  angle: number;
+}
+
+interface OrbitTopology {
+  parentToChildren: Map<number, number[]>;
+  parentMap: Map<number, number>;
+}
+
+function buildOrbitTopology(simLinks: SimLink[]): OrbitTopology {
+  const parentToChildren = new Map<number, number[]>();
+  const childSet = new Set<number>();
+
+  for (const link of simLinks) {
+    const srcId = typeof link.source === 'object' ? link.source.id : link.source;
+    const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+    if (!parentToChildren.has(srcId)) parentToChildren.set(srcId, []);
+    parentToChildren.get(srcId)!.push(tgtId);
+    childSet.add(tgtId);
+  }
+
+  const roots = new Set<number>();
+  for (const srcId of parentToChildren.keys()) {
+    if (!childSet.has(srcId)) roots.add(srcId);
+  }
+
+  const depthMap = new Map<number, number>();
+  const parentMap = new Map<number, number>();
+
+  function assignDepth(nodeId: number, depth: number) {
+    if (depthMap.has(nodeId)) return;
+    depthMap.set(nodeId, depth);
+    const children = parentToChildren.get(nodeId);
+    if (children) {
+      for (const childId of children) {
+        parentMap.set(childId, nodeId);
+        assignDepth(childId, depth + 1);
+      }
+    }
+  }
+
+  for (const rootId of roots) {
+    assignDepth(rootId, 0);
+  }
+  for (const link of simLinks) {
+    const srcId = typeof link.source === 'object' ? link.source.id : link.source;
+    const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+    if (!depthMap.has(srcId)) depthMap.set(srcId, 0);
+    if (!depthMap.has(tgtId)) {
+      parentMap.set(tgtId, srcId);
+      depthMap.set(tgtId, (depthMap.get(srcId) || 0) + 1);
+    }
+  }
+
+  return { parentToChildren, parentMap };
+}
+
+const TWO_PI = Math.PI * 2;
+
+function orbitForce(
+  simNodes: SimNode[],
+  topology: OrbitTopology,
+  orbitStates: Map<number, OrbitState>,
+  draggedNodeId: number | null,
+  alpha: number,
+  nodeMap: Map<number, SimNode>
+) {
+  if (alpha > 0.08) return;
+
+  const { parentMap, parentToChildren } = topology;
+
+  const ORBIT_RADIUS_BASE = 28;
+  const ORBIT_RADIUS_STEP = 8;
+  const ANGULAR_SPEED = 0.005;
+
+  const dragSubtree = new Set<number>();
+  if (draggedNodeId !== null) {
+    dragSubtree.add(draggedNodeId);
+    const queue = [draggedNodeId];
+    while (queue.length > 0) {
+      const nid = queue.pop()!;
+      const children = parentToChildren.get(nid);
+      if (children) {
+        for (const cid of children) {
+          if (!dragSubtree.has(cid)) {
+            dragSubtree.add(cid);
+            queue.push(cid);
+          }
+        }
+      }
+    }
+  }
+
+  for (const [parentId, children] of parentToChildren) {
+    if (dragSubtree.has(parentId)) continue;
+    const parent = nodeMap.get(parentId);
+    if (!parent || parent.x == null || parent.y == null) continue;
+
+    const validChildren = children.filter(cid => {
+      if (dragSubtree.has(cid)) return false;
+      const child = nodeMap.get(cid);
+      return child && child.x != null && child.fx == null;
+    });
+    if (validChildren.length === 0) continue;
+
+    const depth = (parentMap.has(parentId) ? 1 : 0);
+    const orbitR = ORBIT_RADIUS_BASE + depth * ORBIT_RADIUS_STEP;
+    const angleStep = TWO_PI / validChildren.length;
+
+    for (let i = 0; i < validChildren.length; i++) {
+      const childId = validChildren[i];
+      const child = nodeMap.get(childId)!;
+
+      if (!orbitStates.has(childId)) {
+        const dx = (child.x || 0) - (parent.x || 0);
+        const dy = (child.y || 0) - (parent.y || 0);
+        orbitStates.set(childId, { angle: Math.atan2(dy, dx) });
+      }
+      const state = orbitStates.get(childId)!;
+      state.angle = (state.angle + ANGULAR_SPEED) % TWO_PI;
+
+      const baseAngle = state.angle + i * angleStep;
+      const targetX = (parent.x || 0) + Math.cos(baseAngle) * orbitR;
+      const targetY = (parent.y || 0) + Math.sin(baseAngle) * orbitR;
+
+      const strength = 0.12;
+      child.vx = (child.vx || 0) + (targetX - (child.x || 0)) * strength;
+      child.vy = (child.vy || 0) + (targetY - (child.y || 0)) * strength;
+    }
+  }
+}
+
 function truncate(str: string, max: number) {
   if (str.length <= max) return str;
   return str.slice(0, max) + "\u2026";
@@ -167,7 +299,7 @@ export interface GalaxyBoundary {
   nodeCount: number;
 }
 
-function computeGalaxyBoundaries(nodes: SimNode[], departments: DeptInfo[], padding: number = 40): GalaxyBoundary[] {
+function computeGalaxyBoundaries(nodes: SimNode[], departments: DeptInfo[], padding: number = 30): GalaxyBoundary[] {
   const deptNodes: Record<number, SimNode[]> = {};
   for (const n of nodes) {
     const key = n.deptId ?? -1;
@@ -220,18 +352,23 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
   const selectedNodeIdRef = useRef<number | null>(null);
   const galaxyDataRef = useRef<GalaxyBoundary[]>([]);
   const collabHealthRef = useRef(collabHealth);
+  const orbitStatesRef = useRef<Map<number, OrbitState>>(new Map());
+  const orbitTopologyRef = useRef<OrbitTopology | null>(null);
+  const nodeMapRef = useRef<Map<number, SimNode>>(new Map());
+  const draggedNodeIdRef = useRef<number | null>(null);
+  const orbitIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => { collabHealthRef.current = collabHealth; }, [collabHealth]);
 
   const getRadius = useCallback((node: GraphNode) => {
     const priorityBase: Record<string, number> = {
-      critical: 14,
-      high: 10,
-      medium: 7,
-      low: 5,
+      critical: 4,
+      high: 3.5,
+      medium: 3,
+      low: 2.5,
     };
-    let r = (priorityBase[node.priority] || 7) + node.weight * 1.5;
-    if (node.type === 'milestone') r *= 1.3;
+    let r = (priorityBase[node.priority] || 3) + node.weight * 0.3;
+    if (node.type === 'milestone') r *= 1.2;
     return r;
   }, []);
 
@@ -253,6 +390,7 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
     const height = container.clientHeight;
 
     d3.select(svgRef.current).selectAll("*").remove();
+    orbitStatesRef.current.clear();
 
     const svg = d3.select(svgRef.current)
       .attr("width", width)
@@ -275,22 +413,34 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
     const nodeGroup = g.append("g").attr("class", "nodes");
     const labelGroup = g.append("g").attr("class", "labels");
 
+    if (orbitIntervalRef.current) {
+      clearInterval(orbitIntervalRef.current);
+      orbitIntervalRef.current = null;
+    }
+
     const simNodes: SimNode[] = nodes.map((n) => ({ ...n }));
     const simLinks: SimLink[] = links.map((l) => ({ ...l }));
     simLinksRef.current = simLinks;
+
+    const nodeMap = new Map<number, SimNode>();
+    for (const n of simNodes) nodeMap.set(n.id, n);
+    nodeMapRef.current = nodeMap;
+
+    const topology = buildOrbitTopology(simLinks);
+    orbitTopologyRef.current = topology;
 
     const simulation = d3.forceSimulation<SimNode>(simNodes)
       .force(
         "link",
         d3.forceLink<SimNode, SimLink>(simLinks)
           .id((d) => d.id)
-          .distance(100)
+          .distance(35)
       )
-      .force("charge", d3.forceManyBody().strength(-300))
+      .force("charge", d3.forceManyBody().strength(-60))
       .force("center", d3.forceCenter(width / 2, height / 2))
       .force(
         "collision",
-        d3.forceCollide<SimNode>().radius((d) => getRadius(d) + 5)
+        d3.forceCollide<SimNode>().radius((d) => getRadius(d) + 2)
       )
       .force("cluster", (alpha: number) => deptClusterForce(simNodes, alpha));
 
@@ -308,6 +458,7 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
             if (!event.active) simulation.alphaTarget(0.3).restart();
             d.fx = d.x;
             d.fy = d.y;
+            draggedNodeIdRef.current = d.id;
           })
           .on("drag", (event, d) => {
             d.fx = event.x;
@@ -317,6 +468,7 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
             if (!event.active) simulation.alphaTarget(0);
             d.fx = null;
             d.fy = null;
+            draggedNodeIdRef.current = null;
           })
       );
 
@@ -329,7 +481,7 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
         .attr("r", r)
         .attr("fill", fillColor)
         .attr("stroke", d.isOverdue ? "#ef4444" : "none")
-        .attr("stroke-width", d.isOverdue ? 3 : 0);
+        .attr("stroke-width", d.isOverdue ? 1.5 : 0);
 
       if (d.status === 'blocked') {
         el.classed("blocked-breathing", true);
@@ -342,10 +494,10 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
       .enter()
       .append("text")
       .text((d) => truncate(d.title, 12))
-      .attr("font-size", 10)
+      .attr("font-size", 8)
       .attr("text-anchor", "middle")
-      .attr("dy", (d) => getRadius(d) + 14)
-      .attr("fill", "rgba(255,255,255,0.7)")
+      .attr("dy", (d) => getRadius(d) + 10)
+      .attr("fill", "rgba(255,255,255,0.6)")
       .attr("pointer-events", "none")
       .attr("visibility", "hidden");
 
@@ -354,7 +506,7 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
       const hovId = hoveredNodeIdRef.current;
       const selId = selectedNodeIdRef.current;
       labelElements.each(function (d) {
-        const show = k > 1.8 || d.id === hovId || d.id === selId;
+        const show = k > 2.0 || d.id === hovId || d.id === selId;
         d3.select(this).attr("visibility", show ? "visible" : "hidden");
       });
     }
@@ -475,7 +627,7 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
       });
       d3.select(this).attr("transform", function () {
         const d = d3.select<SVGGElement, SimNode>(this as SVGGElement).datum();
-        return `translate(${d.x},${d.y}) scale(1.3)`;
+        return `translate(${d.x},${d.y}) scale(1.5)`;
       });
 
       updateLabelVisibility();
@@ -508,7 +660,7 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
     });
 
     const zoom = d3.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.1, 4])
+      .scaleExtent([0.1, 6])
       .on("zoom", (event) => {
         g.attr("transform", event.transform);
         zoomTransformRef.current = event.transform;
@@ -519,15 +671,33 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
 
     let tickCount = 0;
     simulation.on("tick", () => {
+      tickCount++;
+
+      orbitForce(simNodes, topology, orbitStatesRef.current, draggedNodeIdRef.current, simulation.alpha(), nodeMap);
+
       nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
       labelElements
         .attr("x", (d) => d.x || 0)
         .attr("y", (d) => (d.y || 0));
 
-      tickCount++;
       if (tickCount % 5 === 0) {
         updateGalaxyPositions();
       }
+    });
+
+    simulation.on("end", () => {
+      const interval = setInterval(() => {
+        tickCount++;
+        orbitForce(simNodes, topology, orbitStatesRef.current, draggedNodeIdRef.current, 0.01, nodeMap);
+        nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
+        labelElements
+          .attr("x", (d) => d.x || 0)
+          .attr("y", (d) => (d.y || 0));
+        if (tickCount % 5 === 0) {
+          updateGalaxyPositions();
+        }
+      }, 1000 / 30);
+      orbitIntervalRef.current = interval;
     });
 
     updateLabelVisibility();
@@ -543,6 +713,10 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
     resizeObserver.observe(container);
 
     return () => {
+      if (orbitIntervalRef.current) {
+        clearInterval(orbitIntervalRef.current);
+        orbitIntervalRef.current = null;
+      }
       simulation.stop();
       resizeObserver.disconnect();
     };
