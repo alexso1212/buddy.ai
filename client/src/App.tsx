@@ -1759,6 +1759,10 @@ function App() {
     if (sidebarOpen) {
       document.body.style.overflow = 'hidden';
       document.documentElement.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.width = '100%';
+      document.body.style.top = '0';
+      content.style.overflow = 'hidden';
       if (mainEl) {
         (mainEl as HTMLElement).style.overflow = 'hidden';
         (mainEl as HTMLElement).style.touchAction = 'none';
@@ -1766,15 +1770,37 @@ function App() {
     } else {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+      document.body.style.top = '';
+      content.style.overflow = '';
       if (mainEl) {
         (mainEl as HTMLElement).style.overflow = '';
         (mainEl as HTMLElement).style.touchAction = '';
       }
     }
 
+    const preventScroll = (e: TouchEvent) => {
+      if (sidebarOpen) {
+        const target = e.target as HTMLElement;
+        const sidebarEl = sidebarRef.current;
+        if (sidebarEl && sidebarEl.contains(target)) {
+          return;
+        }
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('touchmove', preventScroll, { passive: false });
+
     return () => {
+      document.removeEventListener('touchmove', preventScroll);
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+      document.body.style.top = '';
+      content.style.overflow = '';
       if (mainEl) {
         (mainEl as HTMLElement).style.overflow = '';
         (mainEl as HTMLElement).style.touchAction = '';
