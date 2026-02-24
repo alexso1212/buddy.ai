@@ -243,6 +243,20 @@ export const tokenUsage = pgTable('token_usage', {
 });
 
 // ============================================================
+// 15. user_memories（用户记忆）
+// ============================================================
+export const userMemories = pgTable('user_memories', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  orgId: integer('org_id').references(() => organizations.id).notNull(),
+  category: varchar('category', { length: 50 }).notNull(),
+  content: text('content').notNull(),
+  source: varchar('source', { length: 20 }).default('auto'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ============================================================
 // 13. chat_messages（对话消息）
 // ============================================================
 export const chatMessages = pgTable('chat_messages', {
@@ -468,6 +482,17 @@ export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
   }),
 }));
 
+export const userMemoriesRelations = relations(userMemories, ({ one }) => ({
+  user: one(users, {
+    fields: [userMemories.userId],
+    references: [users.id],
+  }),
+  organization: one(organizations, {
+    fields: [userMemories.orgId],
+    references: [organizations.id],
+  }),
+}));
+
 // ============================================================
 // Insert Schemas & Types
 // ============================================================
@@ -586,5 +611,13 @@ export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
 });
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type ChatMessage = typeof chatMessages.$inferSelect;
+
+export const insertUserMemorySchema = createInsertSchema(userMemories).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertUserMemory = z.infer<typeof insertUserMemorySchema>;
+export type UserMemory = typeof userMemories.$inferSelect;
 
 export * from "./models/auth";

@@ -6,7 +6,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
-import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Pencil, X, Check, ListFilter, ChevronRight, Search, Star, FolderOpen } from "lucide-react";
+import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Pencil, X, Check, ListFilter, ChevronRight, Search, Star, FolderOpen, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
@@ -708,7 +708,7 @@ function ConversationListView({
   );
 }
 
-function BottomInputArea({ onSend, loading, onStop }: { onSend: (msg: string) => void; loading: boolean; onStop?: () => void }) {
+function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearchToggle, replyStyle, onReplyStyleChange }: { onSend: (msg: string) => void; loading: boolean; onStop?: () => void; webSearchEnabled?: boolean; onWebSearchToggle?: (enabled: boolean) => void; replyStyle?: string; onReplyStyleChange?: (style: string) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const bgRef = useRef<HTMLDivElement>(null);
@@ -790,7 +790,15 @@ function BottomInputArea({ onSend, loading, onStop }: { onSend: (msg: string) =>
       <div style={{ pointerEvents: 'auto' }}>
         <div className="max-w-3xl mx-auto px-3">
           <div ref={composerRef}>
-            <AiInputBar onSend={onSend} loading={loading} onStop={onStop} />
+            <AiInputBar
+              onSend={onSend}
+              loading={loading}
+              onStop={onStop}
+              webSearchEnabled={webSearchEnabled}
+              onWebSearchToggle={onWebSearchToggle}
+              replyStyle={replyStyle}
+              onReplyStyleChange={onReplyStyleChange}
+            />
           </div>
         </div>
       </div>
@@ -811,6 +819,9 @@ export default function Agent() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [replyStyle, setReplyStyle] = useState('normal');
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const conversationHistory = useRef<{ role: string; content: string }[]>([]);
   const [activeConvSystemPrompt, setActiveConvSystemPrompt] = useState<string | undefined>();
@@ -885,11 +896,27 @@ export default function Agent() {
     })();
   }, [activeConvId]);
 
-  useEffect(() => {
+  const isNearBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  }, []);
+
+  const scrollToBottom = useCallback((smooth = true) => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: smooth ? 'smooth' : 'instant' });
     }
-  }, [messages, loading]);
+  }, []);
+
+  const handleScrollEvent = useCallback(() => {
+    setShowScrollBtn(!isNearBottom());
+  }, [isNearBottom]);
+
+  useEffect(() => {
+    if (isNearBottom()) {
+      scrollToBottom(false);
+    }
+  }, [messages, loading, scrollToBottom, isNearBottom]);
 
   const saveMessageToDB = useCallback(async (conversationId: number, msg: Message) => {
     try {
@@ -1413,8 +1440,9 @@ export default function Agent() {
         <div
           className="absolute inset-0 overflow-y-auto"
           ref={scrollRef}
+          onScroll={handleScrollEvent}
           data-testid="agent-messages"
-          style={{ paddingTop: 54, paddingBottom: 'calc(160px + 3.33vh)', WebkitOverflowScrolling: 'touch', scrollBehavior: 'smooth', overscrollBehavior: 'contain' }}
+          style={{ paddingTop: 54, paddingBottom: 'calc(160px + 3.33vh)', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}
         >
           
           <div className="max-w-3xl mx-auto">
@@ -1444,7 +1472,37 @@ export default function Agent() {
         </div>
       )}
 
-      <BottomInputArea onSend={handleSend} loading={loading} onStop={handleStop} />
+      {showScrollBtn && showChat && (
+        <div className="absolute z-30 flex justify-center" style={{ bottom: 'calc(160px + 3.33vh)', left: 0, right: 0, pointerEvents: 'none' }}>
+          <button
+            onClick={() => scrollToBottom(true)}
+            className="flex items-center justify-center shadow-lg hover:scale-105 transition-transform"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              background: 'rgba(50,50,48,0.9)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              backdropFilter: 'blur(8px)',
+              pointerEvents: 'auto',
+              cursor: 'pointer',
+            }}
+            data-testid="btn-scroll-bottom"
+          >
+            <ArrowDown className="w-4 h-4 text-[var(--text-primary)]" strokeWidth={2} />
+          </button>
+        </div>
+      )}
+
+      <BottomInputArea
+        onSend={handleSend}
+        loading={loading}
+        onStop={handleStop}
+        webSearchEnabled={webSearchEnabled}
+        onWebSearchToggle={setWebSearchEnabled}
+        replyStyle={replyStyle}
+        onReplyStyleChange={setReplyStyle}
+      />
     </div>
   );
 }

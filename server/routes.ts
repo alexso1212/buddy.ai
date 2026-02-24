@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
-import { chat as aiChat, chatStream as aiChatStream, generateProjectTasks } from "./services/ai/index";
+import { chat as aiChat, chatStream as aiChatStream, generateProjectTasks, extractMemories } from "./services/ai/index";
 import { executeAction } from "./services/ai/actionExecutor";
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
@@ -19,6 +19,7 @@ import {
   insertJobRoleSchema,
   insertConversationSchema,
   insertChatMessageSchema,
+  insertUserMemorySchema,
 } from "@shared/schema";
 import { judgeTaskAssignment } from "./services/ai/verdictService";
 
@@ -1778,6 +1779,41 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // ===================== User Memories =====================
+  app.get("/api/user-memories", authMiddleware, async (req, res) => {
+    try {
+      const userId = req.currentUserId;
+      const orgId = req.orgId || 1;
+      const memories = await storage.getUserMemories(userId, orgId);
+      return res.json({ data: memories });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/user-memories", authMiddleware, async (req, res) => {
+    try {
+      const userId = req.currentUserId;
+      const orgId = req.orgId || 1;
+      const parsed = insertUserMemorySchema.safeParse({ ...req.body, userId, orgId });
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      const memory = await storage.createUserMemory(parsed.data);
+      return res.status(201).json({ data: memory });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/user-memories/:id", authMiddleware, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteUserMemory(id);
+      return res.json({ data: { success: true } });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
   // ===================== AI Chat Stream =====================
   app.post("/api/ai/chat/stream", async (req, res) => {
     try {
@@ -1871,6 +1907,12 @@ export async function registerRoutes(server: Server, app: Express) {
       }
 
       res.end();
+
+      extractMemories(
+        [...history, { role: 'user', content: message }, { role: 'assistant', content: fullText }],
+        userId,
+        orgId
+      ).catch(err => console.error('Memory extraction error:', err));
     } catch (e: any) {
       console.error('AI Chat Stream error:', e);
       if (!res.headersSent) {

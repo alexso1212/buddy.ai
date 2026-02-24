@@ -48,6 +48,9 @@ import {
   tokenUsage,
   type TokenUsage,
   type InsertTokenUsage,
+  userMemories,
+  type UserMemory,
+  type InsertUserMemory,
 } from "@shared/schema";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -515,6 +518,22 @@ export class DatabaseStorage {
     return db.select().from(conversations).where(
       and(eq(conversations.orgId, orgId), eq(conversations.isArchived, false))
     ).orderBy(desc(conversations.updatedAt));
+  }
+
+  // ==================== User Memories ====================
+  async getUserMemories(userId: number, orgId: number): Promise<UserMemory[]> {
+    return db.select().from(userMemories).where(
+      and(eq(userMemories.userId, userId), eq(userMemories.orgId, orgId))
+    ).orderBy(desc(userMemories.updatedAt));
+  }
+
+  async createUserMemory(data: InsertUserMemory): Promise<UserMemory> {
+    const [result] = await db.insert(userMemories).values(data).returning();
+    return result;
+  }
+
+  async deleteUserMemory(id: number): Promise<void> {
+    await db.delete(userMemories).where(eq(userMemories.id, id));
   }
 }
 

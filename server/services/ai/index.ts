@@ -436,6 +436,120 @@ function formatProjectList(projects: { id: number; name: string; status: string;
   return projects.map(p => `- ID:${p.id} ${p.name}（${p.status}）${p.description || ''}`).join('\n');
 }
 
+async function loadBusinessContext() {
+  const allUsers = await storage.getUsers();
+  const allProjects = await storage.getProjects();
+  const allTasks = await storage.getTasks({});
+  const allDepartments = await storage.getDepartments();
+  const allJobRoles = await storage.getJobRoles();
+  const jobRoleMap = new Map(allJobRoles.map(r => [r.id, r]));
+  const activeTasks = allTasks.filter(t => t.status !== 'done' && t.status !== 'cancelled');
+  const doneTasks = allTasks.filter(t => t.status === 'done');
+  const now = new Date();
+  const overdueTasks = allTasks.filter(t => t.dueDate && new Date(t.dueDate) < now && t.status !== 'done' && t.status !== 'cancelled');
+
+  return { allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks, doneTasks, overdueTasks };
+}
+
+function buildContextBlock(
+  ctx: { currentUserId: number; currentUserName: string; model?: string },
+  allUsers: any[],
+  allProjects: any[],
+  activeTasks: any[],
+  allTasks: any[],
+  doneTasks: any[],
+  overdueTasks: any[],
+): string {
+  const modelName = ctx.model || 'claude-sonnet-4-6';
+  const teamFormatted = formatTeamMembers(allUsers.map(u => ({
+    id: u.id,
+    displayName: u.displayName || u.email,
+    role: u.role || 'member',
+    email: u.email,
+  })));
+  const projectsFormatted = formatProjectList(allProjects);
+  const tasksFormatted = formatTaskList(activeTasks, allUsers);
+
+  return `## 当前系统上下文
+- 组织: Deltapex Education（金融教育公司）
+- 当前用户ID: ${ctx.currentUserId}
+- 当前用户名: ${ctx.currentUserName}
+- 当前时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
+- 运行模型: ${modelName}
+
+## 团队成员
+${teamFormatted}
+
+## 项目列表
+${projectsFormatted}
+
+## 当前活跃任务（未完成/未取消）
+${tasksFormatted}
+
+## 任务统计
+- 总任务数: ${allTasks.length}
+- 已完成: ${doneTasks.length}
+- 逾期: ${overdueTasks.length}`;
+}
+
+export async function buildContextualSystemPrompt(
+  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; orgId?: number },
+  mode: 'streaming' | 'json' = 'streaming'
+): Promise<{ prompt: string; allUsers: any[]; allProjects: any[]; allTasks: any[]; allDepartments: any[]; allJobRoles: any[]; jobRoleMap: Map<number, any>; activeTasks: any[] }> {
+  const { allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks, doneTasks, overdueTasks } = await loadBusinessContext();
+
+  const orgId = context.orgId || 1;
+  const memories = await storage.getUserMemories(context.currentUserId, orgId);
+
+  const contextBlock = buildContextBlock(context, allUsers, allProjects, activeTasks, allTasks, doneTasks, overdueTasks);
+  const modelName = context.model || 'claude-sonnet-4-6';
+
+  let prompt: string;
+
+  if (mode === 'streaming') {
+    prompt = `你是 Buddy，Deltapex Education 的智能助手。你熟悉公司的团队、项目和任务情况，能以自然对话的方式帮助团队成员了解工作进展、回答问题、提供建议。
+
+${contextBlock}
+
+## 回复规则
+- 用自然语言回复，使用 Markdown 格式让内容更易读（标题、列表、粗体等）
+- 使用与用户相同的语言回复（用户用中文就用中文，用英文就用英文）
+- 基于上面的团队、项目、任务数据来回答问题，不要编造不存在的数据
+- 当用户问"你是什么模型"时，如实告知你运行在 ${modelName} 上
+- 回答要简洁专业，必要时引用具体的任务、项目或人员信息
+- 你可以帮助分析任务进度、工作负荷、项目风险等`;
+  } else {
+    prompt = SYSTEM_PROMPT
+      .replace('{{currentUserId}}', String(context.currentUserId))
+      .replace('{{currentUserName}}', context.currentUserName)
+      .replace('{{currentTime}}', new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }))
+      .replace('{{teamMembers}}', formatTeamMembers(allUsers.map(u => ({
+        id: u.id,
+        displayName: u.displayName || u.email,
+        role: u.role || 'member',
+        email: u.email,
+      }))))
+      .replace('{{projectList}}', formatProjectList(allProjects))
+      .replace('{{taskList}}', formatTaskList(activeTasks, allUsers))
+      .replace('{{totalTasks}}', String(allTasks.length))
+      .replace('{{doneTasks}}', String(doneTasks.length))
+      .replace('{{overdueTasks}}', String(overdueTasks.length));
+  }
+
+  if (memories.length > 0) {
+    const memoryLines = memories.map(m => `- [${m.category}] ${m.content}`).join('\n');
+    prompt += `\n\n## 关于当前用户的记忆
+以下是你通过之前对话了解到的关于当前用户的信息：
+${memoryLines}`;
+  }
+
+  if (context.customSystemPrompt) {
+    prompt += `\n\n## 额外指令\n${context.customSystemPrompt}`;
+  }
+
+  return { prompt, allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks };
+}
+
 async function executeQuery(actionType: string, data: Record<string, any>): Promise<string> {
   switch (actionType) {
     case 'query_tasks': {
@@ -522,17 +636,9 @@ export async function chat(
   conversationHistory: { role: string; content: string }[],
   context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean }
 ): Promise<ChatResponse> {
-  const allUsers = await storage.getUsers();
-  const allProjects = await storage.getProjects();
-  const allTasks = await storage.getTasks({});
-  const allDepartments = await storage.getDepartments();
-  const allJobRoles = await storage.getJobRoles();
-  const jobRoleMap = new Map(allJobRoles.map(r => [r.id, r]));
-
-  const activeTasks = allTasks.filter(t => t.status !== 'done' && t.status !== 'cancelled');
+  const { prompt: systemPrompt, allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks } = await buildContextualSystemPrompt(context, 'json');
 
   const modelName = context.model || 'claude-sonnet-4-6';
-  const systemPrompt = `You are Buddy, a helpful AI assistant. Respond naturally and helpfully to the user. Use the same language the user writes in. You are currently running on the model: ${modelName}. When the user asks what model you are, tell them honestly.`;
   const aiClient = getClientForModel(modelName);
 
   const requestParams: any = {
@@ -718,7 +824,7 @@ export async function* chatStream(
   context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean }
 ): AsyncGenerator<{ type: 'token' | 'done' | 'error'; content?: string; tokenUsage?: ChatResponse['tokenUsage'] }> {
   const modelName = context.model || 'claude-sonnet-4-6';
-  const systemPrompt = `You are Buddy, a helpful AI assistant. Respond naturally and helpfully to the user. Use the same language the user writes in. You are currently running on the model: ${modelName}. When the user asks what model you are, tell them honestly.`;
+  const { prompt: systemPrompt } = await buildContextualSystemPrompt(context, 'streaming');
   const aiClient = getClientForModel(modelName);
 
   const requestParams: any = {
@@ -838,5 +944,75 @@ export async function generateProjectTasks(
     return { tasks: parsed.tasks || [], tokenUsage: tokenInfo };
   } catch {
     return { tasks: [], tokenUsage: tokenInfo };
+  }
+}
+
+export async function extractMemories(
+  conversationMessages: { role: string; content: string }[],
+  userId: number,
+  orgId: number
+): Promise<void> {
+  if (conversationMessages.length < 2) return;
+
+  const model = 'claude-haiku-4-5-20251001';
+  const client = getClientForModel(model);
+
+  const conversationText = conversationMessages
+    .map(m => `${m.role}: ${m.content}`)
+    .join('\n');
+
+  try {
+    const response = await client.chat.completions.create({
+      model,
+      max_tokens: 1024,
+      messages: [
+        {
+          role: 'system',
+          content: `你是一个记忆提取助手。分析以下对话，提取值得记住的用户偏好、事实、工作风格或上下文信息。
+
+只提取明确的、有价值的信息，不要猜测。如果没有值得记住的信息，返回空数组。
+
+输出格式为纯 JSON（不要用 markdown 包裹）：
+{
+  "memories": [
+    { "category": "preference|fact|work_style|context", "content": "简短描述" }
+  ]
+}
+
+category 说明：
+- preference: 用户的偏好（如回复风格、语言偏好等）
+- fact: 关于用户的事实（如负责的项目、专业领域等）
+- work_style: 工作风格（如喜欢详细计划、偏好快速迭代等）
+- context: 重要的上下文信息（如正在处理的紧急事项等）`
+        },
+        {
+          role: 'user',
+          content: conversationText
+        }
+      ],
+    });
+
+    let aiText = response.choices[0]?.message?.content || '';
+    const codeBlockMatch = aiText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      aiText = codeBlockMatch[1].trim();
+    }
+
+    const parsed = JSON.parse(aiText);
+    const memories = parsed.memories || [];
+
+    for (const mem of memories) {
+      if (mem.category && mem.content) {
+        await storage.createUserMemory({
+          userId,
+          orgId,
+          category: mem.category,
+          content: mem.content,
+          source: 'auto',
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Failed to extract memories:', err);
   }
 }
