@@ -265,6 +265,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
   const [value, setValue] = useState("");
   const [showSheet, setShowSheet] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [isFocused, setIsFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const adjustHeight = useCallback(() => {
@@ -307,7 +308,13 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
             borderRadius: 20,
             position: 'relative' as const,
             padding: 1,
-            background: 'linear-gradient(to bottom, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.12) 40%, rgba(255,255,255,0.06) 100%)',
+            background: isFocused
+              ? 'linear-gradient(to bottom, rgba(199,167,132,0.6) 0%, rgba(199,167,132,0.3) 40%, rgba(199,167,132,0.15) 100%)'
+              : 'linear-gradient(to bottom, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.12) 40%, rgba(255,255,255,0.06) 100%)',
+            boxShadow: isFocused
+              ? '0 0 20px rgba(199,167,132,0.15), 0 0 40px rgba(199,167,132,0.08)'
+              : 'none',
+            transition: 'background 0.3s ease, box-shadow 0.3s ease',
           }}
           data-testid="ai-composer"
         >
@@ -324,6 +331,8 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
               adjustHeight();
             }}
             onKeyDown={handleKeyDown}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
             placeholder="输入消息..."
             disabled={loading}
             rows={1}
