@@ -355,6 +355,7 @@ function Sidebar({
   const [convSearchQuery, setConvSearchQuery] = useState('');
 
   const isActive = (path: string) => {
+    if (path === '/agent') return location === '/agent' && !!activeConvId;
     return location === path || location.startsWith(path + '/');
   };
 
