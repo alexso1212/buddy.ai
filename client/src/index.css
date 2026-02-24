@@ -541,7 +541,7 @@ html, body {
 }
 
 .sidebar-item {
-  transition: background 200ms ease, transform 200ms ease;
+  transition: background 200ms ease;
   -webkit-tap-highlight-color: transparent;
 }
 .sidebar-item.sidebar-touch-hl {
@@ -553,10 +553,6 @@ html, body {
   }
   .sidebar-item:not(.sidebar-item-active):active {
     background: rgba(0,0,0,0.6) !important;
-    transform: scale(1.02);
-  }
-  .sidebar-item-grid:not(.sidebar-item-active):active {
-    transform: scale(1.04);
   }
 }
 .sidebar-item-active {
