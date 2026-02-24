@@ -3,6 +3,7 @@ import { useLocation, useSearch } from 'wouter';
 import { Loader2, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/hooks/use-toast';
+import { tapMotionProps } from '@/hooks/use-tap-motion';
 
 function GoogleIcon() {
   return (
@@ -288,6 +289,7 @@ export default function LoginPage() {
               cursor: 'pointer',
             }}
             data-testid="button-back"
+            {...tapMotionProps}
           >
             <X size={18} color="rgba(255,255,255,0.6)" />
           </button>
@@ -348,6 +350,7 @@ export default function LoginPage() {
               data-testid="button-submit"
               type="submit"
               disabled={isLoading}
+              {...tapMotionProps}
               style={{
                 width: '100%',
                 height: 48,
@@ -389,6 +392,7 @@ export default function LoginPage() {
                 cursor: 'pointer',
               }}
               data-testid="link-to-register"
+              {...tapMotionProps}
             >
               没有账户？<span style={{ color: 'white', textDecoration: 'underline' }}>注册</span>
             </button>
@@ -405,6 +409,7 @@ export default function LoginPage() {
                 cursor: 'pointer',
               }}
               data-testid="link-to-login"
+              {...tapMotionProps}
             >
               已有账户？<span style={{ color: 'white', textDecoration: 'underline' }}>登录</span>
             </button>
@@ -460,6 +465,7 @@ export default function LoginPage() {
           <button
             onClick={handleSocialLogin}
             data-testid="button-apple-login"
+            {...tapMotionProps}
             style={{
               width: '100%',
               height: 50,
@@ -485,6 +491,7 @@ export default function LoginPage() {
           <button
             onClick={handleSocialLogin}
             data-testid="button-google-login"
+            {...tapMotionProps}
             style={{
               width: '100%',
               height: 50,
@@ -508,6 +515,7 @@ export default function LoginPage() {
           <button
             onClick={() => setView('register')}
             data-testid="button-register"
+            {...tapMotionProps}
             style={{
               width: '100%',
               height: 50,
@@ -526,6 +534,7 @@ export default function LoginPage() {
           <button
             onClick={() => setView('login')}
             data-testid="button-login"
+            {...tapMotionProps}
             style={{
               width: '100%',
               height: 50,
@@ -546,6 +555,7 @@ export default function LoginPage() {
               onClick={handleSocialLogin}
               data-testid="button-github-login"
               title="GitHub"
+              {...tapMotionProps}
               style={{
                 width: 40,
                 height: 40,

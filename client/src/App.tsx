@@ -53,6 +53,7 @@ import {
   X,
 } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
+import { tapMotionProps } from '@/hooks/use-tap-motion';
 
 const BUDDY_AI_NAV = [
   { label: 'Chats', icon: MessageSquare, path: '/agent' },
@@ -86,6 +87,7 @@ function ThemeToggle() {
         return (
           <button
             key={opt.value}
+            {...tapMotionProps}
             onClick={() => setTheme(opt.value)}
             className={cn(
               "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs transition-colors",
@@ -179,7 +181,7 @@ function ProjectPickerSheet({ convId, conversations, onClose, toast }: {
         flexShrink: 0,
       }}>
         <span style={{ fontSize: 17, fontWeight: 600, color: '#ECECEC' }}>移到项目</span>
-        <button onClick={onClose} style={{
+        <button {...tapMotionProps} onClick={onClose} style={{
           background: 'none', border: 'none', cursor: 'pointer',
           padding: 4,
         }} data-testid="button-close-project-picker">
@@ -221,6 +223,7 @@ function ProjectPickerSheet({ convId, conversations, onClose, toast }: {
           filtered.map((project: any) => (
             <button
               key={project.id}
+              {...tapMotionProps}
               onClick={async () => {
                 try {
                   await apiRequest("PATCH", `/api/conversations/${convId}`, {
@@ -266,6 +269,7 @@ function ProjectPickerSheet({ convId, conversations, onClose, toast }: {
               margin: '8px 6px',
             }} />
             <button
+              {...tapMotionProps}
               onClick={async () => {
                 try {
                   await apiRequest("PATCH", `/api/conversations/${convId}`, {
@@ -492,6 +496,7 @@ function Sidebar({
     const GroupIcon = icon;
     return (
       <button
+        {...tapMotionProps}
         onClick={onToggle}
         style={{
           width: '100%',
@@ -707,6 +712,7 @@ function Sidebar({
           </div>
 
           <button
+            {...tapMotionProps}
             style={{
               width: 40,
               height: 40,
@@ -1016,6 +1022,7 @@ function Sidebar({
                     const conv = conversations.find((c: any) => String(c.id) === contextMenu.convoId);
                     return conv?.projectId ? (
                       <button
+                        {...tapMotionProps}
                         onClick={() => {
                           toast({ title: '可见范围设置即将推出' });
                           setContextMenu(null);
@@ -1170,6 +1177,7 @@ function Sidebar({
             />
             <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
               <button
+                {...tapMotionProps}
                 onClick={() => setRenameModal(null)}
                 style={{
                   padding: '8px 16px', borderRadius: 8,
@@ -1180,6 +1188,7 @@ function Sidebar({
                 data-testid="button-cancel-rename"
               >取消</button>
               <button
+                {...tapMotionProps}
                 onClick={async () => {
                   if (renameValue.trim()) {
                     try {
@@ -1234,6 +1243,7 @@ function Sidebar({
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
               <button
+                {...tapMotionProps}
                 onClick={() => setDeleteConfirm(null)}
                 style={{
                   padding: '8px 24px', borderRadius: 8,
@@ -1244,6 +1254,7 @@ function Sidebar({
                 data-testid="button-cancel-delete"
               >取消</button>
               <button
+                {...tapMotionProps}
                 onClick={async () => {
                   try {
                     await apiRequest("DELETE", `/api/conversations/${deleteConfirm}`);
@@ -1407,6 +1418,7 @@ function ModelSelector() {
   const renderModelRow = (m: typeof ALL_MODELS[0]) => (
     <button
       key={m.id}
+      {...tapMotionProps}
       onClick={() => selectModel(m)}
       style={{
         width: '100%',
@@ -1436,6 +1448,7 @@ function ModelSelector() {
   return (
     <div ref={dropRef} style={{ position: 'relative' }}>
       <button
+        {...tapMotionProps}
         onClick={() => setOpen(v => !v)}
         style={{
           display: 'flex',
@@ -1727,7 +1740,7 @@ function App() {
                 justifyContent: 'space-between',
                 pointerEvents: 'auto',
               }} data-testid="top-controls">
-                <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
+                <button {...tapMotionProps} onClick={() => setSidebarOpen(!sidebarOpen)} style={{
                   width: 36, height: 36,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   background: 'rgba(255,255,255,0.07)',
