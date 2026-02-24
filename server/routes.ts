@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { chat as aiChat, generateProjectTasks } from "./services/ai/index";
 import { executeAction } from "./services/ai/actionExecutor";
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { authMiddleware, generateToken } from './middleware/auth';
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import {
@@ -74,6 +75,73 @@ export async function registerRoutes(server: Server, app: Express) {
     } catch (e: any) {
       console.error('OIDC complete error:', e);
       return res.redirect('/login?error=auth_failed');
+    }
+  });
+
+  app.post("/api/auth/telegram", async (req, res) => {
+    try {
+      const { hash, ...userData } = req.body;
+
+      if (!hash || !userData.id || !userData.auth_date) {
+        return res.status(400).json({ error: 'Missing required Telegram auth fields' });
+      }
+
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      if (!botToken) {
+        return res.status(500).json({ error: 'Telegram bot token not configured' });
+      }
+
+      const authDate = Number(userData.auth_date);
+      const now = Math.floor(Date.now() / 1000);
+      if (now - authDate > 86400) {
+        return res.status(401).json({ error: 'Telegram auth data is expired' });
+      }
+
+      const dataCheckString = Object.keys(userData)
+        .sort()
+        .map(key => `${key}=${userData[key]}`)
+        .join('\n');
+
+      const secretKey = crypto.createHash('sha256').update(botToken).digest();
+      const hmac = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+
+      if (hmac !== hash) {
+        return res.status(401).json({ error: 'Invalid Telegram auth hash' });
+      }
+
+      const telegramId = String(userData.id);
+      const firstName = userData.first_name || '';
+      const lastName = userData.last_name || '';
+      const username = userData.username || '';
+      const photoUrl = userData.photo_url || null;
+      const displayName = [firstName, lastName].filter(Boolean).join(' ') || username || 'Telegram User';
+
+      let user = await storage.getUserByProvider('telegram', telegramId);
+
+      if (!user) {
+        const org = await storage.createOrganization({ name: displayName + '的团队' });
+        user = await storage.createUser({
+          orgId: org.id,
+          email: `telegram_${telegramId}@placeholder.local`,
+          displayName,
+          avatarUrl: photoUrl,
+          role: 'owner',
+          isActive: true,
+          authProvider: 'telegram',
+          authProviderId: telegramId,
+        } as any);
+      }
+
+      await storage.updateUser(user.id, { lastLoginAt: new Date(), avatarUrl: photoUrl || user.avatarUrl } as any);
+
+      const token = generateToken({ userId: user.id, orgId: user.orgId, role: user.role });
+      return res.json({
+        token,
+        user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, orgId: user.orgId, avatarUrl: user.avatarUrl },
+      });
+    } catch (e: any) {
+      console.error('Telegram auth error:', e);
+      return res.status(500).json({ error: e.message });
     }
   });
 

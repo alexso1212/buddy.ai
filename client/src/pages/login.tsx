@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useSearch } from 'wouter';
 import { Loader2 } from 'lucide-react';
 import logoImg from '@assets/AD5CCB66-F553-4B90-AFBC-EEA51B534333_1771683834711.png';
@@ -30,6 +30,77 @@ function GitHubIcon() {
       <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2z" />
     </svg>
   );
+}
+
+declare global {
+  interface Window {
+    onTelegramAuth?: (user: any) => void;
+  }
+}
+
+function TelegramLoginButton({
+  loginWithToken,
+  navigate,
+  toast,
+}: {
+  loginWithToken: (token: string) => Promise<void>;
+  navigate: (to: string) => void;
+  toast: (opts: any) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleTelegramAuth = useCallback(async (telegramUser: any) => {
+    try {
+      const res = await fetch('/api/auth/telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(telegramUser),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Telegram login failed');
+      }
+
+      const data = await res.json();
+      await loginWithToken(data.token);
+      toast({ title: '登录成功', description: '正在跳转...' });
+      navigate('/agent');
+    } catch (err: any) {
+      toast({
+        title: '登录失败',
+        description: err.message || 'Telegram 认证失败',
+        variant: 'destructive',
+      });
+    }
+  }, [loginWithToken, navigate, toast]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    window.onTelegramAuth = handleTelegramAuth;
+
+    const script = document.createElement('script');
+    script.src = 'https://telegram.org/js/telegram-widget.js?22';
+    script.setAttribute('data-telegram-login', import.meta.env.VITE_TELEGRAM_BOT_USERNAME || 'Deltapex_Alex_Bot');
+    script.setAttribute('data-size', 'large');
+    script.setAttribute('data-radius', '8');
+    script.setAttribute('data-request-access', 'write');
+    script.setAttribute('data-onauth', 'onTelegramAuth(user)');
+    script.async = true;
+
+    container.appendChild(script);
+
+    return () => {
+      delete window.onTelegramAuth;
+      if (container.contains(script)) {
+        container.removeChild(script);
+      }
+    };
+  }, [handleTelegramAuth]);
+
+  return <div ref={containerRef} data-testid="telegram-login-container" />;
 }
 
 export default function LoginPage() {
@@ -159,7 +230,7 @@ export default function LoginPage() {
               <GitHubIcon />
               <span>Continue with GitHub</span>
             </button>
-            <div data-testid="telegram-login-container" />
+            <TelegramLoginButton loginWithToken={loginWithToken} navigate={navigate} toast={toast} />
           </div>
 
           <div className="flex items-center gap-3 mb-6">
