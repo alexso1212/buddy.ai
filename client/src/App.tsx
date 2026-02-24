@@ -305,6 +305,47 @@ function ProjectPickerSheet({ convId, conversations, onClose, toast }: {
   );
 }
 
+function makeTouchHighlight(highlightBg = 'rgba(0,0,0,0.4)') {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let activeEl: HTMLElement | null = null;
+  let origBg = '';
+
+  const apply = (el: HTMLElement) => {
+    activeEl = el;
+    origBg = el.style.background;
+    el.style.background = highlightBg;
+  };
+
+  const clear = () => {
+    if (activeEl) {
+      activeEl.style.background = origBg;
+      activeEl = null;
+    }
+    if (timer) { clearTimeout(timer); timer = null; }
+  };
+
+  return {
+    onTouchStart: (e: React.TouchEvent<HTMLElement>) => {
+      clear();
+      const el = e.currentTarget;
+      timer = setTimeout(() => apply(el), 80);
+    },
+    onTouchMove: () => { clear(); },
+    onTouchEnd: () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (activeEl) {
+        const el = activeEl;
+        const bg = origBg;
+        setTimeout(() => { if (el) el.style.background = bg; }, 200);
+        activeEl = null;
+      }
+    },
+    onTouchCancel: () => { clear(); },
+  };
+}
+
+const touchHighlight = makeTouchHighlight();
+
 function Sidebar({ 
   isOpen, 
   onClose,
@@ -391,7 +432,10 @@ function Sidebar({
           border: '1px solid transparent',
           cursor: 'pointer',
         }}
-        onTouchStart={() => { try { navigator.vibrate?.(6); } catch {} }}
+        onTouchStart={(e) => { try { navigator.vibrate?.(6); } catch {} touchHighlight.onTouchStart(e); }}
+        onTouchMove={touchHighlight.onTouchMove}
+        onTouchEnd={touchHighlight.onTouchEnd}
+        onTouchCancel={touchHighlight.onTouchCancel}
         data-testid={testId}
       >
         <Icon size={20} color="#ECECEC" strokeWidth={1.5} />
@@ -422,10 +466,11 @@ function Sidebar({
               setContextMenu({ convoId: String(convo.id), x: touch.clientX, y: touch.clientY });
             }, 500);
             try { navigator.vibrate?.(6); } catch {}
+            touchHighlight.onTouchStart(e);
           }}
-          onTouchEnd={() => { clearTimeout(pressTimerRef.current); }}
-          onTouchMove={() => { clearTimeout(pressTimerRef.current); }}
-          onTouchCancel={() => { clearTimeout(pressTimerRef.current); }}
+          onTouchEnd={() => { clearTimeout(pressTimerRef.current); touchHighlight.onTouchEnd(); }}
+          onTouchMove={() => { clearTimeout(pressTimerRef.current); touchHighlight.onTouchMove(); }}
+          onTouchCancel={() => { clearTimeout(pressTimerRef.current); touchHighlight.onTouchCancel(); }}
           style={{
             padding: convo.projectName ? '10px 16px' : '12px 16px',
             margin: '0 8px 2px 12px',
@@ -586,7 +631,10 @@ function Sidebar({
                       border: '1px solid transparent',
                       cursor: 'pointer',
                     }}
-                    onTouchStart={() => { try { navigator.vibrate?.(6); } catch {} }}
+                    onTouchStart={(e) => { try { navigator.vibrate?.(6); } catch {} touchHighlight.onTouchStart(e); }}
+                    onTouchMove={touchHighlight.onTouchMove}
+                    onTouchEnd={touchHighlight.onTouchEnd}
+                    onTouchCancel={touchHighlight.onTouchCancel}
                     data-testid={testId}
                   >
                     <Icon size={16} color="#ECECEC" strokeWidth={1.5} />

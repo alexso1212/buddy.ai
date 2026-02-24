@@ -541,17 +541,19 @@ html, body {
 }
 
 .sidebar-item {
-  transition: background 350ms ease, transform 350ms ease;
+  transition: background 200ms ease, transform 200ms ease;
 }
-.sidebar-item:not(.sidebar-item-active):hover {
-  background: rgba(0,0,0,0.4) !important;
-}
-.sidebar-item:not(.sidebar-item-active):active {
-  background: rgba(0,0,0,0.6) !important;
-  transform: scale(1.02);
-}
-.sidebar-item-grid:not(.sidebar-item-active):active {
-  transform: scale(1.04);
+@media (hover: hover) and (pointer: fine) {
+  .sidebar-item:not(.sidebar-item-active):hover {
+    background: rgba(0,0,0,0.4) !important;
+  }
+  .sidebar-item:not(.sidebar-item-active):active {
+    background: rgba(0,0,0,0.6) !important;
+    transform: scale(1.02);
+  }
+  .sidebar-item-grid:not(.sidebar-item-active):active {
+    transform: scale(1.04);
+  }
 }
 .sidebar-item-active {
   background: #000 !important;
