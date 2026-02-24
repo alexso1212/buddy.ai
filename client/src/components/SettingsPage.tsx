@@ -8,11 +8,15 @@ import {
   X, ArrowLeft, User, CreditCard, Building2, Users,
   Moon, Globe, Bell, Lock, Info, LogOut, ChevronRight,
   Loader2, Copy, Trash2, Plus, Sun, Monitor,
-  Shield, FileText, HelpCircle, Mail,
+  Shield, FileText, HelpCircle, Mail, Settings2,
+  Blocks, Link2, Smartphone, ExternalLink,
+  MessageSquare, Phone, Send,
+  CheckSquare, FolderKanban, UserCog,
+  Bot, Zap, BarChart3, GitBranch,
 } from "lucide-react";
 import type { Organization } from "@shared/schema";
 
-type PageId = 'main' | 'profile' | 'organization' | 'permissions' | 'notifications' | 'privacy' | 'about';
+type PageId = 'main' | 'profile' | 'organization' | 'capabilities' | 'connectors' | 'permissions' | 'notifications' | 'privacy' | 'about' | 'shared-links';
 
 interface SettingsPageProps {
   open: boolean;
@@ -20,6 +24,13 @@ interface SettingsPageProps {
   onOpenOrgSwitcher: () => void;
   onCloseSidebar: () => void;
 }
+
+const scrollStyle: React.CSSProperties = {
+  overflowY: 'auto',
+  overflowX: 'hidden',
+  WebkitOverflowScrolling: 'touch' as any,
+  overscrollBehavior: 'auto',
+};
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -95,6 +106,70 @@ function SettingsItem({
   );
 }
 
+function SettingsToggleItem({
+  icon: Icon,
+  label,
+  description,
+  checked,
+  onChange,
+  testId,
+}: {
+  icon?: typeof User;
+  label: string;
+  description?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  testId?: string;
+}) {
+  return (
+    <div
+      style={{
+        minHeight: 52,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        padding: description ? '12px 16px' : '0 16px',
+      }}
+      data-testid={testId}
+    >
+      {Icon && <Icon size={20} color="#9A9893" strokeWidth={1.8} style={{ flexShrink: 0, alignSelf: description ? 'flex-start' : 'center', marginTop: description ? 2 : 0 }} />}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ fontSize: 16, color: '#ECECEC', display: 'block' }}>{label}</span>
+        {description && (
+          <span style={{ fontSize: 13, color: '#7A7874', display: 'block', marginTop: 3, lineHeight: '1.4' }}>{description}</span>
+        )}
+      </div>
+      <div
+        onClick={() => onChange(!checked)}
+        style={{
+          width: 44,
+          height: 24,
+          borderRadius: 12,
+          background: checked ? '#3B82F6' : 'rgba(255,255,255,0.15)',
+          position: 'relative',
+          cursor: 'pointer',
+          transition: 'background 200ms',
+          flexShrink: 0,
+        }}
+      >
+        <div
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: '50%',
+            background: '#FFFFFF',
+            position: 'absolute',
+            top: 2,
+            left: checked ? 22 : 2,
+            transition: 'left 200ms cubic-bezier(0.32, 0.72, 0, 1)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function Divider() {
   return <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '0 16px' }} />;
 }
@@ -118,6 +193,17 @@ function GroupLabel({ text }: { text: string }) {
       padding: '0 4px',
       marginBottom: 6,
       marginLeft: 20,
+    }}>{text}</div>
+  );
+}
+
+function SubSectionLabel({ text }: { text: string }) {
+  return (
+    <div style={{
+      fontSize: 13,
+      fontWeight: 500,
+      color: '#7A7874',
+      padding: '12px 16px 4px',
     }}>{text}</div>
   );
 }
@@ -299,6 +385,19 @@ function SecondaryButton({
   );
 }
 
+function SettingsGroup({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      margin: '0 20px',
+      borderRadius: 14,
+      background: 'rgba(255,255,255,0.04)',
+      overflow: 'hidden',
+    }}>
+      {children}
+    </div>
+  );
+}
+
 function ProfilePage({ onBack }: { onBack: () => void }) {
   const { user: authUser, updateUser } = useAuth();
   const { toast } = useToast();
@@ -410,7 +509,7 @@ function ProfilePage({ onBack }: { onBack: () => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PageHeader title="Profile" onBack={onBack} />
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 40px' }}>
+      <div style={{ flex: 1, padding: '0 20px 40px', ...scrollStyle }}>
 
         <div style={{ marginBottom: 16 }}>
           <label style={sectionLabelStyle}>Full Name</label>
@@ -592,7 +691,7 @@ function OrganizationPage({ onBack }: { onBack: () => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PageHeader title="Organization" onBack={onBack} />
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 40px' }}>
+      <div style={{ flex: 1, padding: '0 20px 40px', ...scrollStyle }}>
         {isLoading ? (
           <div style={{ padding: '40px 0', textAlign: 'center', color: '#7A7874' }}>
             <Loader2 size={24} className="animate-spin" style={{ margin: '0 auto 8px' }} />
@@ -722,11 +821,296 @@ function OrganizationPage({ onBack }: { onBack: () => void }) {
   );
 }
 
+function CapabilitiesPage({ onBack }: { onBack: () => void }) {
+  const [aiChat, setAiChat] = useState(true);
+  const [aiAssignment, setAiAssignment] = useState(true);
+  const [smartNotif, setSmartNotif] = useState(false);
+  const [graphViz, setGraphViz] = useState(true);
+  const [autoDeps, setAutoDeps] = useState(false);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <PageHeader title="Capabilities" onBack={onBack} />
+      <div style={{ flex: 1, padding: '0 0 40px', ...scrollStyle }}>
+        <SettingsGroup>
+          <SettingsToggleItem
+            icon={Bot}
+            label="AI Chat"
+            checked={aiChat}
+            onChange={setAiChat}
+            testId="toggle-ai-chat"
+          />
+          <Divider />
+          <SettingsToggleItem
+            icon={UserCog}
+            label="AI Task Assignment"
+            description="Allow Buddy AI to suggest task assignments based on team workload and skills"
+            checked={aiAssignment}
+            onChange={setAiAssignment}
+            testId="toggle-ai-assignment"
+          />
+          <Divider />
+          <SettingsToggleItem
+            icon={Zap}
+            label="Smart Notifications"
+            description="Buddy will analyze task urgency and send priority alerts"
+            checked={smartNotif}
+            onChange={setSmartNotif}
+            testId="toggle-smart-notif"
+          />
+        </SettingsGroup>
+
+        <GroupSpacer />
+        <GroupLabel text="Data & Analysis" />
+
+        <SettingsGroup>
+          <SettingsToggleItem
+            icon={BarChart3}
+            label="Graph Visualization"
+            checked={graphViz}
+            onChange={setGraphViz}
+            testId="toggle-graph-viz"
+          />
+          <Divider />
+          <SettingsToggleItem
+            icon={GitBranch}
+            label="Auto Dependency Detection"
+            description="Automatically detect and suggest task dependencies based on content analysis"
+            checked={autoDeps}
+            onChange={setAutoDeps}
+            testId="toggle-auto-deps"
+          />
+        </SettingsGroup>
+      </div>
+    </div>
+  );
+}
+
+function ConnectorItem({
+  icon: Icon,
+  label,
+  connected,
+  onConnect,
+  testId,
+}: {
+  icon: typeof MessageSquare;
+  label: string;
+  connected?: boolean;
+  onConnect?: () => void;
+  testId?: string;
+}) {
+  return (
+    <div
+      style={{
+        height: 56,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        padding: '0 16px',
+      }}
+      data-testid={testId}
+    >
+      <div style={{
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        background: 'rgba(255,255,255,0.06)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+      }}>
+        <Icon size={18} color="#9A9893" />
+      </div>
+      <span style={{ flex: 1, fontSize: 15, color: '#ECECEC' }}>{label}</span>
+      {connected ? (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          fontSize: 13,
+          color: '#3B82F6',
+        }}>
+          Connected
+        </div>
+      ) : (
+        <div
+          onClick={onConnect}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            fontSize: 13,
+            color: '#9A9893',
+            cursor: 'pointer',
+            padding: '4px 0',
+          }}
+        >
+          Connect
+          <ExternalLink size={13} color="#9A9893" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConnectorsPage({ onBack }: { onBack: () => void }) {
+  const { toast } = useToast();
+
+  const handleConnect = (name: string) => {
+    toast({ title: `${name} integration coming soon` });
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <PageHeader title="Connectors" onBack={onBack} />
+      <div style={{ flex: 1, padding: '0 0 40px', ...scrollStyle }}>
+
+        <div style={{ padding: '12px 20px 16px' }}>
+          <div style={{ fontSize: 13, color: '#7A7874', lineHeight: '1.5' }}>
+            Connect third-party services to extend Buddy's capabilities. Integrations allow task syncing, notifications, and more.
+          </div>
+        </div>
+
+        <GroupLabel text="Available" />
+        <SettingsGroup>
+          <ConnectorItem
+            icon={MessageSquare}
+            label="WeChat Work"
+            onConnect={() => handleConnect('WeChat Work')}
+            testId="connector-wechat"
+          />
+          <Divider />
+          <ConnectorItem
+            icon={Phone}
+            label="DingTalk"
+            onConnect={() => handleConnect('DingTalk')}
+            testId="connector-dingtalk"
+          />
+          <Divider />
+          <ConnectorItem
+            icon={Send}
+            label="Feishu"
+            onConnect={() => handleConnect('Feishu')}
+            testId="connector-feishu"
+          />
+          <Divider />
+          <ConnectorItem
+            icon={Mail}
+            label="Email"
+            onConnect={() => handleConnect('Email')}
+            testId="connector-email"
+          />
+        </SettingsGroup>
+      </div>
+    </div>
+  );
+}
+
+function PermissionsPage({ onBack }: { onBack: () => void }) {
+  const { user: authUser } = useAuth();
+  const role = authUser?.role || 'member';
+
+  const getPermLevel = (resource: string): { label: string; color: string } => {
+    switch (resource) {
+      case 'tasks':
+        return role === 'owner' || role === 'admin'
+          ? { label: 'Full access', color: '#3B82F6' }
+          : { label: 'Read & write', color: '#22C55E' };
+      case 'team':
+        return role === 'owner' || role === 'admin'
+          ? { label: 'Manage', color: '#3B82F6' }
+          : role === 'head'
+          ? { label: 'View team', color: '#22C55E' }
+          : { label: 'View', color: '#9A9893' };
+      case 'projects':
+        return role === 'owner' || role === 'admin'
+          ? { label: 'Full access', color: '#3B82F6' }
+          : role === 'head'
+          ? { label: 'Read & write', color: '#22C55E' }
+          : { label: 'Read only', color: '#9A9893' };
+      case 'org':
+        return role === 'owner'
+          ? { label: 'Full access', color: '#3B82F6' }
+          : role === 'admin'
+          ? { label: 'Manage', color: '#3B82F6' }
+          : { label: 'No access', color: '#7A7874' };
+      default:
+        return { label: 'None', color: '#7A7874' };
+    }
+  };
+
+  const items: { icon: typeof CheckSquare; label: string; resource: string }[] = [
+    { icon: CheckSquare, label: 'Task Management', resource: 'tasks' },
+    { icon: Users, label: 'Team Members', resource: 'team' },
+    { icon: FolderKanban, label: 'Projects', resource: 'projects' },
+    { icon: Building2, label: 'Organization Settings', resource: 'org' },
+  ];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <PageHeader title="Permissions" onBack={onBack} />
+      <div style={{ flex: 1, padding: '0 0 40px', ...scrollStyle }}>
+
+        <div style={{ padding: '4px 20px 16px' }}>
+          <div style={{
+            display: 'inline-block',
+            padding: '4px 12px',
+            borderRadius: 8,
+            background: 'rgba(59,130,246,0.15)',
+            fontSize: 13,
+            color: '#3B82F6',
+            fontWeight: 500,
+          }}>
+            Role: {role.charAt(0).toUpperCase() + role.slice(1)}
+          </div>
+        </div>
+
+        <SettingsGroup>
+          {items.map((item, i) => {
+            const perm = getPermLevel(item.resource);
+            const ItemIcon = item.icon;
+            return (
+              <div key={item.resource}>
+                {i > 0 && <Divider />}
+                <div
+                  style={{
+                    height: 52,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                    padding: '0 16px',
+                  }}
+                  data-testid={`perm-${item.resource}`}
+                >
+                  <ItemIcon size={20} color="#9A9893" strokeWidth={1.8} />
+                  <span style={{ flex: 1, fontSize: 16, color: '#ECECEC' }}>{item.label}</span>
+                  <span style={{ fontSize: 13, color: perm.color, fontWeight: 500 }}>{perm.label}</span>
+                </div>
+              </div>
+            );
+          })}
+        </SettingsGroup>
+
+        <div style={{
+          padding: '20px 24px',
+          fontSize: 13,
+          color: '#7A7874',
+          lineHeight: '1.5',
+          textAlign: 'center',
+        }}>
+          Contact your organization admin to change permissions
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ComingSoonPage({ title, onBack }: { title: string; onBack: () => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PageHeader title={title} onBack={onBack} />
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', ...scrollStyle }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{
             width: 48,
@@ -752,7 +1136,7 @@ function AboutPage({ onBack }: { onBack: () => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PageHeader title="About" onBack={onBack} />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, ...scrollStyle }}>
         <div style={{
           width: 72,
           height: 72,
@@ -801,25 +1185,13 @@ function AboutPage({ onBack }: { onBack: () => void }) {
   );
 }
 
-function SettingsGroup({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{
-      margin: '0 20px',
-      borderRadius: 14,
-      background: 'rgba(255,255,255,0.04)',
-      overflow: 'hidden',
-    }}>
-      {children}
-    </div>
-  );
-}
-
 export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onCloseSidebar }: SettingsPageProps) {
   const { user: authUser, logout } = useAuth();
   const { theme } = useTheme();
   const [page, setPage] = useState<PageId>('main');
   const [subVisible, setSubVisible] = useState(false);
   const [subSlideIn, setSubSlideIn] = useState(false);
+  const [hapticFeedback, setHapticFeedback] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -867,14 +1239,20 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
         return <div style={subStyle}><ProfilePage onBack={goBack} /></div>;
       case 'organization':
         return <div style={subStyle}><OrganizationPage onBack={goBack} /></div>;
+      case 'capabilities':
+        return <div style={subStyle}><CapabilitiesPage onBack={goBack} /></div>;
+      case 'connectors':
+        return <div style={subStyle}><ConnectorsPage onBack={goBack} /></div>;
       case 'permissions':
-        return <div style={subStyle}><ComingSoonPage title="Permissions" onBack={goBack} /></div>;
+        return <div style={subStyle}><PermissionsPage onBack={goBack} /></div>;
       case 'notifications':
         return <div style={subStyle}><ComingSoonPage title="Notifications" onBack={goBack} /></div>;
       case 'privacy':
         return <div style={subStyle}><ComingSoonPage title="Privacy" onBack={goBack} /></div>;
       case 'about':
         return <div style={subStyle}><AboutPage onBack={goBack} /></div>;
+      case 'shared-links':
+        return <div style={subStyle}><ComingSoonPage title="Shared Links" onBack={goBack} /></div>;
       default:
         return null;
     }
@@ -912,7 +1290,7 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
         }}>
           <PageHeader title="Settings" onClose={onClose} />
 
-          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+          <div style={{ flex: 1, ...scrollStyle }}>
             <div style={{
               margin: '4px 20px 16px',
               padding: '14px 16px',
@@ -941,6 +1319,10 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
                 onClick={() => { onClose(); onOpenOrgSwitcher(); }}
                 testId="settings-nav-switch-org"
               />
+              <Divider />
+              <SettingsItem icon={Settings2} label="Capabilities" onClick={() => navigateTo('capabilities')} testId="settings-nav-capabilities" />
+              <Divider />
+              <SettingsItem icon={Blocks} label="Connectors" onClick={() => navigateTo('connectors')} testId="settings-nav-connectors" />
               {(authUser?.role === 'owner' || authUser?.role === 'admin') && (
                 <>
                   <Divider />
@@ -974,6 +1356,20 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
               <SettingsItem icon={HelpCircle} label="Help & Feedback" onClick={() => { window.location.href = 'mailto:support@buddy.app'; }} testId="settings-nav-help" />
               <Divider />
               <SettingsItem icon={Info} label="About" value="v0.1.0" onClick={() => navigateTo('about')} testId="settings-nav-about" />
+            </SettingsGroup>
+
+            <GroupSpacer />
+
+            <SettingsGroup>
+              <SettingsItem icon={Link2} label="Shared Links" onClick={() => navigateTo('shared-links')} testId="settings-nav-shared-links" />
+              <Divider />
+              <SettingsToggleItem
+                icon={Smartphone}
+                label="Haptic Feedback"
+                checked={hapticFeedback}
+                onChange={setHapticFeedback}
+                testId="toggle-haptic-feedback"
+              />
             </SettingsGroup>
 
             <GroupSpacer />
