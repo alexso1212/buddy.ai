@@ -792,7 +792,7 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
 
       <div style={{ height: 40 }} />
       <div style={{ pointerEvents: 'auto' }}>
-        <div className="max-w-3xl mx-auto px-3">
+        <div className="max-w-3xl mx-auto px-4">
           <div ref={composerRef}>
             <AiInputBar
               onSend={onSend}
@@ -1468,10 +1468,10 @@ export default function Agent() {
       
 
       {showWelcome ? (
-        <div className="absolute inset-0 flex flex-col items-center justify-center px-3" style={{ paddingBottom: 80 }}>
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-4" style={{ paddingBottom: 80 }}>
           
           <div className="flex flex-col items-center gap-4 mb-8">
-            <AgentLogo size={80} animate={true} glow={true} />
+            <AgentLogo size={72} animate={true} glow={true} />
             <h1 className="font-serif text-2xl text-[var(--text-primary)]" data-testid="text-welcome-heading">有什么可以帮你的？</h1>
           </div>
           <div className="grid grid-cols-2 gap-3 w-full max-w-md">

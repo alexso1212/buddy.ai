@@ -528,11 +528,11 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
               <button
                 onClick={() => setShowSheet(true)}
                 style={{
-                  width: 30,
-                  height: 30,
+                  width: 32,
+                  height: 32,
                   background: 'transparent',
-                  border: '1px solid var(--border-medium)',
-                  borderRadius: 8,
+                  border: 'none',
+                  borderRadius: '50%',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -543,7 +543,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
                 className="hover:bg-white/5"
                 data-testid="ai-attach"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-5 h-5" />
               </button>
 
               {webSearchEnabled && (
@@ -562,10 +562,10 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
               <button
                 onClick={onStop}
                 style={{
-                  width: 30,
-                  height: 30,
+                  width: 34,
+                  height: 34,
                   background: '#ECECEC',
-                  borderRadius: 8,
+                  borderRadius: '50%',
                   border: 'none',
                   display: 'flex',
                   alignItems: 'center',
@@ -584,10 +584,10 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
                 onClick={handleSend}
                 disabled={isEmpty}
                 style={{
-                  width: 30,
-                  height: 30,
+                  width: 34,
+                  height: 34,
                   background: 'var(--brand)',
-                  borderRadius: 8,
+                  borderRadius: '50%',
                   border: 'none',
                   display: 'flex',
                   alignItems: 'center',

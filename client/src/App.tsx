@@ -1753,11 +1753,17 @@ function ModelSelector() {
         onMouseLeave={e => { if (!open) e.currentTarget.style.background = 'transparent'; }}
         data-testid="model-selector-trigger"
       >
-        <span style={{
-          fontSize: 15,
-          fontWeight: 600,
-          color: 'var(--text-primary)',
-        }}>{current.label}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <span style={{
+            fontSize: 16,
+            fontWeight: 600,
+            color: 'var(--text-primary)',
+            lineHeight: 1.2,
+          }}>{current.label}</span>
+          {extThinking && (
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.2 }}>Extended</span>
+          )}
+        </div>
         <ChevronRight
           size={14}
           color="var(--text-secondary)"
@@ -2148,7 +2154,7 @@ function App() {
             }} />
               <div className="md:hidden" style={{
                 position: 'absolute',
-                top: 8, left: 8, right: 8,
+                top: 12, left: 16, right: 16,
                 zIndex: 11,
                 display: 'flex',
                 alignItems: 'center',
@@ -2156,18 +2162,18 @@ function App() {
                 pointerEvents: 'auto',
               }} data-testid="top-controls">
                 <button {...elasticDeformSmallProps} onClick={() => setSidebarOpen(!sidebarOpen)} style={{
-                  width: 36, height: 36,
+                  width: 42, height: 42,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: 'rgba(255,255,255,0.07)',
-                  border: '1px solid rgba(255,255,255,0.10)',
+                  background: 'rgba(255,255,255,0.10)',
+                  border: '1px solid rgba(255,255,255,0.15)',
                   borderRadius: '50%',
                   cursor: 'pointer',
                   color: 'var(--text-primary)',
                   transition: 'background 150ms',
                 }} data-testid="menu-toggle"
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}
                 >
-                  <Menu size={18} strokeWidth={1.8} />
+                  <Menu size={20} strokeWidth={1.8} />
                 </button>
                 {isAgentPage ? (
                   <ModelSelector />
@@ -2178,7 +2184,7 @@ function App() {
                     fontFamily: 'var(--font-sans)',
                   }} data-testid="top-bar-title">{isChatsPage ? 'Chats' : 'Buddy'}</span>
                 )}
-                <div style={{ width: 36 }} />
+                <div style={{ width: 42 }} />
               </div>
             </>
           )}
