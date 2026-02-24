@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import mammoth from 'mammoth';
 import { SYSTEM_PROMPT } from './prompts';
 import { ACTION_SCHEMAS } from './actionSchemas';
 import { storage } from '../../storage';
@@ -840,9 +841,24 @@ export async function* chatStream(
           }
         });
       } else {
+        let fileText = '';
+        const buffer = Buffer.from(att.base64, 'base64');
+        const ext = att.name.toLowerCase().split('.').pop() || '';
+        if (ext === 'docx') {
+          try {
+            const result = await mammoth.extractRawText({ buffer });
+            fileText = result.value;
+          } catch {
+            fileText = '[无法解析此 .docx 文件]';
+          }
+        } else if (['txt', 'csv', 'json', 'md', 'xml', 'html', 'css', 'js', 'ts', 'py', 'yaml', 'yml', 'log', 'ini', 'cfg', 'env', 'sh', 'bat'].includes(ext)) {
+          fileText = buffer.toString('utf-8');
+        } else {
+          fileText = `[不支持直接解析的文件格式: .${ext}]`;
+        }
         contentParts.push({
           type: 'text',
-          text: `[附件: ${att.name}]\n内容:\n${Buffer.from(att.base64, 'base64').toString('utf-8')}`,
+          text: `[附件: ${att.name}]\n内容:\n${fileText}`,
         });
       }
     }
