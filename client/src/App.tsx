@@ -54,7 +54,7 @@ import {
   X,
 } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
-import { tapMotionProps, elasticTiltSmallProps, elasticTiltProps } from '@/hooks/use-tap-motion';
+import { tapMotionProps, elasticDeformSmallProps, elasticDeformProps } from '@/hooks/use-tap-motion';
 
 const BUDDY_AI_NAV = [
   { label: 'Chats', icon: MessageSquare, path: '/chats' },
@@ -706,7 +706,7 @@ function Sidebar({
           }}
         >
           <div
-            {...elasticTiltProps}
+            {...elasticDeformProps}
             style={{
               display: 'flex', alignItems: 'center', cursor: 'pointer',
               padding: '6px 14px 6px 6px',
@@ -716,7 +716,6 @@ function Sidebar({
               transition: 'background 150ms ease',
             }}
             onClick={() => setSettingsOpen(true)}
-            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.09)')}
             data-testid="button-open-settings"
           >
             <div
@@ -2156,7 +2155,7 @@ function App() {
                 justifyContent: 'space-between',
                 pointerEvents: 'auto',
               }} data-testid="top-controls">
-                <button {...elasticTiltSmallProps} onClick={() => setSidebarOpen(!sidebarOpen)} style={{
+                <button {...elasticDeformSmallProps} onClick={() => setSidebarOpen(!sidebarOpen)} style={{
                   width: 36, height: 36,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   background: 'rgba(255,255,255,0.07)',

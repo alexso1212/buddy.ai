@@ -267,51 +267,87 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isFocused, setIsFocused] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
+  const [glowPos, setGlowPos] = useState({ x: 0.5, y: 0.5 });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composerWrapRef = useRef<HTMLDivElement>(null);
-  const tiltState = useRef({ pressed: false, moveHandler: null as ((e: PointerEvent) => void) | null });
+  const deformState = useRef({ pressed: false, moveHandler: null as ((e: PointerEvent) => void) | null });
 
-  const computeInputTilt = useCallback((clientX: number, clientY: number) => {
+  const computeDeform = useCallback((clientX: number, clientY: number) => {
     const el = composerWrapRef.current;
-    if (!el) return '';
+    if (!el) return { transform: '', dx: 0, dy: 0, norm: 0 };
     const rect = el.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
-    const dx = Math.max(-1, Math.min(1, (clientX - cx) / (rect.width / 2)));
-    const dy = Math.max(-1, Math.min(1, (clientY - cy) / (rect.height / 2)));
-    return `perspective(800px) rotateX(${-dy * 3}deg) rotateY(${dx * 3}deg) scale(0.985)`;
+    const rawDx = clientX - cx;
+    const rawDy = clientY - cy;
+    const maxDist = Math.max(rect.width, rect.height);
+    const dist = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
+    const norm = Math.min(dist / maxDist, 1.5);
+    const dx = maxDist > 0 ? rawDx / maxDist : 0;
+    const dy = maxDist > 0 ? rawDy / maxDist : 0;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+    const stretch = 0.025;
+    let scaleX = 0.99, scaleY = 0.99;
+    if (absDx > absDy) {
+      scaleX = 0.99 + norm * stretch * 0.6;
+      scaleY = 0.99 - norm * stretch * 0.35;
+    } else if (absDy > absDx) {
+      scaleY = 0.99 + norm * stretch * 0.6;
+      scaleX = 0.99 - norm * stretch * 0.35;
+    }
+    const tx = dx * norm * 3;
+    const ty = dy * norm * 3;
+    return {
+      transform: `translate(${tx}px, ${ty}px) scaleX(${scaleX.toFixed(4)}) scaleY(${scaleY.toFixed(4)})`,
+      dx, dy, norm,
+    };
+  }, []);
+
+  const updateGlowPos = useCallback((clientX: number, clientY: number) => {
+    const el = composerWrapRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setGlowPos({
+      x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height)),
+    });
   }, []);
 
   const handleComposerPointerDown = useCallback((e: React.PointerEvent) => {
     setIsPressed(true);
+    updateGlowPos(e.clientX, e.clientY);
     if (navigator.vibrate) navigator.vibrate(10);
     const el = composerWrapRef.current;
     if (!el) return;
-    tiltState.current.pressed = true;
-    el.style.transition = 'transform 200ms cubic-bezier(0.34,1.56,0.64,1)';
-    el.style.transform = computeInputTilt(e.clientX, e.clientY);
+    deformState.current.pressed = true;
     el.style.willChange = 'transform';
+    const { transform } = computeDeform(e.clientX, e.clientY);
+    el.style.transition = 'transform 180ms cubic-bezier(0.25,0.46,0.45,0.94)';
+    el.style.transform = transform;
     const onMove = (ev: PointerEvent) => {
-      if (!tiltState.current.pressed || !composerWrapRef.current) return;
-      composerWrapRef.current.style.transition = 'transform 60ms ease-out';
-      composerWrapRef.current.style.transform = computeInputTilt(ev.clientX, ev.clientY);
+      if (!deformState.current.pressed || !composerWrapRef.current) return;
+      const result = computeDeform(ev.clientX, ev.clientY);
+      composerWrapRef.current.style.transition = 'transform 50ms ease-out';
+      composerWrapRef.current.style.transform = result.transform;
+      updateGlowPos(ev.clientX, ev.clientY);
     };
-    tiltState.current.moveHandler = onMove;
+    deformState.current.moveHandler = onMove;
     window.addEventListener('pointermove', onMove);
-  }, [computeInputTilt]);
+  }, [computeDeform, updateGlowPos]);
 
   const handleComposerPointerUp = useCallback(() => {
     setIsPressed(false);
-    tiltState.current.pressed = false;
+    deformState.current.pressed = false;
     const el = composerWrapRef.current;
     if (el) {
-      el.style.transition = 'transform 300ms cubic-bezier(0.34,1.56,0.64,1)';
-      el.style.transform = 'perspective(800px) rotateX(0deg) rotateY(0deg) scale(1)';
+      el.style.transition = 'transform 360ms cubic-bezier(0.34,1.56,0.64,1)';
+      el.style.transform = 'translate(0px, 0px) scaleX(1) scaleY(1)';
       el.style.willChange = '';
     }
-    if (tiltState.current.moveHandler) {
-      window.removeEventListener('pointermove', tiltState.current.moveHandler);
-      tiltState.current.moveHandler = null;
+    if (deformState.current.moveHandler) {
+      window.removeEventListener('pointermove', deformState.current.moveHandler);
+      deformState.current.moveHandler = null;
     }
   }, []);
 
@@ -357,12 +393,12 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
             position: 'relative' as const,
             padding: 1,
             background: isPressed
-              ? 'linear-gradient(to bottom, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.3) 40%, rgba(255,255,255,0.15) 100%)'
+              ? `radial-gradient(ellipse at ${glowPos.x * 100}% ${glowPos.y * 100}%, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.3) 40%, rgba(255,255,255,0.12) 100%)`
               : 'linear-gradient(to bottom, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.12) 40%, rgba(255,255,255,0.06) 100%)',
             boxShadow: isPressed
-              ? '0 0 24px rgba(255,255,255,0.2), 0 0 48px rgba(255,255,255,0.1), inset 0 0 12px rgba(255,255,255,0.06)'
+              ? `${(glowPos.x - 0.5) * 16}px ${(glowPos.y - 0.5) * 12}px 28px rgba(255,255,255,0.22), 0 0 20px rgba(255,255,255,0.12), inset ${(glowPos.x - 0.5) * 6}px ${(glowPos.y - 0.5) * 4}px 12px rgba(255,255,255,0.06)`
               : 'none',
-            transition: 'background 0.15s ease, box-shadow 0.15s ease',
+            transition: 'background 0.1s ease, box-shadow 0.1s ease',
           }}
           onPointerDown={handleComposerPointerDown}
           onPointerUp={handleComposerPointerUp}

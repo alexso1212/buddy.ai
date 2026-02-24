@@ -71,44 +71,91 @@ export function getTapMotionProps(scale = DEFAULT_SCALE, duration = DEFAULT_DURA
 
 export const tapMotionProps = getTapMotionProps();
 
-interface ElasticTiltOptions {
-  maxTilt?: number;
-  scale?: number;
-  perspective?: number;
-  glowColor?: string;
-  glowIntensity?: number;
+interface ElasticDeformOptions {
+  maxStretch?: number;
+  maxTranslate?: number;
+  baseScale?: number;
+  glowSpread?: number;
+  glowStrength?: number;
   duration?: number;
   vibrate?: number;
 }
 
-function computeTilt(
+function computeDeform(
   el: HTMLElement,
   clientX: number,
   clientY: number,
-  maxTilt: number,
-  scale: number,
-  perspective: number,
+  maxStretch: number,
+  maxTranslate: number,
+  baseScale: number,
 ) {
   const rect = el.getBoundingClientRect();
   const cx = rect.left + rect.width / 2;
   const cy = rect.top + rect.height / 2;
-  const dx = (clientX - cx) / (rect.width / 2);
-  const dy = (clientY - cy) / (rect.height / 2);
-  const clampedDx = Math.max(-1, Math.min(1, dx));
-  const clampedDy = Math.max(-1, Math.min(1, dy));
-  const rotateX = -clampedDy * maxTilt;
-  const rotateY = clampedDx * maxTilt;
-  return `perspective(${perspective}px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(${scale})`;
+
+  const rawDx = clientX - cx;
+  const rawDy = clientY - cy;
+  const dist = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
+  const maxDist = Math.max(rect.width, rect.height);
+  const norm = Math.min(dist / maxDist, 1.5);
+
+  const dx = maxDist > 0 ? rawDx / maxDist : 0;
+  const dy = maxDist > 0 ? rawDy / maxDist : 0;
+
+  const absDx = Math.abs(dx);
+  const absDy = Math.abs(dy);
+
+  let scaleX = baseScale;
+  let scaleY = baseScale;
+
+  if (absDx > absDy) {
+    scaleX = baseScale + norm * maxStretch * 0.6;
+    scaleY = baseScale - norm * maxStretch * 0.35;
+  } else if (absDy > absDx) {
+    scaleY = baseScale + norm * maxStretch * 0.6;
+    scaleX = baseScale - norm * maxStretch * 0.35;
+  } else {
+    scaleX = baseScale + norm * maxStretch * 0.2;
+    scaleY = baseScale + norm * maxStretch * 0.2;
+  }
+
+  scaleX = Math.max(baseScale - maxStretch, Math.min(baseScale + maxStretch, scaleX));
+  scaleY = Math.max(baseScale - maxStretch, Math.min(baseScale + maxStretch, scaleY));
+
+  const tx = dx * norm * maxTranslate;
+  const ty = dy * norm * maxTranslate;
+
+  return { scaleX, scaleY, tx, ty, dx, dy, norm };
 }
 
-export function getElasticTiltProps(options?: ElasticTiltOptions) {
+function computeGlow(
+  dx: number,
+  dy: number,
+  norm: number,
+  glowSpread: number,
+  glowStrength: number,
+) {
+  const intensity = 0.15 + norm * glowStrength;
+  const spreadPx = glowSpread + norm * glowSpread * 0.5;
+
+  const offsetX = dx * spreadPx * 0.6;
+  const offsetY = dy * spreadPx * 0.6;
+
+  const base = `0 0 ${spreadPx}px rgba(255,255,255,${intensity * 0.5})`;
+  const directional = `${offsetX}px ${offsetY}px ${spreadPx * 1.5}px rgba(255,255,255,${intensity})`;
+  const inner = `inset ${offsetX * 0.3}px ${offsetY * 0.3}px ${spreadPx * 0.6}px rgba(255,255,255,${intensity * 0.3})`;
+
+  return `${directional}, ${base}, ${inner}`;
+}
+
+export function getElasticDeformProps(options?: ElasticDeformOptions) {
   const {
-    maxTilt = 12,
-    scale = 0.97,
-    perspective = 400,
-    glowColor = 'rgba(255,255,255,0.18)',
-    glowIntensity = 0.12,
-    duration = 200,
+    maxStretch = 0.08,
+    maxTranslate = 6,
+    baseScale = 0.97,
+    glowSpread = 16,
+    glowStrength = 0.25,
+    duration = 180,
     vibrate: vib = 6,
   } = options || {};
 
@@ -118,14 +165,15 @@ export function getElasticTiltProps(options?: ElasticTiltOptions) {
   let origBoxShadow = '';
   let origFilter = '';
 
-  const applyGlow = (el: HTMLElement) => {
-    el.style.boxShadow = `0 0 20px ${glowColor}, 0 0 40px rgba(255,255,255,${glowIntensity * 0.5}), ${origBoxShadow ? origBoxShadow : ''}`.replace(/,\s*$/, '');
-    el.style.filter = `brightness(1.15)`;
-  };
+  const applyDeform = (el: HTMLElement, clientX: number, clientY: number, fast: boolean) => {
+    const { scaleX, scaleY, tx, ty, dx, dy, norm } = computeDeform(el, clientX, clientY, maxStretch, maxTranslate, baseScale);
+    const glow = computeGlow(dx, dy, norm, glowSpread, glowStrength);
 
-  const removeGlow = (el: HTMLElement) => {
-    el.style.boxShadow = origBoxShadow;
-    el.style.filter = origFilter;
+    const dur = fast ? 50 : duration;
+    el.style.transition = `transform ${dur}ms cubic-bezier(0.25,0.46,0.45,0.94), box-shadow ${dur}ms ease, filter ${dur}ms ease`;
+    el.style.transform = `translate(${tx}px, ${ty}px) scaleX(${scaleX.toFixed(4)}) scaleY(${scaleY.toFixed(4)})`;
+    el.style.boxShadow = origBoxShadow ? `${glow}, ${origBoxShadow}` : glow;
+    el.style.filter = `brightness(${1 + norm * 0.18})`;
   };
 
   const press = (el: HTMLElement, clientX: number, clientY: number) => {
@@ -134,11 +182,9 @@ export function getElasticTiltProps(options?: ElasticTiltOptions) {
     currentEl = el;
     origBoxShadow = el.style.boxShadow || '';
     origFilter = el.style.filter || '';
+    el.style.willChange = 'transform, box-shadow, filter';
 
-    el.style.transition = `transform ${duration}ms cubic-bezier(0.34,1.56,0.64,1), box-shadow ${duration}ms ease, filter ${duration}ms ease`;
-    el.style.transform = computeTilt(el, clientX, clientY, maxTilt, scale, perspective);
-    el.style.willChange = 'transform';
-    applyGlow(el);
+    applyDeform(el, clientX, clientY, false);
 
     if (vib && navigator.vibrate) {
       try { navigator.vibrate(vib); } catch {}
@@ -146,8 +192,7 @@ export function getElasticTiltProps(options?: ElasticTiltOptions) {
 
     moveHandler = (e: PointerEvent) => {
       if (!pressed || !currentEl) return;
-      currentEl.style.transition = 'transform 60ms ease-out, box-shadow 150ms ease, filter 150ms ease';
-      currentEl.style.transform = computeTilt(currentEl, e.clientX, e.clientY, maxTilt, scale, perspective);
+      applyDeform(currentEl, e.clientX, e.clientY, true);
     };
     window.addEventListener('pointermove', moveHandler);
   };
@@ -156,10 +201,12 @@ export function getElasticTiltProps(options?: ElasticTiltOptions) {
     if (!pressed) return;
     pressed = false;
     currentEl = null;
-    el.style.transition = `transform ${duration * 1.5}ms cubic-bezier(0.34,1.56,0.64,1), box-shadow ${duration}ms ease, filter ${duration}ms ease`;
-    el.style.transform = 'perspective(400px) rotateX(0deg) rotateY(0deg) scale(1)';
+
+    el.style.transition = `transform ${duration * 2}ms cubic-bezier(0.34,1.56,0.64,1), box-shadow ${duration}ms ease, filter ${duration}ms ease`;
+    el.style.transform = 'translate(0px, 0px) scaleX(1) scaleY(1)';
+    el.style.boxShadow = origBoxShadow;
+    el.style.filter = origFilter;
     el.style.willChange = '';
-    removeGlow(el);
 
     if (moveHandler) {
       window.removeEventListener('pointermove', moveHandler);
@@ -179,20 +226,21 @@ export function getElasticTiltProps(options?: ElasticTiltOptions) {
   };
 }
 
-export const elasticTiltProps = getElasticTiltProps();
+export const elasticDeformProps = getElasticDeformProps();
 
-export const elasticTiltSmallProps = getElasticTiltProps({
-  maxTilt: 18,
-  scale: 0.92,
-  perspective: 300,
-  glowIntensity: 0.15,
+export const elasticDeformSmallProps = getElasticDeformProps({
+  maxStretch: 0.12,
+  maxTranslate: 4,
+  baseScale: 0.93,
+  glowSpread: 12,
+  glowStrength: 0.3,
 });
 
-export const elasticTiltInputProps = getElasticTiltProps({
-  maxTilt: 4,
-  scale: 0.985,
-  perspective: 800,
-  glowColor: 'rgba(255,255,255,0.12)',
-  glowIntensity: 0.08,
-  duration: 250,
+export const elasticDeformInputProps = getElasticDeformProps({
+  maxStretch: 0.025,
+  maxTranslate: 3,
+  baseScale: 0.99,
+  glowSpread: 20,
+  glowStrength: 0.15,
+  duration: 220,
 });
