@@ -817,6 +817,7 @@ export default function Agent() {
   const [convTitle, setConvTitle] = useState<string>("");
   const [showChat, setShowChat] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isStreamingRef = useRef(false);
 
   useEffect(() => {
     if (!activeConvId) {
@@ -827,6 +828,8 @@ export default function Agent() {
       setConvTitle("");
       return;
     }
+
+    if (isStreamingRef.current) return;
 
     setMessagesLoading(true);
     (async () => {
@@ -941,6 +944,7 @@ export default function Agent() {
       };
       setMessages((prev) => [...prev, userMsg]);
       setLoading(true);
+      isStreamingRef.current = true;
 
       conversationHistory.current.push({ role: "user", content: text });
 
@@ -1092,6 +1096,7 @@ export default function Agent() {
         }
       } finally {
         setLoading(false);
+        isStreamingRef.current = false;
         abortControllerRef.current = null;
       }
     },

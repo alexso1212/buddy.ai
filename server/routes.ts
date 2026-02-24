@@ -1786,8 +1786,8 @@ export async function registerRoutes(server: Server, app: Express) {
         return res.status(400).json({ error: 'message is required' });
       }
 
-      const orgId = req.orgId;
-      const userId = currentUserId || req.currentUserId;
+      const orgId = req.orgId || 1;
+      const userId = currentUserId || req.currentUserId || 1;
       const user = await storage.getUserById(userId);
       const userName = user?.displayName || 'Unknown';
 
@@ -1891,8 +1891,8 @@ export async function registerRoutes(server: Server, app: Express) {
         return res.status(400).json({ error: 'message is required' });
       }
 
-      const orgId = req.orgId;
-      const userId = currentUserId || req.currentUserId;
+      const orgId = req.orgId || 1;
+      const userId = currentUserId || req.currentUserId || 1;
       const user = await storage.getUserById(userId);
       const userName = user?.displayName || 'Unknown';
 
