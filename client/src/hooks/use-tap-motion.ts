@@ -96,8 +96,8 @@ function computeDeform(
   const rawDx = clientX - cx;
   const rawDy = clientY - cy;
   const dist = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
-  const maxDist = Math.max(rect.width, rect.height) * 0.8;
-  const norm = Math.min(dist / Math.max(maxDist, 1), 1.2);
+  const refDist = Math.max(rect.width, rect.height, 60) * 1.5;
+  const norm = Math.min(dist / refDist, 1.0);
 
   const angle = Math.atan2(rawDy, rawDx);
   const cosA = Math.cos(angle);
@@ -209,11 +209,13 @@ export function getElasticDeformProps(options?: ElasticDeformOptions) {
   };
 }
 
-export const elasticDeformProps = getElasticDeformProps();
+export const elasticDeformProps = getElasticDeformProps({
+  maxTranslate: 4,
+});
 
 export const elasticDeformSmallProps = getElasticDeformProps({
-  maxStretch: 0.22,
-  maxTranslate: 1.5,
+  maxStretch: 0.20,
+  maxTranslate: 5,
   baseScale: 1.0,
   glowSpread: 10,
   glowStrength: 0.4,
