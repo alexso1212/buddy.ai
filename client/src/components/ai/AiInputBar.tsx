@@ -268,6 +268,52 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
   const [isFocused, setIsFocused] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const composerWrapRef = useRef<HTMLDivElement>(null);
+  const tiltState = useRef({ pressed: false, moveHandler: null as ((e: PointerEvent) => void) | null });
+
+  const computeInputTilt = useCallback((clientX: number, clientY: number) => {
+    const el = composerWrapRef.current;
+    if (!el) return '';
+    const rect = el.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = Math.max(-1, Math.min(1, (clientX - cx) / (rect.width / 2)));
+    const dy = Math.max(-1, Math.min(1, (clientY - cy) / (rect.height / 2)));
+    return `perspective(800px) rotateX(${-dy * 3}deg) rotateY(${dx * 3}deg) scale(0.985)`;
+  }, []);
+
+  const handleComposerPointerDown = useCallback((e: React.PointerEvent) => {
+    setIsPressed(true);
+    if (navigator.vibrate) navigator.vibrate(10);
+    const el = composerWrapRef.current;
+    if (!el) return;
+    tiltState.current.pressed = true;
+    el.style.transition = 'transform 200ms cubic-bezier(0.34,1.56,0.64,1)';
+    el.style.transform = computeInputTilt(e.clientX, e.clientY);
+    el.style.willChange = 'transform';
+    const onMove = (ev: PointerEvent) => {
+      if (!tiltState.current.pressed || !composerWrapRef.current) return;
+      composerWrapRef.current.style.transition = 'transform 60ms ease-out';
+      composerWrapRef.current.style.transform = computeInputTilt(ev.clientX, ev.clientY);
+    };
+    tiltState.current.moveHandler = onMove;
+    window.addEventListener('pointermove', onMove);
+  }, [computeInputTilt]);
+
+  const handleComposerPointerUp = useCallback(() => {
+    setIsPressed(false);
+    tiltState.current.pressed = false;
+    const el = composerWrapRef.current;
+    if (el) {
+      el.style.transition = 'transform 300ms cubic-bezier(0.34,1.56,0.64,1)';
+      el.style.transform = 'perspective(800px) rotateX(0deg) rotateY(0deg) scale(1)';
+      el.style.willChange = '';
+    }
+    if (tiltState.current.moveHandler) {
+      window.removeEventListener('pointermove', tiltState.current.moveHandler);
+      tiltState.current.moveHandler = null;
+    }
+  }, []);
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -305,6 +351,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
     <>
       <div style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div
+          ref={composerWrapRef}
           style={{
             borderRadius: 20,
             position: 'relative' as const,
@@ -317,13 +364,10 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
               : 'none',
             transition: 'background 0.15s ease, box-shadow 0.15s ease',
           }}
-          onPointerDown={() => {
-            setIsPressed(true);
-            if (navigator.vibrate) navigator.vibrate(10);
-          }}
-          onPointerUp={() => setIsPressed(false)}
-          onPointerLeave={() => setIsPressed(false)}
-          onPointerCancel={() => setIsPressed(false)}
+          onPointerDown={handleComposerPointerDown}
+          onPointerUp={handleComposerPointerUp}
+          onPointerLeave={handleComposerPointerUp}
+          onPointerCancel={handleComposerPointerUp}
           data-testid="ai-composer"
         >
           <div style={{
