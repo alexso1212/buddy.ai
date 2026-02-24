@@ -1362,6 +1362,109 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // ===================== Cross-Department Collaboration Health =====================
+  app.get("/api/graph/collaboration-health", async (_req, res) => {
+    try {
+      const allTasks = await storage.getTasks({});
+      const allProjects = await storage.getProjects();
+      const allUsers = await storage.getUsers();
+      const allDepartments = await storage.getDepartments();
+
+      const projectMap = new Map(allProjects.map(p => [p.id, p]));
+      const userMap = new Map(allUsers.map(u => [u.id, u]));
+
+      const userDeptMap = new Map<number, number | null>();
+      for (const u of allUsers) {
+        userDeptMap.set(u.id, u.deptId ?? null);
+      }
+
+      const crossDeptPairs = new Map<string, {
+        deptA: number;
+        deptB: number;
+        total: number;
+        completed: number;
+        overdue: number;
+        blocked: number;
+        active: number;
+      }>();
+
+      const now = new Date();
+
+      for (const task of allTasks) {
+        const project = projectMap.get(task.projectId);
+        const projectDeptId = project?.deptId ?? null;
+        const assigneeDeptId = task.assigneeId ? userDeptMap.get(task.assigneeId) ?? null : null;
+
+        if (projectDeptId === null || assigneeDeptId === null) continue;
+        if (projectDeptId === assigneeDeptId) continue;
+
+        const dA = Math.min(projectDeptId, assigneeDeptId);
+        const dB = Math.max(projectDeptId, assigneeDeptId);
+        const key = `${dA}-${dB}`;
+
+        if (!crossDeptPairs.has(key)) {
+          crossDeptPairs.set(key, { deptA: dA, deptB: dB, total: 0, completed: 0, overdue: 0, blocked: 0, active: 0 });
+        }
+        const pair = crossDeptPairs.get(key)!;
+        pair.total++;
+
+        if (task.status === 'done') pair.completed++;
+        if (task.status === 'blocked') pair.blocked++;
+        if (task.status !== 'done' && task.status !== 'cancelled') pair.active++;
+        if (task.dueDate && task.dueDate < now && task.status !== 'done' && task.status !== 'cancelled') pair.overdue++;
+      }
+
+      const results = Array.from(crossDeptPairs.values()).map(pair => {
+        const volumeScore = Math.min(pair.total / 10, 1);
+        const completionScore = pair.total > 0 ? pair.completed / pair.total : 0;
+        const timelinessScore = pair.total > 0 ? 1 - (pair.overdue / pair.total) : 1;
+        const flowScore = pair.active > 0 ? 1 - (pair.blocked / pair.active) : 1;
+
+        const healthScore = 0.15 * volumeScore + 0.30 * completionScore + 0.25 * timelinessScore + 0.30 * flowScore;
+
+        return {
+          deptA: pair.deptA,
+          deptB: pair.deptB,
+          healthScore: Math.round(healthScore * 1000) / 1000,
+          taskCount: pair.total,
+          metrics: {
+            volume: Math.round(volumeScore * 1000) / 1000,
+            completion: Math.round(completionScore * 1000) / 1000,
+            timeliness: Math.round(timelinessScore * 1000) / 1000,
+            flow: Math.round(flowScore * 1000) / 1000,
+          },
+        };
+      });
+
+      const deptIds = new Set<number>();
+      results.forEach(r => { deptIds.add(r.deptA); deptIds.add(r.deptB); });
+      const deptMap = new Map(allDepartments.map(d => [d.id, d]));
+      const allDeptIds = new Set(allDepartments.map(d => d.id));
+
+      allDeptIds.forEach(id => deptIds.add(id));
+
+      for (const dA of deptIds) {
+        for (const dB of deptIds) {
+          if (dA >= dB) continue;
+          const key = `${dA}-${dB}`;
+          if (!crossDeptPairs.has(key)) {
+            results.push({
+              deptA: dA,
+              deptB: dB,
+              healthScore: 0.55,
+              taskCount: 0,
+              metrics: { volume: 0, completion: 0, timeliness: 1, flow: 1 },
+            });
+          }
+        }
+      }
+
+      return res.json({ data: results });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
   // ===================== Job Roles =====================
   app.get("/api/job-roles", async (_req, res) => {
     try {

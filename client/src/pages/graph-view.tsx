@@ -2,15 +2,9 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Menu } from "lucide-react";
 import ForceGraph from "@/components/graph/ForceGraph";
-import type { GraphNode, GraphLink, ProjectInfo } from "@/components/graph/ForceGraph";
+import type { GraphNode, GraphLink, ProjectInfo, DeptInfo, CollabHealth } from "@/components/graph/ForceGraph";
 import GraphSettings from "@/components/graph/GraphSettings";
 import type { ColorByOption } from "@/components/graph/GraphSettings";
-
-interface DeptInfo {
-  id: number;
-  name: string;
-  color: string;
-}
 
 interface GraphData {
   nodes: GraphNode[];
@@ -80,7 +74,12 @@ export default function GraphView() {
     queryKey: ['/api/graph/data'],
   });
 
+  const { data: healthResponse } = useQuery<{ data: CollabHealth[] }>({
+    queryKey: ['/api/graph/collaboration-health'],
+  });
+
   const graphData = response?.data;
+  const collabHealth = healthResponse?.data ?? [];
 
   if (isLoading) {
     return (
@@ -110,6 +109,7 @@ export default function GraphView() {
   const nodes = graphData?.nodes ?? [];
   const links = graphData?.links ?? [];
   const projects = graphData?.projects ?? [];
+  const departments = graphData?.departments ?? [];
 
   return (
     <div
@@ -133,6 +133,8 @@ export default function GraphView() {
           nodes={nodes}
           links={links}
           projects={projects}
+          departments={departments}
+          collabHealth={collabHealth}
           colorBy={colorBy}
           bloodFlow={bloodFlow}
         />

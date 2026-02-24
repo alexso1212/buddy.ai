@@ -37,10 +37,26 @@ export interface ProjectInfo {
   color: string;
 }
 
+export interface DeptInfo {
+  id: number;
+  name: string;
+  color: string;
+}
+
+export interface CollabHealth {
+  deptA: number;
+  deptB: number;
+  healthScore: number;
+  taskCount: number;
+  metrics: { volume: number; completion: number; timeliness: number; flow: number };
+}
+
 interface ForceGraphProps {
   nodes: GraphNode[];
   links: GraphLink[];
   projects: ProjectInfo[];
+  departments?: DeptInfo[];
+  collabHealth?: CollabHealth[];
   colorBy?: ColorByOption;
   bloodFlow?: boolean;
   onNodeClick?: (node: GraphNode) => void;
@@ -96,37 +112,39 @@ function getNodeColor(node: GraphNode, colorBy: ColorByOption): string {
   }
 }
 
-function clusterForce(nodes: SimNode[], alpha: number) {
+function deptClusterForce(nodes: SimNode[], alpha: number) {
   const centroids: Record<number, { x: number; y: number; count: number }> = {};
   for (const node of nodes) {
-    if (!centroids[node.projectId]) {
-      centroids[node.projectId] = { x: 0, y: 0, count: 0 };
+    const key = node.deptId ?? -1;
+    if (!centroids[key]) {
+      centroids[key] = { x: 0, y: 0, count: 0 };
     }
-    centroids[node.projectId].x += node.x || 0;
-    centroids[node.projectId].y += node.y || 0;
-    centroids[node.projectId].count += 1;
+    centroids[key].x += node.x || 0;
+    centroids[key].y += node.y || 0;
+    centroids[key].count += 1;
   }
   for (const key of Object.keys(centroids)) {
     const c = centroids[Number(key)];
     c.x /= c.count;
     c.y /= c.count;
   }
-  const attractStrength = 0.3;
-  const repelStrength = 0.05;
+  const attractStrength = 0.35;
+  const repelStrength = 0.08;
   for (const node of nodes) {
-    const c = centroids[node.projectId];
+    const key = node.deptId ?? -1;
+    const c = centroids[key];
     if (c) {
       node.vx = (node.vx || 0) + (c.x - (node.x || 0)) * alpha * attractStrength;
       node.vy = (node.vy || 0) + (c.y - (node.y || 0)) * alpha * attractStrength;
-      for (const key of Object.keys(centroids)) {
-        const pid = Number(key);
-        if (pid !== node.projectId) {
-          const other = centroids[pid];
+      for (const otherKey of Object.keys(centroids)) {
+        const otherDept = Number(otherKey);
+        if (otherDept !== key) {
+          const other = centroids[otherDept];
           const dx = (node.x || 0) - other.x;
           const dy = (node.y || 0) - other.y;
           const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          node.vx = (node.vx || 0) + (dx / dist) * alpha * repelStrength * 50;
-          node.vy = (node.vy || 0) + (dy / dist) * alpha * repelStrength * 50;
+          node.vx = (node.vx || 0) + (dx / dist) * alpha * repelStrength * 60;
+          node.vy = (node.vy || 0) + (dy / dist) * alpha * repelStrength * 60;
         }
       }
     }
@@ -138,7 +156,51 @@ function truncate(str: string, max: number) {
   return str.slice(0, max) + "\u2026";
 }
 
-export default function ForceGraph({ nodes, links, projects, colorBy = 'department', bloodFlow = true, onNodeClick }: ForceGraphProps) {
+function computeGalaxyBoundaries(nodes: SimNode[], departments: DeptInfo[], padding: number = 40) {
+  const deptNodes: Record<number, SimNode[]> = {};
+  for (const n of nodes) {
+    const key = n.deptId ?? -1;
+    if (key === -1) continue;
+    if (!deptNodes[key]) deptNodes[key] = [];
+    deptNodes[key].push(n);
+  }
+
+  return Object.entries(deptNodes).map(([deptIdStr, dNodes]) => {
+    const deptId = Number(deptIdStr);
+    const dept = departments.find(d => d.id === deptId);
+    if (!dept || dNodes.length === 0) return null;
+
+    let cx = 0, cy = 0;
+    for (const n of dNodes) { cx += n.x || 0; cy += n.y || 0; }
+    cx /= dNodes.length;
+    cy /= dNodes.length;
+
+    let maxR = 0;
+    for (const n of dNodes) {
+      const dx = (n.x || 0) - cx;
+      const dy = (n.y || 0) - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > maxR) maxR = dist;
+    }
+
+    const radius = maxR + padding;
+
+    return {
+      deptId,
+      name: dept.name,
+      color: dept.color || FALLBACK_COLOR,
+      cx,
+      cy,
+      radius,
+      nodeCount: dNodes.length,
+    };
+  }).filter(Boolean) as Array<{
+    deptId: number; name: string; color: string;
+    cx: number; cy: number; radius: number; nodeCount: number;
+  }>;
+}
+
+export default function ForceGraph({ nodes, links, projects, departments = [], collabHealth = [], colorBy = 'department', bloodFlow = true, onNodeClick }: ForceGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const simulationRef = useRef<d3.Simulation<SimNode, SimLink> | null>(null);
@@ -146,8 +208,11 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
   const colorByRef = useRef(colorBy);
   const simLinksRef = useRef<any[]>([]);
   const hoveredNodeIdRef = useRef<number | null>(null);
-
   const selectedNodeIdRef = useRef<number | null>(null);
+  const galaxyDataRef = useRef<ReturnType<typeof computeGalaxyBoundaries>>([]);
+  const collabHealthRef = useRef(collabHealth);
+
+  useEffect(() => { collabHealthRef.current = collabHealth; }, [collabHealth]);
 
   const getRadius = useCallback((node: GraphNode) => {
     const priorityBase: Record<string, number> = {
@@ -184,11 +249,34 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
       .attr("width", width)
       .attr("height", height);
 
+    const defs = svg.append("defs");
+
+    const galaxyFilter = defs.append("filter")
+      .attr("id", "galaxyNebula")
+      .attr("x", "-50%").attr("y", "-50%")
+      .attr("width", "200%").attr("height", "200%");
+    galaxyFilter.append("feTurbulence")
+      .attr("type", "fractalNoise")
+      .attr("baseFrequency", "0.015")
+      .attr("numOctaves", "4")
+      .attr("seed", "3")
+      .attr("result", "noise");
+    galaxyFilter.append("feDisplacementMap")
+      .attr("in", "SourceGraphic")
+      .attr("in2", "noise")
+      .attr("scale", "25")
+      .attr("xChannelSelector", "R")
+      .attr("yChannelSelector", "G");
+
     const g = svg.append("g");
+
+    const galaxyGroup = g.append("g").attr("class", "galaxies");
+    const collabGroup = g.append("g").attr("class", "collab-links");
+    const nodeGroup = g.append("g").attr("class", "nodes");
+    const labelGroup = g.append("g").attr("class", "labels");
 
     const simNodes: SimNode[] = nodes.map((n) => ({ ...n }));
     const simLinks: SimLink[] = links.map((l) => ({ ...l }));
-
     simLinksRef.current = simLinks;
 
     const simulation = d3.forceSimulation<SimNode>(simNodes)
@@ -204,12 +292,9 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
         "collision",
         d3.forceCollide<SimNode>().radius((d) => getRadius(d) + 5)
       )
-      .force("cluster", (alpha: number) => clusterForce(simNodes, alpha));
+      .force("cluster", (alpha: number) => deptClusterForce(simNodes, alpha));
 
     simulationRef.current = simulation;
-
-    const nodeGroup = g.append("g").attr("class", "nodes");
-    const labelGroup = g.append("g").attr("class", "labels");
 
     const nodeElements = nodeGroup
       .selectAll<SVGGElement, SimNode>("g")
@@ -272,6 +357,104 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
         const show = k > 1.5 || d.id === hovId || d.id === selId;
         d3.select(this).attr("visibility", show ? "visible" : "hidden");
       });
+    }
+
+    function updateGalaxies() {
+      const boundaries = computeGalaxyBoundaries(simNodes, departments);
+      galaxyDataRef.current = boundaries;
+
+      galaxyGroup.selectAll("*").remove();
+
+      for (const gal of boundaries) {
+        const galG = galaxyGroup.append("g");
+
+        galG.append("circle")
+          .attr("cx", gal.cx)
+          .attr("cy", gal.cy)
+          .attr("r", gal.radius)
+          .attr("fill", "none")
+          .attr("stroke", gal.color)
+          .attr("stroke-width", 1.5)
+          .attr("stroke-opacity", 0.15)
+          .attr("filter", "url(#galaxyNebula)");
+
+        galG.append("circle")
+          .attr("cx", gal.cx)
+          .attr("cy", gal.cy)
+          .attr("r", gal.radius)
+          .attr("fill", `url(#grad-${gal.deptId})`)
+          .attr("opacity", 0.12);
+
+        if (!defs.select(`#grad-${gal.deptId}`).node()) {
+          const grad = defs.append("radialGradient")
+            .attr("id", `grad-${gal.deptId}`);
+          grad.append("stop").attr("offset", "0%").attr("stop-color", gal.color).attr("stop-opacity", 0.08);
+          grad.append("stop").attr("offset", "60%").attr("stop-color", gal.color).attr("stop-opacity", 0.04);
+          grad.append("stop").attr("offset", "100%").attr("stop-color", gal.color).attr("stop-opacity", 0.15);
+        }
+
+        galG.append("circle")
+          .attr("cx", gal.cx)
+          .attr("cy", gal.cy)
+          .attr("r", gal.radius * 0.92)
+          .attr("fill", "none")
+          .attr("stroke", gal.color)
+          .attr("stroke-width", 0.5)
+          .attr("stroke-opacity", 0.08)
+          .attr("stroke-dasharray", "3,6");
+
+        galG.append("text")
+          .attr("x", gal.cx)
+          .attr("y", gal.cy - gal.radius - 8)
+          .attr("text-anchor", "middle")
+          .attr("font-size", 13)
+          .attr("font-weight", 600)
+          .attr("fill", gal.color)
+          .attr("opacity", 0.5)
+          .text(gal.name);
+      }
+
+      updateCollabLinks(boundaries);
+    }
+
+    function updateCollabLinks(boundaries: ReturnType<typeof computeGalaxyBoundaries>) {
+      collabGroup.selectAll("*").remove();
+      const health = collabHealthRef.current;
+      if (!health || health.length === 0) return;
+
+      const galaxyMap = new Map(boundaries.map(g => [g.deptId, g]));
+
+      for (const h of health) {
+        const gA = galaxyMap.get(h.deptA);
+        const gB = galaxyMap.get(h.deptB);
+        if (!gA || !gB) continue;
+
+        const dx = gB.cx - gA.cx;
+        const dy = gB.cy - gA.cy;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        const x1 = gA.cx + nx * gA.radius;
+        const y1 = gA.cy + ny * gA.radius;
+        const x2 = gB.cx - nx * gB.radius;
+        const y2 = gB.cy - ny * gB.radius;
+
+        let linkColor: string;
+        if (h.healthScore > 0.7) linkColor = '#10b981';
+        else if (h.healthScore > 0.3) linkColor = '#f59e0b';
+        else linkColor = '#ef4444';
+
+        const lineWidth = Math.max(1, Math.min(4, h.taskCount * 0.5));
+
+        collabGroup.append("line")
+          .attr("x1", x1).attr("y1", y1)
+          .attr("x2", x2).attr("y2", y2)
+          .attr("stroke", linkColor)
+          .attr("stroke-width", lineWidth)
+          .attr("stroke-opacity", 0.2)
+          .attr("stroke-dasharray", "6,4");
+      }
     }
 
     nodeElements.on("mouseover", function (_event, hoveredNode) {
@@ -340,12 +523,17 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
 
     svg.call(zoom);
 
+    let tickCount = 0;
     simulation.on("tick", () => {
       nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
-
       labelElements
         .attr("x", (d) => d.x || 0)
         .attr("y", (d) => (d.y || 0));
+
+      tickCount++;
+      if (tickCount % 3 === 0) {
+        updateGalaxies();
+      }
     });
 
     updateLabelVisibility();
@@ -364,7 +552,7 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
       simulation.stop();
       resizeObserver.disconnect();
     };
-  }, [nodes, links, projects, onNodeClick, getRadius]);
+  }, [nodes, links, projects, departments, onNodeClick, getRadius]);
 
   return (
     <div
@@ -377,6 +565,8 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
         zoomTransformRef={zoomTransformRef}
         hoveredNodeIdRef={hoveredNodeIdRef}
         bloodFlow={bloodFlow}
+        galaxyDataRef={galaxyDataRef}
+        collabHealthRef={collabHealthRef}
       />
       <svg
         ref={svgRef}

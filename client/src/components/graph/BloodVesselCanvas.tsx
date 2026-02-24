@@ -7,6 +7,12 @@ interface Particle {
   radius: number;
 }
 
+interface CollabParticle {
+  pairIdx: number;
+  t: number;
+  radius: number;
+}
+
 interface PipeStyle {
   particleColor: string;
   baseColor: string;
@@ -32,6 +38,12 @@ function getPipeStyle(srcStatus: string, tgtStatus: string): PipeStyle {
     default:
       return { particleColor: '', baseColor: '#9ca3af', baseOpacity: 0.05, speed: 0, hasParticles: false, isBlocked: false, isDashed: true };
   }
+}
+
+function getHealthColor(score: number): string {
+  if (score > 0.7) return '#10b981';
+  if (score > 0.3) return '#f59e0b';
+  return '#ef4444';
 }
 
 const BASE_MAX_PARTICLES = 1500;
@@ -61,11 +73,31 @@ function initParticles(links: any[], scale: number = 1): Particle[] {
   return particles;
 }
 
+interface GalaxyBoundary {
+  deptId: number;
+  name: string;
+  color: string;
+  cx: number;
+  cy: number;
+  radius: number;
+  nodeCount: number;
+}
+
+interface CollabHealth {
+  deptA: number;
+  deptB: number;
+  healthScore: number;
+  taskCount: number;
+  metrics: { volume: number; completion: number; timeliness: number; flow: number };
+}
+
 interface BloodVesselCanvasProps {
   simLinksRef: React.MutableRefObject<any[]>;
   zoomTransformRef: React.MutableRefObject<any>;
   hoveredNodeIdRef: React.MutableRefObject<number | null>;
   bloodFlow: boolean;
+  galaxyDataRef?: React.MutableRefObject<GalaxyBoundary[]>;
+  collabHealthRef?: React.MutableRefObject<CollabHealth[]>;
 }
 
 export default function BloodVesselCanvas({
@@ -73,9 +105,12 @@ export default function BloodVesselCanvas({
   zoomTransformRef,
   hoveredNodeIdRef,
   bloodFlow,
+  galaxyDataRef,
+  collabHealthRef,
 }: BloodVesselCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particlesRef = useRef<Particle[]>([]);
+  const collabParticlesRef = useRef<CollabParticle[]>([]);
   const animFrameRef = useRef<number>(0);
   const bloodFlowRef = useRef(bloodFlow);
   const lastLinksRef = useRef<any[] | null>(null);
@@ -234,6 +269,81 @@ export default function BloodVesselCanvas({
         ctx.shadowColor = 'transparent';
       }
 
+      if (flowing && galaxyDataRef && collabHealthRef) {
+        const galaxies = galaxyDataRef.current;
+        const health = collabHealthRef.current;
+        if (galaxies.length > 0 && health.length > 0) {
+          const galaxyMap = new Map(galaxies.map(g => [g.deptId, g]));
+
+          const activePairs: Array<{
+            x1: number; y1: number; x2: number; y2: number;
+            color: string; speed: number; width: number;
+          }> = [];
+
+          for (const h of health) {
+            const gA = galaxyMap.get(h.deptA);
+            const gB = galaxyMap.get(h.deptB);
+            if (!gA || !gB) continue;
+
+            const dx = gB.cx - gA.cx;
+            const dy = gB.cy - gA.cy;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            const nx = dx / dist;
+            const ny = dy / dist;
+
+            activePairs.push({
+              x1: gA.cx + nx * gA.radius,
+              y1: gA.cy + ny * gA.radius,
+              x2: gB.cx - nx * gB.radius,
+              y2: gB.cy - ny * gB.radius,
+              color: getHealthColor(h.healthScore),
+              speed: 0.002 + h.healthScore * 0.012,
+              width: Math.max(1, Math.min(4, h.taskCount * 0.5)),
+            });
+          }
+
+          const lastPairCount = collabParticlesRef.current.length > 0
+            ? Math.max(...collabParticlesRef.current.map(p => p.pairIdx)) + 1
+            : 0;
+          if (activePairs.length > 0 && activePairs.length !== lastPairCount) {
+            const cp: CollabParticle[] = [];
+            for (let i = 0; i < activePairs.length; i++) {
+              const count = 12 + Math.floor(Math.random() * 8);
+              for (let j = 0; j < count; j++) {
+                cp.push({
+                  pairIdx: i,
+                  t: Math.random(),
+                  radius: 1.5 + Math.random() * 1,
+                });
+              }
+            }
+            collabParticlesRef.current = cp;
+          }
+
+          for (const cp of collabParticlesRef.current) {
+            if (cp.pairIdx >= activePairs.length) continue;
+            const pair = activePairs[cp.pairIdx];
+
+            cp.t += pair.speed;
+            if (cp.t > 1) cp.t -= 1;
+
+            const px = pair.x1 + (pair.x2 - pair.x1) * cp.t;
+            const py = pair.y1 + (pair.y2 - pair.y1) * cp.t;
+
+            ctx.globalAlpha = 0.7;
+            ctx.shadowColor = pair.color;
+            ctx.shadowBlur = 4 + cp.radius;
+            ctx.fillStyle = pair.color;
+            ctx.beginPath();
+            ctx.arc(px, py, cp.radius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          ctx.shadowBlur = 0;
+          ctx.shadowColor = 'transparent';
+        }
+      }
+
       ctx.restore();
       ctx.globalAlpha = 1;
 
@@ -245,7 +355,7 @@ export default function BloodVesselCanvas({
       cancelAnimationFrame(animFrameRef.current);
       ro.disconnect();
     };
-  }, [simLinksRef, zoomTransformRef, hoveredNodeIdRef]);
+  }, [simLinksRef, zoomTransformRef, hoveredNodeIdRef, galaxyDataRef, collabHealthRef]);
 
   return (
     <canvas
