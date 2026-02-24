@@ -105,7 +105,7 @@ function AddToChatSheet({
       >
         <div
           style={{
-            background: '#2A2A28',
+            background: '#1E1D1B',
             borderTopLeftRadius: 16,
             borderTopRightRadius: 16,
             paddingBottom: 'calc(16px + env(safe-area-inset-bottom))',
@@ -203,7 +203,7 @@ function AddToChatSheet({
                     onClick={() => item.ref.current?.click()}
                     className="flex flex-col items-center justify-center gap-2 py-4 rounded-2xl transition-colors"
                     style={{
-                      background: '#3A3A38',
+                      background: '#2A2928',
                       cursor: 'pointer',
                     }}
                     data-testid={item.testId}
@@ -458,7 +458,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
           data-testid="ai-composer"
         >
           <div style={{
-            background: '#262624',
+            background: '#1A1918',
             borderRadius: 19,
             overflow: 'hidden',
           }}>
@@ -634,7 +634,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
                 onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
                 data-testid="ai-stop"
               >
-                <Square className="w-3 h-3 text-[#262624]" strokeWidth={3} fill="#262624" />
+                <Square className="w-3 h-3 text-[#1A1918]" strokeWidth={3} fill="#1A1918" />
               </button>
             ) : (
               <button

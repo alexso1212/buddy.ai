@@ -45,12 +45,12 @@ html, body {
   --font-mono: 'SF Mono', 'Fira Code', Menlo, Consolas, monospace;
 
   /* ===== Dark Mode 自定义变量（默认模式） ===== */
-  --bg-primary: #262624;
-  --bg-sidebar: #1A1918;
-  --bg-composer: #2F2F2D;
-  --bg-bubble: #323230;
-  --bg-code: #1A1A18;
-  --bg-code-header: #262624;
+  --bg-primary: #1A1918;
+  --bg-sidebar: #141312;
+  --bg-composer: #232321;
+  --bg-bubble: #2A2928;
+  --bg-code: #141413;
+  --bg-code-header: #1E1D1B;
   --text-primary: #ECECEC;
   --text-secondary: #9A9893;
   --text-placeholder: #7A7874;

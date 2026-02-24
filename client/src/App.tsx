@@ -1630,7 +1630,7 @@ function ModelSelector() {
           left: '50%',
           transform: 'translateX(-50%)',
           marginTop: 8,
-          background: 'rgba(30, 29, 26, 0.95)',
+          background: 'rgba(26, 25, 24, 0.95)',
           backdropFilter: 'blur(40px)',
           WebkitBackdropFilter: 'blur(40px)',
           borderRadius: 16,
@@ -1997,7 +1997,7 @@ function App() {
               position: 'absolute',
               top: 0, left: 0, right: 0,
               height: 108,
-              background: 'linear-gradient(to bottom, rgba(38,38,36,0.99) 0%, transparent 100%)',
+              background: 'linear-gradient(to bottom, rgba(26,25,24,0.99) 0%, transparent 100%)',
               zIndex: 10,
               pointerEvents: 'none',
             }} />

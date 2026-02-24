@@ -493,7 +493,7 @@ function ConversationItem({
               left: contextMenu.x,
               top: contextMenu.y,
               width: 220,
-              background: 'rgba(30, 29, 26, 0.95)',
+              background: 'rgba(26, 25, 24, 0.95)',
               backdropFilter: 'blur(40px)',
               WebkitBackdropFilter: 'blur(40px)',
               border: '1px solid rgba(255,255,255,0.12)',
@@ -651,7 +651,7 @@ function ConversationListView({
       >
         <div style={{
           height: 40,
-          background: 'linear-gradient(to top, rgba(38,38,36,0.75) 0%, transparent 100%)',
+          background: 'linear-gradient(to top, rgba(26,25,24,0.75) 0%, transparent 100%)',
           pointerEvents: 'none',
         }} />
 
@@ -665,7 +665,7 @@ function ConversationListView({
               border: '1px solid rgba(255,255,255,0.15)',
               padding: '0 14px',
               display: 'flex', alignItems: 'center', gap: 8,
-              background: 'rgba(38, 38, 36, 0.75)',
+              background: 'rgba(26, 25, 24, 0.75)',
             }}
           >
             <Search size={16} color="#7A7874" />
@@ -778,7 +778,7 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
       >
         <div style={{
           height: 40,
-          background: 'linear-gradient(to top, rgba(38,38,36,0.85) 0%, transparent 100%)',
+          background: 'linear-gradient(to top, rgba(26,25,24,0.85) 0%, transparent 100%)',
         }} />
         <div style={{
           position: 'absolute',
@@ -786,7 +786,7 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(38,38,36,0.85)',
+          background: 'rgba(26,25,24,0.85)',
         }} />
       </div>
 
@@ -1540,7 +1540,7 @@ export default function Agent() {
               width: 36,
               height: 36,
               borderRadius: '50%',
-              background: 'rgba(50,50,48,0.9)',
+              background: 'rgba(40,39,37,0.9)',
               border: '1px solid rgba(255,255,255,0.1)',
               backdropFilter: 'blur(8px)',
               pointerEvents: 'auto',
