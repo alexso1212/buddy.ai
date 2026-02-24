@@ -22,6 +22,7 @@ import Settings from "@/pages/settings";
 import GraphView from "@/pages/graph-view";
 import Artifacts from "@/pages/artifacts";
 import ChatsPage from "@/pages/chats";
+import SettingsPage from "@/components/SettingsPage";
 import {
   LayoutDashboard,
   FolderKanban,
@@ -47,7 +48,6 @@ import {
   Pencil,
   Trash2,
   FolderInput,
-  HelpCircle,
   Eye,
   Search,
   Check,
@@ -858,244 +858,12 @@ function Sidebar({
         </div>
       </aside>
 
-      {settingsOpen && (
-        <>
-          <div
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(0,0,0,0.4)',
-              zIndex: 55,
-            }}
-            onClick={() => setSettingsOpen(false)}
-            data-testid="settings-overlay"
-          />
-          <div
-            style={{
-              position: 'fixed',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              zIndex: 60,
-              background: 'var(--bg-sidebar)',
-              borderRadius: '16px 16px 0 0',
-              padding: '24px 20px',
-              paddingBottom: 'calc(24px + env(safe-area-inset-bottom, 0px))',
-              boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
-              animation: 'settingsSlideUp 300ms cubic-bezier(0.165, 0.85, 0.45, 1) forwards',
-            }}
-            data-testid="settings-action-sheet"
-          >
-            <style>{`
-              @keyframes settingsSlideUp {
-                from { transform: translateY(100%); }
-                to { transform: translateY(0); }
-              }
-            `}</style>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
-              <div
-                style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: '50%',
-                  background: '#4A4A47',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 20,
-                  fontWeight: 600,
-                  color: '#FFFFFF',
-                  flexShrink: 0,
-                }}
-              >
-                {authUser?.displayName?.charAt(0)?.toUpperCase() || 'U'}
-              </div>
-              <div>
-                <div style={{ fontSize: 17, fontWeight: 600, color: '#ECECEC' }} data-testid="text-settings-username">{authUser?.displayName || '用户'}</div>
-                <div style={{ fontSize: 14, color: '#9A9893' }} data-testid="text-settings-email">{authUser?.email || ''}</div>
-              </div>
-            </div>
-
-            <div style={{ 
-              margin: '12px 0 4px',
-              padding: '10px 12px',
-              borderRadius: 10,
-              background: 'rgba(255,255,255,0.04)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-            }}
-              onClick={() => { setSettingsOpen(false); setOrgSwitcherOpen(true); }}
-              data-testid="button-switch-org"
-            >
-              <Building2 size={18} color="#9A9893" />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, color: '#9A9893' }}>当前组织</div>
-                <div style={{ fontSize: 15, color: '#ECECEC', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {authUser?.orgName || '我的团队'}
-                </div>
-              </div>
-              <div style={{
-                fontSize: 11,
-                padding: '2px 8px',
-                borderRadius: 6,
-                background: authUser?.orgType === 'enterprise' ? 'rgba(255,255,255,0.1)' : 'rgba(174,86,48,0.15)',
-                color: authUser?.orgType === 'enterprise' ? '#ECECEC' : '#C4703F',
-                fontWeight: 500,
-              }}>
-                {authUser?.orgType === 'enterprise' ? '企业' : '项目'}
-              </div>
-              <ChevronRight size={16} color="#9A9893" />
-            </div>
-
-            <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
-
-            <Link
-              href="/settings"
-              onClick={() => { setSettingsOpen(false); onClose(); }}
-              style={{ textDecoration: 'none' }}
-            >
-              <div
-                style={{
-                  height: 48,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 14,
-                  borderRadius: 8,
-                  padding: '0 8px',
-                  cursor: 'pointer',
-                  transition: 'background 150ms',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                data-testid="settings-item-settings"
-              >
-                <Settings2 size={20} color="#ECECEC" />
-                <span style={{ fontSize: 16, fontWeight: 400, color: '#ECECEC' }}>设置</span>
-              </div>
-            </Link>
-
-            <Link
-              href="/notifications"
-              onClick={() => { setSettingsOpen(false); onClose(); }}
-              style={{ textDecoration: 'none' }}
-            >
-              <div
-                style={{
-                  height: 48,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 14,
-                  borderRadius: 8,
-                  padding: '0 8px',
-                  cursor: 'pointer',
-                  transition: 'background 150ms',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                data-testid="settings-item-notifications"
-              >
-                <Bell size={20} color="#ECECEC" />
-                <span style={{ fontSize: 16, fontWeight: 400, color: '#ECECEC' }}>通知</span>
-              </div>
-            </Link>
-
-            <div
-              style={{
-                height: 48,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 14,
-                borderRadius: 8,
-                padding: '0 8px',
-                cursor: 'pointer',
-                transition: 'background 150ms',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              data-testid="settings-item-darkmode"
-            >
-              <Moon size={20} color="#ECECEC" />
-              <span style={{ fontSize: 16, fontWeight: 400, color: '#ECECEC', flex: 1 }}>深色模式</span>
-              <div
-                style={{
-                  width: 44,
-                  height: 24,
-                  borderRadius: 12,
-                  background: theme === 'dark' ? '#AE5630' : 'rgba(255,255,255,0.2)',
-                  position: 'relative',
-                  transition: 'background 200ms',
-                  flexShrink: 0,
-                }}
-              >
-                <div
-                  style={{
-                    width: 20,
-                    height: 20,
-                    borderRadius: '50%',
-                    background: '#FFFFFF',
-                    position: 'absolute',
-                    top: 2,
-                    left: theme === 'dark' ? 22 : 2,
-                    transition: 'left 200ms',
-                  }}
-                />
-              </div>
-            </div>
-
-            <div
-              style={{
-                height: 48,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 14,
-                borderRadius: 8,
-                padding: '0 8px',
-                cursor: 'pointer',
-                transition: 'background 150ms',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-              onClick={() => {
-                window.location.href = 'mailto:support@buddy.app';
-                setSettingsOpen(false);
-              }}
-              data-testid="settings-item-help"
-            >
-              <HelpCircle size={20} color="#ECECEC" />
-              <span style={{ fontSize: 16, fontWeight: 400, color: '#ECECEC' }}>帮助与反馈</span>
-            </div>
-
-            <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
-
-            <div
-              style={{
-                height: 48,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 14,
-                borderRadius: 8,
-                padding: '0 8px',
-                cursor: 'pointer',
-                transition: 'background 150ms',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-              onClick={() => {
-                setSettingsOpen(false);
-                onClose();
-                logout();
-              }}
-              data-testid="settings-item-logout"
-            >
-              <LogOut size={20} color="#E5534B" />
-              <span style={{ fontSize: 16, fontWeight: 400, color: '#E5534B' }}>退出登录</span>
-            </div>
-          </div>
-        </>
-      )}
+      <SettingsPage
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onOpenOrgSwitcher={() => { setSettingsOpen(false); setOrgSwitcherOpen(true); }}
+        onCloseSidebar={onClose}
+      />
 
       {orgSwitcherOpen && (
         <>
