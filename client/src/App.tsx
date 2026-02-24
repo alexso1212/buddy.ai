@@ -309,6 +309,9 @@ function makeTouchHighlight(highlightBg = 'rgba(0,0,0,0.4)') {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let activeEl: HTMLElement | null = null;
   let origBg = '';
+  let startX = 0;
+  let startY = 0;
+  let scrolling = false;
 
   const apply = (el: HTMLElement) => {
     activeEl = el;
@@ -322,15 +325,29 @@ function makeTouchHighlight(highlightBg = 'rgba(0,0,0,0.4)') {
       activeEl = null;
     }
     if (timer) { clearTimeout(timer); timer = null; }
+    scrolling = false;
   };
 
   return {
     onTouchStart: (e: React.TouchEvent<HTMLElement>) => {
       clear();
+      const touch = e.touches[0];
+      startX = touch.clientX;
+      startY = touch.clientY;
+      scrolling = false;
       const el = e.currentTarget;
       timer = setTimeout(() => apply(el), 80);
     },
-    onTouchMove: () => { clear(); },
+    onTouchMove: (e: React.TouchEvent<HTMLElement>) => {
+      if (scrolling) return;
+      const touch = e.touches[0];
+      const dx = Math.abs(touch.clientX - startX);
+      const dy = Math.abs(touch.clientY - startY);
+      if (dx > 8 || dy > 8) {
+        scrolling = true;
+        clear();
+      }
+    },
     onTouchEnd: () => {
       if (timer) { clearTimeout(timer); timer = null; }
       if (activeEl) {
@@ -339,6 +356,7 @@ function makeTouchHighlight(highlightBg = 'rgba(0,0,0,0.4)') {
         setTimeout(() => { if (el) el.style.background = bg; }, 200);
         activeEl = null;
       }
+      scrolling = false;
     },
     onTouchCancel: () => { clear(); },
   };
@@ -408,7 +426,7 @@ function Sidebar({
   const userOrgs = userOrgsData?.data || [];
 
   const isActive = (path: string) => {
-    if (path === '/chats') return location === '/chats' || (location === '/agent' && !!activeConvId);
+    if (path === '/chats') return location === '/chats';
     return location === path || location.startsWith(path + '/');
   };
 
@@ -433,9 +451,9 @@ function Sidebar({
           cursor: 'pointer',
         }}
         onTouchStart={(e) => { try { navigator.vibrate?.(6); } catch {} touchHighlight.onTouchStart(e); }}
-        onTouchMove={touchHighlight.onTouchMove}
-        onTouchEnd={touchHighlight.onTouchEnd}
-        onTouchCancel={touchHighlight.onTouchCancel}
+        onTouchMove={(e) => touchHighlight.onTouchMove(e)}
+        onTouchEnd={() => touchHighlight.onTouchEnd()}
+        onTouchCancel={() => touchHighlight.onTouchCancel()}
         data-testid={testId}
       >
         <Icon size={20} color="#ECECEC" strokeWidth={1.5} />
@@ -469,7 +487,7 @@ function Sidebar({
             touchHighlight.onTouchStart(e);
           }}
           onTouchEnd={() => { clearTimeout(pressTimerRef.current); touchHighlight.onTouchEnd(); }}
-          onTouchMove={() => { clearTimeout(pressTimerRef.current); touchHighlight.onTouchMove(); }}
+          onTouchMove={(e) => { clearTimeout(pressTimerRef.current); touchHighlight.onTouchMove(e); }}
           onTouchCancel={() => { clearTimeout(pressTimerRef.current); touchHighlight.onTouchCancel(); }}
           style={{
             padding: convo.projectName ? '10px 16px' : '12px 16px',
@@ -632,9 +650,9 @@ function Sidebar({
                       cursor: 'pointer',
                     }}
                     onTouchStart={(e) => { try { navigator.vibrate?.(6); } catch {} touchHighlight.onTouchStart(e); }}
-                    onTouchMove={touchHighlight.onTouchMove}
-                    onTouchEnd={touchHighlight.onTouchEnd}
-                    onTouchCancel={touchHighlight.onTouchCancel}
+                    onTouchMove={(e) => touchHighlight.onTouchMove(e)}
+                    onTouchEnd={() => touchHighlight.onTouchEnd()}
+                    onTouchCancel={() => touchHighlight.onTouchCancel()}
                     data-testid={testId}
                   >
                     <Icon size={16} color="#ECECEC" strokeWidth={1.5} />

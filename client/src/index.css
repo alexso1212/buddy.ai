@@ -542,6 +542,7 @@ html, body {
 
 .sidebar-item {
   transition: background 200ms ease, transform 200ms ease;
+  -webkit-tap-highlight-color: transparent;
 }
 @media (hover: hover) and (pointer: fine) {
   .sidebar-item:not(.sidebar-item-active):hover {
