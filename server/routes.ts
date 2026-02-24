@@ -2060,7 +2060,8 @@ export async function registerRoutes(server: Server, app: Express) {
       }
 
       const userId = currentUserId || req.currentUserId;
-      const result = await executeAction(actionType, data, userId);
+      const orgId = req.orgId || 1;
+      const result = await executeAction(actionType, data, userId, orgId);
 
       if (conversationId) {
         const conv = await storage.getConversationById(conversationId);

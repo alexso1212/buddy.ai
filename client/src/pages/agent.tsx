@@ -998,9 +998,13 @@ export default function Agent() {
         const selectedModel = (() => { try { return localStorage.getItem('buddy_model') || undefined; } catch { return undefined; } })();
         const extendedThinking = (() => { try { return localStorage.getItem('buddy_extended_thinking') === 'true'; } catch { return false; } })();
 
+        const streamHeaders: Record<string, string> = { "Content-Type": "application/json" };
+        const token = localStorage.getItem('buddy_token');
+        if (token) streamHeaders['Authorization'] = `Bearer ${token}`;
+
         const res = await fetch("/api/ai/chat/stream", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: streamHeaders,
           body: JSON.stringify({
             message: text,
             conversationHistory: conversationHistory.current,

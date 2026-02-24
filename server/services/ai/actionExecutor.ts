@@ -4,13 +4,14 @@ import { judgeTaskAssignment } from "./verdictService";
 export async function executeAction(
   actionType: string,
   data: Record<string, any>,
-  userId: number
+  userId: number,
+  orgId: number = 1
 ): Promise<{ success: boolean; message: string; entity?: any }> {
   switch (actionType) {
     case 'create_task': {
       const hasWarnings = Array.isArray(data.warnings) && data.warnings.length > 0;
       const newTask = await storage.createTask({
-        orgId: 1,
+        orgId,
         projectId: data.projectId,
         title: data.title,
         description: data.description || null,
@@ -29,7 +30,7 @@ export async function executeAction(
       });
 
       await storage.createActivityLog({
-        orgId: 1,
+        orgId,
         userId: userId,
         entityType: 'task',
         entityId: newTask.id,
@@ -73,7 +74,7 @@ export async function executeAction(
       }
 
       await storage.createActivityLog({
-        orgId: 1,
+        orgId,
         userId: userId,
         entityType: 'task',
         entityId: taskId,
@@ -94,7 +95,7 @@ export async function executeAction(
 
     case 'create_project': {
       const newProject = await storage.createProject({
-        orgId: 1,
+        orgId,
         name: data.name,
         description: data.description || null,
         deptId: data.deptId || null,
@@ -105,7 +106,7 @@ export async function executeAction(
       });
 
       await storage.createActivityLog({
-        orgId: 1,
+        orgId,
         userId: userId,
         entityType: 'project',
         entityId: newProject.id,
@@ -129,7 +130,7 @@ export async function executeAction(
       });
 
       await storage.createActivityLog({
-        orgId: 1,
+        orgId,
         userId: userId,
         entityType: 'task',
         entityId: data.taskId,
@@ -151,7 +152,7 @@ export async function executeAction(
         const verdictResult = await judgeTaskAssignment(taskId, targetUserId);
         
         const verdict = await storage.createVerdict({
-          orgId: 1,
+          orgId,
           taskId,
           userId: targetUserId,
           verdict: verdictResult.verdict,
