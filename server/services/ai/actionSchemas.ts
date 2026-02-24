@@ -56,6 +56,30 @@ export const queryVerdictsSchema = z.object({
   taskId: z.number().optional(),
 });
 
+export const createUserSchema = z.object({
+  displayName: z.string().min(1),
+  email: z.string().email(),
+  role: z.enum(['owner', 'admin', 'head', 'member']).default('member'),
+  deptId: z.number().optional(),
+  jobRoleId: z.number().optional(),
+});
+
+export const updateUserSchema = z.object({
+  userId: z.number(),
+  displayName: z.string().optional(),
+  role: z.enum(['owner', 'admin', 'head', 'member']).optional(),
+  deptId: z.number().nullable().optional(),
+  jobRoleId: z.number().nullable().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const createDepartmentSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  color: z.string().optional(),
+  parentDeptId: z.number().optional(),
+});
+
 export const ACTION_SCHEMAS: Record<string, z.ZodSchema> = {
   create_task: createTaskSchema,
   update_task: updateTaskSchema,
@@ -64,4 +88,7 @@ export const ACTION_SCHEMAS: Record<string, z.ZodSchema> = {
   add_comment: addCommentSchema,
   judge_assignment: judgeAssignmentSchema,
   query_verdicts: queryVerdictsSchema,
+  create_user: createUserSchema,
+  update_user: updateUserSchema,
+  create_department: createDepartmentSchema,
 };

@@ -540,10 +540,15 @@ ${contextBlock}
 - update_task: 需要 taskId(必填), 可选 title, status, priority, assigneeId, dueDate, weight, progress, description
 - create_project: 需要 name(必填), 可选 description, deptId, startDate, targetDate
 - add_comment: 需要 taskId(必填), content(必填)
+- create_user: 需要 displayName(必填), email(必填), 可选 role(owner/admin/head/member, 默认member), deptId, jobRoleId
+- update_user: 需要 userId(必填), 可选 displayName, role, deptId, jobRoleId, isActive
+- create_department: 需要 name(必填), 可选 description, color(hex如#FF5733), parentDeptId
 
 重要规则：
 - projectId 必须是上面项目列表中存在的项目ID，不要编造
 - assigneeId 必须是上面团队成员中存在的用户ID
+- deptId、jobRoleId、parentDeptId 必须是系统中已存在的ID
+- 创建成员时 email 必须唯一，如果用户没指定邮箱可以用姓名拼音@组织域名的格式
 - 如果用户没有指定项目，你需要先问用户要放到哪个项目
 - 从会议纪要等文档提取任务时，对信息不确定的字段添加 warnings 数组（如 "负责人未明确，已暂分给当前用户"）
 - confidence: 信息完整≥0.9，有推测0.7-0.8，严重缺失0.5-0.6

@@ -2071,9 +2071,12 @@ export async function registerRoutes(server: Server, app: Express) {
         try {
           const summaryParts = [];
           if (actionType === 'create_task') summaryParts.push(`创建任务「${data.title || ''}」`);
-          else if (actionType === 'update_task') summaryParts.push(`更新任务 #${data.id || ''}`);
+          else if (actionType === 'update_task') summaryParts.push(`更新任务 #${data.taskId || ''}`);
           else if (actionType === 'create_project') summaryParts.push(`创建项目「${data.name || ''}」`);
           else if (actionType === 'add_comment') summaryParts.push(`添加评论`);
+          else if (actionType === 'create_user') summaryParts.push(`创建成员「${data.displayName || ''}」`);
+          else if (actionType === 'update_user') summaryParts.push(`更新成员 #${data.userId || ''}`);
+          else if (actionType === 'create_department') summaryParts.push(`创建部门「${data.name || ''}」`);
           else summaryParts.push(`执行操作: ${actionType}`);
 
           await storage.createChatMessage({

@@ -146,6 +146,105 @@ export async function executeAction(
       };
     }
 
+    case 'create_user': {
+      let newUser;
+      try {
+        newUser = await storage.createUser({
+          orgId,
+          displayName: data.displayName,
+          email: data.email,
+          role: data.role || 'member',
+          deptId: data.deptId ?? null,
+          jobRoleId: data.jobRoleId ?? null,
+          isActive: true,
+          authProvider: 'manual',
+        });
+      } catch (err: any) {
+        if (err.message?.includes('unique') || err.code === '23505') {
+          return { success: false, message: `邮箱「${data.email}」已被使用，请换一个邮箱` };
+        }
+        throw err;
+      }
+
+      await storage.createActivityLog({
+        orgId,
+        userId: userId,
+        entityType: 'user',
+        entityId: newUser.id,
+        action: 'create',
+        changes: JSON.stringify(data),
+        source: 'ai_chat',
+      });
+
+      return {
+        success: true,
+        message: `成员「${data.displayName}」已成功创建`,
+        entity: newUser,
+      };
+    }
+
+    case 'update_user': {
+      const { userId: targetUserId, ...updateFields } = data;
+      const oldUser = await storage.getUserById(targetUserId);
+      if (!oldUser) {
+        return { success: false, message: '未找到该用户' };
+      }
+
+      const updateData: Record<string, any> = {};
+      if (updateFields.displayName !== undefined) updateData.displayName = updateFields.displayName;
+      if (updateFields.role !== undefined) updateData.role = updateFields.role;
+      if (updateFields.deptId !== undefined) updateData.deptId = updateFields.deptId;
+      if (updateFields.jobRoleId !== undefined) updateData.jobRoleId = updateFields.jobRoleId;
+      if (updateFields.isActive !== undefined) updateData.isActive = updateFields.isActive;
+
+      const updated = await storage.updateUser(targetUserId, updateData);
+      if (!updated) {
+        return { success: false, message: '更新失败' };
+      }
+
+      await storage.createActivityLog({
+        orgId,
+        userId: userId,
+        entityType: 'user',
+        entityId: targetUserId,
+        action: 'update',
+        changes: JSON.stringify({ before: oldUser, after: updateFields }),
+        source: 'ai_chat',
+      });
+
+      return {
+        success: true,
+        message: `成员「${updated.displayName}」已更新`,
+        entity: updated,
+      };
+    }
+
+    case 'create_department': {
+      const newDept = await storage.createDepartment({
+        orgId,
+        name: data.name,
+        description: data.description || null,
+        color: data.color || null,
+        parentDeptId: data.parentDeptId || null,
+      });
+
+      await storage.createActivityLog({
+        orgId,
+        userId: userId,
+        entityType: 'department',
+        entityId: newDept.id,
+        action: 'create',
+        changes: JSON.stringify(data),
+        source: 'ai_chat',
+      });
+
+      return {
+        success: true,
+        message: `部门「${data.name}」已成功创建`,
+        entity: newDept,
+      };
+    }
+
     case 'judge_assignment': {
       const { taskId, userId: targetUserId } = data;
       try {
