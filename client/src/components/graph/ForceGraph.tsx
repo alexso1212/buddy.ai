@@ -284,10 +284,6 @@ function orbitForce(
   }
 }
 
-function truncate(str: string, max: number) {
-  if (str.length <= max) return str;
-  return str.slice(0, max) + "\u2026";
-}
 
 export interface GalaxyBoundary {
   deptId: number;
@@ -350,6 +346,7 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
   const simLinksRef = useRef<any[]>([]);
   const hoveredNodeIdRef = useRef<number | null>(null);
   const selectedNodeIdRef = useRef<number | null>(null);
+  const onNodeClickRef = useRef(onNodeClick);
   const galaxyDataRef = useRef<GalaxyBoundary[]>([]);
   const collabHealthRef = useRef(collabHealth);
   const orbitStatesRef = useRef<Map<number, OrbitState>>(new Map());
@@ -359,6 +356,7 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
   const orbitIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => { collabHealthRef.current = collabHealth; }, [collabHealth]);
+  useEffect(() => { onNodeClickRef.current = onNodeClick; }, [onNodeClick]);
 
   const getRadius = useCallback((node: GraphNode) => {
     const priorityBase: Record<string, number> = {
@@ -411,7 +409,6 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
 
     const galaxyGroup = g.append("g").attr("class", "galaxies");
     const nodeGroup = g.append("g").attr("class", "nodes");
-    const labelGroup = g.append("g").attr("class", "labels");
 
     if (orbitIntervalRef.current) {
       clearInterval(orbitIntervalRef.current);
@@ -488,28 +485,6 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
       }
     });
 
-    const labelElements = labelGroup
-      .selectAll<SVGTextElement, SimNode>("text")
-      .data(simNodes)
-      .enter()
-      .append("text")
-      .text((d) => truncate(d.title, 12))
-      .attr("font-size", 8)
-      .attr("text-anchor", "middle")
-      .attr("dy", (d) => getRadius(d) + 10)
-      .attr("fill", "rgba(255,255,255,0.6)")
-      .attr("pointer-events", "none")
-      .attr("visibility", "hidden");
-
-    function updateLabelVisibility() {
-      const k = zoomTransformRef.current.k;
-      const hovId = hoveredNodeIdRef.current;
-      const selId = selectedNodeIdRef.current;
-      labelElements.each(function (d) {
-        const show = k > 2.0 || d.id === hovId || d.id === selId;
-        d3.select(this).attr("visibility", show ? "visible" : "hidden");
-      });
-    }
 
     interface GalaxyDOMGroup {
       deptId: number;
@@ -629,8 +604,6 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
         const d = d3.select<SVGGElement, SimNode>(this as SVGGElement).datum();
         return `translate(${d.x},${d.y}) scale(1.5)`;
       });
-
-      updateLabelVisibility();
     });
 
     nodeElements.on("mouseout", function () {
@@ -644,19 +617,17 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
         }
       });
       nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
-      updateLabelVisibility();
     });
 
     nodeElements.on("click", (_event, d) => {
       _event.stopPropagation();
       selectedNodeIdRef.current = d.id;
-      updateLabelVisibility();
-      if (onNodeClick) onNodeClick(d);
+      if (onNodeClickRef.current) onNodeClickRef.current(d);
     });
 
     svg.on("click", () => {
       selectedNodeIdRef.current = null;
-      updateLabelVisibility();
+      if (onNodeClickRef.current) onNodeClickRef.current(null as any);
     });
 
     const zoom = d3.zoom<SVGSVGElement, unknown>()
@@ -664,7 +635,6 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
       .on("zoom", (event) => {
         g.attr("transform", event.transform);
         zoomTransformRef.current = event.transform;
-        updateLabelVisibility();
       });
 
     svg.call(zoom);
@@ -676,9 +646,6 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
       orbitForce(simNodes, topology, orbitStatesRef.current, draggedNodeIdRef.current, simulation.alpha(), nodeMap);
 
       nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
-      labelElements
-        .attr("x", (d) => d.x || 0)
-        .attr("y", (d) => (d.y || 0));
 
       if (tickCount % 5 === 0) {
         updateGalaxyPositions();
@@ -690,17 +657,12 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
         tickCount++;
         orbitForce(simNodes, topology, orbitStatesRef.current, draggedNodeIdRef.current, 0.01, nodeMap);
         nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
-        labelElements
-          .attr("x", (d) => d.x || 0)
-          .attr("y", (d) => (d.y || 0));
         if (tickCount % 5 === 0) {
           updateGalaxyPositions();
         }
       }, 1000 / 30);
       orbitIntervalRef.current = interval;
     });
-
-    updateLabelVisibility();
 
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -720,7 +682,7 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
       simulation.stop();
       resizeObserver.disconnect();
     };
-  }, [nodes, links, projects, departments, onNodeClick, getRadius]);
+  }, [nodes, links, projects, departments, getRadius]);
 
   return (
     <div

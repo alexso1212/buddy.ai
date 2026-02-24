@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Menu } from "lucide-react";
 import ForceGraph from "@/components/graph/ForceGraph";
 import type { GraphNode, GraphLink, ProjectInfo, DeptInfo, CollabHealth } from "@/components/graph/ForceGraph";
 import GraphSettings from "@/components/graph/GraphSettings";
 import type { ColorByOption } from "@/components/graph/GraphSettings";
+import GraphNodeSheet from "@/components/graph/GraphNodeSheet";
 
 interface GraphData {
   nodes: GraphNode[];
@@ -69,6 +70,7 @@ function GraphOverlayControls() {
 export default function GraphView() {
   const [colorBy, setColorBy] = useState<ColorByOption>('department');
   const [bloodFlow, setBloodFlow] = useState(true);
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
 
   const { data: response, isLoading } = useQuery<{ data: GraphData }>({
     queryKey: ['/api/graph/data'],
@@ -80,6 +82,14 @@ export default function GraphView() {
 
   const graphData = response?.data;
   const collabHealth = healthResponse?.data ?? [];
+
+  const handleNodeClick = useCallback((node: GraphNode | null) => {
+    setSelectedNode(node && node.id ? node : null);
+  }, []);
+
+  const handleSheetClose = useCallback(() => {
+    setSelectedNode(null);
+  }, []);
 
   if (isLoading) {
     return (
@@ -137,6 +147,7 @@ export default function GraphView() {
           collabHealth={collabHealth}
           colorBy={colorBy}
           bloodFlow={bloodFlow}
+          onNodeClick={handleNodeClick}
         />
       ) : (
         <div
@@ -153,6 +164,7 @@ export default function GraphView() {
           No tasks to display
         </div>
       )}
+      <GraphNodeSheet node={selectedNode} onClose={handleSheetClose} />
     </div>
   );
 }
