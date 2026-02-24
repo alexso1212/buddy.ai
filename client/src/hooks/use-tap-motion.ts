@@ -139,11 +139,10 @@ export function getElasticDeformProps(options?: ElasticDeformOptions) {
   let origBorder = '';
   let origBoxShadow = '';
 
-  const applyDeform = (el: HTMLElement, clientX: number, clientY: number, fast: boolean) => {
+  const applyDeform = (el: HTMLElement, clientX: number, clientY: number) => {
     const { scaleX, scaleY, tx, ty, norm, glowX, glowY } = computeDeform(el, clientX, clientY, maxStretch, maxTranslate, baseScale);
 
-    const dur = fast ? 40 : duration;
-    el.style.transition = `transform ${dur}ms cubic-bezier(0.25,0.46,0.45,0.94), background ${dur}ms ease, border-color ${dur}ms ease, box-shadow ${dur}ms ease`;
+    el.style.transition = 'transform 16ms linear, background 30ms ease, border-color 30ms ease, box-shadow 30ms ease';
     el.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scaleX(${scaleX.toFixed(4)}) scaleY(${scaleY.toFixed(4)})`;
 
     const glowIntensity = 0.2 + norm * glowStrength;
@@ -166,7 +165,7 @@ export function getElasticDeformProps(options?: ElasticDeformOptions) {
     origBoxShadow = el.style.boxShadow || '';
     el.style.willChange = 'transform, background, box-shadow';
 
-    applyDeform(el, clientX, clientY, false);
+    applyDeform(el, clientX, clientY);
 
     if (vib && navigator.vibrate) {
       try { navigator.vibrate(vib); } catch {}
@@ -174,7 +173,7 @@ export function getElasticDeformProps(options?: ElasticDeformOptions) {
 
     moveHandler = (e: PointerEvent) => {
       if (!pressed || !currentEl) return;
-      applyDeform(currentEl, e.clientX, e.clientY, true);
+      applyDeform(currentEl, e.clientX, e.clientY);
     };
     window.addEventListener('pointermove', moveHandler);
   };
