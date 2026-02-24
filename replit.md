@@ -21,7 +21,7 @@ All pages with a top bar and/or bottom input area must follow this pattern:
 The application is built with an Express.js backend, a React (TypeScript) frontend utilizing Vite, and PostgreSQL with Drizzle ORM for data persistence. Tailwind CSS and shadcn/ui components are used for styling and UI elements, while `wouter` handles frontend routing.
 
 **Core Data Model:**
-The system uses a 14-table PostgreSQL database schema, including `organizations`, `departments`, `users`, `projects`, `tasks`, `task_dependencies`, `activity_logs`, `task_comments`, `job_roles`, `verdicts`, `notifications`, `conversations`, `chat_messages`, and `token_usage`. All tables use serial integer IDs.
+The system uses a 15-table PostgreSQL database schema, including `organizations`, `departments`, `users`, `projects`, `tasks`, `task_dependencies`, `activity_logs`, `task_comments`, `job_roles`, `verdicts`, `notifications`, `conversations`, `chat_messages`, `token_usage`, and `user_memories`. All tables use serial integer IDs.
 
 **Backend (API):**
 - **RESTful API:** Provides full CRUD operations for all entities, with unified `{data}/{error}` response formats.
@@ -57,7 +57,8 @@ The system uses a 14-table PostgreSQL database schema, including `organizations`
   - `CLAUDE_SIMPLE_API_KEY` → Anthropic direct API for simple models (Claude Sonnet 4, Claude Haiku 3.5)
   - `AI_API_KEY` + `AI_BASE_URL` → OpenRouter for other models (GPT-4o, DeepSeek, etc.)
 - **Model routing:** `getClientForModel()` in `server/services/ai/index.ts` selects the correct client based on model ID.
-- **Contextual Prompts:** System prompts are dynamically generated with relevant team, project, and task context.
+- **Contextual Prompts:** System prompts are dynamically generated with relevant team, project, and task context via `buildContextualSystemPrompt()`. Both `chat` (JSON mode) and `chatStream` (streaming mode) use full business context.
+- **Cross-Conversation Memory:** `user_memories` table stores user preferences, facts, work styles, and context extracted by AI. Memories are auto-loaded into system prompt and auto-extracted after each streaming conversation via fire-and-forget `extractMemories()` using Claude Haiku. API: `GET/POST/DELETE /api/user-memories`.
 - **Action Schemas:** Zod schemas define available AI actions (e.g., `create_task`, `update_task`, `query_tasks`, `create_project`, `add_comment`).
 - **Action Executor:** Processes and executes confirmed AI actions, logging their source as `ai_chat`.
 - **Verdict Service:** An AI-powered service for judging task-user assignments, determining scope, confidence, and suggesting assignees.
