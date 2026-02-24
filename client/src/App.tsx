@@ -1350,7 +1350,7 @@ function Router() {
       <Route>
         <AuthGuard>
           <Switch>
-            <Route path="/"><Redirect to="/chats" /></Route>
+            <Route path="/"><Redirect to="/agent" /></Route>
             <Route path="/chats" component={ChatsPage} />
             <Route path="/dashboard" component={Dashboard} />
             <Route path="/graph" component={GraphView} />
