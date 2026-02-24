@@ -34,11 +34,12 @@ function getPipeStyle(srcStatus: string, tgtStatus: string): PipeStyle {
   }
 }
 
-const MAX_PARTICLES = 1500;
+const BASE_MAX_PARTICLES = 1500;
 
-function initParticles(links: any[]): Particle[] {
+function initParticles(links: any[], scale: number = 1): Particle[] {
+  const maxParticles = Math.floor(BASE_MAX_PARTICLES * scale);
   const particles: Particle[] = [];
-  for (let i = 0; i < links.length && particles.length < MAX_PARTICLES; i++) {
+  for (let i = 0; i < links.length && particles.length < maxParticles; i++) {
     const link = links[i];
     const src = link.source;
     const tgt = link.target;
@@ -48,7 +49,7 @@ function initParticles(links: any[]): Particle[] {
     const count = style.isBlocked
       ? 15 + Math.floor(Math.random() * 6)
       : 8 + Math.floor(Math.random() * 8);
-    for (let j = 0; j < count && particles.length < MAX_PARTICLES; j++) {
+    for (let j = 0; j < count && particles.length < maxParticles; j++) {
       particles.push({
         linkIdx: i,
         t: style.isBlocked ? Math.random() * 0.15 : Math.random(),
@@ -79,6 +80,9 @@ export default function BloodVesselCanvas({
   const bloodFlowRef = useRef(bloodFlow);
   const lastLinksRef = useRef<any[] | null>(null);
   const timeRef = useRef(0);
+  const fpsFrameCount = useRef(0);
+  const fpsLastTime = useRef(performance.now());
+  const particleScaleRef = useRef(1);
 
   useEffect(() => { bloodFlowRef.current = bloodFlow; }, [bloodFlow]);
 
@@ -103,6 +107,21 @@ export default function BloodVesselCanvas({
       if (!ctx || !canvas) return;
       timeRef.current++;
       const t = timeRef.current;
+
+      fpsFrameCount.current++;
+      if (fpsFrameCount.current >= 60) {
+        const now = performance.now();
+        const elapsed = now - fpsLastTime.current;
+        const avgFps = (60 / elapsed) * 1000;
+        fpsLastTime.current = now;
+        fpsFrameCount.current = 0;
+        if (avgFps < 30 && particleScaleRef.current > 0.125) {
+          particleScaleRef.current *= 0.5;
+          const keep = Math.floor(particlesRef.current.length * 0.5);
+          particlesRef.current = particlesRef.current.slice(0, keep);
+        }
+      }
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const links = simLinksRef.current;
@@ -113,7 +132,7 @@ export default function BloodVesselCanvas({
 
       if (links !== lastLinksRef.current) {
         lastLinksRef.current = links;
-        particlesRef.current = initParticles(links);
+        particlesRef.current = initParticles(links, particleScaleRef.current);
       }
 
       const transform = zoomTransformRef.current;

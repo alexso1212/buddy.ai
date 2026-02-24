@@ -147,7 +147,19 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
   const simLinksRef = useRef<any[]>([]);
   const hoveredNodeIdRef = useRef<number | null>(null);
 
-  const getRadius = useCallback((node: GraphNode) => 6 + node.weight * 2, []);
+  const selectedNodeIdRef = useRef<number | null>(null);
+
+  const getRadius = useCallback((node: GraphNode) => {
+    const priorityBase: Record<string, number> = {
+      critical: 14,
+      high: 10,
+      medium: 7,
+      low: 5,
+    };
+    let r = (priorityBase[node.priority] || 7) + node.weight * 1.5;
+    if (node.type === 'milestone') r *= 1.3;
+    return r;
+  }, []);
 
   useEffect(() => {
     colorByRef.current = colorBy;
@@ -155,9 +167,7 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
     const svg = d3.select(svgRef.current);
     svg.selectAll<SVGGElement, SimNode>("g.nodes g").each(function (d) {
       const fillColor = getNodeColor(d, colorBy);
-      const el = d3.select(this);
-      el.select("circle").attr("fill", fillColor);
-      el.select("rect").attr("fill", fillColor);
+      d3.select(this).select("circle").attr("fill", fillColor);
     });
   }, [colorBy]);
 
@@ -230,22 +240,14 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
       const r = getRadius(d);
       const fillColor = getNodeColor(d, colorByRef.current);
 
-      if (d.type === "milestone") {
-        el.append("rect")
-          .attr("width", r * 1.4)
-          .attr("height", r * 1.4)
-          .attr("x", (-r * 1.4) / 2)
-          .attr("y", (-r * 1.4) / 2)
-          .attr("transform", "rotate(45)")
-          .attr("fill", fillColor)
-          .attr("stroke", d.isOverdue ? "#ef4444" : "none")
-          .attr("stroke-width", d.isOverdue ? 3 : 0);
-      } else {
-        el.append("circle")
-          .attr("r", r)
-          .attr("fill", fillColor)
-          .attr("stroke", d.isOverdue ? "#ef4444" : "none")
-          .attr("stroke-width", d.isOverdue ? 3 : 0);
+      el.append("circle")
+        .attr("r", r)
+        .attr("fill", fillColor)
+        .attr("stroke", d.isOverdue ? "#ef4444" : "none")
+        .attr("stroke-width", d.isOverdue ? 3 : 0);
+
+      if (d.status === 'blocked') {
+        el.classed("blocked-breathing", true);
       }
     });
 
@@ -255,22 +257,25 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
       .enter()
       .append("text")
       .text((d) => truncate(d.title, 12))
-      .attr("font-size", 11)
+      .attr("font-size", 10)
       .attr("text-anchor", "middle")
       .attr("dy", (d) => getRadius(d) + 14)
-      .attr("fill", "#d1d5db")
-      .attr("pointer-events", "none");
+      .attr("fill", "rgba(255,255,255,0.7)")
+      .attr("pointer-events", "none")
+      .attr("visibility", "hidden");
 
     function updateLabelVisibility() {
       const k = zoomTransformRef.current.k;
-      labelElements.attr("visibility", k < 0.5 ? "hidden" : "visible");
+      const hovId = hoveredNodeIdRef.current;
+      const selId = selectedNodeIdRef.current;
+      labelElements.each(function (d) {
+        const show = k > 1.5 || d.id === hovId || d.id === selId;
+        d3.select(this).attr("visibility", show ? "visible" : "hidden");
+      });
     }
-
-    const isHovering = { value: false };
 
     nodeElements.on("mouseover", function (_event, hoveredNode) {
       hoveredNodeIdRef.current = hoveredNode.id;
-      isHovering.value = true;
 
       const connectedIds = new Set<number>();
       connectedIds.add(hoveredNode.id);
@@ -283,8 +288,9 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
 
       nodeElements.each(function (d) {
         const el = d3.select(this);
-        el.style("opacity", connectedIds.has(d.id) ? 1 : 0.2);
+        el.style("opacity", connectedIds.has(d.id) ? "1" : "0.2");
         if (d.id === hoveredNode.id) {
+          el.classed("blocked-breathing", false);
           el.style("filter", "brightness(1.4)");
         } else {
           el.style("filter", "none");
@@ -295,24 +301,33 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
         return `translate(${d.x},${d.y}) scale(1.3)`;
       });
 
-      labelElements.attr("opacity", (d) => (connectedIds.has(d.id) ? 1 : 0.2));
+      updateLabelVisibility();
     });
 
     nodeElements.on("mouseout", function () {
       hoveredNodeIdRef.current = null;
-      isHovering.value = false;
       nodeElements.each(function (d) {
         const el = d3.select(this);
         el.style("opacity", null);
         el.style("filter", null);
+        if (d.status === 'blocked') {
+          el.classed("blocked-breathing", true);
+        }
       });
-      labelElements.attr("opacity", 1);
       nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
+      updateLabelVisibility();
     });
 
     nodeElements.on("click", (_event, d) => {
       _event.stopPropagation();
+      selectedNodeIdRef.current = d.id;
+      updateLabelVisibility();
       if (onNodeClick) onNodeClick(d);
+    });
+
+    svg.on("click", () => {
+      selectedNodeIdRef.current = null;
+      updateLabelVisibility();
     });
 
     const zoom = d3.zoom<SVGSVGElement, unknown>()
@@ -335,26 +350,6 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
 
     updateLabelVisibility();
 
-    let breathAnimFrame = 0;
-    function animateBreathing() {
-      const now = Date.now();
-      const breathVal = (Math.sin((now / 1000) * Math.PI) + 1) / 2;
-      const opacity = 0.6 + breathVal * 0.4;
-      const glowAlpha = 0.2 + breathVal * 0.5;
-      const glowSize = 6 + breathVal * 6;
-
-      nodeElements.each(function (d) {
-        if (d.status === 'blocked' && !isHovering.value) {
-          d3.select(this)
-            .style("opacity", opacity)
-            .style("filter", `drop-shadow(0 0 ${glowSize}px rgba(239,68,68,${glowAlpha}))`);
-        }
-      });
-
-      breathAnimFrame = requestAnimationFrame(animateBreathing);
-    }
-    breathAnimFrame = requestAnimationFrame(animateBreathing);
-
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width: w, height: h } = entry.contentRect;
@@ -367,7 +362,6 @@ export default function ForceGraph({ nodes, links, projects, colorBy = 'departme
 
     return () => {
       simulation.stop();
-      cancelAnimationFrame(breathAnimFrame);
       resizeObserver.disconnect();
     };
   }, [nodes, links, projects, onNodeClick, getRadius]);
