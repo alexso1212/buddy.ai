@@ -284,6 +284,107 @@ html, body {
   --shadow-2xl: 0 12px 40px rgba(0,0,0,0.15);
 }
 
+/* ===== Enterprise Theme（企业版黑白灰主题，覆盖暖色） ===== */
+.theme-enterprise {
+  --bg-primary: #212121;
+  --bg-sidebar: #171717;
+  --bg-composer: #2F2F2F;
+  --bg-bubble: #303030;
+  --bg-code: #1A1A1A;
+  --bg-code-header: #262626;
+  --text-primary: #ECECEC;
+  --text-secondary: #A0A0A0;
+  --text-placeholder: #6B6B6B;
+  --text-bright: #FFFFFF;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-medium: rgba(255, 255, 255, 0.15);
+  --overlay: rgba(0, 0, 0, 0.5);
+  --brand: #10A37F;
+  --brand-hover: #12B48C;
+  --brand-icon: #10A37F;
+  --sidebar-active: rgba(255, 255, 255, 0.10);
+  --sidebar-hover: rgba(255, 255, 255, 0.05);
+  --section-title: #A0A0A0;
+
+  --primary: 160 82% 35%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 160 82% 35%;
+  --background: 0 0% 13%;
+  --foreground: 0 0% 93%;
+  --card: 0 0% 11%;
+  --card-foreground: 0 0% 93%;
+  --card-border: 0 0% 15%;
+  --border: 0 0% 18%;
+  --sidebar: 0 0% 9%;
+  --sidebar-foreground: 0 0% 93%;
+  --sidebar-border: 0 0% 15%;
+  --sidebar-primary: 160 82% 35%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 0 0% 18%;
+  --sidebar-accent-foreground: 0 0% 93%;
+  --sidebar-ring: 160 82% 35%;
+  --popover: 0 0% 12%;
+  --popover-foreground: 0 0% 93%;
+  --popover-border: 0 0% 20%;
+  --secondary: 0 0% 20%;
+  --secondary-foreground: 0 0% 93%;
+  --muted: 0 0% 18%;
+  --muted-foreground: 0 0% 55%;
+  --accent: 0 0% 20%;
+  --accent-foreground: 0 0% 93%;
+  --input: 0 0% 25%;
+}
+
+.theme-enterprise.light {
+  --bg-primary: #FFFFFF;
+  --bg-sidebar: #F9F9F9;
+  --bg-composer: #FFFFFF;
+  --bg-bubble: #F0F0F0;
+  --bg-code: #F7F7F7;
+  --bg-code-header: #EEEEEE;
+  --text-primary: #1A1A1A;
+  --text-secondary: #6E6E6E;
+  --text-placeholder: #999999;
+  --text-bright: #000000;
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-medium: rgba(0, 0, 0, 0.15);
+  --overlay: rgba(0, 0, 0, 0.3);
+  --brand: #10A37F;
+  --brand-hover: #0E8F6E;
+  --brand-icon: #10A37F;
+  --sidebar-active: rgba(0, 0, 0, 0.06);
+  --sidebar-hover: rgba(0, 0, 0, 0.03);
+  --section-title: #6E6E6E;
+
+  --primary: 160 82% 35%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 160 82% 35%;
+  --background: 0 0% 100%;
+  --foreground: 0 0% 10%;
+  --card: 0 0% 98%;
+  --card-foreground: 0 0% 10%;
+  --card-border: 0 0% 92%;
+  --border: 0 0% 90%;
+  --sidebar: 0 0% 98%;
+  --sidebar-foreground: 0 0% 10%;
+  --sidebar-border: 0 0% 90%;
+  --sidebar-primary: 160 82% 35%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 0 0% 95%;
+  --sidebar-accent-foreground: 0 0% 10%;
+  --sidebar-ring: 160 82% 35%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 10%;
+  --popover-border: 0 0% 92%;
+  --secondary: 0 0% 96%;
+  --secondary-foreground: 0 0% 10%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 46%;
+  --accent: 0 0% 96%;
+  --accent-foreground: 0 0% 10%;
+  --input: 0 0% 82%;
+}
+
 @layer base {
   * {
     @apply border-border;

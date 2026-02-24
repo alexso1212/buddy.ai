@@ -5,7 +5,7 @@ import { chat as aiChat, chatStream as aiChatStream, generateProjectTasks, extra
 import { executeAction } from "./services/ai/actionExecutor";
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { authMiddleware, generateToken } from './middleware/auth';
+import { authMiddleware, generateToken, getTokenExpiry } from './middleware/auth';
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import {
   insertOrganizationSchema,
@@ -67,6 +67,7 @@ export async function registerRoutes(server: Server, app: Express) {
           authProvider: 'oidc',
           authProviderId: sub,
         } as any);
+        await storage.createOrgMembership({ userId: user.id, orgId: org.id, role: 'owner', isActive: true });
       }
 
       await storage.updateUser(user.id, { lastLoginAt: new Date(), avatarUrl: avatarUrl || user.avatarUrl } as any);
@@ -132,6 +133,7 @@ export async function registerRoutes(server: Server, app: Express) {
           authProvider: 'telegram',
           authProviderId: telegramId,
         } as any);
+        await storage.createOrgMembership({ userId: user.id, orgId: org.id, role: 'owner', isActive: true });
       }
 
       await storage.updateUser(user.id, { lastLoginAt: new Date(), avatarUrl: photoUrl || user.avatarUrl } as any);
@@ -246,6 +248,8 @@ export async function registerRoutes(server: Server, app: Express) {
         isActive: true,
       } as any);
 
+      await storage.createOrgMembership({ userId: user.id, orgId: org.id, role: 'owner', isActive: true });
+
       const token = generateToken({ userId: user.id, orgId: user.orgId, role: user.role });
       return res.status(201).json({
         token,
@@ -293,19 +297,40 @@ export async function registerRoutes(server: Server, app: Express) {
         return res.status(404).json({ error: '用户不存在' });
       }
 
-      const orgs = await storage.getOrganizations();
-      const org = orgs.find(o => o.id === user.orgId);
+      const org = await storage.getOrganizationById(user.orgId);
+
+      const userData = {
+        id: user.id,
+        email: user.email,
+        displayName: user.displayName,
+        role: user.role,
+        orgId: user.orgId,
+        avatarUrl: user.avatarUrl,
+        orgName: org?.name,
+        orgType: org?.type || 'project',
+      };
+
+      const authHeader = req.headers.authorization;
+      const currentToken = authHeader?.split(' ')[1];
+      let refreshedToken: string | undefined;
+
+      if (currentToken) {
+        const expiry = getTokenExpiry(currentToken);
+        if (expiry) {
+          const remainingSec = expiry - Math.floor(Date.now() / 1000);
+          if (remainingSec < 86400) {
+            refreshedToken = generateToken({
+              userId: user.id,
+              orgId: user.orgId,
+              role: user.role,
+            });
+          }
+        }
+      }
 
       return res.json({
-        user: {
-          id: user.id,
-          email: user.email,
-          displayName: user.displayName,
-          role: user.role,
-          orgId: user.orgId,
-          avatarUrl: user.avatarUrl,
-          orgName: org?.name,
-        },
+        user: userData,
+        ...(refreshedToken ? { token: refreshedToken } : {}),
       });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
@@ -354,6 +379,168 @@ export async function registerRoutes(server: Server, app: Express) {
       return res.json({ message: '密码修改成功' });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== Multi-Org & Invitations =====================
+  app.get("/api/user/orgs", authMiddleware, async (req: any, res) => {
+    try {
+      const orgs = await storage.getUserOrgsWithDetails(req.currentUserId);
+      res.json({ data: orgs });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/user/switch-org", authMiddleware, async (req: any, res) => {
+    try {
+      const { orgId } = req.body;
+      if (!orgId) return res.status(400).json({ error: 'orgId is required' });
+
+      const membership = await storage.getOrgMembershipByUserAndOrg(req.currentUserId, orgId);
+      if (!membership || !membership.isActive) {
+        return res.status(403).json({ error: 'You are not a member of this organization' });
+      }
+
+      const user = await storage.switchActiveOrg(req.currentUserId, orgId);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+
+      const org = await storage.getOrganizationById(orgId);
+      const token = generateToken({ userId: user.id, orgId: user.orgId, role: membership.role });
+
+      res.json({
+        data: {
+          token,
+          user: {
+            id: user.id, email: user.email, displayName: user.displayName,
+            role: membership.role, orgId: user.orgId, avatarUrl: user.avatarUrl,
+            orgName: org?.name,
+            orgType: org?.type || 'project',
+          }
+        }
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/org/members", authMiddleware, async (req: any, res) => {
+    try {
+      const members = await storage.getOrgMembers(req.orgId);
+      res.json({ data: members });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/invitations", authMiddleware, async (req: any, res) => {
+    try {
+      const membership = await storage.getOrgMembershipByUserAndOrg(req.currentUserId, req.orgId);
+      if (!membership || !['owner', 'admin'].includes(membership.role)) {
+        return res.status(403).json({ error: 'Only owner or admin can create invitations' });
+      }
+
+      const inviteCode = crypto.randomBytes(6).toString('hex');
+      const { role, maxUses, expiresInDays } = req.body;
+
+      const invitation = await storage.createInvitation({
+        orgId: req.orgId,
+        inviteCode,
+        role: role || 'member',
+        createdBy: req.currentUserId,
+        maxUses: maxUses || null,
+        expiresAt: expiresInDays ? new Date(Date.now() + expiresInDays * 86400000) : null,
+        isActive: true,
+      });
+
+      res.json({ data: invitation });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/invitations", authMiddleware, async (req: any, res) => {
+    try {
+      const orgInvitations = await storage.getOrgInvitations(req.orgId);
+      res.json({ data: orgInvitations });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/invitations/:id", authMiddleware, async (req: any, res) => {
+    try {
+      const result = await storage.deactivateInvitation(Number(req.params.id));
+      res.json({ data: result });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/invitations/verify/:code", async (req, res) => {
+    try {
+      const invitation = await storage.getInvitationByCode(req.params.code);
+      if (!invitation || !invitation.isActive) {
+        return res.status(404).json({ error: 'Invalid or expired invitation' });
+      }
+      if (invitation.expiresAt && new Date() > invitation.expiresAt) {
+        return res.status(410).json({ error: 'Invitation has expired' });
+      }
+      if (invitation.maxUses && invitation.usedCount >= invitation.maxUses) {
+        return res.status(410).json({ error: 'Invitation has reached maximum uses' });
+      }
+
+      const org = await storage.getOrganizationById(invitation.orgId);
+      res.json({ data: { orgName: org?.name, orgType: org?.type, role: invitation.role } });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/invitations/accept/:code", authMiddleware, async (req: any, res) => {
+    try {
+      const invitation = await storage.getInvitationByCode(req.params.code);
+      if (!invitation || !invitation.isActive) {
+        return res.status(404).json({ error: 'Invalid or expired invitation' });
+      }
+      if (invitation.expiresAt && new Date() > invitation.expiresAt) {
+        return res.status(410).json({ error: 'Invitation has expired' });
+      }
+      if (invitation.maxUses && invitation.usedCount >= invitation.maxUses) {
+        return res.status(410).json({ error: 'Invitation has reached maximum uses' });
+      }
+
+      const existing = await storage.getOrgMembershipByUserAndOrg(req.currentUserId, invitation.orgId);
+      if (existing && existing.isActive) {
+        return res.status(409).json({ error: 'You are already a member of this organization' });
+      }
+
+      await storage.createOrgMembership({
+        userId: req.currentUserId,
+        orgId: invitation.orgId,
+        role: invitation.role,
+        isActive: true,
+      });
+
+      await storage.incrementInvitationUsedCount(invitation.id);
+
+      const user = await storage.switchActiveOrg(req.currentUserId, invitation.orgId);
+      const org = await storage.getOrganizationById(invitation.orgId);
+      const token = generateToken({ userId: req.currentUserId, orgId: invitation.orgId, role: invitation.role });
+
+      res.json({
+        data: {
+          token,
+          user: {
+            id: user!.id, email: user!.email, displayName: user!.displayName,
+            role: invitation.role, orgId: invitation.orgId, avatarUrl: user!.avatarUrl,
+            orgName: org?.name,
+            orgType: org?.type || 'project',
+          }
+        }
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 

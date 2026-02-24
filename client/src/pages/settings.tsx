@@ -4,9 +4,9 @@ import type { Organization } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, User, Lock, Loader2 } from "lucide-react";
+import { Building2, User, Lock, Loader2, UserPlus, Plus, Copy, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Settings() {
@@ -74,6 +74,37 @@ export default function Settings() {
       toast({ title: '密码修改失败', description: e.message, variant: 'destructive' });
     } finally {
       setPasswordSaving(false);
+    }
+  };
+
+  const [inviteRole, setInviteRole] = useState('member');
+  const [inviteCreating, setInviteCreating] = useState(false);
+
+  const { data: invitationsData, isLoading: invitationsLoading } = useQuery<{ data: any[] }>({
+    queryKey: ['/api/invitations'],
+  });
+  const invitations = invitationsData?.data || [];
+
+  const handleCreateInvite = async () => {
+    setInviteCreating(true);
+    try {
+      await apiRequest('POST', '/api/invitations', { role: inviteRole });
+      queryClient.invalidateQueries({ queryKey: ['/api/invitations'] });
+      toast({ title: '邀请链接已生成' });
+    } catch (e: any) {
+      toast({ title: '生成失败', description: e.message, variant: 'destructive' });
+    } finally {
+      setInviteCreating(false);
+    }
+  };
+
+  const handleDeactivateInvite = async (id: number) => {
+    try {
+      await apiRequest('DELETE', `/api/invitations/${id}`);
+      queryClient.invalidateQueries({ queryKey: ['/api/invitations'] });
+      toast({ title: '邀请已停用' });
+    } catch (e: any) {
+      toast({ title: '操作失败', description: e.message, variant: 'destructive' });
     }
   };
 
@@ -198,6 +229,80 @@ export default function Settings() {
           )}
         </CardContent>
       </Card>
+
+      {(authUser?.role === 'owner' || authUser?.role === 'admin') && (
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2">
+            <UserPlus className="w-5 h-5 text-muted-foreground" />
+            <CardTitle>邀请成员</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Generate invite section */}
+            <div className="flex items-center gap-2">
+              <select 
+                value={inviteRole}
+                onChange={e => setInviteRole(e.target.value)}
+                className="h-10 px-3 text-sm bg-background border border-border rounded-md outline-none"
+                data-testid="select-invite-role"
+              >
+                <option value="member">成员</option>
+                <option value="head">主管</option>
+                <option value="admin">管理员</option>
+              </select>
+              <Button onClick={handleCreateInvite} disabled={inviteCreating} data-testid="button-create-invite">
+                {inviteCreating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                生成邀请链接
+              </Button>
+            </div>
+
+            {/* Active invitations list */}
+            {invitationsLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+              </div>
+            ) : invitations.length === 0 ? (
+              <p className="text-sm text-muted-foreground">暂无活跃的邀请链接</p>
+            ) : (
+              <div className="space-y-2">
+                {invitations.map((inv: any) => (
+                  <div key={inv.id} className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/30" data-testid={`invitation-${inv.id}`}>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-mono text-foreground truncate" data-testid={`invite-code-${inv.id}`}>
+                        {inv.inviteCode}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {inv.role === 'admin' ? '管理员' : inv.role === 'head' ? '主管' : '成员'}
+                        {inv.maxUses ? ` · ${inv.usedCount}/${inv.maxUses} 已使用` : ` · ${inv.usedCount} 已使用`}
+                        {inv.expiresAt ? ` · ${new Date(inv.expiresAt) < new Date() ? '已过期' : `${new Date(inv.expiresAt).toLocaleDateString('zh-CN')} 过期`}` : ''}
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(inv.inviteCode);
+                        toast({ title: '邀请码已复制' });
+                      }}
+                      data-testid={`button-copy-invite-${inv.id}`}
+                    >
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDeactivateInvite(inv.id)}
+                      data-testid={`button-deactivate-invite-${inv.id}`}
+                    >
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

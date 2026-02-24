@@ -1,7 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key';
+if (!process.env.JWT_SECRET) {
+  throw new Error('[auth] JWT_SECRET environment variable is required. Set it in Secrets to ensure stable sessions.');
+}
+const JWT_SECRET = process.env.JWT_SECRET;
 
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -11,7 +14,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
 
   const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: number; orgId: number; role: string };
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: number; orgId: number; role: string; exp?: number; iat?: number };
     req.currentUserId = decoded.userId;
     req.orgId = decoded.orgId;
     next();
@@ -38,4 +41,13 @@ export function optionalAuthMiddleware(req: Request, _res: Response, next: NextF
 
 export function generateToken(payload: { userId: number; orgId: number; role: string }): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+}
+
+export function getTokenExpiry(token: string): number | null {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { exp?: number };
+    return decoded.exp || null;
+  } catch {
+    return null;
+  }
 }

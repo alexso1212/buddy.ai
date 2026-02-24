@@ -8,6 +8,7 @@ interface AuthUser {
   orgId: number;
   avatarUrl: string | null;
   orgName?: string;
+  orgType?: string;
 }
 
 interface AuthContextType {
@@ -19,6 +20,7 @@ interface AuthContextType {
   register: (email: string, password: string, displayName: string) => Promise<void>;
   logout: () => void;
   updateUser: (updates: Partial<AuthUser>) => void;
+  switchOrg: (orgId: number) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -30,6 +32,7 @@ const AuthContext = createContext<AuthContextType>({
   register: async () => {},
   logout: () => {},
   updateUser: () => {},
+  switchOrg: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -52,14 +55,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const u = data.user || data;
           setUser(u);
           localStorage.setItem('buddy_user', JSON.stringify(u));
-        } else {
+          if (data.token) {
+            localStorage.setItem('buddy_token', data.token);
+          }
+        } else if (res.status === 401) {
           localStorage.removeItem('buddy_token');
           localStorage.removeItem('buddy_user');
+        } else {
+          const cached = localStorage.getItem('buddy_user');
+          if (cached) {
+            try { setUser(JSON.parse(cached)); } catch {}
+          }
         }
       })
       .catch(() => {
-        localStorage.removeItem('buddy_token');
-        localStorage.removeItem('buddy_user');
+        const cached = localStorage.getItem('buddy_user');
+        if (cached) {
+          try { setUser(JSON.parse(cached)); } catch {}
+        }
       })
       .finally(() => setLoading(false));
   }, []);
@@ -95,6 +108,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const data = await res.json();
     const u = data.user || data;
+    if (data.token) {
+      localStorage.setItem('buddy_token', data.token);
+    }
     localStorage.setItem('buddy_user', JSON.stringify(u));
     setUser(u);
   }, []);
@@ -134,6 +150,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const switchOrg = useCallback(async (orgId: number) => {
+    const token = localStorage.getItem('buddy_token');
+    if (!token) throw new Error('Not authenticated');
+
+    const res = await fetch('/api/user/switch-org', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ orgId }),
+    });
+
+    if (!res.ok) {
+      const text = (await res.text()) || res.statusText;
+      throw new Error(text);
+    }
+
+    const data = await res.json();
+    const newToken = data.data.token;
+    const u = data.data.user;
+    localStorage.setItem('buddy_token', newToken);
+    localStorage.setItem('buddy_user', JSON.stringify(u));
+    setUser(u);
+
+    const { queryClient } = await import('./queryClient');
+    queryClient.invalidateQueries();
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -145,6 +190,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         register,
         logout,
         updateUser,
+        switchOrg,
       }}
     >
       {children}

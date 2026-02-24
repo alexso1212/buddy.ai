@@ -10,6 +10,7 @@ export const organizations = pgTable('organizations', {
   id: serial('id').primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
   description: text('description'),
+  type: varchar('type', { length: 50 }).notNull().default('project'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -63,6 +64,36 @@ export const users = pgTable('users', {
   authProviderId: varchar('auth_provider_id', { length: 255 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ============================================================
+// org_memberships（组织成员关系）
+// ============================================================
+export const orgMemberships = pgTable('org_memberships', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  orgId: integer('org_id').references(() => organizations.id).notNull(),
+  role: varchar('role', { length: 50 }).notNull().default('member'),
+  deptId: integer('dept_id').references(() => departments.id),
+  jobRoleId: integer('job_role_id').references(() => jobRoles.id),
+  isActive: boolean('is_active').default(true).notNull(),
+  joinedAt: timestamp('joined_at').defaultNow().notNull(),
+});
+
+// ============================================================
+// invitations（组织邀请）
+// ============================================================
+export const invitations = pgTable('invitations', {
+  id: serial('id').primaryKey(),
+  orgId: integer('org_id').references(() => organizations.id).notNull(),
+  inviteCode: varchar('invite_code', { length: 50 }).notNull().unique(),
+  role: varchar('role', { length: 50 }).notNull().default('member'),
+  createdBy: integer('created_by').references(() => users.id).notNull(),
+  expiresAt: timestamp('expires_at'),
+  maxUses: integer('max_uses'),
+  usedCount: integer('used_count').notNull().default(0),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
 // ============================================================
@@ -277,6 +308,8 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   departments: many(departments),
   users: many(users),
   projects: many(projects),
+  memberships: many(orgMemberships),
+  invitations: many(invitations),
 }));
 
 export const departmentsRelations = relations(departments, ({ one, many }) => ({
@@ -323,6 +356,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   assignedTasks: many(tasks, { relationName: 'taskAssignee' }),
   comments: many(taskComments),
   participatedTasks: many(taskParticipants),
+  memberships: many(orgMemberships),
 }));
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
@@ -493,6 +527,36 @@ export const userMemoriesRelations = relations(userMemories, ({ one }) => ({
   }),
 }));
 
+export const orgMembershipsRelations = relations(orgMemberships, ({ one }) => ({
+  user: one(users, {
+    fields: [orgMemberships.userId],
+    references: [users.id],
+  }),
+  organization: one(organizations, {
+    fields: [orgMemberships.orgId],
+    references: [organizations.id],
+  }),
+  department: one(departments, {
+    fields: [orgMemberships.deptId],
+    references: [departments.id],
+  }),
+  jobRole: one(jobRoles, {
+    fields: [orgMemberships.jobRoleId],
+    references: [jobRoles.id],
+  }),
+}));
+
+export const invitationsRelations = relations(invitations, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [invitations.orgId],
+    references: [organizations.id],
+  }),
+  creator: one(users, {
+    fields: [invitations.createdBy],
+    references: [users.id],
+  }),
+}));
+
 // ============================================================
 // Insert Schemas & Types
 // ============================================================
@@ -619,5 +683,20 @@ export const insertUserMemorySchema = createInsertSchema(userMemories).omit({
 });
 export type InsertUserMemory = z.infer<typeof insertUserMemorySchema>;
 export type UserMemory = typeof userMemories.$inferSelect;
+
+export const insertOrgMembershipSchema = createInsertSchema(orgMemberships).omit({
+  id: true,
+  joinedAt: true,
+});
+export type InsertOrgMembership = z.infer<typeof insertOrgMembershipSchema>;
+export type OrgMembership = typeof orgMemberships.$inferSelect;
+
+export const insertInvitationSchema = createInsertSchema(invitations).omit({
+  id: true,
+  createdAt: true,
+  usedCount: true,
+});
+export type InsertInvitation = z.infer<typeof insertInvitationSchema>;
+export type Invitation = typeof invitations.$inferSelect;
 
 export * from "./models/auth";

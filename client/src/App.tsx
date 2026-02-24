@@ -316,7 +316,7 @@ function Sidebar({
   sidebarRef: React.RefObject<HTMLElement>;
   overlayRef: React.RefObject<HTMLDivElement>;
 }) {
-  const { user: authUser, logout } = useAuth();
+  const { user: authUser, logout, switchOrg: authSwitchOrg } = useAuth();
   const [location, navigate] = useLocation();
   const [buddyAiOpen, setBuddyAiOpen] = useState(() => {
     try { const s = localStorage.getItem('sidebar_buddyAi'); return s !== null ? s === 'true' : true; } catch { return true; }
@@ -354,6 +354,17 @@ function Sidebar({
   const [projectPicker, setProjectPicker] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [convSearchQuery, setConvSearchQuery] = useState('');
+  const [orgSwitcherOpen, setOrgSwitcherOpen] = useState(false);
+  const [joinOrgOpen, setJoinOrgOpen] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
+  const [joinLoading, setJoinLoading] = useState(false);
+  const [joinError, setJoinError] = useState('');
+
+  const { data: userOrgsData, refetch: refetchOrgs } = useQuery<{ data: any[] }>({
+    queryKey: ['/api/user/orgs'],
+    enabled: !!authUser,
+  });
+  const userOrgs = userOrgsData?.data || [];
 
   const isActive = (path: string) => {
     if (path === '/chats') return location === '/chats' || (location === '/agent' && !!activeConvId);
@@ -816,6 +827,39 @@ function Sidebar({
               </div>
             </div>
 
+            <div style={{ 
+              margin: '12px 0 4px',
+              padding: '10px 12px',
+              borderRadius: 10,
+              background: 'rgba(255,255,255,0.04)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}
+              onClick={() => { setSettingsOpen(false); setOrgSwitcherOpen(true); }}
+              data-testid="button-switch-org"
+            >
+              <Building2 size={18} color="#9A9893" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: '#9A9893' }}>当前组织</div>
+                <div style={{ fontSize: 15, color: '#ECECEC', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {authUser?.orgName || '我的团队'}
+                </div>
+              </div>
+              <div style={{
+                fontSize: 11,
+                padding: '2px 8px',
+                borderRadius: 6,
+                background: authUser?.orgType === 'enterprise' ? 'rgba(255,255,255,0.1)' : 'rgba(174,86,48,0.15)',
+                color: authUser?.orgType === 'enterprise' ? '#ECECEC' : '#C4703F',
+                fontWeight: 500,
+              }}>
+                {authUser?.orgType === 'enterprise' ? '企业' : '项目'}
+              </div>
+              <ChevronRight size={16} color="#9A9893" />
+            </div>
+
             <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
 
             <Link
@@ -960,6 +1004,232 @@ function Sidebar({
               <LogOut size={20} color="#E5534B" />
               <span style={{ fontSize: 16, fontWeight: 400, color: '#E5534B' }}>退出登录</span>
             </div>
+          </div>
+        </>
+      )}
+
+      {orgSwitcherOpen && (
+        <>
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 55 }}
+            onClick={() => setOrgSwitcherOpen(false)}
+            data-testid="org-switcher-overlay"
+          />
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 0, left: 0, right: 0,
+              zIndex: 60,
+              background: 'var(--bg-sidebar)',
+              borderRadius: '16px 16px 0 0',
+              maxHeight: '70vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
+              animation: 'settingsSlideUp 300ms cubic-bezier(0.165, 0.85, 0.45, 1) forwards',
+            }}
+            data-testid="org-switcher-sheet"
+          >
+            <div style={{ padding: '18px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+              <span style={{ fontSize: 17, fontWeight: 600, color: '#ECECEC' }}>切换组织</span>
+              <button onClick={() => setOrgSwitcherOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }} data-testid="button-close-org-switcher">
+                <X size={20} color="#9A9893" />
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+              {userOrgs.map((org: any) => (
+                <button
+                  key={org.orgId}
+                  {...tapMotionProps}
+                  onClick={async () => {
+                    if (org.orgId === authUser?.orgId) {
+                      setOrgSwitcherOpen(false);
+                      return;
+                    }
+                    try {
+                      await authSwitchOrg(org.orgId);
+                      setOrgSwitcherOpen(false);
+                      toast({ title: `已切换到「${org.orgName}」` });
+                      navigate('/agent');
+                    } catch (e: any) {
+                      toast({ title: '切换失败', description: e.message, variant: 'destructive' });
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '14px 14px',
+                    borderRadius: 10,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    background: org.orgId === authUser?.orgId ? 'rgba(174, 86, 48, 0.12)' : 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left' as const,
+                  }}
+                  data-testid={`org-option-${org.orgId}`}
+                >
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 10,
+                    background: org.orgType === 'enterprise' ? 'rgba(255,255,255,0.1)' : 'rgba(174,86,48,0.15)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                  }}>
+                    <Building2 size={18} color={org.orgType === 'enterprise' ? '#ECECEC' : '#C4703F'} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, color: '#ECECEC', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {org.orgName}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#9A9893', marginTop: 2 }}>
+                      {org.orgType === 'enterprise' ? '企业' : '项目'} · {org.role === 'owner' ? '所有者' : org.role === 'admin' ? '管理员' : org.role === 'head' ? '主管' : '成员'}
+                    </div>
+                  </div>
+                  {org.orgId === authUser?.orgId && (
+                    <Check size={16} color="#AE5630" />
+                  )}
+                </button>
+              ))}
+
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', margin: '8px 6px' }} />
+              
+              <button
+                {...tapMotionProps}
+                onClick={() => { setOrgSwitcherOpen(false); setJoinOrgOpen(true); }}
+                style={{
+                  width: '100%',
+                  padding: '14px 14px',
+                  borderRadius: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                }}
+                data-testid="button-join-org"
+              >
+                <div style={{
+                  width: 36, height: 36, borderRadius: 10,
+                  background: 'rgba(255,255,255,0.06)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <Plus size={18} color="#9A9893" />
+                </div>
+                <span style={{ fontSize: 15, color: '#9A9893' }}>加入组织</span>
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {joinOrgOpen && (
+        <>
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 55 }}
+            onClick={() => { setJoinOrgOpen(false); setInviteCode(''); setJoinError(''); }}
+            data-testid="join-org-overlay"
+          />
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 0, left: 0, right: 0,
+              zIndex: 60,
+              background: 'var(--bg-sidebar)',
+              borderRadius: '16px 16px 0 0',
+              padding: '24px 20px',
+              paddingBottom: 'calc(24px + env(safe-area-inset-bottom, 0px))',
+              boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
+              animation: 'settingsSlideUp 300ms cubic-bezier(0.165, 0.85, 0.45, 1) forwards',
+            }}
+            data-testid="join-org-sheet"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <span style={{ fontSize: 17, fontWeight: 600, color: '#ECECEC' }}>加入组织</span>
+              <button onClick={() => { setJoinOrgOpen(false); setInviteCode(''); setJoinError(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }} data-testid="button-close-join-org">
+                <X size={20} color="#9A9893" />
+              </button>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 14, color: '#9A9893', marginBottom: 8 }}>输入邀请码</div>
+              <input
+                value={inviteCode}
+                onChange={e => { setInviteCode(e.target.value); setJoinError(''); }}
+                placeholder="请输入邀请码..."
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  background: 'rgba(44,43,40,0.5)',
+                  color: '#ECECEC',
+                  fontSize: 15,
+                  outline: 'none',
+                }}
+                data-testid="input-invite-code"
+              />
+            </div>
+
+            {joinError && (
+              <div style={{ fontSize: 13, color: '#E5534B', marginBottom: 12 }} data-testid="text-join-error">
+                {joinError}
+              </div>
+            )}
+
+            <button
+              {...tapMotionProps}
+              disabled={!inviteCode.trim() || joinLoading}
+              onClick={async () => {
+                if (!inviteCode.trim()) return;
+                setJoinLoading(true);
+                setJoinError('');
+                try {
+                  const token = localStorage.getItem('buddy_token');
+                  const res = await fetch(`/api/invitations/accept/${inviteCode.trim()}`, {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${token}` },
+                  });
+                  
+                  if (!res.ok) {
+                    const data = await res.json();
+                    throw new Error(data.error || 'Failed to join');
+                  }
+                  
+                  const data = await res.json();
+                  const newToken = data.data.token;
+                  const u = data.data.user;
+                  localStorage.setItem('buddy_token', newToken);
+                  localStorage.setItem('buddy_user', JSON.stringify(u));
+                  setJoinOrgOpen(false);
+                  setInviteCode('');
+                  toast({ title: `已加入「${u.orgName || '组织'}」` });
+                  refetchOrgs();
+                  window.location.reload();
+                } catch (e: any) {
+                  setJoinError(e.message === 'You are already a member of this organization' ? '你已经是该组织的成员' : e.message === 'Invalid or expired invitation' ? '邀请码无效或已过期' : e.message === 'Invitation has expired' ? '邀请已过期' : e.message === 'Invitation has reached maximum uses' ? '邀请已达到使用上限' : '加入失败，请检查邀请码');
+                } finally {
+                  setJoinLoading(false);
+                }
+              }}
+              style={{
+                width: '100%',
+                padding: '14px 0',
+                borderRadius: 12,
+                background: inviteCode.trim() ? 'linear-gradient(145deg, rgba(174,86,48,0.85) 0%, rgba(174,86,48,0.65) 100%)' : 'rgba(255,255,255,0.06)',
+                border: 'none',
+                color: inviteCode.trim() ? '#FFFFFF' : '#9A9893',
+                fontSize: 16,
+                fontWeight: 600,
+                cursor: inviteCode.trim() ? 'pointer' : 'default',
+                opacity: joinLoading ? 0.6 : 1,
+              }}
+              data-testid="button-submit-join"
+            >
+              {joinLoading ? '加入中...' : '加入组织'}
+            </button>
           </div>
         </>
       )}
@@ -1589,6 +1859,19 @@ function ModelSelector() {
   );
 }
 
+function OrgThemeSync() {
+  const { user } = useAuth();
+  const { setOrgType } = useTheme();
+
+  useEffect(() => {
+    if (user?.orgType) {
+      setOrgType(user.orgType);
+    }
+  }, [user?.orgType, setOrgType]);
+
+  return null;
+}
+
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
@@ -1840,6 +2123,7 @@ function App() {
     <AuthProvider>
     <ThemeProvider>
     <QueryClientProvider client={queryClient}>
+      <OrgThemeSync />
       <div className="flex bg-[var(--bg-primary)]" style={{ height: '100dvh' }}>
         {!isLoginPage && <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} sidebarRef={sidebarRef} overlayRef={overlayRef} />}
 

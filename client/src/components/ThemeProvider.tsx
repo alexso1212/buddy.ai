@@ -6,12 +6,16 @@ interface ThemeContextValue {
   theme: Theme;
   resolvedTheme: "light" | "dark";
   setTheme: (theme: Theme) => void;
+  orgType: string;
+  setOrgType: (type: string) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
   theme: "dark",
   resolvedTheme: "dark",
   setTheme: () => {},
+  orgType: "project",
+  setOrgType: () => {},
 });
 
 export function useTheme() {
@@ -33,6 +37,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (saved && saved !== "system") return saved;
     if (!saved) return "dark";
     return getSystemTheme();
+  });
+
+  const [orgType, setOrgTypeState] = useState<string>(() => {
+    return localStorage.getItem("buddy_org_type") || "project";
   });
 
   const applyTheme = useCallback((resolved: "light" | "dark") => {
@@ -57,6 +65,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [applyTheme]);
 
+  const setOrgType = useCallback((type: string) => {
+    setOrgTypeState(type);
+    localStorage.setItem("buddy_org_type", type);
+    const root = document.documentElement;
+    if (type === 'enterprise') {
+      root.classList.add('theme-enterprise');
+    } else {
+      root.classList.remove('theme-enterprise');
+    }
+  }, []);
+
   useEffect(() => {
     if (theme === "system") {
       applyTheme(getSystemTheme());
@@ -73,8 +92,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mediaQuery.removeEventListener("change", handler);
   }, [theme, applyTheme]);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    if (orgType === 'enterprise') {
+      root.classList.add('theme-enterprise');
+    } else {
+      root.classList.remove('theme-enterprise');
+    }
+  }, [orgType]);
+
   return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>
+    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme, orgType, setOrgType }}>
       {children}
     </ThemeContext.Provider>
   );

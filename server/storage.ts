@@ -51,6 +51,12 @@ import {
   userMemories,
   type UserMemory,
   type InsertUserMemory,
+  orgMemberships,
+  invitations,
+  type OrgMembership,
+  type InsertOrgMembership,
+  type Invitation,
+  type InsertInvitation,
 } from "@shared/schema";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -534,6 +540,107 @@ export class DatabaseStorage {
 
   async deleteUserMemory(id: number): Promise<void> {
     await db.delete(userMemories).where(eq(userMemories.id, id));
+  }
+
+  // ==================== Org Memberships ====================
+  async getOrgMemberships(userId: number): Promise<OrgMembership[]> {
+    return db.select().from(orgMemberships).where(
+      and(eq(orgMemberships.userId, userId), eq(orgMemberships.isActive, true))
+    );
+  }
+
+  async getUserOrgsWithDetails(userId: number): Promise<(OrgMembership & { orgName: string; orgType: string })[]> {
+    const result = await db
+      .select({
+        id: orgMemberships.id,
+        userId: orgMemberships.userId,
+        orgId: orgMemberships.orgId,
+        role: orgMemberships.role,
+        deptId: orgMemberships.deptId,
+        jobRoleId: orgMemberships.jobRoleId,
+        isActive: orgMemberships.isActive,
+        joinedAt: orgMemberships.joinedAt,
+        orgName: organizations.name,
+        orgType: organizations.type,
+      })
+      .from(orgMemberships)
+      .innerJoin(organizations, eq(orgMemberships.orgId, organizations.id))
+      .where(and(eq(orgMemberships.userId, userId), eq(orgMemberships.isActive, true)));
+    return result;
+  }
+
+  async createOrgMembership(data: InsertOrgMembership): Promise<OrgMembership> {
+    const [result] = await db.insert(orgMemberships).values(data).returning();
+    return result;
+  }
+
+  async getOrgMembershipByUserAndOrg(userId: number, orgId: number): Promise<OrgMembership | undefined> {
+    const [result] = await db.select().from(orgMemberships).where(
+      and(eq(orgMemberships.userId, userId), eq(orgMemberships.orgId, orgId))
+    );
+    return result;
+  }
+
+  async getOrgMembers(orgId: number): Promise<(OrgMembership & { displayName: string; email: string; avatarUrl: string | null })[]> {
+    const result = await db
+      .select({
+        id: orgMemberships.id,
+        userId: orgMemberships.userId,
+        orgId: orgMemberships.orgId,
+        role: orgMemberships.role,
+        deptId: orgMemberships.deptId,
+        jobRoleId: orgMemberships.jobRoleId,
+        isActive: orgMemberships.isActive,
+        joinedAt: orgMemberships.joinedAt,
+        displayName: users.displayName,
+        email: users.email,
+        avatarUrl: users.avatarUrl,
+      })
+      .from(orgMemberships)
+      .innerJoin(users, eq(orgMemberships.userId, users.id))
+      .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.isActive, true)));
+    return result;
+  }
+
+  async switchActiveOrg(userId: number, orgId: number): Promise<User | undefined> {
+    const [result] = await db.update(users).set({ orgId }).where(eq(users.id, userId)).returning();
+    return result;
+  }
+
+  // ==================== Invitations ====================
+  async createInvitation(data: InsertInvitation): Promise<Invitation> {
+    const [result] = await db.insert(invitations).values(data).returning();
+    return result;
+  }
+
+  async getInvitationByCode(code: string): Promise<Invitation | undefined> {
+    const [result] = await db.select().from(invitations).where(eq(invitations.inviteCode, code));
+    return result;
+  }
+
+  async getOrgInvitations(orgId: number): Promise<Invitation[]> {
+    return db.select().from(invitations).where(
+      and(eq(invitations.orgId, orgId), eq(invitations.isActive, true))
+    ).orderBy(desc(invitations.createdAt));
+  }
+
+  async deactivateInvitation(id: number): Promise<Invitation | undefined> {
+    const [result] = await db.update(invitations).set({ isActive: false }).where(eq(invitations.id, id)).returning();
+    return result;
+  }
+
+  async incrementInvitationUsedCount(id: number): Promise<void> {
+    await db.update(invitations).set({ usedCount: sql`${invitations.usedCount} + 1` }).where(eq(invitations.id, id));
+  }
+
+  async getOrganizationById(id: number): Promise<Organization | undefined> {
+    const [result] = await db.select().from(organizations).where(eq(organizations.id, id));
+    return result;
+  }
+
+  async updateOrganization(id: number, data: Partial<{ name: string; type: string; description: string | null }>): Promise<Organization | undefined> {
+    const [result] = await db.update(organizations).set({ ...data, updatedAt: new Date() }).where(eq(organizations.id, id)).returning();
+    return result;
   }
 }
 
