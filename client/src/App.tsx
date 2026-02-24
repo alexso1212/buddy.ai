@@ -637,7 +637,7 @@ function Sidebar({
           </h1>
         </div>
 
-        <div ref={scrollContainerRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' } as any}>
+        <div ref={scrollContainerRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', position: 'relative' } as any}>
           {renderGroupHeader('企业管理', Building2, enterpriseOpen, () => setEnterpriseOpen(v => !v), 'button-toggle-enterprise')}
           <CollapsibleContent isOpen={enterpriseOpen}>
             <div style={{
@@ -773,79 +773,88 @@ function Sidebar({
               })()}
             </div>
           </CollapsibleContent>
-        </div>
 
-        <div
-          style={{
-            padding: '16px 20px',
-            paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexShrink: 0,
-            gap: 8,
-          }}
-        >
+          <div style={{ height: 'calc(76px + env(safe-area-inset-bottom, 0px))' }} />
+
           <div
-            {...elasticDeformProps}
             style={{
-              display: 'flex', alignItems: 'center', cursor: 'pointer',
-              padding: '5px 16px 5px 5px',
-              borderRadius: 100,
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.10)',
-              transition: 'background 150ms ease',
+              position: 'sticky',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              padding: '12px 16px',
+              paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              background: 'transparent',
+              pointerEvents: 'none',
             }}
-            onClick={() => setSettingsOpen(true)}
-            data-testid="button-open-settings"
           >
             <div
+              {...elasticDeformProps}
               style={{
-                width: 32,
-                height: 32,
+                display: 'flex', alignItems: 'center', cursor: 'pointer',
+                padding: '5px 16px 5px 5px',
+                borderRadius: 999,
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.10)',
+                transition: 'background 150ms ease',
+                pointerEvents: 'auto',
+              }}
+              onClick={() => setSettingsOpen(true)}
+              data-testid="button-open-settings"
+            >
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  background: '#000',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: '#FFFFFF',
+                  flexShrink: 0,
+                }}
+                data-testid="img-avatar"
+              >
+                {authUser?.displayName?.charAt(0)?.toUpperCase() || 'U'}
+              </div>
+              <span style={{ fontSize: 15, fontWeight: 500, color: '#ECECEC', marginLeft: 10 }} data-testid="text-username">{authUser?.displayName || '用户'}</span>
+            </div>
+
+            <button
+              {...tapMotionProps}
+              style={{
+                width: 44,
+                height: 44,
                 borderRadius: '50%',
-                background: '#000',
+                background: '#AE5630',
+                border: 'none',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: 14,
-                fontWeight: 600,
-                color: '#FFFFFF',
+                cursor: 'pointer',
                 flexShrink: 0,
+                transition: 'transform 150ms ease, opacity 150ms ease',
+                pointerEvents: 'auto',
               }}
-              data-testid="img-avatar"
+              onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.92)')}
+              onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+              onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+              onClick={() => {
+                onClose();
+                navigate('/agent');
+              }}
+              data-testid="button-new-chat"
             >
-              {authUser?.displayName?.charAt(0)?.toUpperCase() || 'U'}
-            </div>
-            <span style={{ fontSize: 15, fontWeight: 500, color: '#ECECEC', marginLeft: 10 }} data-testid="text-username">{authUser?.displayName || '用户'}</span>
+              <MessageSquarePlus size={20} color="#FFFFFF" strokeWidth={2} />
+            </button>
           </div>
-
-          <button
-            {...tapMotionProps}
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: '50%',
-              background: '#AE5630',
-              border: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              flexShrink: 0,
-              transition: 'transform 150ms ease, opacity 150ms ease',
-            }}
-            onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.92)')}
-            onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
-            onClick={() => {
-              onClose();
-              navigate('/agent');
-            }}
-            data-testid="button-new-chat"
-          >
-            <MessageSquarePlus size={20} color="#FFFFFF" strokeWidth={2} />
-          </button>
         </div>
       </aside>
 
