@@ -505,6 +505,7 @@ function Sidebar({
           opacity: isOpen ? 1 : 0,
           pointerEvents: isOpen ? 'auto' : 'none',
           transition: 'opacity 300ms',
+          touchAction: 'none',
         }}
         className="md:hidden"
         onClick={onClose}
@@ -547,7 +548,7 @@ function Sidebar({
           </h1>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' } as any}>
           {renderGroupHeader('企业管理', Building2, enterpriseOpen, () => setEnterpriseOpen(v => !v), 'button-toggle-enterprise')}
           <CollapsibleContent isOpen={enterpriseOpen}>
             <div style={{
@@ -1740,12 +1741,45 @@ function App() {
     const isMobile = window.innerWidth < 768;
     if (!isMobile) {
       content.style.transform = '';
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+      const mainEl = content.querySelector('main');
+      if (mainEl) {
+        (mainEl as HTMLElement).style.overflow = '';
+        (mainEl as HTMLElement).style.touchAction = '';
+      }
       return;
     }
     const sidebar = sidebarRef.current;
     const w = sidebar ? Math.min(sidebar.offsetWidth, 340) : Math.min(window.innerWidth * 0.82, 340);
     content.style.transition = 'transform 350ms cubic-bezier(0.32, 0.72, 0, 1)';
     content.style.transform = sidebarOpen ? `translateX(${w}px)` : 'translateX(0)';
+
+    const mainEl = content.querySelector('main');
+    if (sidebarOpen) {
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+      if (mainEl) {
+        (mainEl as HTMLElement).style.overflow = 'hidden';
+        (mainEl as HTMLElement).style.touchAction = 'none';
+      }
+    } else {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+      if (mainEl) {
+        (mainEl as HTMLElement).style.overflow = '';
+        (mainEl as HTMLElement).style.touchAction = '';
+      }
+    }
+
+    return () => {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+      if (mainEl) {
+        (mainEl as HTMLElement).style.overflow = '';
+        (mainEl as HTMLElement).style.touchAction = '';
+      }
+    };
   }, [sidebarOpen]);
 
   return (
