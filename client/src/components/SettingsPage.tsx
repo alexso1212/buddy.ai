@@ -25,12 +25,110 @@ interface SettingsPageProps {
   onCloseSidebar: () => void;
 }
 
+function useIOSBounceScroll(scrollRef: React.RefObject<HTMLDivElement | null>) {
+  const touchStartY = useRef(0);
+  const pulling = useRef(false);
+  const pullDir = useRef<'top' | 'bottom' | null>(null);
+  const currentPull = useRef(0);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const getContentEl = () => el.firstElementChild as HTMLElement | null;
+
+    const onTouchStart = (e: TouchEvent) => {
+      touchStartY.current = e.touches[0].clientY;
+      pulling.current = false;
+      pullDir.current = null;
+      currentPull.current = 0;
+      const content = getContentEl();
+      if (content) {
+        content.style.transition = 'none';
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      const content = getContentEl();
+      if (!content) return;
+
+      const touchY = e.touches[0].clientY;
+      const delta = touchY - touchStartY.current;
+      const atTop = el.scrollTop <= 0;
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+
+      if (atTop && delta > 0) {
+        if (!pulling.current) {
+          pulling.current = true;
+          pullDir.current = 'top';
+          touchStartY.current = touchY;
+        }
+        if (pullDir.current === 'top') {
+          const rawDelta = touchY - touchStartY.current;
+          const dampened = rawDelta * 0.4;
+          currentPull.current = dampened;
+          content.style.transform = `translateY(${dampened}px)`;
+          e.preventDefault();
+        }
+      } else if (atBottom && delta < 0) {
+        if (!pulling.current) {
+          pulling.current = true;
+          pullDir.current = 'bottom';
+          touchStartY.current = touchY;
+        }
+        if (pullDir.current === 'bottom') {
+          const rawDelta = touchY - touchStartY.current;
+          const dampened = rawDelta * 0.4;
+          currentPull.current = dampened;
+          content.style.transform = `translateY(${dampened}px)`;
+          e.preventDefault();
+        }
+      } else if (!pulling.current) {
+        pullDir.current = null;
+      }
+    };
+
+    const onTouchEnd = () => {
+      const content = getContentEl();
+      if (!content) return;
+
+      if (pulling.current && currentPull.current !== 0) {
+        content.style.transition = 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)';
+        content.style.transform = 'translateY(0)';
+      }
+      pulling.current = false;
+      pullDir.current = null;
+      currentPull.current = 0;
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [scrollRef]);
+}
+
 const scrollStyle: React.CSSProperties = {
   overflowY: 'auto',
   overflowX: 'hidden',
   WebkitOverflowScrolling: 'touch' as any,
-  overscrollBehavior: 'auto',
+  overscrollBehavior: 'none',
 };
+
+function BounceScroll({ children, style, className }: { children: React.ReactNode; style?: React.CSSProperties; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useIOSBounceScroll(ref);
+  return (
+    <div ref={ref} style={{ ...scrollStyle, ...style }} className={className}>
+      <div>{children}</div>
+    </div>
+  );
+}
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -509,7 +607,7 @@ function ProfilePage({ onBack }: { onBack: () => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PageHeader title="Profile" onBack={onBack} />
-      <div style={{ flex: 1, padding: '0 20px 40px', ...scrollStyle }}>
+      <BounceScroll style={{ flex: 1, padding: '0 20px 40px' }}>
 
         <div style={{ marginBottom: 16 }}>
           <label style={sectionLabelStyle}>Full Name</label>
@@ -644,7 +742,7 @@ function ProfilePage({ onBack }: { onBack: () => void }) {
           <Trash2 size={18} color="#E5534B" />
           <span style={{ fontSize: 15, color: '#E5534B' }}>Delete account</span>
         </div>
-      </div>
+      </BounceScroll>
     </div>
   );
 }
@@ -691,7 +789,7 @@ function OrganizationPage({ onBack }: { onBack: () => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PageHeader title="Organization" onBack={onBack} />
-      <div style={{ flex: 1, padding: '0 20px 40px', ...scrollStyle }}>
+      <BounceScroll style={{ flex: 1, padding: '0 20px 40px' }}>
         {isLoading ? (
           <div style={{ padding: '40px 0', textAlign: 'center', color: '#7A7874' }}>
             <Loader2 size={24} className="animate-spin" style={{ margin: '0 auto 8px' }} />
@@ -816,7 +914,7 @@ function OrganizationPage({ onBack }: { onBack: () => void }) {
             No organization found
           </div>
         )}
-      </div>
+      </BounceScroll>
     </div>
   );
 }
@@ -831,7 +929,7 @@ function CapabilitiesPage({ onBack }: { onBack: () => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PageHeader title="Capabilities" onBack={onBack} />
-      <div style={{ flex: 1, padding: '0 0 40px', ...scrollStyle }}>
+      <BounceScroll style={{ flex: 1, padding: '0 0 40px' }}>
         <SettingsGroup>
           <SettingsToggleItem
             icon={Bot}
@@ -881,7 +979,7 @@ function CapabilitiesPage({ onBack }: { onBack: () => void }) {
             testId="toggle-auto-deps"
           />
         </SettingsGroup>
-      </div>
+      </BounceScroll>
     </div>
   );
 }
@@ -964,7 +1062,7 @@ function ConnectorsPage({ onBack }: { onBack: () => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PageHeader title="Connectors" onBack={onBack} />
-      <div style={{ flex: 1, padding: '0 0 40px', ...scrollStyle }}>
+      <BounceScroll style={{ flex: 1, padding: '0 0 40px' }}>
 
         <div style={{ padding: '12px 20px 16px' }}>
           <div style={{ fontSize: 13, color: '#7A7874', lineHeight: '1.5' }}>
@@ -1002,7 +1100,7 @@ function ConnectorsPage({ onBack }: { onBack: () => void }) {
             testId="connector-email"
           />
         </SettingsGroup>
-      </div>
+      </BounceScroll>
     </div>
   );
 }
@@ -1050,7 +1148,7 @@ function PermissionsPage({ onBack }: { onBack: () => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PageHeader title="Permissions" onBack={onBack} />
-      <div style={{ flex: 1, padding: '0 0 40px', ...scrollStyle }}>
+      <BounceScroll style={{ flex: 1, padding: '0 0 40px' }}>
 
         <div style={{ padding: '4px 20px 16px' }}>
           <div style={{
@@ -1101,7 +1199,7 @@ function PermissionsPage({ onBack }: { onBack: () => void }) {
         }}>
           Contact your organization admin to change permissions
         </div>
-      </div>
+      </BounceScroll>
     </div>
   );
 }
@@ -1110,7 +1208,7 @@ function ComingSoonPage({ title, onBack }: { title: string; onBack: () => void }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PageHeader title={title} onBack={onBack} />
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', ...scrollStyle }}>
+      <BounceScroll style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{
             width: 48,
@@ -1127,7 +1225,7 @@ function ComingSoonPage({ title, onBack }: { title: string; onBack: () => void }
           <div style={{ fontSize: 16, color: '#9A9893', marginBottom: 4 }}>Coming soon</div>
           <div style={{ fontSize: 13, color: '#7A7874' }}>This feature is under development</div>
         </div>
-      </div>
+      </BounceScroll>
     </div>
   );
 }
@@ -1136,7 +1234,7 @@ function AboutPage({ onBack }: { onBack: () => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PageHeader title="About" onBack={onBack} />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, ...scrollStyle }}>
+      <BounceScroll style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
         <div style={{
           width: 72,
           height: 72,
@@ -1180,7 +1278,7 @@ function AboutPage({ onBack }: { onBack: () => void }) {
             <span style={{ fontSize: 14, color: '#9A9893' }}>Contact Support</span>
           </div>
         </div>
-      </div>
+      </BounceScroll>
     </div>
   );
 }
@@ -1290,7 +1388,7 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
         }}>
           <PageHeader title="Settings" onClose={onClose} />
 
-          <div style={{ flex: 1, ...scrollStyle }}>
+          <BounceScroll style={{ flex: 1 }}>
             <div style={{
               margin: '4px 20px 16px',
               padding: '14px 16px',
@@ -1389,7 +1487,7 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
             </SettingsGroup>
 
             <div style={{ height: 'calc(40px + env(safe-area-inset-bottom, 0px))' }} />
-          </div>
+          </BounceScroll>
         </div>
 
         {page !== 'main' && renderSubPage()}
