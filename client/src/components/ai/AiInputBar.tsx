@@ -28,6 +28,69 @@ const REPLY_STYLES = [
   { value: 'casual', label: '随意', description: '轻松友好的对话' },
 ];
 
+function useSheetBounce(scrollRef: React.RefObject<HTMLDivElement | null>) {
+  const lastY = useRef(0);
+  const pulling = useRef(false);
+  const pullDir = useRef<'top' | 'bottom' | null>(null);
+  const accumulated = useRef(0);
+  const edgeY = useRef(0);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const getContentEl = () => el.firstElementChild as HTMLElement | null;
+
+    const onTouchStart = (e: TouchEvent) => {
+      lastY.current = e.touches[0].clientY;
+      const content = getContentEl();
+      if (content) { content.style.transition = 'none'; content.style.transform = 'translateY(0)'; }
+      pulling.current = false; pullDir.current = null; accumulated.current = 0; edgeY.current = 0;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const content = getContentEl();
+      if (!content) return;
+      const touchY = e.touches[0].clientY;
+      const moveDir = touchY - lastY.current;
+      lastY.current = touchY;
+      const atTop = el.scrollTop <= 0;
+      const atBottom = Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight;
+
+      if (pulling.current) {
+        const rawDelta = touchY - edgeY.current;
+        if ((pullDir.current === 'top' && rawDelta <= 0) || (pullDir.current === 'bottom' && rawDelta >= 0)) {
+          content.style.transform = 'translateY(0)';
+          pulling.current = false; pullDir.current = null; accumulated.current = 0;
+          return;
+        }
+        const dampened = rawDelta * 0.4;
+        accumulated.current = dampened;
+        content.style.transform = `translateY(${dampened}px)`;
+        e.preventDefault();
+        return;
+      }
+      if (atTop && moveDir > 0) {
+        pulling.current = true; pullDir.current = 'top'; edgeY.current = touchY; accumulated.current = 0; e.preventDefault();
+      } else if (atBottom && moveDir < 0) {
+        pulling.current = true; pullDir.current = 'bottom'; edgeY.current = touchY; accumulated.current = 0; e.preventDefault();
+      }
+    };
+    const onTouchEnd = () => {
+      const content = getContentEl();
+      if (!content) return;
+      if (pulling.current && accumulated.current !== 0) {
+        content.style.transition = 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)';
+        content.style.transform = 'translateY(0)';
+      }
+      pulling.current = false; pullDir.current = null; accumulated.current = 0;
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    return () => { el.removeEventListener('touchstart', onTouchStart); el.removeEventListener('touchmove', onTouchMove); el.removeEventListener('touchend', onTouchEnd); };
+  }, [scrollRef]);
+}
+
 function AddToChatSheet({
   open,
   onClose,
@@ -47,6 +110,8 @@ function AddToChatSheet({
 }) {
   const [showStylePicker, setShowStylePicker] = useState(false);
   const [researchEnabled, setResearchEnabled] = useState(false);
+  const sheetScrollRef = useRef<HTMLDivElement>(null);
+  useSheetBounce(sheetScrollRef);
   const cameraRef = useRef<HTMLInputElement>(null);
   const photosRef = useRef<HTMLInputElement>(null);
   const filesRef = useRef<HTMLInputElement>(null);
@@ -99,7 +164,6 @@ function AddToChatSheet({
         className="fixed bottom-0 left-0 right-0 z-50"
         style={{
           animation: 'slideUpSheet 250ms ease-out',
-          maxHeight: '70vh',
         }}
         data-testid="add-to-chat-sheet"
       >
@@ -109,9 +173,12 @@ function AddToChatSheet({
             borderTopLeftRadius: 16,
             borderTopRightRadius: 16,
             paddingBottom: 'calc(16px + env(safe-area-inset-bottom))',
+            display: 'flex',
+            flexDirection: 'column',
+            maxHeight: '70vh',
           }}
         >
-          <div className="flex items-center justify-between px-5 pt-4 pb-3">
+          <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ flexShrink: 0 }}>
             <button
               onClick={onClose}
               className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors"
@@ -123,7 +190,7 @@ function AddToChatSheet({
             <div className="w-8" />
           </div>
 
-          <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4" />
+          <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4" style={{ flexShrink: 0 }} />
 
           <input
             ref={cameraRef}
@@ -151,6 +218,17 @@ function AddToChatSheet({
             onChange={(e) => { handleFileSelect(e.target.files); e.target.value = ''; }}
             data-testid="input-files"
           />
+
+          <div
+            ref={sheetScrollRef}
+            style={{
+              flex: 1,
+              overflowY: 'auto',
+              overscrollBehavior: 'none',
+              WebkitOverflowScrolling: 'touch',
+            }}
+          >
+          <div>
 
           {showStylePicker ? (
             <div className="px-5 pb-2">
@@ -305,6 +383,9 @@ function AddToChatSheet({
               </div>
             </>
           )}
+
+          </div>
+          </div>
         </div>
       </div>
     </>
