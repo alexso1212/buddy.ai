@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { Check, Copy, Share2, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import { Check, Copy, Share2, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink, FileText } from "lucide-react";
 import AiConfirmCard from "./AiConfirmCard";
 import AiGuidedCreation from "./AiGuidedCreation";
 import AIMessageContent from "./AIMessageContent";
@@ -56,6 +56,7 @@ interface Message {
   followUpSubmitted?: boolean;
   isStreaming?: boolean;
   searchResults?: { title: string; url: string; content: string }[];
+  attachments?: { type: string; name: string; mimeType: string; base64: string; previewUrl?: string }[];
 }
 
 interface AiMessageBubbleProps {
@@ -424,6 +425,44 @@ export default function AiMessageBubble({
           className="whitespace-pre-wrap"
           data-testid={`user-bubble-${message.id}`}
         >
+          {message.attachments && message.attachments.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: message.content ? 8 : 0 }}>
+              {message.attachments.map((att, i) => (
+                att.type === 'image' ? (
+                  <img
+                    key={i}
+                    src={att.previewUrl || `data:${att.mimeType};base64,${att.base64}`}
+                    alt={att.name}
+                    style={{
+                      maxWidth: 200,
+                      maxHeight: 200,
+                      borderRadius: 12,
+                      objectFit: 'cover',
+                    }}
+                    data-testid={`attachment-image-${i}`}
+                  />
+                ) : (
+                  <div
+                    key={i}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '6px 10px',
+                      background: 'rgba(255,255,255,0.08)',
+                      borderRadius: 8,
+                      fontSize: 13,
+                      color: 'var(--text-secondary)',
+                    }}
+                    data-testid={`attachment-file-${i}`}
+                  >
+                    <FileText size={14} />
+                    {att.name}
+                  </div>
+                )
+              ))}
+            </div>
+          )}
           {message.content}
         </div>
       </div>

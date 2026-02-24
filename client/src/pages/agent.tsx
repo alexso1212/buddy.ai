@@ -6,6 +6,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
+import type { Attachment } from "@/components/ai/AiInputBar";
 import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Pencil, X, Check, ListFilter, ChevronRight, Search, Star, FolderOpen, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import AgentLogo from "@/components/AgentLogo";
@@ -62,6 +63,7 @@ interface Message {
   followUpSubmitted?: boolean;
   isStreaming?: boolean;
   searchResults?: { title: string; url: string; content: string }[];
+  attachments?: { type: string; name: string; mimeType: string; base64: string; previewUrl?: string }[];
 }
 
 interface Conversation {
@@ -710,7 +712,7 @@ function ConversationListView({
   );
 }
 
-function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearchToggle, replyStyle, onReplyStyleChange }: { onSend: (msg: string) => void; loading: boolean; onStop?: () => void; webSearchEnabled?: boolean; onWebSearchToggle?: (enabled: boolean) => void; replyStyle?: string; onReplyStyleChange?: (style: string) => void }) {
+function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearchToggle, replyStyle, onReplyStyleChange }: { onSend: (msg: string, attachments?: Attachment[]) => void; loading: boolean; onStop?: () => void; webSearchEnabled?: boolean; onWebSearchToggle?: (enabled: boolean) => void; replyStyle?: string; onReplyStyleChange?: (style: string) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const bgRef = useRef<HTMLDivElement>(null);
@@ -958,7 +960,7 @@ export default function Agent() {
   }, []);
 
   const handleSend = useCallback(
-    async (text: string) => {
+    async (text: string, attachments?: Attachment[]) => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
@@ -971,6 +973,7 @@ export default function Agent() {
         role: "user",
         content: text,
         type: "text",
+        attachments: attachments,
       };
       setMessages((prev) => [...prev, userMsg]);
       setLoading(true);
@@ -1008,6 +1011,7 @@ export default function Agent() {
             extendedThinking,
             replyStyle: replyStyle !== 'normal' ? replyStyle : undefined,
             webSearchEnabled,
+            attachments,
           }),
           signal: abortController.signal,
         });

@@ -1818,8 +1818,8 @@ export async function registerRoutes(server: Server, app: Express) {
   // ===================== AI Chat Stream =====================
   app.post("/api/ai/chat/stream", async (req, res) => {
     try {
-      const { message, conversationHistory, conversationId, currentUserId, systemPrompt, model, extendedThinking, replyStyle, webSearchEnabled } = req.body;
-      if (!message || typeof message !== 'string') {
+      const { message, conversationHistory, conversationId, currentUserId, systemPrompt, model, extendedThinking, replyStyle, webSearchEnabled, attachments } = req.body;
+      if ((!message || typeof message !== 'string') && (!attachments || attachments.length === 0)) {
         return res.status(400).json({ error: 'message is required' });
       }
 
@@ -1827,11 +1827,12 @@ export async function registerRoutes(server: Server, app: Express) {
       const userId = currentUserId || req.currentUserId || 1;
       const user = await storage.getUserById(userId);
       const userName = user?.displayName || 'Unknown';
+      const msgText = message || '';
 
       let activeConvId = conversationId || null;
 
       if (!activeConvId) {
-        const title = message.slice(0, 30) + (message.length > 30 ? '...' : '');
+        const title = (msgText || '附件消息').slice(0, 30) + ((msgText || '附件消息').length > 30 ? '...' : '');
         const newConv = await storage.createConversation({
           title,
           orgId,
@@ -1878,7 +1879,7 @@ export async function registerRoutes(server: Server, app: Express) {
 
       if (webSearchEnabled) {
         try {
-          const searchResults = await searchWeb(message);
+          const searchResults = await searchWeb(msgText);
           if (searchResults.results.length > 0 || searchResults.answer) {
             let searchContext = `\n\n## 网页搜索结果\n用户开启了网页搜索，以下是与用户问题相关的网页搜索结果，请参考这些信息回答：\n`;
             if (searchResults.answer) {
@@ -1903,9 +1904,10 @@ export async function registerRoutes(server: Server, app: Express) {
       }
 
       const generator = aiChatStream(
-        message,
+        msgText,
         history,
-        { currentUserId: userId, currentUserName: userName, customSystemPrompt: effectiveSystemPrompt || undefined, model: model || undefined, extendedThinking: extendedThinking || false, orgId }
+        { currentUserId: userId, currentUserName: userName, customSystemPrompt: effectiveSystemPrompt || undefined, model: model || undefined, extendedThinking: extendedThinking || false, orgId },
+        attachments
       );
 
       for await (const chunk of generator) {
@@ -1947,7 +1949,7 @@ export async function registerRoutes(server: Server, app: Express) {
       res.end();
 
       extractMemories(
-        [...history, { role: 'user', content: message }, { role: 'assistant', content: fullText }],
+        [...history, { role: 'user', content: msgText }, { role: 'assistant', content: fullText }],
         userId,
         orgId
       ).catch(err => console.error('Memory extraction error:', err));

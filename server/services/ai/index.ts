@@ -820,12 +820,35 @@ export async function chat(
 
 export async function* chatStream(
   message: string,
-  conversationHistory: { role: string; content: string }[],
-  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean; orgId?: number }
+  conversationHistory: { role: string; content: string | any[] }[],
+  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean; orgId?: number },
+  attachments?: { type: string; name: string; mimeType: string; base64: string }[]
 ): AsyncGenerator<{ type: 'token' | 'done' | 'error'; content?: string; tokenUsage?: ChatResponse['tokenUsage'] }> {
   const modelName = context.model || 'claude-sonnet-4-6';
   const { prompt: systemPrompt } = await buildContextualSystemPrompt(context, 'streaming');
   const aiClient = getClientForModel(modelName);
+
+  let userContent: any = message;
+  if (attachments && attachments.length > 0) {
+    const contentParts: any[] = [];
+    for (const att of attachments) {
+      if (att.type === 'image') {
+        contentParts.push({
+          type: 'image_url',
+          image_url: {
+            url: `data:${att.mimeType};base64,${att.base64}`,
+          }
+        });
+      } else {
+        contentParts.push({
+          type: 'text',
+          text: `[附件: ${att.name}]\n内容:\n${Buffer.from(att.base64, 'base64').toString('utf-8')}`,
+        });
+      }
+    }
+    contentParts.push({ type: 'text', text: message || '请查看附件' });
+    userContent = contentParts;
+  }
 
   const requestParams: any = {
     model: modelName,
@@ -837,7 +860,7 @@ export async function* chatStream(
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
       })),
-      { role: 'user', content: message },
+      { role: 'user', content: userContent },
     ],
   };
 

@@ -2,8 +2,16 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { ArrowUp, Plus, Square, X, Globe, Palette, FileText, Image, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+export interface Attachment {
+  type: 'image' | 'file';
+  name: string;
+  mimeType: string;
+  base64: string;
+  previewUrl?: string;
+}
+
 interface AiInputBarProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, attachments?: Attachment[]) => void;
   loading: boolean;
   onStop?: () => void;
   webSearchEnabled?: boolean;
@@ -27,6 +35,7 @@ function AddToChatSheet({
   onWebSearchToggle,
   replyStyle,
   onReplyStyleChange,
+  onAttach,
 }: {
   open: boolean;
   onClose: () => void;
@@ -34,8 +43,12 @@ function AddToChatSheet({
   onWebSearchToggle: (enabled: boolean) => void;
   replyStyle: string;
   onReplyStyleChange: (style: string) => void;
+  onAttach: (attachments: Attachment[]) => void;
 }) {
   const [showStylePicker, setShowStylePicker] = useState(false);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const photosRef = useRef<HTMLInputElement>(null);
+  const filesRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) setShowStylePicker(false);
@@ -44,6 +57,32 @@ function AddToChatSheet({
   if (!open) return null;
 
   const currentStyleLabel = REPLY_STYLES.find(s => s.value === replyStyle)?.label || '正常';
+
+  const handleFileSelect = (files: FileList | null) => {
+    if (!files) return;
+    const newAttachments: Attachment[] = [];
+    let processed = 0;
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = (reader.result as string).split(',')[1];
+        const isImage = file.type.startsWith('image/');
+        const attachment: Attachment = {
+          type: isImage ? 'image' : 'file',
+          name: file.name,
+          mimeType: file.type,
+          base64,
+          previewUrl: isImage ? URL.createObjectURL(file) : undefined,
+        };
+        newAttachments.push(attachment);
+        processed++;
+        if (processed === files.length) {
+          onAttach(newAttachments);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
 
   return (
     <>
@@ -82,6 +121,33 @@ function AddToChatSheet({
           </div>
 
           <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4" />
+
+          <input
+            ref={cameraRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            style={{ display: 'none' }}
+            onChange={(e) => { handleFileSelect(e.target.files); e.target.value = ''; }}
+            data-testid="input-camera"
+          />
+          <input
+            ref={photosRef}
+            type="file"
+            accept="image/*"
+            multiple
+            style={{ display: 'none' }}
+            onChange={(e) => { handleFileSelect(e.target.files); e.target.value = ''; }}
+            data-testid="input-photos"
+          />
+          <input
+            ref={filesRef}
+            type="file"
+            accept=".pdf,.txt,.csv,.json,.md,.doc,.docx,.xls,.xlsx"
+            style={{ display: 'none' }}
+            onChange={(e) => { handleFileSelect(e.target.files); e.target.value = ''; }}
+            data-testid="input-files"
+          />
 
           {showStylePicker ? (
             <div className="px-5 pb-2">
@@ -125,18 +191,17 @@ function AddToChatSheet({
             <>
               <div className="grid grid-cols-3 gap-3 px-5 mb-5">
                 {[
-                  { icon: Camera, label: '相机', testId: 'btn-camera', disabled: true },
-                  { icon: Image, label: '图片', testId: 'btn-photos', disabled: true },
-                  { icon: FileText, label: '文件', testId: 'btn-files', disabled: true },
+                  { icon: Camera, label: '相机', testId: 'btn-camera', ref: cameraRef },
+                  { icon: Image, label: '图片', testId: 'btn-photos', ref: photosRef },
+                  { icon: FileText, label: '文件', testId: 'btn-files', ref: filesRef },
                 ].map(item => (
                   <button
                     key={item.testId}
-                    disabled={item.disabled}
+                    onClick={() => item.ref.current?.click()}
                     className="flex flex-col items-center justify-center gap-2 py-4 rounded-2xl transition-colors"
                     style={{
                       background: '#3A3A38',
-                      opacity: item.disabled ? 0.4 : 1,
-                      cursor: item.disabled ? 'not-allowed' : 'pointer',
+                      cursor: 'pointer',
                     }}
                     data-testid={item.testId}
                   >
@@ -186,14 +251,6 @@ function AddToChatSheet({
                   </div>
                 </div>
               </div>
-
-              {(true) && (
-                <div className="px-5 mt-3">
-                  <p className="text-xs text-[var(--text-secondary)] text-center" style={{ opacity: 0.5 }}>
-                    相机、图片和文件上传即将上线
-                  </p>
-                </div>
-              )}
             </>
           )}
         </div>
@@ -205,6 +262,7 @@ function AddToChatSheet({
 export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled = false, onWebSearchToggle, replyStyle = 'normal', onReplyStyleChange }: AiInputBarProps) {
   const [value, setValue] = useState("");
   const [showSheet, setShowSheet] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const adjustHeight = useCallback(() => {
@@ -217,13 +275,15 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
-    if (!trimmed || loading) return;
-    onSend(trimmed);
+    if (!trimmed && attachments.length === 0) return;
+    if (loading) return;
+    onSend(trimmed, attachments.length > 0 ? attachments : undefined);
     setValue("");
+    setAttachments([]);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [value, loading, onSend]);
+  }, [value, loading, onSend, attachments]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -235,7 +295,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
     [handleSend]
   );
 
-  const isEmpty = !value.trim();
+  const isEmpty = !value.trim() && attachments.length === 0;
 
   return (
     <>
@@ -286,6 +346,81 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
             )}
             data-testid="ai-input"
           />
+
+          {attachments.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                gap: 8,
+                padding: '4px 16px 8px 16px',
+                overflowX: 'auto',
+              }}
+              data-testid="attachment-previews"
+            >
+              {attachments.map((att, i) => (
+                <div
+                  key={i}
+                  style={{
+                    position: 'relative',
+                    flexShrink: 0,
+                  }}
+                  data-testid={`attachment-preview-${i}`}
+                >
+                  {att.type === 'image' ? (
+                    <img
+                      src={att.previewUrl || `data:${att.mimeType};base64,${att.base64}`}
+                      alt={att.name}
+                      style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 8,
+                        objectFit: 'cover',
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 8,
+                        background: 'rgba(255,255,255,0.08)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 2,
+                      }}
+                    >
+                      <FileText className="w-4 h-4 text-[var(--text-secondary)]" />
+                      <span style={{ fontSize: 8, color: 'var(--text-secondary)', maxWidth: 44, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
+                        {att.name.split('.').pop()}
+                      </span>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => setAttachments(prev => prev.filter((_, idx) => idx !== i))}
+                    style={{
+                      position: 'absolute',
+                      top: -6,
+                      right: -6,
+                      width: 18,
+                      height: 18,
+                      borderRadius: 9,
+                      background: '#444',
+                      border: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                    }}
+                    data-testid={`remove-attachment-${i}`}
+                  >
+                    <X className="w-3 h-3 text-white" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div
             style={{
@@ -390,6 +525,10 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
         replyStyle={replyStyle}
         onReplyStyleChange={(style) => {
           onReplyStyleChange?.(style);
+        }}
+        onAttach={(newAttachments) => {
+          setAttachments(prev => [...prev, ...newAttachments]);
+          setShowSheet(false);
         }}
       />
     </>
