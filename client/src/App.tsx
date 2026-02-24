@@ -1299,7 +1299,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <div style={{
-        height: '100vh',
+        height: '100dvh',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -1704,7 +1704,7 @@ function App() {
     <AuthProvider>
     <ThemeProvider>
     <QueryClientProvider client={queryClient}>
-      <div className="flex h-screen bg-[var(--bg-primary)]">
+      <div className="flex bg-[var(--bg-primary)]" style={{ height: '100dvh' }}>
         {!isLoginPage && <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} sidebarRef={sidebarRef} overlayRef={overlayRef} />}
 
         <div className="flex-1 flex flex-col overflow-hidden relative">

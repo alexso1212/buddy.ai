@@ -266,7 +266,7 @@ export default function LoginPage() {
     return (
       <div
         style={{
-          minHeight: '100vh',
+          minHeight: '100dvh',
           background: '#000',
           display: 'flex',
           flexDirection: 'column',
@@ -417,7 +417,7 @@ export default function LoginPage() {
   return (
     <div
       style={{
-        minHeight: '100vh',
+        minHeight: '100dvh',
         background: '#000',
         display: 'flex',
         flexDirection: 'column',
