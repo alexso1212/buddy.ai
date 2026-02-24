@@ -420,3 +420,20 @@ html, body {
   from { opacity: 0; transform: translateX(-50%) translateY(-6px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
+
+.sidebar-item {
+  transition: background 350ms ease, transform 350ms ease;
+}
+.sidebar-item:not(.sidebar-item-active):hover {
+  background: rgba(0,0,0,0.4) !important;
+}
+.sidebar-item:not(.sidebar-item-active):active {
+  background: rgba(0,0,0,0.6) !important;
+  transform: scale(1.02);
+}
+.sidebar-item-grid:not(.sidebar-item-active):active {
+  transform: scale(1.04);
+}
+.sidebar-item-active {
+  background: #000 !important;
+}

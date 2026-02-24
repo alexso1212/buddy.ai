@@ -367,6 +367,7 @@ function Sidebar({
 
     const content = (
       <div
+        className={`sidebar-item ${active ? 'sidebar-item-active' : ''}`}
         style={{
           height: 46,
           padding: '0 20px 0 28px',
@@ -378,34 +379,8 @@ function Sidebar({
           background: active ? '#000' : 'transparent',
           border: '1px solid transparent',
           cursor: 'pointer',
-          transition: 'background 150ms ease, transform 150ms ease',
         }}
-        onMouseEnter={e => {
-          if (!active) e.currentTarget.style.background = 'rgba(0,0,0,0.4)';
-        }}
-        onMouseLeave={e => {
-          if (!active) {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.transform = 'scale(1)';
-          }
-        }}
-        onTouchStart={e => {
-          e.currentTarget.style.background = active ? '#000' : 'rgba(0,0,0,0.6)';
-          e.currentTarget.style.transform = 'scale(1.02)';
-          try { navigator.vibrate?.(6); } catch {}
-        }}
-        onTouchEnd={e => {
-          if (!active) e.currentTarget.style.background = 'transparent';
-          e.currentTarget.style.transform = 'scale(1)';
-        }}
-        onTouchMove={e => {
-          if (!active) e.currentTarget.style.background = 'transparent';
-          e.currentTarget.style.transform = 'scale(1)';
-        }}
-        onTouchCancel={e => {
-          if (!active) e.currentTarget.style.background = 'transparent';
-          e.currentTarget.style.transform = 'scale(1)';
-        }}
+        onTouchStart={() => { try { navigator.vibrate?.(6); } catch {} }}
         data-testid={testId}
       >
         <Icon size={20} color="#ECECEC" strokeWidth={1.5} />
@@ -428,31 +403,18 @@ function Sidebar({
     return (
       <Link key={convo.id} href={`/agent?conv=${convo.id}`} onClick={onClose} style={{ textDecoration: 'none' }}>
         <div
+          className={`sidebar-item ${selected ? 'sidebar-item-active' : ''}`}
           onTouchStart={(e) => {
             const touch = e.touches[0];
             pressTimerRef.current = window.setTimeout(() => {
               if (navigator.vibrate) navigator.vibrate(10);
               setContextMenu({ convoId: String(convo.id), x: touch.clientX, y: touch.clientY });
             }, 500);
-            e.currentTarget.style.background = selected ? '#000' : 'rgba(0,0,0,0.6)';
-            e.currentTarget.style.transform = 'scale(1.02)';
             try { navigator.vibrate?.(6); } catch {}
           }}
-          onTouchEnd={(e) => {
-            clearTimeout(pressTimerRef.current);
-            if (!selected) e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.transform = 'scale(1)';
-          }}
-          onTouchMove={(e) => {
-            clearTimeout(pressTimerRef.current);
-            if (!selected) e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.transform = 'scale(1)';
-          }}
-          onTouchCancel={(e) => {
-            clearTimeout(pressTimerRef.current);
-            if (!selected) e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.transform = 'scale(1)';
-          }}
+          onTouchEnd={() => { clearTimeout(pressTimerRef.current); }}
+          onTouchMove={() => { clearTimeout(pressTimerRef.current); }}
+          onTouchCancel={() => { clearTimeout(pressTimerRef.current); }}
           style={{
             padding: convo.projectName ? '10px 16px' : '12px 16px',
             margin: '0 8px 2px 12px',
@@ -460,16 +422,6 @@ function Sidebar({
             background: selected ? '#000' : 'transparent',
             border: '1px solid transparent',
             cursor: 'pointer',
-            transition: 'background 150ms ease, transform 150ms ease',
-          }}
-          onMouseEnter={e => {
-            if (!selected) e.currentTarget.style.background = 'rgba(0,0,0,0.4)';
-          }}
-          onMouseLeave={e => {
-            if (!selected) {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'scale(1)';
-            }
           }}
           data-testid={`convo-${convo.id}`}
         >
@@ -610,6 +562,7 @@ function Sidebar({
                 const testId = item.path ? `nav-${item.path.slice(1)}` : `nav-${item.label.toLowerCase()}`;
                 const inner = (
                   <div
+                    className={`sidebar-item sidebar-item-grid ${active ? 'sidebar-item-active' : ''}`}
                     style={{
                       height: 36,
                       padding: '0 12px',
@@ -620,34 +573,8 @@ function Sidebar({
                       background: active ? '#000' : 'transparent',
                       border: '1px solid transparent',
                       cursor: 'pointer',
-                      transition: 'background 150ms ease, transform 150ms ease',
                     }}
-                    onMouseEnter={e => {
-                      if (!active) e.currentTarget.style.background = 'rgba(0,0,0,0.4)';
-                    }}
-                    onMouseLeave={e => {
-                      if (!active) {
-                        e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.transform = 'scale(1)';
-                      }
-                    }}
-                    onTouchStart={e => {
-                      e.currentTarget.style.background = active ? '#000' : 'rgba(0,0,0,0.6)';
-                      e.currentTarget.style.transform = 'scale(1.04)';
-                      try { navigator.vibrate?.(6); } catch {}
-                    }}
-                    onTouchEnd={e => {
-                      if (!active) e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.transform = 'scale(1)';
-                    }}
-                    onTouchMove={e => {
-                      if (!active) e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.transform = 'scale(1)';
-                    }}
-                    onTouchCancel={e => {
-                      if (!active) e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.transform = 'scale(1)';
-                    }}
+                    onTouchStart={() => { try { navigator.vibrate?.(6); } catch {} }}
                     data-testid={testId}
                   >
                     <Icon size={16} color="#ECECEC" strokeWidth={1.5} />
