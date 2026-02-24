@@ -352,10 +352,10 @@ function Sidebar({
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [projectPicker, setProjectPicker] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [convSearchQuery, setConvSearchQuery] = useState('');
 
   const isActive = (path: string) => {
-    if (path === '/dashboard') return location === '/dashboard';
-    return location.startsWith(path);
+    return location === path || location.startsWith(path + '/');
   };
 
   const renderNavItem = (item: { label: string; icon: typeof MessageSquare; path: string | null }, index: number) => {
@@ -670,31 +670,85 @@ function Sidebar({
             <div>
               {BUDDY_AI_NAV.map(renderNavItem)}
 
-              {conversations.length === 0 ? (
-                <div style={{ padding: '32px 28px', textAlign: 'center' }}>
-                  <p style={{ fontSize: 14, color: '#9A9893', lineHeight: 1.5 }}>还没有对话</p>
-                  <p style={{ fontSize: 13, color: '#7A7874', marginTop: 4 }}>点击下方 + 开始新对话</p>
+              {conversations.length > 0 && (
+                <div style={{ padding: '12px 16px 6px 16px' }}>
+                  <div style={{
+                    background: 'rgba(255,255,255,0.06)',
+                    borderRadius: 10,
+                    padding: '0 12px',
+                    height: 36,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}>
+                    <Search size={16} color="#7A7874" />
+                    <input
+                      value={convSearchQuery}
+                      onChange={e => setConvSearchQuery(e.target.value)}
+                      placeholder="搜索对话..."
+                      style={{
+                        flex: 1, border: 'none', outline: 'none',
+                        background: 'transparent', fontSize: 14,
+                        color: '#ECECEC',
+                      }}
+                      data-testid="input-search-conversations"
+                    />
+                    {convSearchQuery && (
+                      <button
+                        onClick={() => setConvSearchQuery('')}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex' }}
+                        data-testid="button-clear-search"
+                      >
+                        <X size={14} color="#7A7874" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              ) : (
-                <>
-                  {starredConvs.length > 0 && (
-                    <>
-                      <div style={{ padding: '20px 20px 8px 28px', fontSize: 14.5, fontWeight: 500, color: '#C4703F' }} data-testid="text-starred-label">
-                        收藏
-                      </div>
-                      {starredConvs.map(renderConvoItem)}
-                    </>
-                  )}
-                  {recentConvs.length > 0 && (
-                    <>
-                      <div style={{ padding: '20px 20px 8px 28px', fontSize: 14.5, fontWeight: 500, color: '#C4703F' }} data-testid="text-recents-label">
-                        最近对话
-                      </div>
-                      {recentConvs.map(renderConvoItem)}
-                    </>
-                  )}
-                </>
               )}
+
+              {(() => {
+                const q = convSearchQuery.toLowerCase().trim();
+                const filteredStarred = q ? starredConvs.filter((c: any) => (c.title || '').toLowerCase().includes(q) || (c.projectName || '').toLowerCase().includes(q)) : starredConvs;
+                const filteredRecent = q ? recentConvs.filter((c: any) => (c.title || '').toLowerCase().includes(q) || (c.projectName || '').toLowerCase().includes(q)) : recentConvs;
+
+                if (conversations.length === 0) {
+                  return (
+                    <div style={{ padding: '32px 28px', textAlign: 'center' }}>
+                      <p style={{ fontSize: 14, color: '#9A9893', lineHeight: 1.5 }}>还没有对话</p>
+                      <p style={{ fontSize: 13, color: '#7A7874', marginTop: 4 }}>点击下方 + 开始新对话</p>
+                    </div>
+                  );
+                }
+
+                if (q && filteredStarred.length === 0 && filteredRecent.length === 0) {
+                  return (
+                    <div style={{ padding: '24px 28px', textAlign: 'center' }}>
+                      <p style={{ fontSize: 14, color: '#9A9893' }}>没有找到匹配的对话</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <>
+                    {filteredStarred.length > 0 && (
+                      <>
+                        <div style={{ padding: '20px 20px 8px 28px', fontSize: 14.5, fontWeight: 500, color: '#C4703F' }} data-testid="text-starred-label">
+                          收藏
+                        </div>
+                        {filteredStarred.map(renderConvoItem)}
+                      </>
+                    )}
+                    {filteredRecent.length > 0 && (
+                      <>
+                        <div style={{ padding: '20px 20px 8px 28px', fontSize: 14.5, fontWeight: 500, color: '#C4703F' }} data-testid="text-recents-label">
+                          最近对话
+                        </div>
+                        {filteredRecent.map(renderConvoItem)}
+                      </>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </CollapsibleContent>
         </div>
