@@ -63,6 +63,7 @@ The system uses a 15-table PostgreSQL database schema, including `organizations`
 - **Action Executor:** Processes and executes confirmed AI actions, logging their source as `ai_chat`.
 - **Verdict Service:** An AI-powered service for judging task-user assignments, determining scope, confidence, and suggesting assignees.
 - **Structured Follow-up:** When AI detects missing information, it provides structured, clickable options for users to complete task details, auto-populating choices from the database.
+- **Web Search Integration:** Tavily API (`server/services/ai/webSearch.ts`) provides real-time web search. When user toggles "搜索网页" in the input bar, the backend searches the web before AI responds, injecting results into the system prompt. Search results are sent via SSE `search_results` event and displayed as collapsible source links in the message bubble.
 
 ## External Dependencies
 - **PostgreSQL:** Primary database.
@@ -76,3 +77,4 @@ The system uses a 15-table PostgreSQL database schema, including `organizations`
 - **shadcn/ui:** Reusable UI components.
 - **wouter:** Small routing library for React.
 - **Zod:** Schema declaration and validation library.
+- **Tavily API:** AI-native web search API for real-time information retrieval.
