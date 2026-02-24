@@ -26,10 +26,11 @@ interface SettingsPageProps {
 }
 
 function useIOSBounceScroll(scrollRef: React.RefObject<HTMLDivElement | null>) {
-  const touchStartY = useRef(0);
+  const lastY = useRef(0);
   const pulling = useRef(false);
   const pullDir = useRef<'top' | 'bottom' | null>(null);
-  const currentPull = useRef(0);
+  const accumulated = useRef(0);
+  const edgeY = useRef(0);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -38,14 +39,16 @@ function useIOSBounceScroll(scrollRef: React.RefObject<HTMLDivElement | null>) {
     const getContentEl = () => el.firstElementChild as HTMLElement | null;
 
     const onTouchStart = (e: TouchEvent) => {
-      touchStartY.current = e.touches[0].clientY;
-      pulling.current = false;
-      pullDir.current = null;
-      currentPull.current = 0;
+      lastY.current = e.touches[0].clientY;
       const content = getContentEl();
       if (content) {
         content.style.transition = 'none';
+        content.style.transform = 'translateY(0)';
       }
+      pulling.current = false;
+      pullDir.current = null;
+      accumulated.current = 0;
+      edgeY.current = 0;
     };
 
     const onTouchMove = (e: TouchEvent) => {
@@ -53,38 +56,47 @@ function useIOSBounceScroll(scrollRef: React.RefObject<HTMLDivElement | null>) {
       if (!content) return;
 
       const touchY = e.touches[0].clientY;
-      const delta = touchY - touchStartY.current;
-      const atTop = el.scrollTop <= 0;
-      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+      const moveDir = touchY - lastY.current;
+      lastY.current = touchY;
 
-      if (atTop && delta > 0) {
-        if (!pulling.current) {
-          pulling.current = true;
-          pullDir.current = 'top';
-          touchStartY.current = touchY;
+      const atTop = el.scrollTop <= 0;
+      const atBottom = Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight;
+
+      if (pulling.current) {
+        const rawDelta = touchY - edgeY.current;
+        if (pullDir.current === 'top' && rawDelta <= 0) {
+          content.style.transform = 'translateY(0)';
+          pulling.current = false;
+          pullDir.current = null;
+          accumulated.current = 0;
+          return;
         }
-        if (pullDir.current === 'top') {
-          const rawDelta = touchY - touchStartY.current;
-          const dampened = rawDelta * 0.4;
-          currentPull.current = dampened;
-          content.style.transform = `translateY(${dampened}px)`;
-          e.preventDefault();
+        if (pullDir.current === 'bottom' && rawDelta >= 0) {
+          content.style.transform = 'translateY(0)';
+          pulling.current = false;
+          pullDir.current = null;
+          accumulated.current = 0;
+          return;
         }
-      } else if (atBottom && delta < 0) {
-        if (!pulling.current) {
-          pulling.current = true;
-          pullDir.current = 'bottom';
-          touchStartY.current = touchY;
-        }
-        if (pullDir.current === 'bottom') {
-          const rawDelta = touchY - touchStartY.current;
-          const dampened = rawDelta * 0.4;
-          currentPull.current = dampened;
-          content.style.transform = `translateY(${dampened}px)`;
-          e.preventDefault();
-        }
-      } else if (!pulling.current) {
-        pullDir.current = null;
+        const dampened = rawDelta * 0.4;
+        accumulated.current = dampened;
+        content.style.transform = `translateY(${dampened}px)`;
+        e.preventDefault();
+        return;
+      }
+
+      if (atTop && moveDir > 0) {
+        pulling.current = true;
+        pullDir.current = 'top';
+        edgeY.current = touchY;
+        accumulated.current = 0;
+        e.preventDefault();
+      } else if (atBottom && moveDir < 0) {
+        pulling.current = true;
+        pullDir.current = 'bottom';
+        edgeY.current = touchY;
+        accumulated.current = 0;
+        e.preventDefault();
       }
     };
 
@@ -92,13 +104,13 @@ function useIOSBounceScroll(scrollRef: React.RefObject<HTMLDivElement | null>) {
       const content = getContentEl();
       if (!content) return;
 
-      if (pulling.current && currentPull.current !== 0) {
+      if (pulling.current && accumulated.current !== 0) {
         content.style.transition = 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)';
         content.style.transform = 'translateY(0)';
       }
       pulling.current = false;
       pullDir.current = null;
-      currentPull.current = 0;
+      accumulated.current = 0;
     };
 
     el.addEventListener('touchstart', onTouchStart, { passive: true });
