@@ -96,65 +96,38 @@ function computeDeform(
   const rawDx = clientX - cx;
   const rawDy = clientY - cy;
   const dist = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
-  const maxDist = Math.max(rect.width, rect.height);
-  const norm = Math.min(dist / maxDist, 1.5);
+  const maxDist = Math.max(rect.width, rect.height) * 0.8;
+  const norm = Math.min(dist / Math.max(maxDist, 1), 1.2);
 
-  const dx = maxDist > 0 ? rawDx / maxDist : 0;
-  const dy = maxDist > 0 ? rawDy / maxDist : 0;
+  const angle = Math.atan2(rawDy, rawDx);
+  const cosA = Math.cos(angle);
+  const sinA = Math.sin(angle);
 
-  const absDx = Math.abs(dx);
-  const absDy = Math.abs(dy);
+  const stretchAlongDrag = norm * maxStretch;
+  const compressPerpendicular = norm * maxStretch * 0.55;
 
-  let scaleX = baseScale;
-  let scaleY = baseScale;
+  let scaleX = baseScale + stretchAlongDrag * Math.abs(cosA) - compressPerpendicular * Math.abs(sinA);
+  let scaleY = baseScale + stretchAlongDrag * Math.abs(sinA) - compressPerpendicular * Math.abs(cosA);
 
-  if (absDx > absDy) {
-    scaleX = baseScale + norm * maxStretch * 0.6;
-    scaleY = baseScale - norm * maxStretch * 0.35;
-  } else if (absDy > absDx) {
-    scaleY = baseScale + norm * maxStretch * 0.6;
-    scaleX = baseScale - norm * maxStretch * 0.35;
-  } else {
-    scaleX = baseScale + norm * maxStretch * 0.2;
-    scaleY = baseScale + norm * maxStretch * 0.2;
-  }
+  scaleX = Math.max(baseScale - maxStretch * 0.6, Math.min(baseScale + maxStretch, scaleX));
+  scaleY = Math.max(baseScale - maxStretch * 0.6, Math.min(baseScale + maxStretch, scaleY));
 
-  scaleX = Math.max(baseScale - maxStretch, Math.min(baseScale + maxStretch, scaleX));
-  scaleY = Math.max(baseScale - maxStretch, Math.min(baseScale + maxStretch, scaleY));
+  const tx = cosA * norm * maxTranslate;
+  const ty = sinA * norm * maxTranslate;
 
-  const tx = dx * norm * maxTranslate;
-  const ty = dy * norm * maxTranslate;
+  const glowX = Math.max(0, Math.min(1, 0.5 + cosA * norm * 0.4));
+  const glowY = Math.max(0, Math.min(1, 0.5 + sinA * norm * 0.4));
 
-  return { scaleX, scaleY, tx, ty, dx, dy, norm };
-}
-
-function computeGlow(
-  dx: number,
-  dy: number,
-  norm: number,
-  glowSpread: number,
-  glowStrength: number,
-) {
-  const intensity = 0.15 + norm * glowStrength;
-  const spreadPx = glowSpread + norm * glowSpread * 0.5;
-
-  const offsetX = dx * spreadPx * 0.6;
-  const offsetY = dy * spreadPx * 0.6;
-
-  const base = `0 0 ${spreadPx}px rgba(255,255,255,${intensity * 0.5})`;
-  const directional = `${offsetX}px ${offsetY}px ${spreadPx * 1.5}px rgba(255,255,255,${intensity})`;
-  const inner = `inset ${offsetX * 0.3}px ${offsetY * 0.3}px ${spreadPx * 0.6}px rgba(255,255,255,${intensity * 0.3})`;
-
-  return `${directional}, ${base}, ${inner}`;
+  return { scaleX, scaleY, tx, ty, norm, glowX, glowY };
 }
 
 export function getElasticDeformProps(options?: ElasticDeformOptions) {
   const {
-    maxStretch = 0.08,
-    maxTranslate = 6,
-    baseScale = 0.97,
-    glowSpread = 16,
-    glowStrength = 0.25,
+    maxStretch = 0.15,
+    maxTranslate = 2,
+    baseScale = 1.0,
+    glowSpread = 14,
+    glowStrength = 0.35,
     duration = 180,
     vibrate: vib = 6,
   } = options || {};
@@ -162,27 +135,36 @@ export function getElasticDeformProps(options?: ElasticDeformOptions) {
   let pressed = false;
   let moveHandler: ((e: PointerEvent) => void) | null = null;
   let currentEl: HTMLElement | null = null;
+  let origBg = '';
+  let origBorder = '';
   let origBoxShadow = '';
-  let origFilter = '';
 
   const applyDeform = (el: HTMLElement, clientX: number, clientY: number, fast: boolean) => {
-    const { scaleX, scaleY, tx, ty, dx, dy, norm } = computeDeform(el, clientX, clientY, maxStretch, maxTranslate, baseScale);
-    const glow = computeGlow(dx, dy, norm, glowSpread, glowStrength);
+    const { scaleX, scaleY, tx, ty, norm, glowX, glowY } = computeDeform(el, clientX, clientY, maxStretch, maxTranslate, baseScale);
 
-    const dur = fast ? 50 : duration;
-    el.style.transition = `transform ${dur}ms cubic-bezier(0.25,0.46,0.45,0.94), box-shadow ${dur}ms ease, filter ${dur}ms ease`;
-    el.style.transform = `translate(${tx}px, ${ty}px) scaleX(${scaleX.toFixed(4)}) scaleY(${scaleY.toFixed(4)})`;
-    el.style.boxShadow = origBoxShadow ? `${glow}, ${origBoxShadow}` : glow;
-    el.style.filter = `brightness(${1 + norm * 0.18})`;
+    const dur = fast ? 40 : duration;
+    el.style.transition = `transform ${dur}ms cubic-bezier(0.25,0.46,0.45,0.94), background ${dur}ms ease, border-color ${dur}ms ease, box-shadow ${dur}ms ease`;
+    el.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scaleX(${scaleX.toFixed(4)}) scaleY(${scaleY.toFixed(4)})`;
+
+    const glowIntensity = 0.2 + norm * glowStrength;
+    const spreadPx = glowSpread + norm * glowSpread * 0.6;
+    const offX = (glowX - 0.5) * spreadPx * 0.8;
+    const offY = (glowY - 0.5) * spreadPx * 0.8;
+    el.style.boxShadow = `${offX.toFixed(1)}px ${offY.toFixed(1)}px ${spreadPx.toFixed(0)}px rgba(255,255,255,${glowIntensity.toFixed(2)}), 0 0 ${(spreadPx * 0.6).toFixed(0)}px rgba(255,255,255,${(glowIntensity * 0.4).toFixed(2)}), inset 0 0 ${(spreadPx * 0.5).toFixed(0)}px rgba(255,255,255,${(glowIntensity * 0.15).toFixed(2)})`;
+
+    const bgAlpha = (0.25 + norm * 0.2).toFixed(2);
+    el.style.background = `radial-gradient(ellipse at ${(glowX * 100).toFixed(0)}% ${(glowY * 100).toFixed(0)}%, rgba(255,255,255,${bgAlpha}) 0%, rgba(255,255,255,${(parseFloat(bgAlpha) * 0.5).toFixed(2)}) 60%, rgba(255,255,255,${(parseFloat(bgAlpha) * 0.2).toFixed(2)}) 100%)`;
+    el.style.borderColor = `rgba(255,255,255,${(0.3 + norm * 0.25).toFixed(2)})`;
   };
 
   const press = (el: HTMLElement, clientX: number, clientY: number) => {
     if (pressed) return;
     pressed = true;
     currentEl = el;
+    origBg = el.style.background || '';
+    origBorder = el.style.borderColor || '';
     origBoxShadow = el.style.boxShadow || '';
-    origFilter = el.style.filter || '';
-    el.style.willChange = 'transform, box-shadow, filter';
+    el.style.willChange = 'transform, background, box-shadow';
 
     applyDeform(el, clientX, clientY, false);
 
@@ -202,10 +184,11 @@ export function getElasticDeformProps(options?: ElasticDeformOptions) {
     pressed = false;
     currentEl = null;
 
-    el.style.transition = `transform ${duration * 2}ms cubic-bezier(0.34,1.56,0.64,1), box-shadow ${duration}ms ease, filter ${duration}ms ease`;
+    el.style.transition = `transform ${duration * 2.5}ms cubic-bezier(0.34,1.56,0.64,1), background ${duration * 1.5}ms ease, border-color ${duration * 1.5}ms ease, box-shadow ${duration * 1.5}ms ease`;
     el.style.transform = 'translate(0px, 0px) scaleX(1) scaleY(1)';
+    el.style.background = origBg;
+    el.style.borderColor = origBorder;
     el.style.boxShadow = origBoxShadow;
-    el.style.filter = origFilter;
     el.style.willChange = '';
 
     if (moveHandler) {
@@ -229,18 +212,18 @@ export function getElasticDeformProps(options?: ElasticDeformOptions) {
 export const elasticDeformProps = getElasticDeformProps();
 
 export const elasticDeformSmallProps = getElasticDeformProps({
-  maxStretch: 0.12,
-  maxTranslate: 4,
-  baseScale: 0.93,
-  glowSpread: 12,
-  glowStrength: 0.3,
+  maxStretch: 0.22,
+  maxTranslate: 1.5,
+  baseScale: 1.0,
+  glowSpread: 10,
+  glowStrength: 0.4,
 });
 
 export const elasticDeformInputProps = getElasticDeformProps({
-  maxStretch: 0.025,
-  maxTranslate: 3,
-  baseScale: 0.99,
-  glowSpread: 20,
-  glowStrength: 0.15,
-  duration: 220,
+  maxStretch: 0.03,
+  maxTranslate: 2,
+  baseScale: 1.0,
+  glowSpread: 18,
+  glowStrength: 0.2,
+  duration: 200,
 });

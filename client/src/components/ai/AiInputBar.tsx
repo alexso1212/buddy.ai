@@ -274,33 +274,27 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
 
   const computeDeform = useCallback((clientX: number, clientY: number) => {
     const el = composerWrapRef.current;
-    if (!el) return { transform: '', dx: 0, dy: 0, norm: 0 };
+    if (!el) return { transform: '' };
     const rect = el.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
     const rawDx = clientX - cx;
     const rawDy = clientY - cy;
-    const maxDist = Math.max(rect.width, rect.height);
     const dist = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
-    const norm = Math.min(dist / maxDist, 1.5);
-    const dx = maxDist > 0 ? rawDx / maxDist : 0;
-    const dy = maxDist > 0 ? rawDy / maxDist : 0;
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
+    const maxDist = Math.max(rect.width, rect.height) * 0.8;
+    const norm = Math.min(dist / Math.max(maxDist, 1), 1.2);
+    const angle = Math.atan2(rawDy, rawDx);
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
     const stretch = 0.025;
-    let scaleX = 0.99, scaleY = 0.99;
-    if (absDx > absDy) {
-      scaleX = 0.99 + norm * stretch * 0.6;
-      scaleY = 0.99 - norm * stretch * 0.35;
-    } else if (absDy > absDx) {
-      scaleY = 0.99 + norm * stretch * 0.6;
-      scaleX = 0.99 - norm * stretch * 0.35;
-    }
-    const tx = dx * norm * 3;
-    const ty = dy * norm * 3;
+    const stretchAlong = norm * stretch;
+    const compressPerp = norm * stretch * 0.55;
+    const scaleX = 1.0 + stretchAlong * Math.abs(cosA) - compressPerp * Math.abs(sinA);
+    const scaleY = 1.0 + stretchAlong * Math.abs(sinA) - compressPerp * Math.abs(cosA);
+    const tx = cosA * norm * 1.5;
+    const ty = sinA * norm * 1.5;
     return {
-      transform: `translate(${tx}px, ${ty}px) scaleX(${scaleX.toFixed(4)}) scaleY(${scaleY.toFixed(4)})`,
-      dx, dy, norm,
+      transform: `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scaleX(${scaleX.toFixed(4)}) scaleY(${scaleY.toFixed(4)})`,
     };
   }, []);
 
