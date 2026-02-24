@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useSearch } from 'wouter';
-import { Loader2 } from 'lucide-react';
-import logoImg from '@assets/AD5CCB66-F553-4B90-AFBC-EEA51B534333_1771683834711.png';
+import { Loader2, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/hooks/use-toast';
 
@@ -16,80 +15,29 @@ function GoogleIcon() {
   );
 }
 
-function AppleIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
-    </svg>
-  );
-}
-
-function GitHubIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2z" />
-    </svg>
-  );
-}
-
 declare global {
   interface Window {
     onTelegramAuth?: (user: any) => void;
   }
 }
 
-function TelegramLoginButton({
-  loginWithToken,
-  navigate,
-  toast,
-}: {
-  loginWithToken: (token: string) => Promise<void>;
-  navigate: (to: string) => void;
-  toast: (opts: any) => void;
-}) {
+function TelegramLoginIcon({ onAuth }: { onAuth: (user: any) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
-
-  const handleTelegramAuth = useCallback(async (telegramUser: any) => {
-    try {
-      const res = await fetch('/api/auth/telegram', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(telegramUser),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Telegram login failed');
-      }
-
-      const data = await res.json();
-      await loginWithToken(data.token);
-      toast({ title: '登录成功', description: '正在跳转...' });
-      navigate('/agent');
-    } catch (err: any) {
-      toast({
-        title: '登录失败',
-        description: err.message || 'Telegram 认证失败',
-        variant: 'destructive',
-      });
-    }
-  }, [loginWithToken, navigate, toast]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    window.onTelegramAuth = handleTelegramAuth;
+    window.onTelegramAuth = onAuth;
 
     const script = document.createElement('script');
     script.src = 'https://telegram.org/js/telegram-widget.js?22';
     script.setAttribute('data-telegram-login', import.meta.env.VITE_TELEGRAM_BOT_USERNAME || 'Deltapex_Alex_Bot');
-    script.setAttribute('data-size', 'large');
-    script.setAttribute('data-radius', '8');
+    script.setAttribute('data-size', 'small');
+    script.setAttribute('data-radius', '20');
     script.setAttribute('data-request-access', 'write');
     script.setAttribute('data-onauth', 'onTelegramAuth(user)');
     script.async = true;
-
     container.appendChild(script);
 
     return () => {
@@ -98,9 +46,112 @@ function TelegramLoginButton({
         container.removeChild(script);
       }
     };
-  }, [handleTelegramAuth]);
+  }, [onAuth]);
 
-  return <div ref={containerRef} data-testid="telegram-login-container" />;
+  return <div ref={containerRef} />;
+}
+
+const SLOGANS = [
+  '一起协作',
+  '智能管理',
+  '高效执行',
+  '团队赋能',
+  '创造价值',
+];
+
+function TypingSlogan() {
+  const [displayText, setDisplayText] = useState('');
+  const [sloganIndex, setSloganIndex] = useState(0);
+  const [charIndex, setCharIndex] = useState(0);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showCursor, setShowCursor] = useState(true);
+
+  useEffect(() => {
+    const cursorInterval = setInterval(() => {
+      setShowCursor(prev => !prev);
+    }, 530);
+    return () => clearInterval(cursorInterval);
+  }, []);
+
+  useEffect(() => {
+    const currentSlogan = SLOGANS[sloganIndex];
+
+    if (!isDeleting && charIndex <= currentSlogan.length) {
+      const timeout = setTimeout(() => {
+        const newText = currentSlogan.slice(0, charIndex);
+        setDisplayText(newText);
+
+        if (charIndex > 0 && charIndex <= currentSlogan.length) {
+          try {
+            if (navigator.vibrate) {
+              navigator.vibrate(8);
+            }
+          } catch {}
+        }
+
+        if (charIndex === currentSlogan.length) {
+          setTimeout(() => setIsDeleting(true), 2000);
+        } else {
+          setCharIndex(prev => prev + 1);
+        }
+      }, 120);
+      return () => clearTimeout(timeout);
+    }
+
+    if (isDeleting && charIndex >= 0) {
+      const timeout = setTimeout(() => {
+        setDisplayText(currentSlogan.slice(0, charIndex));
+        if (charIndex === 0) {
+          setIsDeleting(false);
+          setSloganIndex(prev => (prev + 1) % SLOGANS.length);
+        } else {
+          setCharIndex(prev => prev - 1);
+        }
+      }, 60);
+      return () => clearTimeout(timeout);
+    }
+  }, [charIndex, isDeleting, sloganIndex]);
+
+  return (
+    <div className="flex items-center justify-center gap-0" data-testid="typing-slogan">
+      <span
+        style={{
+          fontSize: '28px',
+          fontWeight: 600,
+          color: 'white',
+          letterSpacing: '0.02em',
+        }}
+      >
+        {displayText}
+      </span>
+      <span
+        style={{
+          display: 'inline-block',
+          width: '3px',
+          height: '32px',
+          background: 'white',
+          marginLeft: '2px',
+          opacity: showCursor ? 1 : 0,
+          transition: 'opacity 0.1s',
+          borderRadius: '2px',
+        }}
+      />
+    </div>
+  );
+}
+
+function BuddyLogo() {
+  return (
+    <div
+      style={{
+        width: 32,
+        height: 32,
+        borderRadius: '50%',
+        background: 'white',
+      }}
+      data-testid="buddy-logo"
+    />
+  );
 }
 
 export default function LoginPage() {
@@ -109,7 +160,7 @@ export default function LoginPage() {
   const { login, loginWithToken, register } = useAuth();
   const { toast } = useToast();
 
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [view, setView] = useState<'main' | 'login' | 'register'>('main');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -140,6 +191,30 @@ export default function LoginPage() {
     }
   }, []);
 
+  const handleTelegramAuth = useCallback(async (telegramUser: any) => {
+    try {
+      const res = await fetch('/api/auth/telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(telegramUser),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Telegram login failed');
+      }
+      const data = await res.json();
+      await loginWithToken(data.token);
+      toast({ title: '登录成功', description: '正在跳转...' });
+      navigate('/agent');
+    } catch (err: any) {
+      toast({ title: '登录失败', description: err.message || 'Telegram 认证失败', variant: 'destructive' });
+    }
+  }, [loginWithToken, navigate, toast]);
+
+  const handleSocialLogin = () => {
+    window.location.href = '/api/login';
+  };
+
   const validateEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -155,7 +230,7 @@ export default function LoginPage() {
       return;
     }
 
-    if (mode === 'register') {
+    if (view === 'register') {
       if (!displayName.trim()) {
         toast({ title: '请输入显示名称', variant: 'destructive' });
         return;
@@ -169,7 +244,7 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      if (mode === 'login') {
+      if (view === 'login') {
         await login(email, password);
         toast({ title: '登录成功', description: '正在跳转...' });
       } else {
@@ -179,95 +254,53 @@ export default function LoginPage() {
       navigate('/agent');
     } catch (error) {
       const msg = error instanceof Error ? error.message : '操作失败';
-      toast({ title: mode === 'login' ? '登录失败' : '注册失败', description: msg, variant: 'destructive' });
+      toast({ title: view === 'login' ? '登录失败' : '注册失败', description: msg, variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSocialLogin = () => {
-    window.location.href = '/api/login';
-  };
+  const inputClass = 'w-full h-12 px-4 text-[15px] bg-transparent border border-[rgba(255,255,255,0.15)] rounded-full outline-none focus:border-[rgba(255,255,255,0.4)] transition-colors text-white placeholder:text-[rgba(255,255,255,0.35)]';
 
-  const inputClass = 'w-full h-10 px-3 text-sm bg-background border border-border rounded-md outline-none focus:ring-2 focus:ring-ring/20 focus:border-foreground/30 transition-colors';
-  const socialBtnClass = 'w-full h-10 flex items-center gap-3 px-4 text-sm font-medium border border-border rounded-md bg-background text-foreground hover-elevate active-elevate-2 transition-colors cursor-pointer';
+  if (view === 'login' || view === 'register') {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#000',
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'relative',
+        }}
+      >
+        <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 10 }}>
+          <button
+            onClick={() => setView('main')}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              background: 'rgba(255,255,255,0.1)',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+            data-testid="button-back"
+          >
+            <X size={18} color="rgba(255,255,255,0.6)" />
+          </button>
+        </div>
 
-  return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-[360px]">
-        <div className="bg-card border border-border rounded-lg shadow-sm p-8">
-          <div className="flex flex-col items-center mb-8">
-            <img src={logoImg} alt="Deltapex" className="h-7 object-contain dark:invert mb-3" />
-            <h1 className="text-base font-medium text-foreground" data-testid="text-title">任务中心</h1>
-            <p className="text-xs text-muted-foreground mt-1">团队任务看板</p>
-          </div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 24px' }}>
+          <BuddyLogo />
+          <h2 style={{ color: 'white', fontSize: '20px', fontWeight: 600, marginTop: 16, marginBottom: 32 }}>
+            {view === 'login' ? '欢迎回来' : '创建账户'}
+          </h2>
 
-          <div className="space-y-2 mb-6">
-            <button
-              type="button"
-              onClick={handleSocialLogin}
-              className={socialBtnClass}
-              data-testid="button-google-login"
-            >
-              <GoogleIcon />
-              <span>Continue with Google</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleSocialLogin}
-              className={socialBtnClass}
-              data-testid="button-apple-login"
-            >
-              <AppleIcon />
-              <span>Continue with Apple</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleSocialLogin}
-              className={socialBtnClass}
-              data-testid="button-github-login"
-            >
-              <GitHubIcon />
-              <span>Continue with GitHub</span>
-            </button>
-            <TelegramLoginButton loginWithToken={loginWithToken} navigate={navigate} toast={toast} />
-          </div>
-
-          <div className="flex items-center gap-3 mb-6">
-            <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-muted-foreground">或</span>
-            <div className="flex-1 h-px bg-border" />
-          </div>
-
-          <div className="flex mb-6" data-testid="auth-tabs">
-            <button
-              type="button"
-              onClick={() => setMode('login')}
-              className={`flex-1 pb-2 text-sm font-medium border-b-2 transition-colors ${
-                mode === 'login'
-                  ? 'border-foreground text-foreground'
-                  : 'border-transparent text-muted-foreground'
-              }`}
-              data-testid="tab-login"
-            >
-              登录
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('register')}
-              className={`flex-1 pb-2 text-sm font-medium border-b-2 transition-colors ${
-                mode === 'register'
-                  ? 'border-foreground text-foreground'
-                  : 'border-transparent text-muted-foreground'
-              }`}
-              data-testid="tab-register"
-            >
-              注册
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {mode === 'register' && (
+          <form onSubmit={handleSubmit} style={{ width: '100%', maxWidth: 360, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {view === 'register' && (
               <input
                 data-testid="input-display-name"
                 type="text"
@@ -299,7 +332,7 @@ export default function LoginPage() {
               className={inputClass}
             />
 
-            {mode === 'register' && (
+            {view === 'register' && (
               <input
                 data-testid="input-confirm-password"
                 type="password"
@@ -315,23 +348,225 @@ export default function LoginPage() {
               data-testid="button-submit"
               type="submit"
               disabled={isLoading}
-              className="w-full h-10 bg-foreground text-background text-[13px] font-medium rounded-md hover:bg-foreground/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+              style={{
+                width: '100%',
+                height: 48,
+                borderRadius: 9999,
+                background: 'white',
+                color: 'black',
+                fontSize: '15px',
+                fontWeight: 600,
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                marginTop: 4,
+                opacity: isLoading ? 0.5 : 1,
+              }}
             >
               {isLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  {mode === 'login' ? '登录中...' : '注册中...'}
+                  {view === 'login' ? '登录中...' : '注册中...'}
                 </>
               ) : (
-                mode === 'login' ? '登录' : '注册'
+                view === 'login' ? '登录' : '注册'
               )}
             </button>
           </form>
-        </div>
 
-        <p className="text-center text-[11px] text-muted-foreground mt-6">
-          © 2026 Buddy
-        </p>
+          {view === 'login' && (
+            <button
+              onClick={() => setView('register')}
+              style={{
+                marginTop: 20,
+                background: 'none',
+                border: 'none',
+                color: 'rgba(255,255,255,0.5)',
+                fontSize: '13px',
+                cursor: 'pointer',
+              }}
+              data-testid="link-to-register"
+            >
+              没有账户？<span style={{ color: 'white', textDecoration: 'underline' }}>注册</span>
+            </button>
+          )}
+          {view === 'register' && (
+            <button
+              onClick={() => setView('login')}
+              style={{
+                marginTop: 20,
+                background: 'none',
+                border: 'none',
+                color: 'rgba(255,255,255,0.5)',
+                fontSize: '13px',
+                cursor: 'pointer',
+              }}
+              data-testid="link-to-login"
+            >
+              已有账户？<span style={{ color: 'white', textDecoration: 'underline' }}>登录</span>
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: '100vh',
+        background: '#000',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+      }}
+    >
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingBottom: '30vh',
+        }}
+      >
+        <div style={{ marginBottom: 24 }}>
+          <BuddyLogo />
+        </div>
+        <TypingSlogan />
+      </div>
+
+      <div
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          padding: '0 20px',
+          paddingBottom: 'calc(20px + env(safe-area-inset-bottom))',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 10,
+          background: 'linear-gradient(to top, #000 60%, transparent 100%)',
+          paddingTop: 40,
+        }}
+      >
+        <div style={{ width: '100%', maxWidth: 360, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <button
+            onClick={handleSocialLogin}
+            data-testid="button-apple-login"
+            style={{
+              width: '100%',
+              height: 50,
+              borderRadius: 9999,
+              background: 'white',
+              color: 'black',
+              fontSize: '15px',
+              fontWeight: 600,
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 10,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="black">
+              <path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
+            </svg>
+            通过 Apple 继续
+          </button>
+
+          <button
+            onClick={handleSocialLogin}
+            data-testid="button-google-login"
+            style={{
+              width: '100%',
+              height: 50,
+              borderRadius: 9999,
+              background: '#1a1a1a',
+              color: 'white',
+              fontSize: '15px',
+              fontWeight: 500,
+              border: '1px solid rgba(255,255,255,0.15)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 10,
+            }}
+          >
+            <GoogleIcon />
+            继续使用 Google 登录
+          </button>
+
+          <button
+            onClick={() => setView('register')}
+            data-testid="button-register"
+            style={{
+              width: '100%',
+              height: 50,
+              borderRadius: 9999,
+              background: '#1a1a1a',
+              color: 'white',
+              fontSize: '15px',
+              fontWeight: 500,
+              border: '1px solid rgba(255,255,255,0.15)',
+              cursor: 'pointer',
+            }}
+          >
+            注册
+          </button>
+
+          <button
+            onClick={() => setView('login')}
+            data-testid="button-login"
+            style={{
+              width: '100%',
+              height: 50,
+              borderRadius: 9999,
+              background: 'transparent',
+              color: 'white',
+              fontSize: '15px',
+              fontWeight: 500,
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            登录
+          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginTop: 4 }}>
+            <button
+              onClick={handleSocialLogin}
+              data-testid="button-github-login"
+              title="GitHub"
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+                <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2z" />
+              </svg>
+            </button>
+            <div data-testid="telegram-login-container" style={{ display: 'flex', alignItems: 'center' }}>
+              <TelegramLoginIcon onAuth={handleTelegramAuth} />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
