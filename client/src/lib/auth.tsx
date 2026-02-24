@@ -15,6 +15,7 @@ interface AuthContextType {
   loading: boolean;
   currentUserId: number;
   login: (email: string, password: string) => Promise<void>;
+  loginWithToken: (token: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   logout: () => void;
   updateUser: (updates: Partial<AuthUser>) => void;
@@ -25,6 +26,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   currentUserId: 0,
   login: async () => {},
+  loginWithToken: async () => {},
   register: async () => {},
   logout: () => {},
   updateUser: () => {},
@@ -82,6 +84,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(u);
   }, []);
 
+  const loginWithToken = useCallback(async (token: string) => {
+    localStorage.setItem('buddy_token', token);
+    const res = await fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      localStorage.removeItem('buddy_token');
+      throw new Error('Token verification failed');
+    }
+    const data = await res.json();
+    const u = data.user || data;
+    localStorage.setItem('buddy_user', JSON.stringify(u));
+    setUser(u);
+  }, []);
+
   const register = useCallback(async (email: string, password: string, displayName: string) => {
     const res = await fetch('/api/auth/register', {
       method: 'POST',
@@ -124,6 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         currentUserId: user?.id || 0,
         login,
+        loginWithToken,
         register,
         logout,
         updateUser,
