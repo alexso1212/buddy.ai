@@ -266,6 +266,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
   const [showSheet, setShowSheet] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isFocused, setIsFocused] = useState(false);
+  const [isPressed, setIsPressed] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const adjustHeight = useCallback(() => {
@@ -308,14 +309,21 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
             borderRadius: 20,
             position: 'relative' as const,
             padding: 1,
-            background: isFocused
-              ? 'linear-gradient(to bottom, rgba(199,167,132,0.6) 0%, rgba(199,167,132,0.3) 40%, rgba(199,167,132,0.15) 100%)'
+            background: isPressed
+              ? 'linear-gradient(to bottom, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.3) 40%, rgba(255,255,255,0.15) 100%)'
               : 'linear-gradient(to bottom, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.12) 40%, rgba(255,255,255,0.06) 100%)',
-            boxShadow: isFocused
-              ? '0 0 20px rgba(199,167,132,0.15), 0 0 40px rgba(199,167,132,0.08)'
+            boxShadow: isPressed
+              ? '0 0 24px rgba(255,255,255,0.2), 0 0 48px rgba(255,255,255,0.1), inset 0 0 12px rgba(255,255,255,0.06)'
               : 'none',
-            transition: 'background 0.3s ease, box-shadow 0.3s ease',
+            transition: 'background 0.15s ease, box-shadow 0.15s ease',
           }}
+          onPointerDown={() => {
+            setIsPressed(true);
+            if (navigator.vibrate) navigator.vibrate(10);
+          }}
+          onPointerUp={() => setIsPressed(false)}
+          onPointerLeave={() => setIsPressed(false)}
+          onPointerCancel={() => setIsPressed(false)}
           data-testid="ai-composer"
         >
           <div style={{
