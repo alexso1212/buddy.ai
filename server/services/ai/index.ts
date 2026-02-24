@@ -634,7 +634,7 @@ function formatTaskList(tasks: any[], users: any[]): string {
 export async function chat(
   message: string,
   conversationHistory: { role: string; content: string }[],
-  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean }
+  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean; orgId?: number }
 ): Promise<ChatResponse> {
   const { prompt: systemPrompt, allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks } = await buildContextualSystemPrompt(context, 'json');
 
@@ -821,7 +821,7 @@ export async function chat(
 export async function* chatStream(
   message: string,
   conversationHistory: { role: string; content: string }[],
-  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean }
+  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean; orgId?: number }
 ): AsyncGenerator<{ type: 'token' | 'done' | 'error'; content?: string; tokenUsage?: ChatResponse['tokenUsage'] }> {
   const modelName = context.model || 'claude-sonnet-4-6';
   const { prompt: systemPrompt } = await buildContextualSystemPrompt(context, 'streaming');

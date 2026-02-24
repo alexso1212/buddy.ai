@@ -1817,7 +1817,7 @@ export async function registerRoutes(server: Server, app: Express) {
   // ===================== AI Chat Stream =====================
   app.post("/api/ai/chat/stream", async (req, res) => {
     try {
-      const { message, conversationHistory, conversationId, currentUserId, systemPrompt, model, extendedThinking } = req.body;
+      const { message, conversationHistory, conversationId, currentUserId, systemPrompt, model, extendedThinking, replyStyle } = req.body;
       if (!message || typeof message !== 'string') {
         return res.status(400).json({ error: 'message is required' });
       }
@@ -1864,10 +1864,21 @@ export async function registerRoutes(server: Server, app: Express) {
       let aborted = false;
       req.on('close', () => { aborted = true; });
 
+      let effectiveSystemPrompt = systemPrompt || '';
+      if (replyStyle && replyStyle !== 'normal') {
+        const styleMap: Record<string, string> = {
+          concise: '请用简短直接的方式回答，避免冗长的解释。',
+          detailed: '请提供深入全面的解释，包含更多细节和背景信息。',
+          professional: '请用正式的商务语气回复，保持专业和严谨。',
+          casual: '请用轻松友好的语气对话，像朋友之间聊天一样。',
+        };
+        effectiveSystemPrompt = (effectiveSystemPrompt ? effectiveSystemPrompt + '\n' : '') + (styleMap[replyStyle] || '');
+      }
+
       const generator = aiChatStream(
         message,
         history,
-        { currentUserId: userId, currentUserName: userName, customSystemPrompt: systemPrompt || undefined, model: model || undefined, extendedThinking: extendedThinking || false }
+        { currentUserId: userId, currentUserName: userName, customSystemPrompt: effectiveSystemPrompt || undefined, model: model || undefined, extendedThinking: extendedThinking || false, orgId }
       );
 
       for await (const chunk of generator) {
@@ -1965,7 +1976,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const result = await aiChat(
         message,
         history,
-        { currentUserId: userId, currentUserName: userName, customSystemPrompt: systemPrompt || undefined, model: model || undefined, extendedThinking: extendedThinking || false }
+        { currentUserId: userId, currentUserName: userName, customSystemPrompt: systemPrompt || undefined, model: model || undefined, extendedThinking: extendedThinking || false, orgId }
       );
 
       if (result.tokenUsage) {

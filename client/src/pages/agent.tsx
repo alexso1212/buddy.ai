@@ -10,6 +10,7 @@ import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, Messa
 import { Button } from "@/components/ui/button";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
+import { useAuth } from "@/lib/auth";
 
 interface ActionPayload {
   actionType: string;
@@ -815,6 +816,7 @@ export default function Agent() {
   const searchString = useSearch();
   const params = new URLSearchParams(searchString);
   const activeConvId = params.get('conv') ? parseInt(params.get('conv')!) : null;
+  const { currentUserId } = useAuth();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -999,10 +1001,11 @@ export default function Agent() {
             message: text,
             conversationHistory: conversationHistory.current,
             conversationId: convId || undefined,
-            currentUserId: 1,
+            currentUserId: currentUserId || 1,
             systemPrompt: activeConvSystemPrompt || undefined,
             model: selectedModel,
             extendedThinking,
+            replyStyle: replyStyle !== 'normal' ? replyStyle : undefined,
           }),
           signal: abortController.signal,
         });
@@ -1127,7 +1130,7 @@ export default function Agent() {
         abortControllerRef.current = null;
       }
     },
-    [activeConvId, activeConvSystemPrompt, saveMessageToDB, navigate]
+    [activeConvId, activeConvSystemPrompt, saveMessageToDB, navigate, currentUserId, replyStyle]
   );
 
   const rebuildHistoryFromMessages = useCallback((msgs: Message[]) => {
@@ -1200,7 +1203,7 @@ export default function Agent() {
         const res = await apiRequest("POST", "/api/ai/confirm", {
           actionType: action.actionType,
           data: action.data,
-          currentUserId: 1,
+          currentUserId: currentUserId || 1,
           conversationId: activeConvId || undefined,
         });
         const json = await res.json();
@@ -1335,7 +1338,7 @@ export default function Agent() {
           message: chatMessage,
           conversationHistory: conversationHistory.current,
           conversationId: activeConvId || undefined,
-          currentUserId: 1,
+          currentUserId: currentUserId || 1,
           systemPrompt: activeConvSystemPrompt || undefined,
           model: selectedModel2,
           extendedThinking: extendedThinking2,
@@ -1390,7 +1393,7 @@ export default function Agent() {
         setLoading(false);
       }
     },
-    [activeConvId, activeConvSystemPrompt, saveMessageToDB]
+    [activeConvId, activeConvSystemPrompt, saveMessageToDB, currentUserId]
   );
 
   const handleBack = useCallback(() => {
