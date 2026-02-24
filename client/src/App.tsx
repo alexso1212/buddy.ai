@@ -305,64 +305,72 @@ function ProjectPickerSheet({ convId, conversations, onClose, toast }: {
   );
 }
 
-function makeTouchHighlight(highlightBg = 'rgba(0,0,0,0.4)') {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  let activeEl: HTMLElement | null = null;
-  let origBg = '';
-  let startX = 0;
-  let startY = 0;
-  let scrolling = false;
+const HL_CLASS = 'sidebar-touch-hl';
 
-  const apply = (el: HTMLElement) => {
-    activeEl = el;
-    origBg = el.style.background;
-    el.style.background = highlightBg;
-  };
+function makeTouchHighlight() {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let fadeTimer: ReturnType<typeof setTimeout> | null = null;
+  let activeEl: HTMLElement | null = null;
+  let startY = 0;
+  let cancelled = false;
 
   const clear = () => {
-    if (activeEl) {
-      activeEl.style.background = origBg;
-      activeEl = null;
-    }
+    if (fadeTimer) { clearTimeout(fadeTimer); fadeTimer = null; }
     if (timer) { clearTimeout(timer); timer = null; }
-    scrolling = false;
+    if (activeEl) { activeEl.classList.remove(HL_CLASS); activeEl = null; }
+    cancelled = false;
+  };
+
+  const scrollHandler = () => {
+    cancelled = true;
+    clear();
+  };
+
+  let boundContainer: HTMLElement | null = null;
+
+  const bindScroll = (container: HTMLElement | null) => {
+    if (boundContainer === container) return;
+    if (boundContainer) boundContainer.removeEventListener('scroll', scrollHandler);
+    boundContainer = container;
+    if (container) container.addEventListener('scroll', scrollHandler, { passive: true });
   };
 
   return {
+    bindScroll,
     onTouchStart: (e: React.TouchEvent<HTMLElement>) => {
       clear();
-      const touch = e.touches[0];
-      startX = touch.clientX;
-      startY = touch.clientY;
-      scrolling = false;
+      cancelled = false;
+      startY = e.touches[0].clientY;
       const el = e.currentTarget;
-      timer = setTimeout(() => apply(el), 80);
+      timer = setTimeout(() => {
+        if (!cancelled) {
+          activeEl = el;
+          el.classList.add(HL_CLASS);
+        }
+      }, 60);
     },
     onTouchMove: (e: React.TouchEvent<HTMLElement>) => {
-      if (scrolling) return;
-      const touch = e.touches[0];
-      const dx = Math.abs(touch.clientX - startX);
-      const dy = Math.abs(touch.clientY - startY);
-      if (dx > 8 || dy > 8) {
-        scrolling = true;
+      if (cancelled) return;
+      const dy = Math.abs(e.touches[0].clientY - startY);
+      if (dy > 6) {
+        cancelled = true;
         clear();
       }
     },
     onTouchEnd: () => {
       if (timer) { clearTimeout(timer); timer = null; }
       if (activeEl) {
-        const el = activeEl;
-        const bg = origBg;
-        setTimeout(() => { if (el) el.style.background = bg; }, 200);
-        activeEl = null;
+        fadeTimer = setTimeout(() => {
+          if (activeEl) { activeEl.classList.remove(HL_CLASS); activeEl = null; }
+        }, 180);
       }
-      scrolling = false;
+      cancelled = false;
     },
     onTouchCancel: () => { clear(); },
   };
 }
 
-const touchHighlight = makeTouchHighlight();
+const touchHL = makeTouchHighlight();
 
 function Sidebar({ 
   isOpen, 
@@ -376,6 +384,7 @@ function Sidebar({
   overlayRef: React.RefObject<HTMLDivElement>;
 }) {
   const { user: authUser, logout, switchOrg: authSwitchOrg } = useAuth();
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [location, navigate] = useLocation();
   const [buddyAiOpen, setBuddyAiOpen] = useState(() => {
     try { const s = localStorage.getItem('sidebar_buddyAi'); return s !== null ? s === 'true' : true; } catch { return true; }
@@ -390,6 +399,11 @@ function Sidebar({
   useEffect(() => {
     try { localStorage.setItem('sidebar_enterprise', String(enterpriseOpen)); } catch {}
   }, [enterpriseOpen]);
+
+  useEffect(() => {
+    touchHL.bindScroll(scrollContainerRef.current);
+    return () => touchHL.bindScroll(null);
+  }, []);
 
   // Fetch conversations from API
   const { data: conversationsData } = useQuery<{ data: any[] }>({
@@ -450,10 +464,10 @@ function Sidebar({
           border: '1px solid transparent',
           cursor: 'pointer',
         }}
-        onTouchStart={(e) => { try { navigator.vibrate?.(6); } catch {} touchHighlight.onTouchStart(e); }}
-        onTouchMove={(e) => touchHighlight.onTouchMove(e)}
-        onTouchEnd={() => touchHighlight.onTouchEnd()}
-        onTouchCancel={() => touchHighlight.onTouchCancel()}
+        onTouchStart={(e) => { try { navigator.vibrate?.(6); } catch {} touchHL.onTouchStart(e); }}
+        onTouchMove={(e) => touchHL.onTouchMove(e)}
+        onTouchEnd={() => touchHL.onTouchEnd()}
+        onTouchCancel={() => touchHL.onTouchCancel()}
         data-testid={testId}
       >
         <Icon size={20} color="#ECECEC" strokeWidth={1.5} />
@@ -484,11 +498,11 @@ function Sidebar({
               setContextMenu({ convoId: String(convo.id), x: touch.clientX, y: touch.clientY });
             }, 500);
             try { navigator.vibrate?.(6); } catch {}
-            touchHighlight.onTouchStart(e);
+            touchHL.onTouchStart(e);
           }}
-          onTouchEnd={() => { clearTimeout(pressTimerRef.current); touchHighlight.onTouchEnd(); }}
-          onTouchMove={(e) => { clearTimeout(pressTimerRef.current); touchHighlight.onTouchMove(e); }}
-          onTouchCancel={() => { clearTimeout(pressTimerRef.current); touchHighlight.onTouchCancel(); }}
+          onTouchEnd={() => { clearTimeout(pressTimerRef.current); touchHL.onTouchEnd(); }}
+          onTouchMove={(e) => { clearTimeout(pressTimerRef.current); touchHL.onTouchMove(e); }}
+          onTouchCancel={() => { clearTimeout(pressTimerRef.current); touchHL.onTouchCancel(); }}
           style={{
             padding: convo.projectName ? '10px 16px' : '12px 16px',
             margin: '0 8px 2px 12px',
@@ -622,7 +636,7 @@ function Sidebar({
           </h1>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' } as any}>
+        <div ref={scrollContainerRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' } as any}>
           {renderGroupHeader('企业管理', Building2, enterpriseOpen, () => setEnterpriseOpen(v => !v), 'button-toggle-enterprise')}
           <CollapsibleContent isOpen={enterpriseOpen}>
             <div style={{
@@ -649,10 +663,10 @@ function Sidebar({
                       border: '1px solid transparent',
                       cursor: 'pointer',
                     }}
-                    onTouchStart={(e) => { try { navigator.vibrate?.(6); } catch {} touchHighlight.onTouchStart(e); }}
-                    onTouchMove={(e) => touchHighlight.onTouchMove(e)}
-                    onTouchEnd={() => touchHighlight.onTouchEnd()}
-                    onTouchCancel={() => touchHighlight.onTouchCancel()}
+                    onTouchStart={(e) => { try { navigator.vibrate?.(6); } catch {} touchHL.onTouchStart(e); }}
+                    onTouchMove={(e) => touchHL.onTouchMove(e)}
+                    onTouchEnd={() => touchHL.onTouchEnd()}
+                    onTouchCancel={() => touchHL.onTouchCancel()}
                     data-testid={testId}
                   >
                     <Icon size={16} color="#ECECEC" strokeWidth={1.5} />

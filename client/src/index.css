@@ -544,6 +544,9 @@ html, body {
   transition: background 200ms ease, transform 200ms ease;
   -webkit-tap-highlight-color: transparent;
 }
+.sidebar-item.sidebar-touch-hl {
+  background: rgba(0,0,0,0.4) !important;
+}
 @media (hover: hover) and (pointer: fine) {
   .sidebar-item:not(.sidebar-item-active):hover {
     background: rgba(0,0,0,0.4) !important;
