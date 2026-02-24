@@ -1622,6 +1622,18 @@ function App() {
         drag.currentX = touch.clientX;
         drag.type = 'open';
       }
+      
+      if (sidebarOpen && sidebarRef.current) {
+        const rect = sidebarRef.current.getBoundingClientRect();
+        const edgeZone = 40;
+        if (touch.clientX > rect.right - edgeZone && touch.clientX <= rect.right + 30) {
+          drag.isDragging = true;
+          drag.startX = touch.clientX;
+          drag.startTime = Date.now();
+          drag.currentX = touch.clientX;
+          drag.type = 'close';
+        }
+      }
     };
     
     const handleTouchMove = (e: TouchEvent) => {
@@ -1647,6 +1659,14 @@ function App() {
         overlay.style.opacity = String(progress * 0.4);
         overlay.style.pointerEvents = 'auto';
         overlay.style.display = 'block';
+      }
+      
+      if (drag.type === 'close' && deltaX < 0) {
+        const actualWidth = Math.min(sidebar.offsetWidth, sidebarWidth);
+        sidebar.style.transform = `translateX(${deltaX}px)`;
+        if (content) content.style.transform = `translateX(${Math.max(actualWidth + deltaX, 0)}px)`;
+        const progress = 1 + deltaX / actualWidth;
+        overlay.style.opacity = String(Math.max(0, progress * 0.4));
       }
     };
     
@@ -1682,6 +1702,19 @@ function App() {
           overlay.style.opacity = '0';
           setTimeout(() => { overlay.style.pointerEvents = 'none'; }, 350);
           setSidebarOpen(false);
+        }
+      }
+      
+      if (drag.type === 'close') {
+        if (deltaX < -actualWidth * 0.3 || velocity > 0.5) {
+          sidebar.style.transform = 'translateX(-100%)';
+          if (content) content.style.transform = 'translateX(0)';
+          overlay.style.opacity = '0';
+          setSidebarOpen(false);
+        } else {
+          sidebar.style.transform = 'translateX(0)';
+          if (content) content.style.transform = `translateX(${actualWidth}px)`;
+          overlay.style.opacity = '0.4';
         }
       }
     };
