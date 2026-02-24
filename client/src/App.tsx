@@ -21,6 +21,7 @@ import Team from "@/pages/team";
 import Settings from "@/pages/settings";
 import GraphView from "@/pages/graph-view";
 import Artifacts from "@/pages/artifacts";
+import ChatsPage from "@/pages/chats";
 import {
   LayoutDashboard,
   FolderKanban,
@@ -56,7 +57,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { tapMotionProps } from '@/hooks/use-tap-motion';
 
 const BUDDY_AI_NAV = [
-  { label: 'Chats', icon: MessageSquare, path: '/agent' },
+  { label: 'Chats', icon: MessageSquare, path: '/chats' },
   { label: 'Projects', icon: FolderClosed, path: null },
   { label: 'Artifacts', icon: Settings2, path: '/artifacts' },
   { label: 'Code', icon: Code2, path: null },
@@ -355,7 +356,7 @@ function Sidebar({
   const [convSearchQuery, setConvSearchQuery] = useState('');
 
   const isActive = (path: string) => {
-    if (path === '/agent') return location === '/agent' && !!activeConvId;
+    if (path === '/chats') return location === '/chats' || (location === '/agent' && !!activeConvId);
     return location === path || location.startsWith(path + '/');
   };
 
@@ -1421,7 +1422,8 @@ function Router() {
       <Route>
         <AuthGuard>
           <Switch>
-            <Route path="/"><Redirect to="/agent" /></Route>
+            <Route path="/"><Redirect to="/chats" /></Route>
+            <Route path="/chats" component={ChatsPage} />
             <Route path="/dashboard" component={Dashboard} />
             <Route path="/graph" component={GraphView} />
             <Route path="/agent" component={Agent} />
@@ -1666,6 +1668,7 @@ function App() {
   const contentRef = useRef<HTMLDivElement>(null);
   const [location] = useLocation();
   const isAgentPage = location === '/agent' || location.startsWith('/agent?');
+  const isChatsPage = location === '/chats';
   const isGraphPage = location === '/graph' || location.startsWith('/graph?');
   const isLoginPage = location === '/login' || location.startsWith('/login?');
   
@@ -1867,7 +1870,7 @@ function App() {
                     fontSize: 17, fontWeight: 600,
                     color: 'var(--text-primary)',
                     fontFamily: 'var(--font-sans)',
-                  }} data-testid="top-bar-title">Buddy</span>
+                  }} data-testid="top-bar-title">{isChatsPage ? 'Chats' : 'Buddy'}</span>
                 )}
                 <div style={{ width: 36 }} />
               </div>
