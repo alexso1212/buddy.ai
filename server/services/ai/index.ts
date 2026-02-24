@@ -712,6 +712,74 @@ export async function chat(
   }
 }
 
+export async function* chatStream(
+  message: string,
+  conversationHistory: { role: string; content: string }[],
+  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean }
+): AsyncGenerator<{ type: 'token' | 'done' | 'error'; content?: string; tokenUsage?: ChatResponse['tokenUsage'] }> {
+  const modelName = context.model || 'claude-sonnet-4-6';
+  const systemPrompt = `You are Buddy, a helpful AI assistant. Respond naturally and helpfully to the user. Use the same language the user writes in. You are currently running on the model: ${modelName}. When the user asks what model you are, tell them honestly.`;
+  const aiClient = getClientForModel(modelName);
+
+  const requestParams: any = {
+    model: modelName,
+    max_tokens: getMaxTokensForModel(modelName),
+    stream: true,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...conversationHistory.map(msg => ({
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content,
+      })),
+      { role: 'user', content: message },
+    ],
+  };
+
+  const isClaudeModel = modelName.startsWith('claude-');
+
+  if (!isClaudeModel) {
+    requestParams.stream_options = { include_usage: true };
+  }
+
+  if (context.extendedThinking && isClaudeModel) {
+    requestParams.extra_body = {
+      thinking: {
+        type: 'enabled',
+        budget_tokens: modelName === 'claude-opus-4-6' ? 32000 : 16000,
+      }
+    };
+  }
+
+  try {
+    const stream = await aiClient.chat.completions.create(requestParams);
+    let totalPromptTokens = 0;
+    let totalCompletionTokens = 0;
+
+    for await (const chunk of stream as any) {
+      const delta = chunk.choices?.[0]?.delta;
+      if (delta?.content) {
+        yield { type: 'token', content: delta.content };
+      }
+      if (chunk.usage) {
+        totalPromptTokens = chunk.usage.prompt_tokens ?? 0;
+        totalCompletionTokens = chunk.usage.completion_tokens ?? 0;
+      }
+    }
+
+    yield {
+      type: 'done',
+      tokenUsage: {
+        model: modelName,
+        promptTokens: totalPromptTokens,
+        completionTokens: totalCompletionTokens,
+        totalTokens: totalPromptTokens + totalCompletionTokens,
+      }
+    };
+  } catch (err: any) {
+    yield { type: 'error', content: err.message || 'Stream error' };
+  }
+}
+
 export async function generateProjectTasks(
   projectName: string,
   projectDescription: string,

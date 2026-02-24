@@ -1,13 +1,14 @@
 import { useState, useRef, useCallback } from "react";
-import { ArrowUp, Plus } from "lucide-react";
+import { ArrowUp, Plus, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AiInputBarProps {
   onSend: (message: string) => void;
   loading: boolean;
+  onStop?: () => void;
 }
 
-export default function AiInputBar({ onSend, loading }: AiInputBarProps) {
+export default function AiInputBar({ onSend, loading, onStop }: AiInputBarProps) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -117,28 +118,51 @@ export default function AiInputBar({ onSend, loading }: AiInputBarProps) {
             <Plus className="w-4 h-4" />
           </button>
 
-          <button
-            onClick={handleSend}
-            disabled={isEmpty || loading}
-            style={{
-              width: 30,
-              height: 30,
-              background: 'var(--brand)',
-              borderRadius: 8,
-              border: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: isEmpty ? 'default' : 'pointer',
-              opacity: isEmpty ? 0.35 : 1,
-              transition: 'opacity 150ms, transform 100ms',
-            }}
-            onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.95)'; }}
-            onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
-            data-testid="ai-send"
-          >
-            <ArrowUp className="w-4 h-4 text-white" strokeWidth={2.5} />
-          </button>
+          {loading ? (
+            <button
+              onClick={onStop}
+              style={{
+                width: 30,
+                height: 30,
+                background: '#ECECEC',
+                borderRadius: 8,
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'opacity 150ms, transform 100ms',
+              }}
+              onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.95)'; }}
+              onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+              data-testid="ai-stop"
+            >
+              <Square className="w-3 h-3 text-[#262624]" strokeWidth={3} fill="#262624" />
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={isEmpty}
+              style={{
+                width: 30,
+                height: 30,
+                background: 'var(--brand)',
+                borderRadius: 8,
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: isEmpty ? 'default' : 'pointer',
+                opacity: isEmpty ? 0.35 : 1,
+                transition: 'opacity 150ms, transform 100ms',
+              }}
+              onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.95)'; }}
+              onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+              data-testid="ai-send"
+            >
+              <ArrowUp className="w-4 h-4 text-white" strokeWidth={2.5} />
+            </button>
+          )}
         </div>
         </div>
       </div>

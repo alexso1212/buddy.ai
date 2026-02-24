@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { Check, Copy, Share2, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Check, Copy, Share2, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X } from "lucide-react";
 import AiConfirmCard from "./AiConfirmCard";
 import AiGuidedCreation from "./AiGuidedCreation";
 import AIMessageContent from "./AIMessageContent";
@@ -54,6 +54,7 @@ interface Message {
   actionSkipped?: boolean[];
   followUp?: FollowUpData;
   followUpSubmitted?: boolean;
+  isStreaming?: boolean;
 }
 
 interface AiMessageBubbleProps {
@@ -63,13 +64,16 @@ interface AiMessageBubbleProps {
   onSkip?: (messageId: string, actionIndex?: number) => void;
   onFollowUpSubmit?: (messageId: string, mergedData: Record<string, any>, creationType?: string) => void;
   onStepAnswer?: (stepLabel: string, answerLabel: string) => void;
+  onRegenerate?: (messageId: string) => void;
+  onEditMessage?: (messageId: string, newContent: string) => void;
+  isLastAssistant?: boolean;
 }
 
 function BrandLogo() {
   return <AgentLogo size={28} animate={false} glow={false} />;
 }
 
-function AiReplyActions({ content }: { content: string }) {
+function AiReplyActions({ content, onRegenerate, isLastAssistant }: { content: string; onRegenerate?: () => void; isLastAssistant?: boolean }) {
   const [liked, setLiked] = useState<boolean | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -96,8 +100,18 @@ function AiReplyActions({ content }: { content: string }) {
         title={copied ? "已复制" : "复制"}
         data-testid="btn-copy-reply"
       >
-        <Copy className="w-3.5 h-3.5" strokeWidth={1.5} />
+        {copied ? <Check className="w-3.5 h-3.5" strokeWidth={1.5} /> : <Copy className="w-3.5 h-3.5" strokeWidth={1.5} />}
       </button>
+      {isLastAssistant && onRegenerate && (
+        <button
+          onClick={onRegenerate}
+          className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+          title="重新生成"
+          data-testid="btn-regenerate"
+        >
+          <RotateCcw className="w-3.5 h-3.5" strokeWidth={1.5} />
+        </button>
+      )}
       <button
         onClick={handleShare}
         className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
@@ -223,7 +237,12 @@ export default function AiMessageBubble({
   onSkip,
   onFollowUpSubmit,
   onStepAnswer,
+  onRegenerate,
+  onEditMessage,
+  isLastAssistant,
 }: AiMessageBubbleProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(message.content);
   if (message.role === "system") {
     const isSuccess = message.content.includes("成功") || message.content.includes("已");
     return (
@@ -246,12 +265,80 @@ export default function AiMessageBubble({
   }
 
   if (message.role === "user") {
+    if (isEditing) {
+      return (
+        <div
+          className="flex justify-end px-3 mb-6"
+          style={{ animation: 'messageAppear 200ms ease-out' }}
+          data-testid={`ai-message-${message.id}`}
+        >
+          <div style={{ maxWidth: '82%', width: '100%' }}>
+            <textarea
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              autoFocus
+              style={{
+                width: '100%',
+                background: '#2F2F2F',
+                borderRadius: 18,
+                padding: '10px 14px',
+                fontFamily: 'var(--font-sans)',
+                fontSize: 16,
+                lineHeight: 1.5,
+                color: 'var(--text-primary)',
+                border: '1px solid var(--brand)',
+                outline: 'none',
+                resize: 'none',
+                minHeight: 60,
+              }}
+              data-testid="edit-message-input"
+            />
+            <div className="flex justify-end gap-2 mt-2">
+              <button
+                onClick={() => { setIsEditing(false); setEditText(message.content); }}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm text-[var(--text-secondary)] hover:bg-white/5 transition-colors"
+                data-testid="btn-cancel-edit"
+              >
+                <X className="w-3.5 h-3.5" />
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  const trimmed = editText.trim();
+                  if (trimmed && trimmed !== message.content && onEditMessage) {
+                    onEditMessage(message.id, trimmed);
+                  }
+                  setIsEditing(false);
+                }}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm text-white transition-colors"
+                style={{ background: 'var(--brand)' }}
+                data-testid="btn-submit-edit"
+              >
+                <Check className="w-3.5 h-3.5" />
+                发送
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div
-        className="flex justify-end px-3 mb-6"
+        className="group flex justify-end px-3 mb-6"
         style={{ animation: 'messageAppear 200ms ease-out' }}
         data-testid={`ai-message-${message.id}`}
       >
+        {onEditMessage && (
+          <button
+            onClick={() => { setEditText(message.content); setIsEditing(true); }}
+            className="self-start mt-2 mr-2 flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors opacity-0 group-hover:opacity-100"
+            title="编辑消息"
+            data-testid="btn-edit-message"
+          >
+            <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
+          </button>
+        )}
         <div
           style={{
             maxWidth: '82%',
@@ -354,8 +441,16 @@ export default function AiMessageBubble({
         <div className="mb-2">
           <BrandLogo />
         </div>
-        <AIMessageContent content={message.content} />
-        <AiReplyActions content={message.content} />
+        <div className={message.isStreaming ? 'streaming-cursor' : ''}>
+          <AIMessageContent content={message.content} />
+        </div>
+        {!message.isStreaming && (
+          <AiReplyActions
+            content={message.content}
+            onRegenerate={onRegenerate ? () => onRegenerate(message.id) : undefined}
+            isLastAssistant={isLastAssistant}
+          />
+        )}
       </div>
     </div>
   );

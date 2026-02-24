@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
-import { chat as aiChat, generateProjectTasks } from "./services/ai/index";
+import { chat as aiChat, chatStream as aiChatStream, generateProjectTasks } from "./services/ai/index";
 import { executeAction } from "./services/ai/actionExecutor";
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
@@ -1775,6 +1775,109 @@ export async function registerRoutes(server: Server, app: Express) {
     } catch (e: any) {
       console.error('Project decompose error:', e);
       return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== AI Chat Stream =====================
+  app.post("/api/ai/chat/stream", async (req, res) => {
+    try {
+      const { message, conversationHistory, conversationId, currentUserId, systemPrompt, model, extendedThinking } = req.body;
+      if (!message || typeof message !== 'string') {
+        return res.status(400).json({ error: 'message is required' });
+      }
+
+      const orgId = req.orgId;
+      const userId = currentUserId || req.currentUserId;
+      const user = await storage.getUserById(userId);
+      const userName = user?.displayName || 'Unknown';
+
+      let activeConvId = conversationId || null;
+
+      if (!activeConvId) {
+        const title = message.slice(0, 30) + (message.length > 30 ? '...' : '');
+        const newConv = await storage.createConversation({
+          title,
+          orgId,
+          userId,
+        });
+        activeConvId = newConv.id;
+      }
+
+      let history = conversationHistory || [];
+      if (activeConvId && history.length === 0) {
+        const conv = await storage.getConversationById(activeConvId);
+        if (conv && conv.orgId !== orgId) {
+          return res.status(403).json({ error: 'Access denied to this conversation' });
+        }
+        const dbMessages = await storage.getChatMessages(activeConvId);
+        history = dbMessages
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(m => ({ role: m.role, content: m.content }));
+      }
+
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      });
+
+      res.write(`data: ${JSON.stringify({ type: 'start', conversationId: activeConvId })}\n\n`);
+
+      let fullText = '';
+
+      const generator = aiChatStream(
+        message,
+        history,
+        { currentUserId: userId, currentUserName: userName, customSystemPrompt: systemPrompt || undefined, model: model || undefined, extendedThinking: extendedThinking || false }
+      );
+
+      for await (const chunk of generator) {
+        if (req.socket?.destroyed) break;
+
+        if (chunk.type === 'token' && chunk.content) {
+          fullText += chunk.content;
+          res.write(`data: ${JSON.stringify({ type: 'token', content: chunk.content })}\n\n`);
+        } else if (chunk.type === 'done') {
+          if (chunk.tokenUsage) {
+            const { calculateCost } = await import('./services/ai/tokenCost');
+            const cost = calculateCost(
+              chunk.tokenUsage.model,
+              chunk.tokenUsage.promptTokens,
+              chunk.tokenUsage.completionTokens
+            );
+            try {
+              await storage.createTokenUsage({
+                orgId,
+                userId,
+                conversationId: activeConvId || null,
+                model: chunk.tokenUsage.model,
+                promptTokens: chunk.tokenUsage.promptTokens,
+                completionTokens: chunk.tokenUsage.completionTokens,
+                totalTokens: chunk.tokenUsage.totalTokens,
+                costUsd: cost,
+                purpose: 'chat',
+              });
+            } catch (tokenErr) {
+              console.error('Failed to record token usage:', tokenErr);
+            }
+          }
+          res.write(`data: ${JSON.stringify({ type: 'done', fullText })}\n\n`);
+        } else if (chunk.type === 'error') {
+          res.write(`data: ${JSON.stringify({ type: 'error', content: chunk.content })}\n\n`);
+        }
+      }
+
+      res.end();
+    } catch (e: any) {
+      console.error('AI Chat Stream error:', e);
+      if (!res.headersSent) {
+        return res.status(500).json({ error: e.message });
+      }
+      try {
+        res.write(`data: ${JSON.stringify({ type: 'error', content: e.message })}\n\n`);
+        res.end();
+      } catch {}
     }
   });
 

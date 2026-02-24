@@ -59,6 +59,7 @@ interface Message {
   actionSkipped?: boolean[];
   followUp?: FollowUpData;
   followUpSubmitted?: boolean;
+  isStreaming?: boolean;
 }
 
 interface Conversation {
@@ -707,7 +708,7 @@ function ConversationListView({
   );
 }
 
-function BottomInputArea({ onSend, loading }: { onSend: (msg: string) => void; loading: boolean }) {
+function BottomInputArea({ onSend, loading, onStop }: { onSend: (msg: string) => void; loading: boolean; onStop?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const bgRef = useRef<HTMLDivElement>(null);
@@ -789,7 +790,7 @@ function BottomInputArea({ onSend, loading }: { onSend: (msg: string) => void; l
       <div style={{ pointerEvents: 'auto' }}>
         <div className="max-w-3xl mx-auto px-3">
           <div ref={composerRef}>
-            <AiInputBar onSend={onSend} loading={loading} />
+            <AiInputBar onSend={onSend} loading={loading} onStop={onStop} />
           </div>
         </div>
       </div>
@@ -815,6 +816,7 @@ export default function Agent() {
   const [activeConvSystemPrompt, setActiveConvSystemPrompt] = useState<string | undefined>();
   const [convTitle, setConvTitle] = useState<string>("");
   const [showChat, setShowChat] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!activeConvId) {
@@ -915,6 +917,13 @@ export default function Agent() {
     navigate('/agent', { replace: true });
   }, [navigate]);
 
+  const handleStop = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  }, []);
+
   const handleSend = useCallback(
     async (text: string) => {
       let convId = activeConvId;
@@ -930,80 +939,195 @@ export default function Agent() {
 
       conversationHistory.current.push({ role: "user", content: text });
 
+      const assistantMsgId = nextId();
+      const streamingMsg: Message = {
+        id: assistantMsgId,
+        role: "assistant",
+        content: "",
+        type: "text",
+        isStreaming: true,
+      };
+      setMessages((prev) => [...prev, streamingMsg]);
+
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
       try {
         const selectedModel = (() => { try { return localStorage.getItem('buddy_model') || undefined; } catch { return undefined; } })();
         const extendedThinking = (() => { try { return localStorage.getItem('buddy_extended_thinking') === 'true'; } catch { return false; } })();
-        const res = await apiRequest("POST", "/api/ai/chat", {
-          message: text,
-          conversationHistory: conversationHistory.current,
-          conversationId: convId || undefined,
-          currentUserId: 1,
-          systemPrompt: activeConvSystemPrompt || undefined,
-          model: selectedModel,
-          extendedThinking,
-        });
-        const json = await res.json();
-        const data = json.data;
 
-        if (data.conversationId && !convId) {
-          convId = data.conversationId;
-          const title = text.slice(0, 30) + (text.length > 30 ? '...' : '');
-          setConvTitle(title);
-          navigate(`/agent?conv=${convId}`, { replace: true });
-          queryClient.invalidateQueries({ queryKey: ['/api/conversations'] });
-        }
-
-        if (convId) {
-          saveMessageToDB(convId, userMsg);
-        }
-
-        let assistantContent = "";
-        if (data.type === "text") {
-          assistantContent = data.message || "";
-        } else if (data.type === "confirm" && data.action) {
-          assistantContent = data.action.followUpQuestion || data.action.summary || "";
-        } else if (data.type === "multi_confirm" && data.actions) {
-          assistantContent = data.message || data.actions.map((a: ActionPayload) => a.summary).join("\n");
-        } else if (data.type === "follow_up" && data.followUp) {
-          assistantContent = data.followUp.message || "";
-        }
-
-        conversationHistory.current.push({
-          role: "assistant",
-          content: assistantContent,
+        const res = await fetch("/api/ai/chat/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: text,
+            conversationHistory: conversationHistory.current,
+            conversationId: convId || undefined,
+            currentUserId: 1,
+            systemPrompt: activeConvSystemPrompt || undefined,
+            model: selectedModel,
+            extendedThinking,
+          }),
+          signal: abortController.signal,
         });
 
-        const assistantMsg: Message = {
-          id: nextId(),
-          role: "assistant",
-          content: assistantContent,
-          type: data.type,
-          action: data.action,
-          actions: data.actions,
-          followUp: data.followUp,
-          confirmed: data.type === "confirm" ? null : undefined,
-          actionConfirmed: data.type === "multi_confirm" && data.actions
-            ? data.actions.map(() => null)
-            : undefined,
-          actionSkipped: data.type === "multi_confirm" && data.actions
-            ? data.actions.map(() => false)
-            : undefined,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-        if (convId) saveMessageToDB(convId, assistantMsg);
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({ error: 'Stream failed' }));
+          throw new Error(errJson.error || 'Stream failed');
+        }
+
+        const reader = res.body?.getReader();
+        if (!reader) throw new Error('No response body');
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullText = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const jsonStr = line.slice(6).trim();
+            if (!jsonStr) continue;
+
+            try {
+              const event = JSON.parse(jsonStr);
+
+              if (event.type === 'start' && event.conversationId) {
+                if (!convId) {
+                  convId = event.conversationId;
+                  const title = text.slice(0, 30) + (text.length > 30 ? '...' : '');
+                  setConvTitle(title);
+                  navigate(`/agent?conv=${convId}`, { replace: true });
+                  queryClient.invalidateQueries({ queryKey: ['/api/conversations'] });
+                }
+                if (convId) saveMessageToDB(convId, userMsg);
+              } else if (event.type === 'token' && event.content) {
+                fullText += event.content;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMsgId
+                      ? { ...m, content: fullText }
+                      : m
+                  )
+                );
+              } else if (event.type === 'done') {
+                const finalText = event.fullText || fullText;
+                conversationHistory.current.push({ role: "assistant", content: finalText });
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMsgId
+                      ? { ...m, content: finalText, isStreaming: false }
+                      : m
+                  )
+                );
+                if (convId) {
+                  saveMessageToDB(convId, {
+                    id: assistantMsgId,
+                    role: "assistant",
+                    content: finalText,
+                    type: "text",
+                  });
+                }
+              } else if (event.type === 'error') {
+                throw new Error(event.content || 'Stream error');
+              }
+            } catch (parseErr: any) {
+              if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
+            }
+          }
+        }
+
+        if (fullText && !conversationHistory.current.some(m => m.content === fullText && m.role === 'assistant')) {
+          conversationHistory.current.push({ role: "assistant", content: fullText });
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgId
+                ? { ...m, content: fullText, isStreaming: false }
+                : m
+            )
+          );
+          if (convId) {
+            saveMessageToDB(convId, {
+              id: assistantMsgId,
+              role: "assistant",
+              content: fullText,
+              type: "text",
+            });
+          }
+        }
       } catch (err: any) {
-        const errorMsg: Message = {
-          id: nextId(),
-          role: "system",
-          content: err.message || "请求失败，请稍后重试",
-        };
-        setMessages((prev) => [...prev, errorMsg]);
-        if (convId) saveMessageToDB(convId, errorMsg);
+        if (err.name === 'AbortError') {
+          setMessages((prev) => {
+            const streamingMsg = prev.find(m => m.id === assistantMsgId);
+            if (streamingMsg?.content) {
+              conversationHistory.current.push({ role: "assistant", content: streamingMsg.content });
+            }
+            return prev.map((m) =>
+              m.id === assistantMsgId
+                ? { ...m, isStreaming: false }
+                : m
+            );
+          });
+        } else {
+          setMessages((prev) => {
+            const filtered = prev.filter((m) => m.id !== assistantMsgId);
+            return [...filtered, {
+              id: nextId(),
+              role: "system" as const,
+              content: err.message || "请求失败，请稍后重试",
+            }];
+          });
+        }
       } finally {
         setLoading(false);
+        abortControllerRef.current = null;
       }
     },
     [activeConvId, activeConvSystemPrompt, saveMessageToDB, navigate]
+  );
+
+  const handleRegenerate = useCallback(
+    (messageId: string) => {
+      const msgIndex = messages.findIndex((m) => m.id === messageId);
+      if (msgIndex < 0) return;
+
+      let lastUserMsg = '';
+      for (let i = msgIndex - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') {
+          lastUserMsg = messages[i].content;
+          break;
+        }
+      }
+      if (!lastUserMsg) return;
+
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+      conversationHistory.current = conversationHistory.current.filter(
+        (m) => !(m.role === 'assistant' && m.content === messages[msgIndex].content)
+      );
+
+      handleSend(lastUserMsg);
+    },
+    [messages, handleSend]
+  );
+
+  const handleEditMessage = useCallback(
+    (messageId: string, newContent: string) => {
+      const msgIndex = messages.findIndex((m) => m.id === messageId);
+      if (msgIndex < 0) return;
+
+      setMessages((prev) => prev.slice(0, msgIndex));
+      conversationHistory.current = conversationHistory.current.slice(0, msgIndex);
+
+      handleSend(newContent);
+    },
+    [messages, handleSend]
   );
 
   const handleConfirm = useCallback(
@@ -1268,18 +1392,24 @@ export default function Agent() {
         >
           
           <div className="max-w-3xl mx-auto">
-            {messages.map((msg) => (
-              <AiMessageBubble
-                key={msg.id}
-                message={msg}
-                onConfirm={handleConfirm}
-                onReject={handleReject}
-                onSkip={handleSkip}
-                onFollowUpSubmit={handleFollowUpSubmit}
-                onStepAnswer={handleStepAnswer}
-              />
-            ))}
-            {loading && (
+            {messages.map((msg, idx) => {
+              const lastAssistantIdx = messages.reduce((acc, m, i) => m.role === 'assistant' && !m.isStreaming ? i : acc, -1);
+              return (
+                <AiMessageBubble
+                  key={msg.id}
+                  message={msg}
+                  onConfirm={handleConfirm}
+                  onReject={handleReject}
+                  onSkip={handleSkip}
+                  onFollowUpSubmit={handleFollowUpSubmit}
+                  onStepAnswer={handleStepAnswer}
+                  onRegenerate={handleRegenerate}
+                  onEditMessage={handleEditMessage}
+                  isLastAssistant={idx === lastAssistantIdx}
+                />
+              );
+            })}
+            {loading && !messages.some(m => m.isStreaming) && (
               <div className="flex justify-start px-3 mb-6" data-testid="ai-loading">
                 <ThinkingAnimation size={36} />
               </div>
@@ -1288,7 +1418,7 @@ export default function Agent() {
         </div>
       )}
 
-      <BottomInputArea onSend={handleSend} loading={loading} />
+      <BottomInputArea onSend={handleSend} loading={loading} onStop={handleStop} />
     </div>
   );
 }
