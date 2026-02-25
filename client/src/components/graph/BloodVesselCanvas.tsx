@@ -94,6 +94,35 @@ interface CollabHealth {
   metrics: { volume: number; completion: number; timeliness: number; flow: number };
 }
 
+interface DeptTubeParticle {
+  pairKey: string;
+  t: number;
+  speed: number;
+  radius: number;
+  direction: number;
+}
+
+function initDeptTubeParticles(centroids: Map<number, { x: number; y: number }>): DeptTubeParticle[] {
+  const particles: DeptTubeParticle[] = [];
+  const ids = Array.from(centroids.keys());
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const key = `${ids[i]}-${ids[j]}`;
+      const count = 3 + Math.floor(Math.random() * 3);
+      for (let k = 0; k < count; k++) {
+        particles.push({
+          pairKey: key,
+          t: Math.random(),
+          speed: 0.002 + Math.random() * 0.002,
+          radius: 0.8 + Math.random() * 0.5,
+          direction: Math.random() > 0.5 ? 1 : -1,
+        });
+      }
+    }
+  }
+  return particles;
+}
+
 interface BloodVesselCanvasProps {
   simLinksRef: React.MutableRefObject<any[]>;
   zoomTransformRef: React.MutableRefObject<any>;
@@ -102,6 +131,7 @@ interface BloodVesselCanvasProps {
   bloodFlow: boolean;
   galaxyDataRef?: React.MutableRefObject<GalaxyBoundary[]>;
   collabHealthRef?: React.MutableRefObject<CollabHealth[]>;
+  deptCentroidsRef?: React.MutableRefObject<Map<number, { x: number; y: number }>>;
 }
 
 export default function BloodVesselCanvas({
@@ -112,9 +142,12 @@ export default function BloodVesselCanvas({
   bloodFlow,
   galaxyDataRef,
   collabHealthRef,
+  deptCentroidsRef,
 }: BloodVesselCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particlesRef = useRef<Particle[]>([]);
+  const deptTubeParticlesRef = useRef<DeptTubeParticle[]>([]);
+  const lastDeptCountRef = useRef(0);
   const animFrameRef = useRef<number>(0);
   const bloodFlowRef = useRef(bloodFlow);
   const lastSelectedIdRef = useRef<number | null>(null);
@@ -279,6 +312,57 @@ export default function BloodVesselCanvas({
         }
       }
 
+      if (deptCentroidsRef && flowing) {
+        const centroids = deptCentroidsRef.current;
+        if (centroids.size > 0) {
+          if (centroids.size !== lastDeptCountRef.current) {
+            lastDeptCountRef.current = centroids.size;
+            deptTubeParticlesRef.current = initDeptTubeParticles(centroids);
+          }
+
+          const ids = Array.from(centroids.keys());
+          for (let i = 0; i < ids.length; i++) {
+            for (let j = i + 1; j < ids.length; j++) {
+              const a = centroids.get(ids[i]);
+              const b = centroids.get(ids[j]);
+              if (!a || !b) continue;
+
+              ctx.globalAlpha = 0.06;
+              ctx.strokeStyle = '#8b8b8b';
+              ctx.lineWidth = 1.5;
+              ctx.setLineDash([]);
+              ctx.beginPath();
+              ctx.moveTo(a.x, a.y);
+              ctx.lineTo(b.x, b.y);
+              ctx.stroke();
+            }
+          }
+
+          if (k >= 0.3) {
+            const deptParticles = deptTubeParticlesRef.current;
+            for (const dp of deptParticles) {
+              const [aStr, bStr] = dp.pairKey.split('-');
+              const a = centroids.get(Number(aStr));
+              const b = centroids.get(Number(bStr));
+              if (!a || !b) continue;
+
+              dp.t += dp.speed * dp.direction;
+              if (dp.t > 1) dp.t -= 1;
+              if (dp.t < 0) dp.t += 1;
+
+              const px = a.x + (b.x - a.x) * dp.t;
+              const py = a.y + (b.y - a.y) * dp.t;
+
+              ctx.globalAlpha = 0.45;
+              ctx.fillStyle = '#a0a0a0';
+              ctx.beginPath();
+              ctx.arc(px, py, dp.radius, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+        }
+      }
+
       ctx.restore();
       ctx.globalAlpha = 1;
 
@@ -290,7 +374,7 @@ export default function BloodVesselCanvas({
       cancelAnimationFrame(animFrameRef.current);
       ro.disconnect();
     };
-  }, [simLinksRef, zoomTransformRef, hoveredNodeIdRef, selectedNodeIdRef, galaxyDataRef, collabHealthRef]);
+  }, [simLinksRef, zoomTransformRef, hoveredNodeIdRef, selectedNodeIdRef, galaxyDataRef, collabHealthRef, deptCentroidsRef]);
 
   return (
     <canvas

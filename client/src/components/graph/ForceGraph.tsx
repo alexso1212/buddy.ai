@@ -123,7 +123,11 @@ function getNodeColor(node: GraphNode, colorBy: ColorByOption): string {
   }
 }
 
-function deptClusterForce(nodes: SimNode[], alpha: number) {
+const DEPT_IDEAL_DIST = 180;
+const DEPT_MIN_DIST = 120;
+const DEPT_MAX_DIST = 260;
+
+function deptClusterForce(nodes: SimNode[], alpha: number, deptCentroidsOut?: Map<number, { x: number; y: number }>) {
   const centroids: Record<number, { x: number; y: number; count: number }> = {};
   for (const node of nodes) {
     const key = node.deptId ?? -1;
@@ -140,23 +144,44 @@ function deptClusterForce(nodes: SimNode[], alpha: number) {
     c.x /= c.count;
     c.y /= c.count;
   }
+
+  if (deptCentroidsOut) {
+    deptCentroidsOut.clear();
+    for (const key of centroidKeys) {
+      const k = Number(key);
+      if (k !== -1) deptCentroidsOut.set(k, { x: centroids[k].x, y: centroids[k].y });
+    }
+  }
+
   const attractStrength = 0.35;
-  const repelStrength = 0.03;
   for (const node of nodes) {
     const key = node.deptId ?? -1;
     const c = centroids[key];
     if (c) {
       node.vx = (node.vx || 0) + (c.x - (node.x || 0)) * alpha * attractStrength;
       node.vy = (node.vy || 0) + (c.y - (node.y || 0)) * alpha * attractStrength;
+
       for (const otherKey of centroidKeys) {
         const otherDept = Number(otherKey);
-        if (otherDept !== key) {
-          const other = centroids[otherDept];
-          const dx = (node.x || 0) - other.x;
-          const dy = (node.y || 0) - other.y;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          node.vx = (node.vx || 0) + (dx / dist) * alpha * repelStrength * 30;
-          node.vy = (node.vy || 0) + (dy / dist) * alpha * repelStrength * 30;
+        if (otherDept === key) continue;
+        const other = centroids[otherDept];
+        const dx = (node.x || 0) - other.x;
+        const dy = (node.y || 0) - other.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+        if (dist < DEPT_MIN_DIST) {
+          const push = (DEPT_MIN_DIST - dist) / dist * alpha * 0.15;
+          node.vx = (node.vx || 0) + dx * push;
+          node.vy = (node.vy || 0) + dy * push;
+        } else if (dist > DEPT_MAX_DIST) {
+          const pull = (dist - DEPT_MAX_DIST) / dist * alpha * 0.08;
+          node.vx = (node.vx || 0) - dx * pull;
+          node.vy = (node.vy || 0) - dy * pull;
+        } else {
+          const diff = dist - DEPT_IDEAL_DIST;
+          const gentle = diff / dist * alpha * 0.02;
+          node.vx = (node.vx || 0) - dx * gentle;
+          node.vy = (node.vy || 0) - dy * gentle;
         }
       }
     }
@@ -372,6 +397,8 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
   const nodeMapRef = useRef<Map<number, SimNode>>(new Map());
   const draggedNodeIdRef = useRef<number | null>(null);
   const orbitIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const deptCentroidsRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const hasDraggedRef = useRef(false);
 
   useEffect(() => { collabHealthRef.current = collabHealth; }, [collabHealth]);
   useEffect(() => { onNodeClickRef.current = onNodeClick; }, [onNodeClick]);
@@ -484,7 +511,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         "collision",
         d3.forceCollide<SimNode>().radius((d) => getRadius(d) + 1)
       )
-      .force("cluster", (alpha: number) => deptClusterForce(simNodes, alpha));
+      .force("cluster", (alpha: number) => deptClusterForce(simNodes, alpha, deptCentroidsRef.current));
 
     simulationRef.current = simulation;
 
@@ -497,12 +524,16 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       .call(
         d3.drag<SVGGElement, SimNode>()
           .on("start", (event, d) => {
-            if (!event.active) simulation.alphaTarget(0.3).restart();
+            hasDraggedRef.current = false;
             d.fx = d.x;
             d.fy = d.y;
             draggedNodeIdRef.current = d.id;
           })
           .on("drag", (event, d) => {
+            if (!hasDraggedRef.current) {
+              hasDraggedRef.current = true;
+              if (!event.active) simulation.alphaTarget(0.1).restart();
+            }
             d.fx = event.x;
             d.fy = event.y;
           })
@@ -511,6 +542,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
             d.fx = null;
             d.fy = null;
             draggedNodeIdRef.current = null;
+            hasDraggedRef.current = false;
           })
       );
 
@@ -788,6 +820,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         bloodFlow={bloodFlow}
         galaxyDataRef={galaxyDataRef}
         collabHealthRef={collabHealthRef}
+        deptCentroidsRef={deptCentroidsRef}
       />
       <svg
         ref={svgRef}
