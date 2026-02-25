@@ -1196,12 +1196,18 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
 
     const VEL_CAP = 5;
     let tickCount = 0;
+    let destroyed = false;
     simulation.on("tick", () => {
+      if (destroyed) return;
       tickCount++;
 
       for (const n of simNodes) {
         if (n.vx != null && Math.abs(n.vx) > VEL_CAP) n.vx = Math.sign(n.vx) * VEL_CAP;
         if (n.vy != null && Math.abs(n.vy) > VEL_CAP) n.vy = Math.sign(n.vy) * VEL_CAP;
+        if (isNaN(n.x as number)) n.x = width / 2;
+        if (isNaN(n.y as number)) n.y = height / 2;
+        if (isNaN(n.vx as number)) n.vx = 0;
+        if (isNaN(n.vy as number)) n.vy = 0;
       }
 
       orbitForce(simNodes, topology, orbitStatesRef.current, draggedNodeIdRef.current, simulation.alpha(), nodeMap);
@@ -1214,7 +1220,13 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     });
 
     simulation.on("end", () => {
+      if (destroyed) return;
+      if (orbitIntervalRef.current) {
+        clearInterval(orbitIntervalRef.current);
+        orbitIntervalRef.current = null;
+      }
       const interval = setInterval(() => {
+        if (destroyed) { clearInterval(interval); return; }
         tickCount++;
         orbitForce(simNodes, topology, orbitStatesRef.current, draggedNodeIdRef.current, 0.01, nodeMap);
         nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
@@ -1248,6 +1260,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     resizeObserver.observe(container);
 
     return () => {
+      destroyed = true;
       if (orbitIntervalRef.current) {
         clearInterval(orbitIntervalRef.current);
         orbitIntervalRef.current = null;
