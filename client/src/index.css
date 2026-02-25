@@ -17,11 +17,11 @@ html, body {
   overflow: hidden;
 }
 
-[data-sidebar="content"] {
+* {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
-[data-sidebar="content"]::-webkit-scrollbar {
+*::-webkit-scrollbar {
   display: none;
 }
 
