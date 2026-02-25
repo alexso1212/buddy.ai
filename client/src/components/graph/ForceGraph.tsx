@@ -520,6 +520,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
   const justClickedNodeRef = useRef(false);
   const downstreamCountsRef = useRef<Map<number, number>>(new Map());
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const activeTouchCountRef = useRef(0);
 
   useEffect(() => { collabHealthRef.current = collabHealth; }, [collabHealth]);
   useEffect(() => { onNodeClickRef.current = onNodeClick; }, [onNodeClick]);
@@ -658,6 +659,14 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
 
     simulationRef.current = simulation;
 
+    const svgNode = svg.node()!;
+    const touchHandler = (e: TouchEvent) => { activeTouchCountRef.current = e.touches.length; };
+    svgNode.addEventListener('touchstart', touchHandler, { passive: true });
+    svgNode.addEventListener('touchend', touchHandler, { passive: true });
+    svgNode.addEventListener('touchcancel', touchHandler, { passive: true });
+
+    const NODE_COLLISION_GAP = 8;
+
     const nodeElements = nodeGroup
       .selectAll<SVGGElement, SimNode>("g")
       .data(simNodes)
@@ -668,6 +677,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         d3.drag<SVGGElement, SimNode>()
           .on("start", (event, d) => {
             if (event.sourceEvent) event.sourceEvent.preventDefault();
+            if (activeTouchCountRef.current >= 2) return;
             hasDraggedRef.current = false;
             longPressFiredRef.current = false;
             d.fx = d.x;
@@ -686,6 +696,16 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
             }, 400);
           })
           .on("drag", (event, d) => {
+            if (activeTouchCountRef.current >= 2) {
+              d.fx = null;
+              d.fy = null;
+              draggedNodeIdRef.current = null;
+              if (longPressTimerRef.current) {
+                clearTimeout(longPressTimerRef.current);
+                longPressTimerRef.current = null;
+              }
+              return;
+            }
             if (!hasDraggedRef.current) {
               hasDraggedRef.current = true;
               if (longPressTimerRef.current) {
@@ -696,6 +716,29 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
             }
             d.fx = event.x;
             d.fy = event.y;
+
+            const dragR = getRadius(d);
+            for (const other of simNodes) {
+              if (other.id === d.id) continue;
+              const odx = (other.x || 0) - event.x;
+              const ody = (other.y || 0) - event.y;
+              const oDist = Math.sqrt(odx * odx + ody * ody) || 0.1;
+              const otherR = getRadius(other);
+              const minDist = dragR + otherR + NODE_COLLISION_GAP;
+              if (oDist < minDist) {
+                const push = minDist - oDist;
+                const nx = odx / oDist;
+                const ny = ody / oDist;
+                other.x = (other.x || 0) + nx * push;
+                other.y = (other.y || 0) + ny * push;
+                if (other.fx == null) {
+                  other.fx = other.x;
+                  other.fy = other.y;
+                  setTimeout(() => { other.fx = null; other.fy = null; }, 200);
+                }
+              }
+            }
+            nodeElements.attr("transform", (nd) => `translate(${nd.x},${nd.y})`);
           })
           .on("end", (event, d) => {
             if (longPressTimerRef.current) {
@@ -870,6 +913,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
                   event.sourceEvent.stopPropagation();
                   event.sourceEvent.preventDefault();
                 }
+                if (activeTouchCountRef.current >= 2) return;
                 d3.select(this).attr("cursor", "grabbing");
 
                 const deptNodes = simNodes.filter(n => (n.deptId ?? -1) === deptId);
@@ -891,6 +935,12 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
               .on("drag", function (event) {
                 const data = (this as any).__dragData;
                 if (!data) return;
+                if (activeTouchCountRef.current >= 2) {
+                  for (const n of data.deptNodes) { n.fx = null; n.fy = null; }
+                  (this as any).__dragData = null;
+                  d3.select(this).attr("cursor", "grab");
+                  return;
+                }
 
                 data.lastCx += event.dx;
                 data.lastCy += event.dy;
@@ -905,31 +955,46 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
 
                 deptCentroidsRef.current.set(deptId, { x: data.lastCx, y: data.lastCy });
 
-                const myRadius = galaxyDataRef.current.find(g => g.deptId === deptId)?.radius || 50;
-                for (const otherGal of galaxyDataRef.current) {
-                  if (otherGal.deptId === deptId) continue;
-                  const otherCentroid = deptCentroidsRef.current.get(otherGal.deptId);
-                  if (!otherCentroid) continue;
-                  const dx = otherCentroid.x - data.lastCx;
-                  const dy = otherCentroid.y - data.lastCy;
-                  const dist = Math.sqrt(dx * dx + dy * dy);
-                  const minDist = myRadius + (otherGal.radius || 50) + 30;
-                  if (dist < minDist && dist > 0.1) {
-                    const pushDist = minDist - dist;
-                    const nx = dx / dist;
-                    const ny = dy / dist;
-                    const otherNodes = simNodes.filter(n => (n.deptId ?? -1) === otherGal.deptId);
-                    for (const n of otherNodes) {
-                      n.x = (n.x || 0) + nx * pushDist;
-                      n.y = (n.y || 0) + ny * pushDist;
-                      n.fx = n.x;
-                      n.fy = n.y;
+                if (!(this as any).__pushedDepts) (this as any).__pushedDepts = new Set<number>();
+                const pushedDepts: Set<number> = (this as any).__pushedDepts;
+
+                const resolved = new Set<number>([deptId]);
+                const queue = [deptId];
+                while (queue.length > 0) {
+                  const srcId = queue.shift()!;
+                  const srcCentroid = deptCentroidsRef.current.get(srcId);
+                  if (!srcCentroid) continue;
+                  const srcR = galaxyDataRef.current.find(g => g.deptId === srcId)?.radius || 50;
+
+                  for (const otherGal of galaxyDataRef.current) {
+                    if (otherGal.deptId === srcId) continue;
+                    const otherCentroid = deptCentroidsRef.current.get(otherGal.deptId);
+                    if (!otherCentroid) continue;
+                    const dx = otherCentroid.x - srcCentroid.x;
+                    const dy = otherCentroid.y - srcCentroid.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;
+                    const minDist = srcR + (otherGal.radius || 50) + 30;
+                    if (dist < minDist) {
+                      const pushDist = minDist - dist;
+                      const nx = dx / dist;
+                      const ny = dy / dist;
+                      const otherNodes = simNodes.filter(n => (n.deptId ?? -1) === otherGal.deptId);
+                      for (const n of otherNodes) {
+                        n.x = (n.x || 0) + nx * pushDist;
+                        n.y = (n.y || 0) + ny * pushDist;
+                        n.fx = n.x;
+                        n.fy = n.y;
+                      }
+                      deptCentroidsRef.current.set(otherGal.deptId, {
+                        x: otherCentroid.x + nx * pushDist,
+                        y: otherCentroid.y + ny * pushDist,
+                      });
+                      pushedDepts.add(otherGal.deptId);
+                      if (!resolved.has(otherGal.deptId)) {
+                        resolved.add(otherGal.deptId);
+                        queue.push(otherGal.deptId);
+                      }
                     }
-                    const newOx = otherCentroid.x + nx * pushDist;
-                    const newOy = otherCentroid.y + ny * pushDist;
-                    deptCentroidsRef.current.set(otherGal.deptId, { x: newOx, y: newOy });
-                    if (!(this as any).__pushedDepts) (this as any).__pushedDepts = new Set<number>();
-                    (this as any).__pushedDepts.add(otherGal.deptId);
                   }
                 }
 
@@ -1191,6 +1256,9 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       if (resizeTimer) clearTimeout(resizeTimer);
       simulation.stop();
       resizeObserver.disconnect();
+      svgNode.removeEventListener('touchstart', touchHandler);
+      svgNode.removeEventListener('touchend', touchHandler);
+      svgNode.removeEventListener('touchcancel', touchHandler);
     };
   }, [nodes, links, projects, departments, getRadius]);
 
