@@ -17,6 +17,14 @@ html, body {
   overflow: hidden;
 }
 
+[data-sidebar="content"] {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+[data-sidebar="content"]::-webkit-scrollbar {
+  display: none;
+}
+
 @keyframes pickerIn {
   from { opacity: 0; transform: translateY(-90%) scale(0.9); }
   to { opacity: 1; transform: translateY(-100%) scale(1); }
