@@ -887,10 +887,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         } else if (d.isOverdue) {
           glowClass = 'urgent-glow';
           glowColor = '#ef4444';
-        } else if (daysLeft !== null && daysLeft <= 3 && daysLeft > 0) {
-          glowClass = 'urgent-glow';
-          glowColor = '#ef4444';
-        } else if (daysLeft !== null && daysLeft <= 7 && daysLeft > 3) {
+        } else if (daysLeft !== null && daysLeft <= 2 && daysLeft > 0) {
           glowClass = 'soon-glow';
           glowColor = '#f59e0b';
         }

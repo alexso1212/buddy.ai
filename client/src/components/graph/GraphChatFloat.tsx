@@ -3,7 +3,7 @@ import { X, Send, Sparkles, Camera } from "lucide-react";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import type { ForceGraphHandle } from "@/components/graph/ForceGraph";
 
@@ -118,7 +118,26 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const conversationHistory = useRef<{ role: string; content: string }[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const conversationIdRef = useRef<number | null>(null);
   const { currentUserId } = useAuth();
+
+  const saveMessageToDB = useCallback(async (convId: number, msg: { role: string; content: string; type?: string; action?: any; actions?: any; confirmed?: boolean | null; actionConfirmed?: (boolean | null)[] }) => {
+    try {
+      const metadata: Record<string, any> = {};
+      if (msg.action) metadata.action = msg.action;
+      if (msg.actions) metadata.actions = msg.actions;
+      if (msg.confirmed !== undefined) metadata.confirmed = msg.confirmed;
+      if (msg.actionConfirmed) metadata.actionConfirmed = msg.actionConfirmed;
+      await apiRequest("POST", `/api/conversations/${convId}/messages`, {
+        role: msg.role,
+        content: msg.content,
+        type: msg.type || 'text',
+        metadata: Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null,
+      });
+    } catch (err) {
+      console.error('Failed to save graph chat message:', err);
+    }
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -207,6 +226,27 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
 
     conversationHistory.current.push({ role: "user", content: finalText });
 
+    if (!conversationIdRef.current) {
+      try {
+        const convTitle = "📊 " + (finalText.slice(0, 25) + (finalText.length > 25 ? '...' : ''));
+        const convRes = await apiRequest("POST", "/api/conversations", {
+          title: convTitle,
+          userId: currentUserId || 1,
+        });
+        const convData = await convRes.json();
+        if (convData.data?.id) {
+          conversationIdRef.current = convData.data.id;
+          queryClient.invalidateQueries({ queryKey: ['/api/conversations'] });
+        }
+      } catch (err) {
+        console.error('Failed to create graph conversation:', err);
+      }
+    }
+
+    if (conversationIdRef.current) {
+      saveMessageToDB(conversationIdRef.current, { role: "user", content: finalText, type: "text" });
+    }
+
     const assistantMsgId = nextId();
     const streamingMsg: Message = {
       id: assistantMsgId,
@@ -231,6 +271,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
         message: finalText,
         conversationHistory: conversationHistory.current.filter(m => m.content && m.content.trim() !== ''),
         currentUserId: currentUserId || 1,
+        conversationId: conversationIdRef.current || undefined,
       };
 
       if (screenshotBase64) {
@@ -318,6 +359,17 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
                       : m
                   )
                 );
+                if (conversationIdRef.current) {
+                  saveMessageToDB(conversationIdRef.current, {
+                    role: "assistant",
+                    content: finalText,
+                    type: msgType,
+                    action: pendingAction.action,
+                    actions: pendingAction.actions,
+                    confirmed: pendingAction.action ? null : undefined,
+                    actionConfirmed: pendingAction.actions ? pendingAction.actions.map(() => null) : undefined,
+                  });
+                }
               } else {
                 setMessages((prev) =>
                   prev.map((m) =>
@@ -326,6 +378,9 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
                       : m
                   )
                 );
+                if (conversationIdRef.current && finalText && finalText.trim()) {
+                  saveMessageToDB(conversationIdRef.current, { role: "assistant", content: finalText, type: "text" });
+                }
               }
             } else if (event.type === "error") {
               throw new Error(event.content || "Stream error");
@@ -354,6 +409,9 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
               : m
           )
         );
+        if (conversationIdRef.current && fullText.trim()) {
+          saveMessageToDB(conversationIdRef.current, { role: "assistant", content: fullText, type: "text" });
+        }
       }
     } catch (err: any) {
       if (err.name === "AbortError") {
@@ -364,6 +422,9 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
               role: "assistant",
               content: sm.content,
             });
+            if (conversationIdRef.current) {
+              saveMessageToDB(conversationIdRef.current, { role: "assistant", content: sm.content, type: "text" });
+            }
           }
           return prev.map((m) =>
             m.id === assistantMsgId ? { ...m, isStreaming: false } : m
@@ -386,7 +447,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
       setLoading(false);
       abortControllerRef.current = null;
     }
-  }, [inputValue, loading, currentUserId]);
+  }, [inputValue, loading, currentUserId, saveMessageToDB]);
 
   const handleConfirm = useCallback(
     async (messageId: string, actionIndex?: number) => {
@@ -449,14 +510,15 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
           })
         );
 
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: nextId(),
-            role: "system",
-            content: systemContent,
-          },
-        ]);
+        const sysMsg = {
+          id: nextId(),
+          role: "system" as const,
+          content: systemContent,
+        };
+        setMessages((prev) => [...prev, sysMsg]);
+        if (conversationIdRef.current) {
+          saveMessageToDB(conversationIdRef.current, { role: "system", content: systemContent, type: "text" });
+        }
       } catch (err: any) {
         setMessages((prev) => [
           ...prev,
@@ -468,7 +530,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
         ]);
       }
     },
-    [messages, currentUserId]
+    [messages, currentUserId, saveMessageToDB]
   );
 
   const handleConfirmAll = useCallback(
