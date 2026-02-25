@@ -105,7 +105,7 @@ export default function GraphNodeSheet({ node, onClose }: GraphNodeSheetProps) {
   const handleNavigate = useCallback(() => {
     if (node) {
       onClose();
-      setTimeout(() => navigate(`/tasks/${node.id}`), 200);
+      setTimeout(() => navigate(`/tasks/${node.id}?from=graph`), 200);
     }
   }, [node, navigate, onClose]);
 

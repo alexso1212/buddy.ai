@@ -395,7 +395,7 @@ export default function ProjectDetail() {
 
   if (projectLoading || usersLoading) {
     return (
-      <div className="space-y-6 p-6">
+      <div className="space-y-6 pt-16 md:pt-6 px-6 pb-6">
         <div className="flex items-center gap-4">
           <Skeleton className="h-10 w-10" />
           <Skeleton className="h-8 w-48" />
@@ -420,7 +420,7 @@ export default function ProjectDetail() {
   const owner = users.find((u) => u.id === project.ownerId);
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 pt-16 md:pt-6 px-6 pb-6">
       {/* Back button and header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">

@@ -549,7 +549,7 @@ export default function TaskDetail() {
 
   if (taskLoading) {
     return (
-      <div className="p-6 space-y-4 max-w-4xl mx-auto">
+      <div className="pt-16 md:pt-6 px-6 pb-6 space-y-4 max-w-4xl mx-auto">
         <Skeleton className="h-8 w-32" />
         <Skeleton className="h-40 w-full" />
         <Skeleton className="h-32 w-full" />
@@ -558,12 +558,16 @@ export default function TaskDetail() {
     );
   }
 
+  const fromGraph = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('from') === 'graph';
+  const handleBack = () => setLocation(fromGraph ? '/graph' : '/tasks');
+  const backLabel = fromGraph ? '返回图谱' : '返回任务列表';
+
   if (!task) {
     return (
-      <div className="p-6 max-w-4xl mx-auto">
-        <Button variant="ghost" onClick={() => setLocation("/tasks")} data-testid="btn-back-tasks">
+      <div className="pt-16 md:pt-6 px-6 pb-6 max-w-4xl mx-auto">
+        <Button variant="ghost" onClick={handleBack} data-testid="btn-back-tasks">
           <ArrowLeft className="mr-2 h-4 w-4" />
-          返回任务列表
+          {backLabel}
         </Button>
         <p className="mt-4 text-muted-foreground">任务不存在或加载失败。</p>
       </div>
@@ -571,10 +575,10 @@ export default function TaskDetail() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl mx-auto">
-      <Button variant="ghost" onClick={() => setLocation("/tasks")} data-testid="btn-back-tasks">
+    <div className="pt-16 md:pt-6 px-6 pb-6 space-y-6 max-w-4xl mx-auto">
+      <Button variant="ghost" onClick={handleBack} data-testid="btn-back-tasks">
         <ArrowLeft className="mr-2 h-4 w-4" />
-        返回任务列表
+        {backLabel}
       </Button>
 
       <div className="flex gap-2 overflow-x-auto md:hidden pb-1" data-testid="mobile-tab-bar">
