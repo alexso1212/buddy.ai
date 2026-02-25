@@ -661,7 +661,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     const MIN_HIT_RADIUS = 12;
 
     const simulation = d3.forceSimulation<SimNode>(simNodes)
-      .velocityDecay(0.55)
+      .velocityDecay(0.12)
       .force(
         "link",
         d3.forceLink<SimNode, SimLink>(simLinks)
@@ -710,7 +710,18 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
             const tip = tooltipRef.current;
             if (tip) tip.style.opacity = '0';
 
-            if (!event.active) simulation.alphaTarget(0.1).restart();
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+
+            nodeElements.filter((nd) => nd.id === d.id)
+              .style("filter", "drop-shadow(0 0 6px rgba(255,255,255,0.4))")
+              .attr("transform", `translate(${d.x},${d.y}) scale(1.15)`);
+
+            const deptId = d.deptId ?? -1;
+            nodeElements.each(function (nd) {
+              if (nd.id !== d.id && (nd.deptId ?? -1) === deptId) {
+                d3.select(this).style("opacity", "0.6");
+              }
+            });
 
             longPressTimerRef.current = setTimeout(() => {
               if (!hasDraggedRef.current) {
@@ -729,6 +740,13 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
                 clearTimeout(longPressTimerRef.current);
                 longPressTimerRef.current = null;
               }
+              nodeElements.filter((nd) => nd.id === d.id)
+                .style("filter", null)
+                .attr("transform", `translate(${d.x},${d.y})`);
+              nodeElements.each(function (nd) {
+                const isBr = !!(nd as any).isBridge;
+                d3.select(this).style("opacity", isBr ? "0.4" : null);
+              });
               return;
             }
             if (!hasDraggedRef.current) {
@@ -740,7 +758,28 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
             }
             d.fx = event.x;
             d.fy = event.y;
-            nodeElements.attr("transform", (nd) => `translate(${nd.x},${nd.y})`);
+
+            const SPRING_K = 0.05;
+            const SPRING_REST = 80;
+            const deptId = d.deptId ?? -1;
+            for (const n of simNodes) {
+              if (n.id === d.id || (n.deptId ?? -1) !== deptId || n.fx != null) continue;
+              const dx = (d.x || 0) - (n.x || 0);
+              const dy = (d.y || 0) - (n.y || 0);
+              const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;
+              const displacement = dist - SPRING_REST;
+              if (displacement > 0) {
+                const fx = (dx / dist) * displacement * SPRING_K;
+                const fy = (dy / dist) * displacement * SPRING_K;
+                n.vx = (n.vx || 0) + fx;
+                n.vy = (n.vy || 0) + fy;
+              }
+            }
+
+            nodeElements.attr("transform", (nd) => {
+              if (nd.id === d.id) return `translate(${nd.x},${nd.y}) scale(1.15)`;
+              return `translate(${nd.x},${nd.y})`;
+            });
           })
           .on("end", (event, d) => {
             if (longPressTimerRef.current) {
@@ -749,11 +788,19 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
             }
             if (!event.active) simulation.alphaTarget(0);
 
+            nodeElements.filter((nd) => nd.id === d.id)
+              .style("filter", null)
+              .attr("transform", `translate(${d.x},${d.y})`);
+
+            nodeElements.each(function (nd) {
+              const isBr = !!(nd as any).isBridge;
+              d3.select(this).style("opacity", isBr ? "0.4" : null);
+            });
+
             if (hasDraggedRef.current) {
-              setTimeout(() => {
-                d.fx = null;
-                d.fy = null;
-              }, 800);
+              d.fx = null;
+              d.fy = null;
+              simulation.alpha(0.15).restart();
             } else if (!longPressFiredRef.current) {
               justClickedNodeRef.current = true;
               selectedNodeIdRef.current = d.id;
@@ -779,6 +826,9 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
                   el.style("filter", "none");
                 }
               });
+            } else {
+              d.fx = null;
+              d.fy = null;
             }
 
             draggedNodeIdRef.current = null;
@@ -1176,7 +1226,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     });
 
     const zoom = d3.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.1, 6])
+      .scaleExtent([0.3, 3])
       .filter((event) => {
         if (event.type === 'dblclick') return false;
         let el = event.target as Element | null;
@@ -1191,13 +1241,64 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       .on("zoom", (event) => {
         g.attr("transform", event.transform);
         zoomTransformRef.current = event.transform;
+      })
+      .on("end", () => {
+        if (simNodes.length === 0) return;
+        const t = zoomTransformRef.current;
+        let anyVisible = false;
+        for (const n of simNodes) {
+          const sx = t.x + (n.x || 0) * t.k;
+          const sy = t.y + (n.y || 0) * t.k;
+          if (sx > -100 && sx < width + 100 && sy > -100 && sy < height + 100) {
+            anyVisible = true;
+            break;
+          }
+        }
+        if (!anyVisible) {
+          let cx = 0, cy = 0;
+          for (const n of simNodes) { cx += n.x || 0; cy += n.y || 0; }
+          cx /= simNodes.length; cy /= simNodes.length;
+          const tx = width / 2 - cx * t.k;
+          const ty = height / 2 - cy * t.k;
+          const bounceTransform = d3.zoomIdentity.translate(tx, ty).scale(t.k);
+          svg.transition().duration(300).ease(d3.easeQuadOut).call(zoom.transform, bounceTransform);
+        }
       });
     zoomBehaviorRef.current = zoom;
 
     svg.call(zoom)
       .on("dblclick.zoom", null);
 
-    const VEL_CAP = 5;
+    svg.on("dblclick", (event) => {
+      let el = event.target as Element | null;
+      while (el && el !== svgRef.current) {
+        if (el.tagName === 'g' && el.parentElement?.classList?.contains('nodes')) return;
+        el = el.parentElement;
+      }
+      if (simNodes.length === 0) return;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const n of simNodes) {
+        const nx = n.x || 0, ny = n.y || 0;
+        if (nx < minX) minX = nx;
+        if (nx > maxX) maxX = nx;
+        if (ny < minY) minY = ny;
+        if (ny > maxY) maxY = ny;
+      }
+      const bw = maxX - minX || 100;
+      const bh = maxY - minY || 100;
+      const pad = 0.1;
+      const scaleX = width * (1 - 2 * pad) / bw;
+      const scaleY = height * (1 - 2 * pad) / bh;
+      const fitScale = Math.min(scaleX, scaleY, 3);
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      const tx = width / 2 - cx * fitScale;
+      const ty = height / 2 - cy * fitScale;
+      const fitTransform = d3.zoomIdentity.translate(tx, ty).scale(fitScale);
+      svg.transition().duration(450).ease(d3.easeQuadOut).call(zoom.transform, fitTransform);
+    });
+
+    const VEL_CAP = 8;
     let tickCount = 0;
     let destroyed = false;
     simulation.on("tick", () => {
@@ -1222,6 +1323,15 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       }
     });
 
+    const idleDriftPhases: { phaseX: number; phaseY: number; freqX: number; freqY: number; ampX: number; ampY: number }[] = simNodes.map(() => ({
+      phaseX: Math.random() * Math.PI * 2,
+      phaseY: Math.random() * Math.PI * 2,
+      freqX: 0.001 + Math.random() * 0.002,
+      freqY: 0.001 + Math.random() * 0.002,
+      ampX: 2 + Math.random() * 2,
+      ampY: 2 + Math.random() * 2,
+    }));
+
     simulation.on("end", () => {
       if (destroyed) return;
       if (orbitIntervalRef.current) {
@@ -1232,6 +1342,22 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         if (destroyed) { clearInterval(interval); return; }
         tickCount++;
         orbitForce(simNodes, topology, orbitStatesRef.current, draggedNodeIdRef.current, 0.01, nodeMap);
+
+        const isDragging = draggedNodeIdRef.current !== null;
+        if (!isDragging) {
+          for (let i = 0; i < simNodes.length; i++) {
+            const n = simNodes[i];
+            if (n.fx != null) continue;
+            const dp = idleDriftPhases[i];
+            dp.phaseX += dp.freqX;
+            dp.phaseY += dp.freqY;
+            const driftX = Math.sin(dp.phaseX) * dp.ampX * 0.02;
+            const driftY = Math.cos(dp.phaseY) * dp.ampY * 0.02;
+            n.x = (n.x || 0) + driftX;
+            n.y = (n.y || 0) + driftY;
+          }
+        }
+
         nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
         if (tickCount % 5 === 0) {
           updateGalaxyPositions();
