@@ -964,41 +964,74 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
                 if (!(this as any).__pushedDepts) (this as any).__pushedDepts = new Set<number>();
                 const pushedDepts: Set<number> = (this as any).__pushedDepts;
 
-                const resolved = new Set<number>([deptId]);
-                const queue = [deptId];
-                while (queue.length > 0) {
-                  const srcId = queue.shift()!;
-                  const srcCentroid = deptCentroidsRef.current.get(srcId);
-                  if (!srcCentroid) continue;
-                  const srcR = galaxyDataRef.current.find(g => g.deptId === srcId)?.radius || 50;
+                const draggedR = galaxyDataRef.current.find(g => g.deptId === deptId)?.radius || 50;
+                const draggedC = { x: data.lastCx, y: data.lastCy };
 
-                  for (const otherGal of galaxyDataRef.current) {
-                    if (otherGal.deptId === srcId) continue;
-                    const otherCentroid = deptCentroidsRef.current.get(otherGal.deptId);
-                    if (!otherCentroid) continue;
-                    const dx = otherCentroid.x - srcCentroid.x;
-                    const dy = otherCentroid.y - srcCentroid.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;
-                    const minDist = srcR + (otherGal.radius || 50) + 30;
-                    if (dist < minDist) {
-                      const pushDist = minDist - dist;
-                      const nx = dx / dist;
-                      const ny = dy / dist;
-                      const otherNodes = simNodes.filter(n => (n.deptId ?? -1) === otherGal.deptId);
-                      for (const n of otherNodes) {
-                        n.x = (n.x || 0) + nx * pushDist;
-                        n.y = (n.y || 0) + ny * pushDist;
-                        n.fx = n.x;
-                        n.fy = n.y;
-                      }
-                      deptCentroidsRef.current.set(otherGal.deptId, {
-                        x: otherCentroid.x + nx * pushDist,
-                        y: otherCentroid.y + ny * pushDist,
-                      });
-                      pushedDepts.add(otherGal.deptId);
-                      if (!resolved.has(otherGal.deptId)) {
-                        resolved.add(otherGal.deptId);
-                        queue.push(otherGal.deptId);
+                for (const otherGal of galaxyDataRef.current) {
+                  if (otherGal.deptId === deptId) continue;
+                  const otherCentroid = deptCentroidsRef.current.get(otherGal.deptId);
+                  if (!otherCentroid) continue;
+                  const dx = otherCentroid.x - draggedC.x;
+                  const dy = otherCentroid.y - draggedC.y;
+                  const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;
+                  const otherR = otherGal.radius || 50;
+                  const idealDist = draggedR + otherR + 60;
+                  const nx = dx / dist;
+                  const ny = dy / dist;
+
+                  let moveDist = 0;
+                  if (dist < idealDist) {
+                    moveDist = idealDist - dist;
+                  } else if (dist > idealDist * 1.3) {
+                    moveDist = -(dist - idealDist) * 0.4;
+                  }
+
+                  if (Math.abs(moveDist) > 0.5) {
+                    const otherNodes = simNodes.filter(n => (n.deptId ?? -1) === otherGal.deptId);
+                    for (const n of otherNodes) {
+                      n.x = (n.x || 0) + nx * moveDist;
+                      n.y = (n.y || 0) + ny * moveDist;
+                      n.fx = n.x;
+                      n.fy = n.y;
+                    }
+                    deptCentroidsRef.current.set(otherGal.deptId, {
+                      x: otherCentroid.x + nx * moveDist,
+                      y: otherCentroid.y + ny * moveDist,
+                    });
+                    pushedDepts.add(otherGal.deptId);
+                  }
+                }
+
+                for (let pass = 0; pass < 2; pass++) {
+                  const allGals = galaxyDataRef.current;
+                  for (let i = 0; i < allGals.length; i++) {
+                    for (let j = i + 1; j < allGals.length; j++) {
+                      if (allGals[i].deptId === deptId && allGals[j].deptId === deptId) continue;
+                      const cA = deptCentroidsRef.current.get(allGals[i].deptId);
+                      const cB = deptCentroidsRef.current.get(allGals[j].deptId);
+                      if (!cA || !cB) continue;
+                      const ddx = cB.x - cA.x;
+                      const ddy = cB.y - cA.y;
+                      const dd = Math.sqrt(ddx * ddx + ddy * ddy) || 0.1;
+                      const minD = (allGals[i].radius || 50) + (allGals[j].radius || 50) + 30;
+                      if (dd < minD) {
+                        const push = (minD - dd) / 2;
+                        const nnx = ddx / dd;
+                        const nny = ddy / dd;
+                        const moveA = allGals[i].deptId === deptId ? 0 : -push;
+                        const moveB = allGals[j].deptId === deptId ? 0 : push;
+                        if (moveA !== 0) {
+                          const nodesA = simNodes.filter(n => (n.deptId ?? -1) === allGals[i].deptId);
+                          for (const n of nodesA) { n.x = (n.x || 0) + nnx * moveA; n.y = (n.y || 0) + nny * moveA; n.fx = n.x; n.fy = n.y; }
+                          deptCentroidsRef.current.set(allGals[i].deptId, { x: cA.x + nnx * moveA, y: cA.y + nny * moveA });
+                          pushedDepts.add(allGals[i].deptId);
+                        }
+                        if (moveB !== 0) {
+                          const nodesB = simNodes.filter(n => (n.deptId ?? -1) === allGals[j].deptId);
+                          for (const n of nodesB) { n.x = (n.x || 0) + nnx * moveB; n.y = (n.y || 0) + nny * moveB; n.fx = n.x; n.fy = n.y; }
+                          deptCentroidsRef.current.set(allGals[j].deptId, { x: cB.x + nnx * moveB, y: cB.y + nny * moveB });
+                          pushedDepts.add(allGals[j].deptId);
+                        }
                       }
                     }
                   }
