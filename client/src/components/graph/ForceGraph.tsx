@@ -126,7 +126,8 @@ function getNodeColor(node: GraphNode, colorBy: ColorByOption): string {
 
 const DEPT_ORBIT_RADIUS = 180;
 const DEPT_ORBIT_SPRING = 0.6;
-const DEPT_INTRA_ATTRACT = 0.35;
+const DEPT_INTRA_ATTRACT = 0.6;
+const DEPT_MAX_SPREAD = 120;
 const DEPT_SEPARATION_SPRING = 0.8;
 
 function deptClusterForce(
@@ -230,8 +231,17 @@ function deptClusterForce(
     const key = node.deptId ?? -1;
     const c = centroids[key];
     if (c) {
-      node.vx = (node.vx || 0) + (c.x - (node.x || 0)) * alpha * DEPT_INTRA_ATTRACT;
-      node.vy = (node.vy || 0) + (c.y - (node.y || 0)) * alpha * DEPT_INTRA_ATTRACT;
+      const toCx = c.x - (node.x || 0);
+      const toCy = c.y - (node.y || 0);
+      const distToCenter = Math.sqrt(toCx * toCx + toCy * toCy) || 0.1;
+
+      let strength = DEPT_INTRA_ATTRACT;
+      if (distToCenter > DEPT_MAX_SPREAD) {
+        strength += (distToCenter - DEPT_MAX_SPREAD) / DEPT_MAX_SPREAD * 2.0;
+      }
+
+      node.vx = (node.vx || 0) + toCx * alpha * strength;
+      node.vy = (node.vy || 0) + toCy * alpha * strength;
     }
   }
 }
@@ -657,7 +667,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       .force("center", d3.forceCenter(width / 2, height / 2).strength(0.05))
       .force(
         "collision",
-        d3.forceCollide<SimNode>().radius((d) => getRadius(d) * 2 + 2)
+        d3.forceCollide<SimNode>().radius((d) => getRadius(d) * 1.5 + 2)
       )
       .force("cluster", (alpha: number) => deptClusterForce(simNodes, alpha, deptCentroidsRef.current, galaxyDataRef.current, width / 2, height / 2));
 
