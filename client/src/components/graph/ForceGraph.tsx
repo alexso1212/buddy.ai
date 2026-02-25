@@ -536,6 +536,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
   const justClickedNodeRef = useRef(false);
   const downstreamCountsRef = useRef<Map<number, number>>(new Map());
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const postReleaseFramesRef = useRef(0);
 
   useEffect(() => { collabHealthRef.current = collabHealth; }, [collabHealth]);
   useEffect(() => { onNodeClickRef.current = onNodeClick; }, [onNodeClick]);
@@ -661,7 +662,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     const MIN_HIT_RADIUS = 12;
 
     const simulation = d3.forceSimulation<SimNode>(simNodes)
-      .velocityDecay(0.12)
+      .velocityDecay(0.18)
       .force(
         "link",
         d3.forceLink<SimNode, SimLink>(simLinks)
@@ -669,7 +670,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
           .distance(35)
           .strength(0.8)
       )
-      .force("charge", d3.forceManyBody().strength(-50).distanceMax(400))
+      .force("charge", d3.forceManyBody().strength(-50).distanceMin(30).distanceMax(400))
       .force("center", d3.forceCenter(width / 2, height / 2).strength(0.05))
       .force(
         "collision",
@@ -759,7 +760,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
             d.fx = event.x;
             d.fy = event.y;
 
-            const SPRING_K = 0.05;
+            const SPRING_K = 0.03;
             const SPRING_REST = 80;
             const deptId = d.deptId ?? -1;
             for (const n of simNodes) {
@@ -769,10 +770,13 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
               const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;
               const displacement = dist - SPRING_REST;
               if (displacement > 0) {
-                const fx = (dx / dist) * displacement * SPRING_K;
-                const fy = (dy / dist) * displacement * SPRING_K;
-                n.vx = (n.vx || 0) + fx;
-                n.vy = (n.vy || 0) + fy;
+                const sfx = (dx / dist) * displacement * SPRING_K;
+                const sfy = (dy / dist) * displacement * SPRING_K;
+                n.vx = (n.vx || 0) + sfx;
+                n.vy = (n.vy || 0) + sfy;
+                const FOLLOWER_MAX = 3.6;
+                if (Math.abs(n.vx!) > FOLLOWER_MAX) n.vx = Math.sign(n.vx!) * FOLLOWER_MAX;
+                if (Math.abs(n.vy!) > FOLLOWER_MAX) n.vy = Math.sign(n.vy!) * FOLLOWER_MAX;
               }
             }
 
@@ -798,6 +802,13 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
             });
 
             if (hasDraggedRef.current) {
+              const releaseSpeed = Math.sqrt((d.vx || 0) ** 2 + (d.vy || 0) ** 2);
+              if (releaseSpeed > 6) {
+                const scale = 6 / releaseSpeed;
+                d.vx = (d.vx || 0) * scale;
+                d.vy = (d.vy || 0) * scale;
+              }
+              postReleaseFramesRef.current = 30;
               d.fx = null;
               d.fy = null;
               simulation.alpha(0.15).restart();
@@ -1298,20 +1309,50 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       svg.transition().duration(450).ease(d3.easeQuadOut).call(zoom.transform, fitTransform);
     });
 
-    const VEL_CAP = 8;
+    const MAX_SPEED = 6;
+    const BOUNDS = { minX: -2000, maxX: 2000, minY: -2000, maxY: 2000 };
     let tickCount = 0;
     let destroyed = false;
     simulation.on("tick", () => {
       if (destroyed) return;
       tickCount++;
 
+      const postRelease = postReleaseFramesRef.current > 0;
+      if (postRelease) postReleaseFramesRef.current--;
+      const effectiveDamping = postRelease ? 0.7 : 1.0;
+
       for (const n of simNodes) {
-        if (n.vx != null && Math.abs(n.vx) > VEL_CAP) n.vx = Math.sign(n.vx) * VEL_CAP;
-        if (n.vy != null && Math.abs(n.vy) > VEL_CAP) n.vy = Math.sign(n.vy) * VEL_CAP;
-        if (isNaN(n.x as number)) n.x = width / 2;
-        if (isNaN(n.y as number)) n.y = height / 2;
-        if (isNaN(n.vx as number)) n.vx = 0;
-        if (isNaN(n.vy as number)) n.vy = 0;
+        if (!isFinite(n.x as number) || !isFinite(n.y as number) ||
+            !isFinite(n.vx as number) || !isFinite(n.vy as number)) {
+          n.x = width / 2;
+          n.y = height / 2;
+          n.vx = 0;
+          n.vy = 0;
+        }
+
+        if (n.fx != null) continue;
+
+        if (effectiveDamping < 1.0) {
+          n.vx = (n.vx || 0) * effectiveDamping;
+          n.vy = (n.vy || 0) * effectiveDamping;
+        }
+
+        if (Math.abs(n.vx || 0) > MAX_SPEED) n.vx = Math.sign(n.vx!) * MAX_SPEED;
+        if (Math.abs(n.vy || 0) > MAX_SPEED) n.vy = Math.sign(n.vy!) * MAX_SPEED;
+
+        if (Math.abs(n.vx || 0) < 0.1) n.vx = 0;
+        if (Math.abs(n.vy || 0) < 0.1) n.vy = 0;
+
+        const nx = n.x || 0;
+        const ny = n.y || 0;
+        if (nx <= BOUNDS.minX || nx >= BOUNDS.maxX) {
+          n.vx = (n.vx || 0) * -0.3;
+          n.x = Math.max(BOUNDS.minX, Math.min(BOUNDS.maxX, nx));
+        }
+        if (ny <= BOUNDS.minY || ny >= BOUNDS.maxY) {
+          n.vy = (n.vy || 0) * -0.3;
+          n.y = Math.max(BOUNDS.minY, Math.min(BOUNDS.maxY, ny));
+        }
       }
 
       orbitForce(simNodes, topology, orbitStatesRef.current, draggedNodeIdRef.current, simulation.alpha(), nodeMap);
