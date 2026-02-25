@@ -658,6 +658,8 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     const topology = buildOrbitTopology(simLinks);
     orbitTopologyRef.current = topology;
 
+    const MIN_HIT_RADIUS = 12;
+
     const simulation = d3.forceSimulation<SimNode>(simNodes)
       .velocityDecay(0.55)
       .force(
@@ -667,11 +669,11 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
           .distance(35)
           .strength(0.8)
       )
-      .force("charge", d3.forceManyBody().strength(-35).distanceMax(300))
+      .force("charge", d3.forceManyBody().strength(-50).distanceMax(400))
       .force("center", d3.forceCenter(width / 2, height / 2).strength(0.05))
       .force(
         "collision",
-        d3.forceCollide<SimNode>().radius((d) => getRadius(d) * 1.5 + 2).strength(0.9)
+        d3.forceCollide<SimNode>().radius((d) => Math.max(getRadius(d) * 1.5 + 2, 12)).strength(1.0).iterations(3)
       )
       .force("cluster", (alpha: number) => deptClusterForce(simNodes, alpha, deptCentroidsRef.current, galaxyDataRef.current, width / 2, height / 2));
 
@@ -697,6 +699,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         d3.drag<SVGGElement, SimNode>()
           .on("start", (event, d) => {
             if (event.sourceEvent) event.sourceEvent.preventDefault();
+            if (event.sourceEvent) event.sourceEvent.stopPropagation();
             if (isMultiTouch(event)) return;
             hasDraggedRef.current = false;
             longPressFiredRef.current = false;
@@ -707,13 +710,15 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
             const tip = tooltipRef.current;
             if (tip) tip.style.opacity = '0';
 
+            if (!event.active) simulation.alphaTarget(0.1).restart();
+
             longPressTimerRef.current = setTimeout(() => {
               if (!hasDraggedRef.current) {
                 longPressFiredRef.current = true;
                 selectedNodeIdRef.current = d.id;
                 if (onNodeClickRef.current) onNodeClickRef.current(d);
               }
-            }, 400);
+            }, 500);
           })
           .on("drag", (event, d) => {
             if (isMultiTouch(event)) {
@@ -732,32 +737,9 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
                 clearTimeout(longPressTimerRef.current);
                 longPressTimerRef.current = null;
               }
-              if (!event.active) simulation.alphaTarget(0.05).restart();
             }
             d.fx = event.x;
             d.fy = event.y;
-
-            const dragR = getRadius(d);
-            const PUSH_DAMPING = 0.35;
-            const MAX_PUSH = 12;
-            for (const other of simNodes) {
-              if (other.id === d.id) continue;
-              const odx = (other.x || 0) - event.x;
-              const ody = (other.y || 0) - event.y;
-              const oDist = Math.sqrt(odx * odx + ody * ody) || 0.1;
-              const otherR = getRadius(other);
-              const minDist = dragR + otherR + NODE_COLLISION_GAP;
-              if (oDist < minDist) {
-                const overlap = minDist - oDist;
-                const push = Math.min(overlap * PUSH_DAMPING, MAX_PUSH);
-                const nx = odx / oDist;
-                const ny = ody / oDist;
-                other.x = (other.x || 0) + nx * push;
-                other.y = (other.y || 0) + ny * push;
-                other.vx = (other.vx || 0) + nx * push * 0.5;
-                other.vy = (other.vy || 0) + ny * push * 0.5;
-              }
-            }
             nodeElements.attr("transform", (nd) => `translate(${nd.x},${nd.y})`);
           })
           .on("end", (event, d) => {
@@ -771,7 +753,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
               setTimeout(() => {
                 d.fx = null;
                 d.fy = null;
-              }, 1500);
+              }, 800);
             } else if (!longPressFiredRef.current) {
               justClickedNodeRef.current = true;
               selectedNodeIdRef.current = d.id;
@@ -803,8 +785,6 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
             hasDraggedRef.current = false;
           })
       );
-
-    const MIN_HIT_RADIUS = 12;
 
     nodeElements.each(function (d) {
       const el = d3.select(this);
