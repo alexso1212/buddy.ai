@@ -838,16 +838,17 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
 
               nodeElements.each(function (nd) {
                 const el = d3.select(this);
-                const isBr = !!(nd as any).isBridge;
                 if (nd.id === d.id) {
                   el.style("opacity", "1");
                   el.style("filter", "brightness(1.4)");
+                  el.selectAll(".node-glow-ring, .node-glow-halo").style("visibility", "hidden");
                 } else if (allChain.has(nd.id)) {
                   el.style("opacity", "0.9");
-                  el.style("filter", "none");
+                  el.style("filter", null);
                 } else {
-                  el.style("opacity", isBr ? "0.15" : "0.15");
-                  el.style("filter", "none");
+                  el.style("opacity", "0.15");
+                  el.style("filter", null);
+                  el.selectAll(".node-glow-ring, .node-glow-halo").style("visibility", "hidden");
                 }
               });
             } else {
@@ -877,22 +878,46 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         .attr("fill", "transparent")
         .attr("stroke", "none");
 
-      if (!isBridge && d.isOverdue) {
+      let glowClass = '';
+      let glowColor = '';
+      if (!isBridge) {
+        if (d.status === 'blocked') {
+          glowClass = 'blocked-breathing-glow';
+          glowColor = '#ef4444';
+        } else if (d.isOverdue) {
+          glowClass = 'urgent-glow';
+          glowColor = '#ef4444';
+        } else if (daysLeft !== null && daysLeft <= 3 && daysLeft > 0) {
+          glowClass = 'urgent-glow';
+          glowColor = '#ef4444';
+        } else if (daysLeft !== null && daysLeft <= 7 && daysLeft > 3) {
+          glowClass = 'soon-glow';
+          glowColor = '#f59e0b';
+        }
+      }
+
+      if (glowClass) {
         el.append("circle")
-          .attr("class", "overdue-glow")
-          .attr("r", r + 3)
+          .attr("class", `${glowClass} node-glow-ring`)
+          .attr("r", r + 8)
           .attr("fill", "none")
-          .attr("stroke", "#ef4444")
-          .attr("stroke-width", 1)
-          .attr("stroke-opacity", 0.7)
+          .attr("stroke", glowColor)
+          .attr("stroke-width", 2)
+          .attr("pointer-events", "none");
+
+        el.append("circle")
+          .attr("class", `${glowClass} node-glow-halo`)
+          .attr("r", r + 5)
+          .attr("fill", glowColor)
+          .attr("opacity", 0.15)
           .attr("pointer-events", "none");
       }
 
       el.append("circle")
         .attr("r", r)
         .attr("fill", fillColor)
-        .attr("stroke", (!isBridge && d.isOverdue) ? "#ef4444" : "none")
-        .attr("stroke-width", (!isBridge && d.isOverdue) ? 1 : 0)
+        .attr("stroke", glowColor || "none")
+        .attr("stroke-width", glowColor ? 0.8 : 0)
         .attr("filter", "url(#node-shadow)");
 
       el.append("circle")
@@ -908,14 +933,6 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
           .attr("stroke-width", 0.5)
           .attr("stroke-dasharray", "2,2")
           .attr("pointer-events", "none");
-      } else if (d.status === 'blocked') {
-        el.classed("blocked-breathing", true);
-      } else if (d.isOverdue) {
-        el.classed("urgent-pulse", true);
-      } else if (daysLeft !== null && daysLeft <= 3 && daysLeft > 0) {
-        el.classed("urgent-pulse", true);
-      } else if (daysLeft !== null && daysLeft <= 7 && daysLeft > 3) {
-        el.classed("soon-pulse", true);
       }
     });
 
@@ -1147,16 +1164,14 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         const el = d3.select(this);
         if (d.id === hoveredNode.id) {
           el.style("opacity", "1");
-          el.classed("blocked-breathing", false);
-          el.classed("urgent-pulse", false);
-          el.classed("soon-pulse", false);
+          el.selectAll(".node-glow-ring, .node-glow-halo").style("visibility", "hidden");
           el.style("filter", "brightness(1.4)");
         } else if (allChain.has(d.id)) {
           el.style("opacity", "0.9");
-          el.style("filter", "none");
+          el.style("filter", null);
         } else {
           el.style("opacity", "0.15");
-          el.style("filter", "none");
+          el.style("filter", null);
         }
       });
       d3.select(this).attr("transform", function () {
@@ -1209,17 +1224,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         const isBridge = !!(d as any).isBridge;
         el.style("opacity", isBridge ? "0.4" : null);
         el.style("filter", null);
-        if (!isBridge) {
-          const daysLeft = getDaysUntilDue(d.dueDate);
-          if (d.status === 'blocked') {
-            el.classed("blocked-breathing", true);
-          }
-          if (d.isOverdue || (daysLeft !== null && daysLeft <= 3)) {
-            el.classed("urgent-pulse", true);
-          } else if (daysLeft !== null && daysLeft <= 7) {
-            el.classed("soon-pulse", true);
-          }
-        }
+        el.selectAll(".node-glow-ring, .node-glow-halo").style("visibility", null);
       });
       nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
 
@@ -1240,12 +1245,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         const isBridge = !!(d as any).isBridge;
         el.style("opacity", isBridge ? "0.4" : null);
         el.style("filter", null);
-        if (!isBridge) {
-          const daysLeft = getDaysUntilDue(d.dueDate);
-          if (d.status === 'blocked') el.classed("blocked-breathing", true);
-          if (d.isOverdue || (daysLeft !== null && daysLeft <= 3)) el.classed("urgent-pulse", true);
-          else if (daysLeft !== null && daysLeft <= 7) el.classed("soon-pulse", true);
-        }
+        el.selectAll(".node-glow-ring, .node-glow-halo").style("visibility", null);
       });
     });
 

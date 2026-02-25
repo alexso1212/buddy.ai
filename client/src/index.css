@@ -30,66 +30,81 @@ html, body {
   to { opacity: 1; transform: translateY(-100%) scale(1); }
 }
 
-@keyframes blockedBreathing {
-  0%, 100% {
-    filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.3));
-    opacity: 0.7;
-  }
-  50% {
-    filter: drop-shadow(0 0 12px rgba(239, 68, 68, 0.7));
-    opacity: 1;
-  }
-}
-
-.blocked-breathing {
-  animation: blockedBreathing 2s ease-in-out infinite;
-  will-change: filter, opacity;
-}
-
 @keyframes glow-pulse {
   0%, 100% { opacity: 0.3; }
   50% { opacity: 0.85; }
 }
 
-@keyframes urgent-pulse {
+@keyframes urgentGlowRing {
   0%, 100% {
-    filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.6)) drop-shadow(0 0 2px rgba(239, 68, 68, 0.8));
-    opacity: 0.85;
+    stroke-opacity: 0.4;
+    stroke-width: 1.5;
   }
   50% {
-    filter: drop-shadow(0 0 18px rgba(239, 68, 68, 1.0)) drop-shadow(0 0 6px rgba(255, 100, 100, 1.0));
-    opacity: 1;
+    stroke-opacity: 1.0;
+    stroke-width: 2.5;
   }
 }
 
-.urgent-pulse {
-  animation: urgent-pulse 1s ease-in-out infinite;
-  will-change: filter, opacity;
+@keyframes urgentGlowHalo {
+  0%, 100% { opacity: 0.08; }
+  50% { opacity: 0.25; }
 }
 
-@keyframes soon-pulse {
+.urgent-glow.node-glow-ring {
+  animation: urgentGlowRing 1s ease-in-out infinite;
+}
+
+.urgent-glow.node-glow-halo {
+  animation: urgentGlowHalo 1s ease-in-out infinite;
+}
+
+@keyframes soonGlowRing {
   0%, 100% {
-    filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.5)) drop-shadow(0 0 1px rgba(245, 158, 11, 0.7));
-    opacity: 0.88;
+    stroke-opacity: 0.3;
+    stroke-width: 1.2;
   }
   50% {
-    filter: drop-shadow(0 0 14px rgba(245, 158, 11, 0.9)) drop-shadow(0 0 4px rgba(255, 180, 50, 1.0));
-    opacity: 1;
+    stroke-opacity: 0.8;
+    stroke-width: 2;
   }
 }
 
-.soon-pulse {
-  animation: soon-pulse 2.5s ease-in-out infinite;
-  will-change: filter, opacity;
+@keyframes soonGlowHalo {
+  0%, 100% { opacity: 0.06; }
+  50% { opacity: 0.18; }
 }
 
-@keyframes overdue-glow {
-  0%, 100% { stroke-opacity: 0.7; }
-  50% { stroke-opacity: 1.0; }
+.soon-glow.node-glow-ring {
+  animation: soonGlowRing 2.5s ease-in-out infinite;
 }
 
-.overdue-glow {
-  animation: overdue-glow 1.5s ease-in-out infinite;
+.soon-glow.node-glow-halo {
+  animation: soonGlowHalo 2.5s ease-in-out infinite;
+}
+
+@keyframes blockedGlowRing {
+  0%, 100% {
+    stroke-opacity: 0.3;
+    stroke-width: 1.2;
+  }
+  50% {
+    stroke-opacity: 0.9;
+    stroke-width: 2.2;
+  }
+}
+
+@keyframes blockedGlowHalo {
+  0%, 100% { opacity: 0.06; }
+  50% { opacity: 0.20; }
+}
+
+.blocked-breathing-glow.node-glow-ring {
+  animation: blockedGlowRing 2s ease-in-out infinite;
+}
+
+.blocked-breathing-glow.node-glow-halo {
+  animation: blockedGlowHalo 2s ease-in-out infinite;
 }
 
 :root {
