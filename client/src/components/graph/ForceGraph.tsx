@@ -124,13 +124,17 @@ function getNodeColor(node: GraphNode, colorBy: ColorByOption): string {
   }
 }
 
-const DEPT_IDEAL_DIST = 180;
-const DEPT_MIN_DIST = 120;
-const DEPT_MAX_DIST = 260;
+const DEPT_BASE_MIN_DIST = 200;
+const DEPT_MAX_DIST = 400;
 const DEPT_FORCE_DIST_CLAMP = 40;
 const DEPT_FORCE_VEL_CAP = 3;
 
-function deptClusterForce(nodes: SimNode[], alpha: number, deptCentroidsOut?: Map<number, { x: number; y: number }>) {
+function deptClusterForce(
+  nodes: SimNode[],
+  alpha: number,
+  deptCentroidsOut?: Map<number, { x: number; y: number }>,
+  galaxyBoundaries?: GalaxyBoundary[]
+) {
   const centroids: Record<number, { x: number; y: number; count: number }> = {};
   for (const node of nodes) {
     const key = node.deptId ?? -1;
@@ -156,6 +160,11 @@ function deptClusterForce(nodes: SimNode[], alpha: number, deptCentroidsOut?: Ma
     }
   }
 
+  const galaxyRadii = new Map<number, number>();
+  if (galaxyBoundaries) {
+    for (const g of galaxyBoundaries) galaxyRadii.set(g.deptId, g.radius);
+  }
+
   const attractStrength = 0.35;
   for (const node of nodes) {
     const key = node.deptId ?? -1;
@@ -175,13 +184,18 @@ function deptClusterForce(nodes: SimNode[], alpha: number, deptCentroidsOut?: Ma
         const nx = dx / dist;
         const ny = dy / dist;
 
+        const rA = galaxyRadii.get(key) || 50;
+        const rB = galaxyRadii.get(otherDept) || 50;
+        const effectiveMinDist = Math.max(DEPT_BASE_MIN_DIST, rA + rB + 30);
+        const effectiveIdealDist = effectiveMinDist + 40;
+
         let fMag = 0;
-        if (rawDist < DEPT_MIN_DIST) {
-          fMag = (DEPT_MIN_DIST - dist) / DEPT_MIN_DIST * alpha * 0.8;
+        if (rawDist < effectiveMinDist) {
+          fMag = (effectiveMinDist - dist) / effectiveMinDist * alpha * 1.5;
         } else if (rawDist > DEPT_MAX_DIST) {
-          fMag = -((dist - DEPT_MAX_DIST) / DEPT_MAX_DIST) * alpha * 0.5;
+          fMag = -((dist - DEPT_MAX_DIST) / DEPT_MAX_DIST) * alpha * 0.3;
         } else {
-          fMag = (dist - DEPT_IDEAL_DIST) / DEPT_IDEAL_DIST * alpha * -0.1;
+          fMag = (dist - effectiveIdealDist) / effectiveIdealDist * alpha * -0.1;
         }
 
         fMag = Math.max(-DEPT_FORCE_VEL_CAP, Math.min(DEPT_FORCE_VEL_CAP, fMag));
@@ -616,7 +630,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         "collision",
         d3.forceCollide<SimNode>().radius((d) => getRadius(d) + 1)
       )
-      .force("cluster", (alpha: number) => deptClusterForce(simNodes, alpha, deptCentroidsRef.current));
+      .force("cluster", (alpha: number) => deptClusterForce(simNodes, alpha, deptCentroidsRef.current, galaxyDataRef.current));
 
     simulationRef.current = simulation;
 
@@ -629,6 +643,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       .call(
         d3.drag<SVGGElement, SimNode>()
           .on("start", (event, d) => {
+            if (event.sourceEvent) event.sourceEvent.preventDefault();
             hasDraggedRef.current = false;
             longPressFiredRef.current = false;
             d.fx = d.x;
@@ -763,6 +778,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       fillCircle: d3.Selection<SVGCircleElement, unknown, null, undefined>;
       dottedCircle: d3.Selection<SVGCircleElement, unknown, null, undefined>;
       label: d3.Selection<SVGTextElement, unknown, null, undefined>;
+      dragHandle: d3.Selection<SVGCircleElement, unknown, null, undefined>;
     }
 
     const galaxyDOMCache: GalaxyDOMGroup[] = [];
@@ -813,12 +829,86 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
           .attr("opacity", 0.4)
           .text(gal.name);
 
+        const deptId = gal.deptId;
+        const dragHandle = galG.append("circle")
+          .attr("cx", gal.cx)
+          .attr("cy", gal.cy)
+          .attr("r", gal.radius)
+          .attr("fill", "transparent")
+          .attr("stroke", "transparent")
+          .attr("stroke-width", 24)
+          .attr("cursor", "grab")
+          .attr("pointer-events", "stroke")
+          .call(
+            d3.drag<SVGCircleElement, unknown>()
+              .on("start", function (event) {
+                if (event.sourceEvent) {
+                  event.sourceEvent.stopPropagation();
+                  event.sourceEvent.preventDefault();
+                }
+                d3.select(this).attr("cursor", "grabbing");
+
+                const deptNodes = simNodes.filter(n => (n.deptId ?? -1) === deptId);
+                const cx = deptNodes.reduce((s, n) => s + (n.x || 0), 0) / (deptNodes.length || 1);
+                const cy = deptNodes.reduce((s, n) => s + (n.y || 0), 0) / (deptNodes.length || 1);
+
+                (this as any).__dragData = {
+                  deptNodes,
+                  lastCx: cx,
+                  lastCy: cy,
+                  offsets: deptNodes.map(n => ({ node: n, dx: (n.x || 0) - cx, dy: (n.y || 0) - cy })),
+                };
+
+                for (const n of deptNodes) {
+                  n.fx = n.x;
+                  n.fy = n.y;
+                }
+              })
+              .on("drag", function (event) {
+                const data = (this as any).__dragData;
+                if (!data) return;
+
+                const scaledDx = event.dx;
+                const scaledDy = event.dy;
+
+                data.lastCx += scaledDx;
+                data.lastCy += scaledDy;
+
+                for (const off of data.offsets) {
+                  const n = off.node;
+                  n.fx = data.lastCx + off.dx;
+                  n.fy = data.lastCy + off.dy;
+                  n.x = n.fx;
+                  n.y = n.fy;
+                }
+
+                nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
+                updateGalaxyPositions();
+              })
+              .on("end", function () {
+                d3.select(this).attr("cursor", "grab");
+                const data = (this as any).__dragData;
+                if (!data) return;
+
+                setTimeout(() => {
+                  for (const n of data.deptNodes) {
+                    n.fx = null;
+                    n.fy = null;
+                  }
+                  simulation.alpha(0.05).restart();
+                }, 2000);
+
+                (this as any).__dragData = null;
+              })
+          );
+
         galaxyDOMCache.push({
           deptId: gal.deptId,
           borderCircle,
           fillCircle,
           dottedCircle,
           label,
+          dragHandle,
         });
       }
     }
@@ -844,6 +934,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         dom.fillCircle.attr("cx", gal.cx).attr("cy", gal.cy).attr("r", gal.radius);
         dom.dottedCircle.attr("cx", gal.cx).attr("cy", gal.cy).attr("r", gal.radius * 0.92);
         dom.label.attr("x", gal.cx).attr("y", gal.cy - gal.radius - 8);
+        dom.dragHandle.attr("cx", gal.cx).attr("cy", gal.cy).attr("r", gal.radius);
       }
     }
 
@@ -1082,7 +1173,15 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     <div
       ref={containerRef}
       data-testid="graph-canvas"
-      style={{ width: '100%', height: '100%', position: 'relative' }}
+      style={{
+        width: '100%',
+        height: '100%',
+        position: 'relative',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        WebkitTouchCallout: 'none',
+        touchAction: 'none',
+      } as any}
     >
       <BloodVesselCanvas
         simLinksRef={simLinksRef}

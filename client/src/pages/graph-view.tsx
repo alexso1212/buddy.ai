@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Menu, LocateFixed, Sparkles, Loader2, X } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
@@ -191,50 +191,53 @@ export default function GraphView() {
     );
   }
 
-  const allNodes = graphData?.nodes ?? [];
-  const allLinks = graphData?.links ?? [];
-  const projects = graphData?.projects ?? [];
-  const departments = graphData?.departments ?? [];
+  const { nodes, links, projects, departments, nodeMap } = useMemo(() => {
+    const allNodes = graphData?.nodes ?? [];
+    const allLinks = graphData?.links ?? [];
+    const proj = graphData?.projects ?? [];
+    const dept = graphData?.departments ?? [];
 
-  const activeNodes = allNodes.filter(n => n.status !== 'done' && n.status !== 'cancelled');
-  const activeIds = new Set(activeNodes.map(n => n.id));
+    const activeNodes = allNodes.filter(n => n.status !== 'done' && n.status !== 'cancelled');
+    const activeIds = new Set(activeNodes.map(n => n.id));
 
-  const upstreamOf = new Map<number, number[]>();
-  const downstreamOf = new Map<number, number[]>();
-  for (const l of allLinks) {
-    if (!downstreamOf.has(l.source)) downstreamOf.set(l.source, []);
-    downstreamOf.get(l.source)!.push(l.target);
-    if (!upstreamOf.has(l.target)) upstreamOf.set(l.target, []);
-    upstreamOf.get(l.target)!.push(l.source);
-  }
-
-  function canReachActive(nodeId: number, getNeighbors: (id: number) => number[], visited: Set<number>): boolean {
-    if (activeIds.has(nodeId)) return true;
-    visited.add(nodeId);
-    for (const nb of (getNeighbors(nodeId) || [])) {
-      if (!visited.has(nb) && canReachActive(nb, getNeighbors, visited)) return true;
+    const upstreamOf = new Map<number, number[]>();
+    const downstreamOf = new Map<number, number[]>();
+    for (const l of allLinks) {
+      if (!downstreamOf.has(l.source)) downstreamOf.set(l.source, []);
+      downstreamOf.get(l.source)!.push(l.target);
+      if (!upstreamOf.has(l.target)) upstreamOf.set(l.target, []);
+      upstreamOf.get(l.target)!.push(l.source);
     }
-    return false;
-  }
 
-  const bridgeIds = new Set<number>();
-  const inactiveNodes = allNodes.filter(n => n.status === 'done' || n.status === 'cancelled');
-  for (const n of inactiveNodes) {
-    const reachesDown = canReachActive(n.id, (id) => downstreamOf.get(id) || [], new Set([n.id]));
-    if (!reachesDown) continue;
-    const reachesUp = canReachActive(n.id, (id) => upstreamOf.get(id) || [], new Set([n.id]));
-    if (reachesUp) bridgeIds.add(n.id);
-  }
+    function canReachActive(nodeId: number, getNeighbors: (id: number) => number[], visited: Set<number>): boolean {
+      if (activeIds.has(nodeId)) return true;
+      visited.add(nodeId);
+      for (const nb of (getNeighbors(nodeId) || [])) {
+        if (!visited.has(nb) && canReachActive(nb, getNeighbors, visited)) return true;
+      }
+      return false;
+    }
 
-  const bridgeNodes = inactiveNodes
-    .filter(n => bridgeIds.has(n.id))
-    .map(n => ({ ...n, isBridge: true }));
+    const bridgeIds = new Set<number>();
+    const inactiveNodes = allNodes.filter(n => n.status === 'done' || n.status === 'cancelled');
+    for (const n of inactiveNodes) {
+      const reachesDown = canReachActive(n.id, (id) => downstreamOf.get(id) || [], new Set([n.id]));
+      if (!reachesDown) continue;
+      const reachesUp = canReachActive(n.id, (id) => upstreamOf.get(id) || [], new Set([n.id]));
+      if (reachesUp) bridgeIds.add(n.id);
+    }
 
-  const nodes = [...activeNodes, ...bridgeNodes];
-  const finalNodeIds = new Set(nodes.map(n => n.id));
-  const links = allLinks.filter(l => finalNodeIds.has(l.source) && finalNodeIds.has(l.target));
+    const bridgeNodes = inactiveNodes
+      .filter(n => bridgeIds.has(n.id))
+      .map(n => ({ ...n, isBridge: true }));
 
-  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+    const finalNodes = [...activeNodes, ...bridgeNodes];
+    const finalNodeIds = new Set(finalNodes.map(n => n.id));
+    const finalLinks = allLinks.filter(l => finalNodeIds.has(l.source) && finalNodeIds.has(l.target));
+
+    const nodeMap = new Map(finalNodes.map(n => [n.id, n]));
+    return { nodes: finalNodes, links: finalLinks, projects: proj, departments: dept, nodeMap };
+  }, [graphData]);
 
   return (
     <div
