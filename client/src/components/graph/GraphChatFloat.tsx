@@ -130,7 +130,7 @@ export default function GraphChatFloat({ open, onClose }: GraphChatFloatProps) {
         headers: streamHeaders,
         body: JSON.stringify({
           message: text,
-          conversationHistory: conversationHistory.current,
+          conversationHistory: conversationHistory.current.filter(m => m.content && m.content.trim() !== ''),
           currentUserId: currentUserId || 1,
         }),
         signal: abortController.signal,
@@ -176,10 +176,12 @@ export default function GraphChatFloat({ open, onClose }: GraphChatFloatProps) {
               pendingAction = event;
             } else if (event.type === "done") {
               const finalText = event.fullText || fullText;
-              conversationHistory.current.push({
-                role: "assistant",
-                content: finalText,
-              });
+              if (finalText && finalText.trim()) {
+                conversationHistory.current.push({
+                  role: "assistant",
+                  content: finalText,
+                });
+              }
 
               if (pendingAction) {
                 const msgType = pendingAction.actions

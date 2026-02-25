@@ -694,7 +694,7 @@ export async function chat(
     max_tokens: getMaxTokensForModel(modelName),
     messages: [
       { role: 'system', content: systemPrompt },
-      ...conversationHistory.map(msg => ({
+      ...conversationHistory.filter(msg => msg.content && (typeof msg.content === 'string' ? msg.content.trim() !== '' : true)).map(msg => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
       })),
@@ -919,7 +919,7 @@ export async function* chatStream(
     stream: true,
     messages: [
       { role: 'system', content: systemPrompt },
-      ...conversationHistory.map(msg => ({
+      ...conversationHistory.filter(msg => msg.content && (typeof msg.content === 'string' ? msg.content.trim() !== '' : true)).map(msg => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
       })),
