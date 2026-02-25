@@ -477,6 +477,9 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
   const orbitIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const deptCentroidsRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const hasDraggedRef = useRef(false);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressFiredRef = useRef(false);
+  const justClickedNodeRef = useRef(false);
   const downstreamCountsRef = useRef<Map<number, number>>(new Map());
   const tooltipRef = useRef<HTMLDivElement>(null);
 
@@ -627,28 +630,73 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         d3.drag<SVGGElement, SimNode>()
           .on("start", (event, d) => {
             hasDraggedRef.current = false;
+            longPressFiredRef.current = false;
             d.fx = d.x;
             d.fy = d.y;
             draggedNodeIdRef.current = d.id;
+
+            const tip = tooltipRef.current;
+            if (tip) tip.style.opacity = '0';
+
+            longPressTimerRef.current = setTimeout(() => {
+              if (!hasDraggedRef.current) {
+                longPressFiredRef.current = true;
+                selectedNodeIdRef.current = d.id;
+                if (onNodeClickRef.current) onNodeClickRef.current(d);
+              }
+            }, 400);
           })
           .on("drag", (event, d) => {
             if (!hasDraggedRef.current) {
               hasDraggedRef.current = true;
-              if (!event.active) simulation.alphaTarget(0.05).restart();
+              if (longPressTimerRef.current) {
+                clearTimeout(longPressTimerRef.current);
+                longPressTimerRef.current = null;
+              }
+              if (!event.active) simulation.alphaTarget(0.02).restart();
             }
             d.fx = event.x;
             d.fy = event.y;
           })
           .on("end", (event, d) => {
+            if (longPressTimerRef.current) {
+              clearTimeout(longPressTimerRef.current);
+              longPressTimerRef.current = null;
+            }
             if (!event.active) simulation.alphaTarget(0);
+
             if (hasDraggedRef.current) {
-              d.fx = null;
-              d.fy = null;
-            } else {
+              setTimeout(() => {
+                d.fx = null;
+                d.fy = null;
+              }, 1500);
+            } else if (!longPressFiredRef.current) {
+              justClickedNodeRef.current = true;
+              selectedNodeIdRef.current = d.id;
+
               d.fx = d.x;
               d.fy = d.y;
-              setTimeout(() => { d.fx = null; d.fy = null; }, 300);
+              setTimeout(() => { d.fx = null; d.fy = null; }, 500);
+
+              const { upstream, downstream } = collectFullChain(d.id, simLinks);
+              const allChain = new Set<number>([d.id, ...upstream, ...downstream]);
+
+              nodeElements.each(function (nd) {
+                const el = d3.select(this);
+                const isBr = !!(nd as any).isBridge;
+                if (nd.id === d.id) {
+                  el.style("opacity", "1");
+                  el.style("filter", "brightness(1.4)");
+                } else if (allChain.has(nd.id)) {
+                  el.style("opacity", "0.9");
+                  el.style("filter", "none");
+                } else {
+                  el.style("opacity", isBr ? "0.15" : "0.15");
+                  el.style("filter", "none");
+                }
+              });
             }
+
             draggedNodeIdRef.current = null;
             hasDraggedRef.current = false;
           })
@@ -802,6 +850,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     initGalaxyDOM();
 
     nodeElements.on("mouseover", function (_event, hoveredNode) {
+      if (draggedNodeIdRef.current !== null) return;
       hoveredNodeIdRef.current = hoveredNode.id;
 
       const { upstream, downstream } = collectFullChain(hoveredNode.id, simLinks);
@@ -891,15 +940,26 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       if (tip) tip.style.opacity = '0';
     });
 
-    nodeElements.on("click", (_event, d) => {
-      _event.stopPropagation();
-      selectedNodeIdRef.current = d.id;
-      if (onNodeClickRef.current) onNodeClickRef.current(d);
-    });
-
     svg.on("click", () => {
+      if (justClickedNodeRef.current) {
+        justClickedNodeRef.current = false;
+        return;
+      }
       selectedNodeIdRef.current = null;
       if (onNodeClickRef.current) onNodeClickRef.current(null as any);
+
+      nodeElements.each(function (d) {
+        const el = d3.select(this);
+        const isBridge = !!(d as any).isBridge;
+        el.style("opacity", isBridge ? "0.4" : null);
+        el.style("filter", null);
+        if (!isBridge) {
+          const daysLeft = getDaysUntilDue(d.dueDate);
+          if (d.status === 'blocked') el.classed("blocked-breathing", true);
+          if (d.isOverdue || (daysLeft !== null && daysLeft <= 3)) el.classed("urgent-pulse", true);
+          else if (daysLeft !== null && daysLeft <= 7) el.classed("soon-pulse", true);
+        }
+      });
     });
 
     const zoom = d3.zoom<SVGSVGElement, unknown>()
@@ -969,6 +1029,10 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       if (orbitIntervalRef.current) {
         clearInterval(orbitIntervalRef.current);
         orbitIntervalRef.current = null;
+      }
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
       }
       if (resizeTimer) clearTimeout(resizeTimer);
       simulation.stop();
