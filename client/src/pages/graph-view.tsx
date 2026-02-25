@@ -166,31 +166,6 @@ export default function GraphView() {
     setAnalysisResult(null);
   }, []);
 
-  if (isLoading) {
-    return (
-      <div
-        data-testid="graph-container"
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background: '#0D0D0D',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <GraphOverlayControls />
-        <GraphSettings
-          colorBy={colorBy}
-          onColorByChange={setColorBy}
-          bloodFlow={bloodFlow}
-          onBloodFlowChange={setBloodFlow}
-        />
-        <div style={{ color: '#6b7280', fontSize: 14 }}>Loading graph data...</div>
-      </div>
-    );
-  }
-
   const { nodes, links, projects, departments, nodeMap } = useMemo(() => {
     const allNodes = graphData?.nodes ?? [];
     const allLinks = graphData?.links ?? [];
@@ -238,6 +213,31 @@ export default function GraphView() {
     const nodeMap = new Map(finalNodes.map(n => [n.id, n]));
     return { nodes: finalNodes, links: finalLinks, projects: proj, departments: dept, nodeMap };
   }, [graphData]);
+
+  if (isLoading) {
+    return (
+      <div
+        data-testid="graph-container"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: '#0D0D0D',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <GraphOverlayControls />
+        <GraphSettings
+          colorBy={colorBy}
+          onColorByChange={setColorBy}
+          bloodFlow={bloodFlow}
+          onBloodFlowChange={setBloodFlow}
+        />
+        <div style={{ color: '#6b7280', fontSize: 14 }}>Loading graph data...</div>
+      </div>
+    );
+  }
 
   return (
     <div
