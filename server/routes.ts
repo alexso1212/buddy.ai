@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
 import { chat as aiChat, chatStream as aiChatStream, generateProjectTasks, extractMemories, generateConversationTitle } from "./services/ai/index";
-import { executeAction } from "./services/ai/actionExecutor";
+import { executeAction, executeBatchActions } from "./services/ai/actionExecutor";
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { authMiddleware, generateToken, getTokenExpiry } from './middleware/auth';
@@ -2453,6 +2453,25 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
       const orgId = req.orgId || 1;
       const result = await executeAction(actionType, data, userId, orgId);
 
+      if (!result.success && result.entity?.conflict) {
+        return res.status(409).json({ error: result.message, data: result });
+      }
+
+      if (result.success && result.entity) {
+        try {
+          if (actionType === 'create_task' || actionType === 'update_task') {
+            const taskEntity = result.entity;
+            const notifType = actionType === 'create_task' ? 'task_created' : 'task_updated';
+            const notifMsg = actionType === 'create_task'
+              ? `通过 AI 创建了任务「${taskEntity.title}」`
+              : `通过 AI 更新了任务「${taskEntity.title}」`;
+            await generateTeamNotifications(userId, 'task', taskEntity.id, taskEntity.title, orgId, notifType, notifMsg);
+          }
+        } catch (notifErr) {
+          console.error('Failed to generate notifications:', notifErr);
+        }
+      }
+
       if (conversationId) {
         const conv = await storage.getConversationById(conversationId);
         if (conv && conv.orgId !== req.orgId) {
@@ -2484,6 +2503,62 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
       return res.json({ data: result });
     } catch (e: any) {
       console.error('AI Confirm error:', e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/ai/confirm-batch", async (req, res) => {
+    try {
+      const { actions, currentUserId, conversationId } = req.body;
+      if (!Array.isArray(actions) || actions.length === 0) {
+        return res.status(400).json({ error: 'actions array is required' });
+      }
+
+      const userId = currentUserId || req.currentUserId;
+      const orgId = req.orgId || 1;
+      const batchResult = await executeBatchActions(actions, userId, orgId);
+
+      for (let i = 0; i < batchResult.results.length; i++) {
+        const r = batchResult.results[i];
+        if (r.success && r.entity) {
+          try {
+            const actionType = actions[i]?.actionType || 'create_task';
+            if (actionType === 'create_task' || actionType === 'update_task') {
+              const notifType = actionType === 'create_task' ? 'task_created' : 'task_updated';
+              const notifMsg = actionType === 'create_task'
+                ? `通过 AI 创建了任务「${r.entity.title}」`
+                : `通过 AI 更新了任务「${r.entity.title}」`;
+              await generateTeamNotifications(userId, 'task', r.entity.id, r.entity.title || '', orgId, notifType, notifMsg);
+            }
+          } catch (notifErr) {
+            console.error('Failed to generate batch notification:', notifErr);
+          }
+        }
+      }
+
+      if (conversationId) {
+        try {
+          const summaryParts = batchResult.results
+            .filter(r => r.success)
+            .map(r => r.message);
+
+          if (summaryParts.length > 0) {
+            await storage.createChatMessage({
+              conversationId,
+              role: 'system',
+              content: `[批量操作已执行] ${summaryParts.join('；')}`,
+              type: 'action_result',
+              metadata: JSON.stringify({ batch: true, results: batchResult.results }),
+            });
+          }
+        } catch (msgErr) {
+          console.error('Failed to save batch system message:', msgErr);
+        }
+      }
+
+      return res.json({ data: batchResult });
+    } catch (e: any) {
+      console.error('AI Confirm Batch error:', e);
       return res.status(500).json({ error: e.message });
     }
   });

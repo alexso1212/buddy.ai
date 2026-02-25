@@ -146,6 +146,8 @@ export const tasks = pgTable('tasks', {
 
   starred: boolean('starred').default(false).notNull(),
 
+  version: integer('version').notNull().default(1),
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

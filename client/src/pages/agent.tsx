@@ -1262,8 +1262,26 @@ export default function Agent() {
           currentUserId: currentUserId || 1,
           conversationId: activeConvId || undefined,
         });
+
+        if (res.status === 409) {
+          const errJson = await res.json();
+          const sysMsg: Message = {
+            id: nextId(),
+            role: "system",
+            content: errJson.error || "该任务已被其他人修改，请刷新后重试",
+          };
+          setMessages((prev) => [...prev, sysMsg]);
+          if (activeConvId) saveMessageToDB(activeConvId, sysMsg);
+          return;
+        }
+
         const json = await res.json();
         const result = json.data;
+
+        let systemContent = result.message;
+        if (result.duplicateWarning) {
+          systemContent += `\n⚠️ ${result.duplicateWarning}`;
+        }
 
         setMessages((prev) =>
           prev.map((m) => {
@@ -1280,7 +1298,7 @@ export default function Agent() {
         const sysMsg: Message = {
           id: nextId(),
           role: "system",
-          content: result.message,
+          content: systemContent,
         };
         setMessages((prev) => [...prev, sysMsg]);
         if (activeConvId) saveMessageToDB(activeConvId, sysMsg);
@@ -1299,6 +1317,72 @@ export default function Agent() {
       }
     },
     [messages, activeConvId, saveMessageToDB]
+  );
+
+  const handleConfirmAll = useCallback(
+    async (messageId: string) => {
+      const msg = messages.find((m) => m.id === messageId);
+      if (!msg || msg.type !== "multi_confirm" || !msg.actions || !msg.actionConfirmed) return;
+
+      const undecidedIndexes = msg.actionConfirmed
+        .map((c, i) => (c === null ? i : -1))
+        .filter((i) => i !== -1);
+      if (undecidedIndexes.length === 0) return;
+
+      const batchActions = undecidedIndexes.map((i) => ({
+        actionType: msg.actions![i].actionType,
+        data: msg.actions![i].data,
+      }));
+
+      try {
+        const res = await apiRequest("POST", "/api/ai/confirm-batch", {
+          actions: batchActions,
+          currentUserId: currentUserId || 1,
+          conversationId: activeConvId || undefined,
+        });
+        const json = await res.json();
+        const batchResult = json.data;
+
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id !== messageId || !m.actionConfirmed) return m;
+            const updated = [...m.actionConfirmed];
+            for (let j = 0; j < undecidedIndexes.length; j++) {
+              updated[undecidedIndexes[j]] = batchResult.results[j]?.success ?? false;
+            }
+            return { ...m, actionConfirmed: updated };
+          })
+        );
+
+        const summaryParts: string[] = [];
+        for (const r of batchResult.results) {
+          let line = r.message;
+          if (r.duplicateWarning) line += ` ⚠️ ${r.duplicateWarning}`;
+          summaryParts.push(line);
+        }
+
+        const sysMsg: Message = {
+          id: nextId(),
+          role: "system",
+          content: summaryParts.join("\n"),
+        };
+        setMessages((prev) => [...prev, sysMsg]);
+        if (activeConvId) saveMessageToDB(activeConvId, sysMsg);
+
+        queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/stats/overview"] });
+      } catch (err: any) {
+        const sysMsg: Message = {
+          id: nextId(),
+          role: "system",
+          content: err.message || "批量执行失败，请重试",
+        };
+        setMessages((prev) => [...prev, sysMsg]);
+        if (activeConvId) saveMessageToDB(activeConvId, sysMsg);
+      }
+    },
+    [messages, activeConvId, saveMessageToDB, currentUserId]
   );
 
   const handleReject = useCallback((messageId: string, actionIndex?: number) => {
@@ -1514,6 +1598,7 @@ export default function Agent() {
                   onConfirm={handleConfirm}
                   onReject={handleReject}
                   onSkip={handleSkip}
+                  onConfirmAll={handleConfirmAll}
                   onFollowUpSubmit={handleFollowUpSubmit}
                   onStepAnswer={handleStepAnswer}
                   onRegenerate={handleRegenerate}

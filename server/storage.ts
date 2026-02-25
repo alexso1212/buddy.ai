@@ -1,6 +1,6 @@
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { eq, and, desc, or, inArray, sql, ilike } from "drizzle-orm";
+import { eq, and, desc, or, inArray, sql, ilike, gte } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import {
   organizations,
@@ -188,6 +188,105 @@ export class DatabaseStorage {
 
   async deleteTask(id: number): Promise<void> {
     await db.delete(tasks).where(eq(tasks.id, id));
+  }
+
+  async updateTaskWithVersion(id: number, expectedVersion: number, data: Partial<InsertTask>): Promise<Task | null> {
+    const [result] = await db
+      .update(tasks)
+      .set({ ...data, version: sql`${tasks.version} + 1`, updatedAt: new Date() })
+      .where(and(eq(tasks.id, id), eq(tasks.version, expectedVersion)))
+      .returning();
+    return result ?? null;
+  }
+
+  async createTaskWithDependencies(
+    taskData: InsertTask,
+    dependsOnIds: number[],
+    orgId: number,
+    userId: number
+  ): Promise<Task> {
+    return await db.transaction(async (tx) => {
+      const [task] = await tx.insert(tasks).values(taskData).returning();
+      for (const depId of dependsOnIds) {
+        await tx.insert(taskDependencies).values({
+          taskId: task.id,
+          dependsOnTaskId: depId,
+          type: 'finish_to_start',
+        });
+      }
+      await tx.insert(activityLogs).values({
+        orgId,
+        userId,
+        entityType: 'task',
+        entityId: task.id,
+        action: 'create',
+        changes: JSON.stringify({ title: task.title, projectId: task.projectId }),
+        source: 'ai_chat',
+      });
+      return task;
+    });
+  }
+
+  async batchCreateTasks(
+    taskItems: Array<{ data: InsertTask; ref?: string; dependsOn?: number[]; dependsOnRef?: string[] }>,
+    orgId: number,
+    userId: number
+  ): Promise<Task[]> {
+    return await db.transaction(async (tx) => {
+      const refToId = new Map<string, number>();
+      const createdTasks: Task[] = [];
+
+      for (const item of taskItems) {
+        const [task] = await tx.insert(tasks).values(item.data).returning();
+        createdTasks.push(task);
+
+        if (item.ref) {
+          refToId.set(item.ref, task.id);
+        }
+
+        const allDepIds: number[] = [...(item.dependsOn || [])];
+        if (item.dependsOnRef) {
+          for (const ref of item.dependsOnRef) {
+            const resolvedId = refToId.get(ref);
+            if (resolvedId) allDepIds.push(resolvedId);
+          }
+        }
+
+        for (const depId of allDepIds) {
+          await tx.insert(taskDependencies).values({
+            taskId: task.id,
+            dependsOnTaskId: depId,
+            type: 'finish_to_start',
+          });
+        }
+
+        await tx.insert(activityLogs).values({
+          orgId,
+          userId,
+          entityType: 'task',
+          entityId: task.id,
+          action: 'create',
+          changes: JSON.stringify({ title: task.title, projectId: task.projectId }),
+          source: 'ai_chat',
+        });
+      }
+
+      return createdTasks;
+    });
+  }
+
+  async checkDuplicateTask(orgId: number, title: string, assigneeId?: number): Promise<Task | null> {
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const conditions = [
+      eq(tasks.orgId, orgId),
+      eq(tasks.title, title),
+      gte(tasks.createdAt, tenMinAgo),
+    ];
+    if (assigneeId) {
+      conditions.push(eq(tasks.assigneeId, assigneeId));
+    }
+    const [result] = await db.select().from(tasks).where(and(...conditions)).limit(1);
+    return result ?? null;
   }
 
   async getTaskDependencies(taskId: number): Promise<TaskDependency[]> {

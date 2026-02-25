@@ -530,13 +530,18 @@ ${contextBlock}
 {"type":"confirm","action":{"actionType":"create_task","data":{"title":"任务标题","projectId":1},"summary":"创建任务「任务标题」","confidence":0.9}}
 <<<END_ACTIONS>>>
 
-批量操作用 multi_confirm：
+批量操作用 multi_confirm（支持依赖关系）：
 <<<ACTIONS>>>
-{"type":"multi_confirm","actions":[{"actionType":"create_task","data":{"title":"任务1","projectId":1},"summary":"创建任务「任务1」","confidence":0.9},{"actionType":"create_task","data":{"title":"任务2","projectId":1},"summary":"创建任务「任务2」","confidence":0.8}]}
+{"type":"multi_confirm","actions":[{"actionType":"create_task","data":{"title":"设计用户界面","projectId":1,"ref":"T1"},"summary":"创建任务「设计用户界面」","confidence":0.9},{"actionType":"create_task","data":{"title":"实现前端页面","projectId":1,"ref":"T2","dependsOnRef":["T1"]},"summary":"创建任务「实现前端页面」（依赖 T1）","confidence":0.9}]}
 <<<END_ACTIONS>>>
 
+批量创建中的依赖关系字段：
+- ref: 当前任务在本批次中的临时标识（如 "T1", "T2"），用于同批次内其他任务引用
+- dependsOn: 依赖的数据库中已存在任务的 ID 列表
+- dependsOnRef: 依赖同批次内其他任务的 ref 标识列表（如 ["T1"]）
+
 可用的 actionType：
-- create_task: 需要 title(必填), projectId(必填), 可选 description, type(task/subtask/milestone/bug/request), status(todo), priority(critical/high/medium/low), assigneeId, dueDate, weight(1-10), parentTaskId, tags, warnings(数组)
+- create_task: 需要 title(必填), projectId(必填), 可选 description, type(task/subtask/milestone/bug/request), status(todo), priority(critical/high/medium/low), assigneeId, dueDate, weight(1-10), parentTaskId, tags, warnings(数组), ref, dependsOn, dependsOnRef
 - update_task: 需要 taskId(必填), 可选 title, status, priority, assigneeId, dueDate, weight, progress, description
 - create_project: 需要 name(必填), 可选 description, deptId, startDate, targetDate
 - add_comment: 需要 taskId(必填), content(必填)
@@ -553,7 +558,14 @@ ${contextBlock}
 - 从会议纪要等文档提取任务时，对信息不确定的字段添加 warnings 数组（如 "负责人未明确，已暂分给当前用户"）
 - confidence: 信息完整≥0.9，有推测0.7-0.8，严重缺失0.5-0.6
 - 操作块必须放在回复的最末尾，<<<ACTIONS>>> 和 <<<END_ACTIONS>>> 各占一行
-- 绝对不要对查询类请求（如"有什么任务"）输出操作块`;
+- 绝对不要对查询类请求（如"有什么任务"）输出操作块
+
+## 会议纪要/批量任务处理流程（极其重要）
+当用户发送会议纪要、工作计划、或包含多个待办事项的文本时，必须遵循"两步确认"流程：
+1. **第一步（先整理）**：用自然语言列出你从文本中提取的任务清单，用表格展示：序号、标题、负责人、截止日期、所属项目、依赖关系。最后问用户"以上任务清单是否正确？确认后我将批量创建。"此时不要输出 <<<ACTIONS>>> 块。
+2. **第二步（用户确认后）**：用户回复确认（说"确认"、"可以"、"好的"、"创建吧"等）后，再输出 multi_confirm 的 <<<ACTIONS>>> 块进行批量创建。如果系统中已有类似标题的活跃任务，在 summary 中标注提醒。
+
+绝对不要在第一步就直接输出操作块，必须先让用户审核清单。`;
   } else {
     prompt = SYSTEM_PROMPT
       .replace('{{currentUserId}}', String(context.currentUserId))

@@ -6,11 +6,17 @@ export async function executeAction(
   data: Record<string, any>,
   userId: number,
   orgId: number = 1
-): Promise<{ success: boolean; message: string; entity?: any }> {
+): Promise<{ success: boolean; message: string; entity?: any; duplicateWarning?: string }> {
   switch (actionType) {
     case 'create_task': {
+      const duplicate = await storage.checkDuplicateTask(orgId, data.title, data.assigneeId);
+      let duplicateWarning: string | undefined;
+      if (duplicate) {
+        duplicateWarning = `系统中已存在类似任务「${duplicate.title}」(#${duplicate.id})，创建于 ${new Date(duplicate.createdAt).toLocaleString('zh-CN')}`;
+      }
+
       const hasWarnings = Array.isArray(data.warnings) && data.warnings.length > 0;
-      const newTask = await storage.createTask({
+      const taskData = {
         orgId,
         projectId: data.projectId,
         title: data.title,
@@ -27,27 +33,36 @@ export async function executeAction(
         tags: data.tags || null,
         needsReview: hasWarnings,
         warnings: hasWarnings ? JSON.stringify(data.warnings) : null,
-      });
+      };
 
-      await storage.createActivityLog({
-        orgId,
-        userId: userId,
-        entityType: 'task',
-        entityId: newTask.id,
-        action: 'create',
-        changes: JSON.stringify(data),
-        source: 'ai_chat',
-      });
+      const dependsOnIds = Array.isArray(data.dependsOn) ? data.dependsOn : [];
+
+      let newTask;
+      if (dependsOnIds.length > 0) {
+        newTask = await storage.createTaskWithDependencies(taskData, dependsOnIds, orgId, userId);
+      } else {
+        newTask = await storage.createTask(taskData);
+        await storage.createActivityLog({
+          orgId,
+          userId,
+          entityType: 'task',
+          entityId: newTask.id,
+          action: 'create',
+          changes: JSON.stringify(data),
+          source: 'ai_chat',
+        });
+      }
 
       return {
         success: true,
         message: `任务「${data.title}」已成功创建`,
         entity: newTask,
+        duplicateWarning,
       };
     }
 
     case 'update_task': {
-      const { taskId, ...updateFields } = data;
+      const { taskId, version, ...updateFields } = data;
 
       const oldTask = await storage.getTaskById(taskId);
       if (!oldTask) {
@@ -68,14 +83,26 @@ export async function executeAction(
         updateData.completedAt = new Date();
       }
 
-      const updated = await storage.updateTask(taskId, updateData);
-      if (!updated) {
-        return { success: false, message: '更新失败' };
+      let updated;
+      if (version !== undefined) {
+        updated = await storage.updateTaskWithVersion(taskId, version, updateData);
+        if (!updated) {
+          return {
+            success: false,
+            message: '该任务已被其他人修改，请刷新后重试',
+            entity: { conflict: true, taskId },
+          };
+        }
+      } else {
+        updated = await storage.updateTask(taskId, updateData);
+        if (!updated) {
+          return { success: false, message: '更新失败' };
+        }
       }
 
       await storage.createActivityLog({
         orgId,
-        userId: userId,
+        userId,
         entityType: 'task',
         entityId: taskId,
         action: 'update',
@@ -107,7 +134,7 @@ export async function executeAction(
 
       await storage.createActivityLog({
         orgId,
-        userId: userId,
+        userId,
         entityType: 'project',
         entityId: newProject.id,
         action: 'create',
@@ -131,7 +158,7 @@ export async function executeAction(
 
       await storage.createActivityLog({
         orgId,
-        userId: userId,
+        userId,
         entityType: 'task',
         entityId: data.taskId,
         action: 'comment',
@@ -168,7 +195,7 @@ export async function executeAction(
 
       await storage.createActivityLog({
         orgId,
-        userId: userId,
+        userId,
         entityType: 'user',
         entityId: newUser.id,
         action: 'create',
@@ -204,7 +231,7 @@ export async function executeAction(
 
       await storage.createActivityLog({
         orgId,
-        userId: userId,
+        userId,
         entityType: 'user',
         entityId: targetUserId,
         action: 'update',
@@ -230,7 +257,7 @@ export async function executeAction(
 
       await storage.createActivityLog({
         orgId,
-        userId: userId,
+        userId,
         entityType: 'department',
         entityId: newDept.id,
         action: 'create',
@@ -292,4 +319,74 @@ export async function executeAction(
     default:
       return { success: false, message: `不支持的操作类型: ${actionType}` };
   }
+}
+
+export async function executeBatchActions(
+  actions: Array<{ actionType: string; data: Record<string, any> }>,
+  userId: number,
+  orgId: number
+): Promise<{ success: boolean; results: Array<{ success: boolean; message: string; entity?: any; duplicateWarning?: string }> }> {
+  const createTaskActions = actions.filter(a => a.actionType === 'create_task');
+  const otherActions = actions.filter(a => a.actionType !== 'create_task');
+
+  const results: Array<{ success: boolean; message: string; entity?: any; duplicateWarning?: string }> = [];
+
+  if (createTaskActions.length > 0) {
+    const duplicateWarnings = new Map<number, string>();
+    const taskItems = [];
+
+    for (let i = 0; i < createTaskActions.length; i++) {
+      const data = createTaskActions[i].data;
+      const duplicate = await storage.checkDuplicateTask(orgId, data.title, data.assigneeId);
+      if (duplicate) {
+        duplicateWarnings.set(i, `系统中已存在类似任务「${duplicate.title}」(#${duplicate.id})`);
+      }
+
+      const hasWarnings = Array.isArray(data.warnings) && data.warnings.length > 0;
+      taskItems.push({
+        data: {
+          orgId,
+          projectId: data.projectId,
+          title: data.title,
+          description: data.description || null,
+          type: data.type || 'task',
+          status: data.status || 'todo',
+          priority: data.priority || 'medium',
+          creatorId: userId,
+          assigneeId: data.assigneeId || userId,
+          dueDate: data.dueDate ? new Date(data.dueDate) : null,
+          weight: data.weight || 3,
+          progress: 0,
+          parentTaskId: data.parentTaskId || null,
+          tags: data.tags || null,
+          needsReview: hasWarnings,
+          warnings: hasWarnings ? JSON.stringify(data.warnings) : null,
+        },
+        ref: data.ref,
+        dependsOn: Array.isArray(data.dependsOn) ? data.dependsOn : undefined,
+        dependsOnRef: Array.isArray(data.dependsOnRef) ? data.dependsOnRef : undefined,
+      });
+    }
+
+    const createdTasks = await storage.batchCreateTasks(taskItems, orgId, userId);
+
+    for (let i = 0; i < createdTasks.length; i++) {
+      results.push({
+        success: true,
+        message: `任务「${createdTasks[i].title}」已成功创建`,
+        entity: createdTasks[i],
+        duplicateWarning: duplicateWarnings.get(i),
+      });
+    }
+  }
+
+  for (const action of otherActions) {
+    const result = await executeAction(action.actionType, action.data, userId, orgId);
+    results.push(result);
+  }
+
+  return {
+    success: results.every(r => r.success),
+    results,
+  };
 }

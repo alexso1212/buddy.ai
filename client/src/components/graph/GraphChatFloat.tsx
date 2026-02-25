@@ -296,8 +296,27 @@ export default function GraphChatFloat({ open, onClose }: GraphChatFloatProps) {
           data: action.data,
           currentUserId: currentUserId || 1,
         });
+
+        if (res.status === 409) {
+          const errJson = await res.json();
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: nextId(),
+              role: "system",
+              content: errJson.error || "该任务已被其他人修改，请刷新后重试",
+            },
+          ]);
+          return;
+        }
+
         const json = await res.json();
         const result = json.data;
+
+        let systemContent = result.message;
+        if (result.duplicateWarning) {
+          systemContent += `\n⚠️ ${result.duplicateWarning}`;
+        }
 
         setMessages((prev) =>
           prev.map((m) => {
@@ -320,7 +339,7 @@ export default function GraphChatFloat({ open, onClose }: GraphChatFloatProps) {
           {
             id: nextId(),
             role: "system",
-            content: result.message,
+            content: systemContent,
           },
         ]);
       } catch (err: any) {
@@ -330,6 +349,69 @@ export default function GraphChatFloat({ open, onClose }: GraphChatFloatProps) {
             id: nextId(),
             role: "system",
             content: err.message || "执行失败，请重试",
+          },
+        ]);
+      }
+    },
+    [messages, currentUserId]
+  );
+
+  const handleConfirmAll = useCallback(
+    async (messageId: string) => {
+      const msg = messages.find((m) => m.id === messageId);
+      if (!msg || msg.type !== "multi_confirm" || !msg.actions || !msg.actionConfirmed) return;
+
+      const undecidedIndexes = msg.actionConfirmed
+        .map((c, i) => (c === null ? i : -1))
+        .filter((i) => i !== -1);
+      if (undecidedIndexes.length === 0) return;
+
+      const batchActions = undecidedIndexes.map((i) => ({
+        actionType: msg.actions![i].actionType,
+        data: msg.actions![i].data,
+      }));
+
+      try {
+        const res = await apiRequest("POST", "/api/ai/confirm-batch", {
+          actions: batchActions,
+          currentUserId: currentUserId || 1,
+        });
+        const json = await res.json();
+        const batchResult = json.data;
+
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id !== messageId || !m.actionConfirmed) return m;
+            const updated = [...m.actionConfirmed];
+            for (let j = 0; j < undecidedIndexes.length; j++) {
+              updated[undecidedIndexes[j]] = batchResult.results[j]?.success ?? false;
+            }
+            return { ...m, actionConfirmed: updated };
+          })
+        );
+
+        const summaryParts: string[] = [];
+        for (const r of batchResult.results) {
+          let line = r.message;
+          if (r.duplicateWarning) line += ` ⚠️ ${r.duplicateWarning}`;
+          summaryParts.push(line);
+        }
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nextId(),
+            role: "system",
+            content: summaryParts.join("\n"),
+          },
+        ]);
+      } catch (err: any) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nextId(),
+            role: "system",
+            content: err.message || "批量执行失败，请重试",
           },
         ]);
       }
@@ -471,6 +553,7 @@ export default function GraphChatFloat({ open, onClose }: GraphChatFloatProps) {
             message={msg}
             onConfirm={handleConfirm}
             onReject={handleReject}
+            onConfirmAll={handleConfirmAll}
           />
         ))}
         {loading && (

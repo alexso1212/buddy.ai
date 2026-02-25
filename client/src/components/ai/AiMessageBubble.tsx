@@ -64,6 +64,7 @@ interface AiMessageBubbleProps {
   onConfirm?: (messageId: string, actionIndex?: number) => void;
   onReject?: (messageId: string, actionIndex?: number) => void;
   onSkip?: (messageId: string, actionIndex?: number) => void;
+  onConfirmAll?: (messageId: string) => void;
   onFollowUpSubmit?: (messageId: string, mergedData: Record<string, any>, creationType?: string) => void;
   onStepAnswer?: (stepLabel: string, answerLabel: string) => void;
   onRegenerate?: (messageId: string) => void;
@@ -161,6 +162,7 @@ function MultiConfirmGroup({
   onConfirm,
   onReject,
   onSkip,
+  onConfirmAll,
 }: {
   message: Message;
   confirmStates: (boolean | null)[];
@@ -168,16 +170,21 @@ function MultiConfirmGroup({
   onConfirm: (messageId: string, actionIndex?: number) => void;
   onReject: (messageId: string, actionIndex?: number) => void;
   onSkip?: (messageId: string, actionIndex?: number) => void;
+  onConfirmAll?: (messageId: string) => void;
 }) {
   const [confirmingAll, setConfirmingAll] = useState(false);
 
   const handleConfirmAll = async () => {
     setConfirmingAll(true);
-    const undecidedIndexes = confirmStates
-      .map((c, i) => (c === null ? i : -1))
-      .filter((i) => i !== -1);
-    for (const index of undecidedIndexes) {
-      onConfirm(message.id, index);
+    if (onConfirmAll) {
+      await onConfirmAll(message.id);
+    } else {
+      const undecidedIndexes = confirmStates
+        .map((c, i) => (c === null ? i : -1))
+        .filter((i) => i !== -1);
+      for (const index of undecidedIndexes) {
+        onConfirm(message.id, index);
+      }
     }
     setConfirmingAll(false);
   };
@@ -306,6 +313,7 @@ export default function AiMessageBubble({
   onConfirm,
   onReject,
   onSkip,
+  onConfirmAll,
   onFollowUpSubmit,
   onStepAnswer,
   onRegenerate,
@@ -511,6 +519,7 @@ export default function AiMessageBubble({
         onConfirm={onConfirm}
         onReject={onReject}
         onSkip={onSkip}
+        onConfirmAll={onConfirmAll}
       />
     );
   }

@@ -13,6 +13,9 @@ export const createTaskSchema = z.object({
   parentTaskId: z.number().optional(),
   tags: z.string().optional(),
   warnings: z.array(z.string()).optional(),
+  ref: z.string().optional(),
+  dependsOn: z.array(z.number()).optional(),
+  dependsOnRef: z.array(z.string()).optional(),
 });
 
 export const updateTaskSchema = z.object({
@@ -25,6 +28,7 @@ export const updateTaskSchema = z.object({
   weight: z.number().min(1).max(10).optional(),
   progress: z.number().min(0).max(100).optional(),
   description: z.string().optional(),
+  version: z.number().optional(),
 });
 
 export const queryTasksSchema = z.object({
