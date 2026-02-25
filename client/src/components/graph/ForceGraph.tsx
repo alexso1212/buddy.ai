@@ -1197,13 +1197,25 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
 
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 6])
+      .filter((event) => {
+        if (event.type === 'dblclick') return false;
+        let el = event.target as Element | null;
+        while (el && el !== event.currentTarget) {
+          if (el.tagName === 'g' && el.parentElement && el.parentElement.classList && el.parentElement.classList.contains('nodes')) {
+            return false;
+          }
+          el = el.parentElement;
+        }
+        return true;
+      })
       .on("zoom", (event) => {
         g.attr("transform", event.transform);
         zoomTransformRef.current = event.transform;
       });
     zoomBehaviorRef.current = zoom;
 
-    svg.call(zoom);
+    svg.call(zoom)
+      .on("dblclick.zoom", null);
 
     const VEL_CAP = 5;
     let tickCount = 0;
