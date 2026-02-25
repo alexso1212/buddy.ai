@@ -883,6 +883,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
                 }
 
                 nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
+                deptCentroidsRef.current.set(deptId, { x: data.lastCx, y: data.lastCy });
                 updateGalaxyPositions();
               })
               .on("end", function () {
