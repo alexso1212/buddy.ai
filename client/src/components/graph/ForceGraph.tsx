@@ -804,6 +804,8 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
           })
       );
 
+    const MIN_HIT_RADIUS = 12;
+
     nodeElements.each(function (d) {
       const el = d3.select(this);
       const isBridge = !!(d as any).isBridge;
@@ -815,6 +817,11 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       if (isBridge) {
         el.style("opacity", "0.4");
       }
+
+      el.append("circle")
+        .attr("r", Math.max(r, MIN_HIT_RADIUS))
+        .attr("fill", "transparent")
+        .attr("stroke", "none");
 
       if (!isBridge && d.isOverdue) {
         el.append("circle")
