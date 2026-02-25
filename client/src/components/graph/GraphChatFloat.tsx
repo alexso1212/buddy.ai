@@ -166,7 +166,18 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
     if ((!text && !hasScreenshot) || loading) return;
 
     const finalText = text || (hasScreenshot ? "请分析当前图谱画面" : "");
-    const screenshotBase64 = pendingScreenshot;
+
+    let screenshotBase64 = pendingScreenshot;
+    if (!screenshotBase64 && graphRef?.current) {
+      try {
+        const svg = graphRef.current.getSvgElement();
+        if (svg) {
+          screenshotBase64 = await captureGraphScreenshot(svg);
+        }
+      } catch (err) {
+        console.error("Auto screenshot failed:", err);
+      }
+    }
 
     setInputValue("");
     setPendingScreenshot(null);
