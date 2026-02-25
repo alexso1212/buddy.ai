@@ -963,9 +963,8 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
 
                 const draggedR = galaxyDataRef.current.find(g => g.deptId === deptId)?.radius || 50;
                 const draggedC = { x: data.lastCx, y: data.lastCy };
-                const VELOCITY_STRENGTH = 8;
-
-                if (!event.active) simulation.alphaTarget(0.05).restart();
+                const LERP_PUSH = 0.25;
+                const LERP_PULL = 0.12;
 
                 for (const otherGal of galaxyDataRef.current) {
                   if (otherGal.deptId === deptId) continue;
@@ -979,19 +978,29 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
                   const nx = dx / dist;
                   const ny = dy / dist;
 
-                  let force = 0;
+                  let targetDist = dist;
+                  let lerp = 0;
                   if (dist < idealDist) {
-                    force = (idealDist - dist) * VELOCITY_STRENGTH;
+                    targetDist = idealDist;
+                    lerp = LERP_PUSH;
                   } else if (dist > idealDist * 1.3) {
-                    force = -(dist - idealDist) * VELOCITY_STRENGTH * 0.5;
+                    targetDist = idealDist;
+                    lerp = LERP_PULL;
                   }
 
-                  if (Math.abs(force) > 0.5) {
-                    const otherNodes = simNodes.filter(n => (n.deptId ?? -1) === otherGal.deptId);
-                    for (const n of otherNodes) {
-                      if (n.fx != null) { n.fx = null; n.fy = null; }
-                      n.vx = (n.vx || 0) + nx * force;
-                      n.vy = (n.vy || 0) + ny * force;
+                  if (lerp > 0) {
+                    const moveX = (draggedC.x + nx * targetDist - otherCentroid.x) * lerp;
+                    const moveY = (draggedC.y + ny * targetDist - otherCentroid.y) * lerp;
+                    if (Math.abs(moveX) > 0.3 || Math.abs(moveY) > 0.3) {
+                      const otherNodes = simNodes.filter(n => (n.deptId ?? -1) === otherGal.deptId);
+                      for (const n of otherNodes) {
+                        n.x = (n.x || 0) + moveX;
+                        n.y = (n.y || 0) + moveY;
+                      }
+                      deptCentroidsRef.current.set(otherGal.deptId, {
+                        x: otherCentroid.x + moveX,
+                        y: otherCentroid.y + moveY,
+                      });
                     }
                   }
                 }
