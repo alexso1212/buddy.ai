@@ -191,10 +191,14 @@ export default function GraphView() {
     );
   }
 
-  const nodes = graphData?.nodes ?? [];
-  const links = graphData?.links ?? [];
+  const allNodes = graphData?.nodes ?? [];
+  const allLinks = graphData?.links ?? [];
   const projects = graphData?.projects ?? [];
   const departments = graphData?.departments ?? [];
+
+  const nodes = allNodes.filter(n => n.status !== 'done' && n.status !== 'cancelled');
+  const activeNodeIds = new Set(nodes.map(n => n.id));
+  const links = allLinks.filter(l => activeNodeIds.has(l.source) && activeNodeIds.has(l.target));
 
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
 

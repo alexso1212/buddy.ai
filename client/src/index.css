@@ -43,6 +43,47 @@ html, body {
   50% { opacity: 0.85; }
 }
 
+@keyframes urgent-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 3px rgba(239, 68, 68, 0.4));
+    opacity: 0.8;
+  }
+  50% {
+    filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.9));
+    opacity: 1;
+  }
+}
+
+.urgent-pulse {
+  animation: urgent-pulse 1s ease-in-out infinite;
+  will-change: filter, opacity;
+}
+
+@keyframes soon-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 2px rgba(245, 158, 11, 0.3));
+    opacity: 0.85;
+  }
+  50% {
+    filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.6));
+    opacity: 1;
+  }
+}
+
+.soon-pulse {
+  animation: soon-pulse 2.5s ease-in-out infinite;
+  will-change: filter, opacity;
+}
+
+@keyframes overdue-glow {
+  0%, 100% { stroke-opacity: 0.5; }
+  50% { stroke-opacity: 0.9; }
+}
+
+.overdue-glow {
+  animation: overdue-glow 1.5s ease-in-out infinite;
+}
+
 :root {
   /* ===== 字体（全局共享） ===== */
   --font-serif: Georgia, 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;

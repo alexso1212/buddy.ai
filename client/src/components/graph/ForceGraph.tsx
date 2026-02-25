@@ -373,6 +373,79 @@ function computeGalaxyBoundaries(nodes: SimNode[], departments: DeptInfo[], padd
   return result;
 }
 
+function computeDownstreamCounts(links: { source: number | any; target: number | any }[]): Map<number, number> {
+  const childrenOf = new Map<number, number[]>();
+  for (const l of links) {
+    const src = typeof l.source === 'object' ? l.source.id : l.source;
+    const tgt = typeof l.target === 'object' ? l.target.id : l.target;
+    if (!childrenOf.has(src)) childrenOf.set(src, []);
+    childrenOf.get(src)!.push(tgt);
+  }
+  const cache = new Map<number, number>();
+  function count(id: number, visited: Set<number>): number {
+    if (cache.has(id)) return cache.get(id)!;
+    if (visited.has(id)) return 0;
+    visited.add(id);
+    const children = childrenOf.get(id) || [];
+    let total = children.length;
+    for (const c of children) {
+      total += count(c, visited);
+    }
+    cache.set(id, total);
+    return total;
+  }
+  const allIds = new Set<number>();
+  for (const l of links) {
+    allIds.add(typeof l.source === 'object' ? l.source.id : l.source);
+    allIds.add(typeof l.target === 'object' ? l.target.id : l.target);
+  }
+  for (const id of allIds) count(id, new Set());
+  return cache;
+}
+
+function collectFullChain(nodeId: number, links: any[]): { upstream: Set<number>; downstream: Set<number> } {
+  const childrenOf = new Map<number, number[]>();
+  const parentsOf = new Map<number, number[]>();
+  for (const l of links) {
+    const src = typeof l.source === 'object' ? l.source.id : l.source;
+    const tgt = typeof l.target === 'object' ? l.target.id : l.target;
+    if (!childrenOf.has(src)) childrenOf.set(src, []);
+    childrenOf.get(src)!.push(tgt);
+    if (!parentsOf.has(tgt)) parentsOf.set(tgt, []);
+    parentsOf.get(tgt)!.push(src);
+  }
+  const upstream = new Set<number>();
+  const downstream = new Set<number>();
+  const qUp = [nodeId];
+  while (qUp.length > 0) {
+    const cur = qUp.pop()!;
+    for (const p of (parentsOf.get(cur) || [])) {
+      if (!upstream.has(p) && p !== nodeId) {
+        upstream.add(p);
+        qUp.push(p);
+      }
+    }
+  }
+  const qDown = [nodeId];
+  while (qDown.length > 0) {
+    const cur = qDown.pop()!;
+    for (const c of (childrenOf.get(cur) || [])) {
+      if (!downstream.has(c) && c !== nodeId) {
+        downstream.add(c);
+        qDown.push(c);
+      }
+    }
+  }
+  return { upstream, downstream };
+}
+
+function getDaysUntilDue(dueDate: string | null): number | null {
+  if (!dueDate) return null;
+  const due = new Date(dueDate);
+  const now = new Date();
+  return Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 const HIGHLIGHT_COLORS: Record<string, string> = {
   followUp: '#3b82f6',
   important: '#f59e0b',
@@ -399,6 +472,8 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
   const orbitIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const deptCentroidsRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const hasDraggedRef = useRef(false);
+  const downstreamCountsRef = useRef<Map<number, number>>(new Map());
+  const tooltipRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { collabHealthRef.current = collabHealth; }, [collabHealth]);
   useEffect(() => { onNodeClickRef.current = onNodeClick; }, [onNodeClick]);
@@ -414,7 +489,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     },
   }), []);
 
-  const getRadius = useCallback((node: GraphNode) => {
+  const getRadius = useCallback((node: GraphNode, downstreamCount?: number) => {
     const priorityBase: Record<string, number> = {
       critical: 2.5,
       high: 2,
@@ -423,6 +498,8 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     };
     let r = (priorityBase[node.priority] || 1.8) + node.weight * 0.15;
     if (node.type === 'milestone') r *= 1.2;
+    const dc = downstreamCount ?? (downstreamCountsRef.current.get(node.id) || 0);
+    r += Math.min(dc * 0.3, 2.0);
     return r;
   }, []);
 
@@ -491,6 +568,9 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     const simLinks: SimLink[] = links.map((l) => ({ ...l }));
     simLinksRef.current = simLinks;
 
+    const dsCounts = computeDownstreamCounts(simLinks);
+    downstreamCountsRef.current = dsCounts;
+
     const nodeMap = new Map<number, SimNode>();
     for (const n of simNodes) nodeMap.set(n.id, n);
     nodeMapRef.current = nodeMap;
@@ -548,8 +628,21 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
 
     nodeElements.each(function (d) {
       const el = d3.select(this);
-      const r = getRadius(d);
+      const dc = dsCounts.get(d.id) || 0;
+      const r = getRadius(d, dc);
       const fillColor = getNodeColor(d, colorByRef.current);
+      const daysLeft = getDaysUntilDue(d.dueDate);
+
+      if (d.isOverdue) {
+        el.append("circle")
+          .attr("class", "overdue-glow")
+          .attr("r", r + 3)
+          .attr("fill", "none")
+          .attr("stroke", "#ef4444")
+          .attr("stroke-width", 1)
+          .attr("stroke-opacity", 0.7)
+          .attr("pointer-events", "none");
+      }
 
       el.append("circle")
         .attr("r", r)
@@ -565,6 +658,12 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
 
       if (d.status === 'blocked') {
         el.classed("blocked-breathing", true);
+      } else if (d.isOverdue) {
+        el.classed("urgent-pulse", true);
+      } else if (daysLeft !== null && daysLeft <= 3 && daysLeft > 0) {
+        el.classed("urgent-pulse", true);
+      } else if (daysLeft !== null && daysLeft <= 7 && daysLeft > 3) {
+        el.classed("soon-pulse", true);
       }
     });
 
@@ -664,22 +763,22 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     nodeElements.on("mouseover", function (_event, hoveredNode) {
       hoveredNodeIdRef.current = hoveredNode.id;
 
-      const connectedIds = new Set<number>();
-      connectedIds.add(hoveredNode.id);
-      simLinks.forEach((l) => {
-        const srcId = typeof l.source === "object" ? l.source.id : l.source;
-        const tgtId = typeof l.target === "object" ? l.target.id : l.target;
-        if (srcId === hoveredNode.id) connectedIds.add(Number(tgtId));
-        if (tgtId === hoveredNode.id) connectedIds.add(Number(srcId));
-      });
+      const { upstream, downstream } = collectFullChain(hoveredNode.id, simLinks);
+      const allChain = new Set<number>([hoveredNode.id, ...upstream, ...downstream]);
 
       nodeElements.each(function (d) {
         const el = d3.select(this);
-        el.style("opacity", connectedIds.has(d.id) ? "1" : "0.2");
         if (d.id === hoveredNode.id) {
+          el.style("opacity", "1");
           el.classed("blocked-breathing", false);
+          el.classed("urgent-pulse", false);
+          el.classed("soon-pulse", false);
           el.style("filter", "brightness(1.4)");
+        } else if (allChain.has(d.id)) {
+          el.style("opacity", "0.9");
+          el.style("filter", "none");
         } else {
+          el.style("opacity", "0.15");
           el.style("filter", "none");
         }
       });
@@ -687,6 +786,34 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         const d = d3.select<SVGGElement, SimNode>(this as SVGGElement).datum();
         return `translate(${d.x},${d.y}) scale(2)`;
       });
+
+      const tip = tooltipRef.current;
+      if (tip) {
+        const dc = dsCounts.get(hoveredNode.id) || 0;
+        const daysLeft = getDaysUntilDue(hoveredNode.dueDate);
+        let urgencyText = '';
+        if (hoveredNode.isOverdue) urgencyText = ' (已过期)';
+        else if (daysLeft !== null && daysLeft <= 3) urgencyText = ` (${daysLeft}天后到期)`;
+        else if (daysLeft !== null && daysLeft <= 7) urgencyText = ` (${daysLeft}天后到期)`;
+
+        const STATUS_LABELS: Record<string, string> = {
+          todo: '待办', in_progress: '进行中', in_review: '审核中', blocked: '阻塞',
+        };
+
+        tip.innerHTML = `
+          <div style="font-weight:600;margin-bottom:3px;color:rgba(255,255,255,0.9);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${hoveredNode.title}</div>
+          <div style="color:rgba(255,255,255,0.5);font-size:11px;line-height:1.5">
+            ${hoveredNode.assigneeName ? `<span>${hoveredNode.assigneeName}</span> · ` : ''}${STATUS_LABELS[hoveredNode.status] || hoveredNode.status}${hoveredNode.dueDate ? ` · ${hoveredNode.dueDate.slice(0, 10)}${urgencyText}` : ''}${dc > 0 ? ` · ${dc}个下游依赖` : ''}
+          </div>
+        `;
+        const transform = zoomTransformRef.current;
+        const sx = transform.x + (hoveredNode.x || 0) * transform.k;
+        const sy = transform.y + (hoveredNode.y || 0) * transform.k;
+        tip.style.left = `${sx + 12}px`;
+        tip.style.top = `${sy - 8}px`;
+        tip.style.opacity = '1';
+        tip.style.pointerEvents = 'none';
+      }
     });
 
     nodeElements.on("mouseout", function () {
@@ -695,11 +822,20 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         const el = d3.select(this);
         el.style("opacity", null);
         el.style("filter", null);
+        const daysLeft = getDaysUntilDue(d.dueDate);
         if (d.status === 'blocked') {
           el.classed("blocked-breathing", true);
         }
+        if (d.isOverdue || (daysLeft !== null && daysLeft <= 3)) {
+          el.classed("urgent-pulse", true);
+        } else if (daysLeft !== null && daysLeft <= 7) {
+          el.classed("soon-pulse", true);
+        }
       });
       nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
+
+      const tip = tooltipRef.current;
+      if (tip) tip.style.opacity = '0';
     });
 
     nodeElements.on("click", (_event, d) => {
@@ -825,6 +961,25 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       <svg
         ref={svgRef}
         style={{ position: 'relative', zIndex: 1, width: '100%', height: '100%', display: 'block' }}
+      />
+      <div
+        ref={tooltipRef}
+        data-testid="graph-tooltip"
+        style={{
+          position: 'absolute',
+          zIndex: 20,
+          maxWidth: 220,
+          padding: '6px 10px',
+          background: 'rgba(20, 19, 18, 0.92)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          borderRadius: 8,
+          opacity: 0,
+          transition: 'opacity 120ms',
+          pointerEvents: 'none',
+          fontFamily: 'var(--font-sans)',
+        }}
       />
     </div>
   );

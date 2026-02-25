@@ -49,15 +49,39 @@ function getPipeStyle(srcStatus: string, tgtStatus: string): PipeStyle {
 
 const BASE_MAX_PARTICLES = 600;
 
+function collectChainNodeIds(links: any[], selectedId: number): Set<number> {
+  const childrenOf = new Map<number, number[]>();
+  const parentsOf = new Map<number, number[]>();
+  for (const l of links) {
+    const src = l.source?.id ?? l.source;
+    const tgt = l.target?.id ?? l.target;
+    if (!childrenOf.has(src)) childrenOf.set(src, []);
+    childrenOf.get(src)!.push(tgt);
+    if (!parentsOf.has(tgt)) parentsOf.set(tgt, []);
+    parentsOf.get(tgt)!.push(src);
+  }
+  const ids = new Set<number>([selectedId]);
+  const q = [selectedId];
+  while (q.length > 0) {
+    const cur = q.pop()!;
+    for (const c of (childrenOf.get(cur) || [])) { if (!ids.has(c)) { ids.add(c); q.push(c); } }
+    for (const p of (parentsOf.get(cur) || [])) { if (!ids.has(p)) { ids.add(p); q.push(p); } }
+  }
+  return ids;
+}
+
 function initParticlesForSelected(links: any[], selectedId: number, scale: number = 1): Particle[] {
   const maxParticles = Math.floor(BASE_MAX_PARTICLES * scale);
+  const chainIds = collectChainNodeIds(links, selectedId);
   const particles: Particle[] = [];
   for (let i = 0; i < links.length && particles.length < maxParticles; i++) {
     const link = links[i];
     const src = link.source;
     const tgt = link.target;
     if (!src || !tgt) continue;
-    if (src.id !== selectedId && tgt.id !== selectedId) continue;
+    const srcId = src.id ?? src;
+    const tgtId = tgt.id ?? tgt;
+    if (!chainIds.has(srcId) || !chainIds.has(tgtId)) continue;
     const style = getPipeStyle(src.status || '', tgt.status || '');
     if (!style.hasParticles) {
       const count = 4 + Math.floor(Math.random() * 3);
@@ -148,6 +172,7 @@ export default function BloodVesselCanvas({
   const particlesRef = useRef<Particle[]>([]);
   const deptTubeParticlesRef = useRef<DeptTubeParticle[]>([]);
   const lastDeptCountRef = useRef(0);
+  const chainIdsRef = useRef<Set<number> | null>(null);
   const animFrameRef = useRef<number>(0);
   const bloodFlowRef = useRef(bloodFlow);
   const lastSelectedIdRef = useRef<number | null>(null);
@@ -212,8 +237,10 @@ export default function BloodVesselCanvas({
         lastSelectedIdRef.current = selId;
         if (selId !== null) {
           particlesRef.current = initParticlesForSelected(links, selId, particleScaleRef.current);
+          chainIdsRef.current = collectChainNodeIds(links, selId);
         } else {
           particlesRef.current = [];
+          chainIdsRef.current = null;
         }
       }
 
@@ -222,8 +249,9 @@ export default function BloodVesselCanvas({
       ctx.translate(transform.x, transform.y);
       ctx.scale(k, k);
 
+      const chainIds = chainIdsRef.current;
       const isConnected = (srcId: number, tgtId: number) => {
-        if (selId !== null) return srcId === selId || tgtId === selId;
+        if (selId !== null && chainIds) return chainIds.has(srcId) && chainIds.has(tgtId);
         if (hovId !== null) return srcId === hovId || tgtId === hovId;
         return true;
       };
@@ -262,7 +290,7 @@ export default function BloodVesselCanvas({
         const connected = isConnected(src.id, tgt.id);
         if (!connected) {
           opacity *= 0.15;
-        } else if (selId !== null && (src.id === selId || tgt.id === selId)) {
+        } else if (selId !== null && connected) {
           opacity = Math.min(opacity * 2.5, 0.6);
           lineWidth *= 1.5;
         }
