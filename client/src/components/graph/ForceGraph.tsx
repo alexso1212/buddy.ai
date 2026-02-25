@@ -197,24 +197,29 @@ function deptClusterForce(
       const rawDist = Math.sqrt(ddx * ddx + ddy * ddy) || 1;
       const rA = galaxyRadii.get(kA) || 50;
       const rB = galaxyRadii.get(kB) || 50;
-      const minDist = rA + rB + 40;
+      const idealDist = rA + rB + 60;
+      const tolerance = idealDist * 0.15;
+      const nx = ddx / rawDist;
+      const ny = ddy / rawDist;
 
-      if (rawDist < minDist) {
-        const overlap = minDist - rawDist;
-        const nx = ddx / rawDist;
-        const ny = ddy / rawDist;
-        const push = overlap * alpha * DEPT_SEPARATION_SPRING * 0.5;
+      let fMag = 0;
+      if (rawDist < idealDist - tolerance) {
+        fMag = (idealDist - rawDist) * alpha * 0.8;
+      } else if (rawDist > idealDist + tolerance) {
+        fMag = -(rawDist - idealDist) * alpha * 0.5;
+      } else {
+        fMag = -(rawDist - idealDist) * alpha * 0.05;
+      }
 
-        for (const node of nodes) {
-          if (node.fx != null) continue;
-          const nk = node.deptId ?? -1;
-          if (nk === kA) {
-            node.vx = (node.vx || 0) + nx * push;
-            node.vy = (node.vy || 0) + ny * push;
-          } else if (nk === kB) {
-            node.vx = (node.vx || 0) - nx * push;
-            node.vy = (node.vy || 0) - ny * push;
-          }
+      for (const node of nodes) {
+        if (node.fx != null) continue;
+        const nk = node.deptId ?? -1;
+        if (nk === kA) {
+          node.vx = (node.vx || 0) + nx * fMag;
+          node.vy = (node.vy || 0) + ny * fMag;
+        } else if (nk === kB) {
+          node.vx = (node.vx || 0) - nx * fMag;
+          node.vy = (node.vy || 0) - ny * fMag;
         }
       }
     }
