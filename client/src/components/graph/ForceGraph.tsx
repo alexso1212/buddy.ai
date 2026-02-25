@@ -124,38 +124,40 @@ function getNodeColor(node: GraphNode, colorBy: ColorByOption): string {
   }
 }
 
-const DEPT_BASE_MIN_DIST = 200;
-const DEPT_MAX_DIST = 400;
-const DEPT_FORCE_DIST_CLAMP = 40;
-const DEPT_FORCE_VEL_CAP = 3;
+const DEPT_ORBIT_RADIUS = 180;
+const DEPT_ORBIT_SPRING = 0.6;
+const DEPT_INTRA_ATTRACT = 0.35;
+const DEPT_SEPARATION_SPRING = 0.8;
 
 function deptClusterForce(
   nodes: SimNode[],
   alpha: number,
   deptCentroidsOut?: Map<number, { x: number; y: number }>,
-  galaxyBoundaries?: GalaxyBoundary[]
+  galaxyBoundaries?: GalaxyBoundary[],
+  centerX?: number,
+  centerY?: number
 ) {
+  const cx = centerX ?? 0;
+  const cy = centerY ?? 0;
+
   const centroids: Record<number, { x: number; y: number; count: number }> = {};
   for (const node of nodes) {
     const key = node.deptId ?? -1;
-    if (!centroids[key]) {
-      centroids[key] = { x: 0, y: 0, count: 0 };
-    }
+    if (!centroids[key]) centroids[key] = { x: 0, y: 0, count: 0 };
     centroids[key].x += node.x || 0;
     centroids[key].y += node.y || 0;
     centroids[key].count += 1;
   }
-  const centroidKeys = Object.keys(centroids);
+  const centroidKeys = Object.keys(centroids).map(Number);
   for (const key of centroidKeys) {
-    const c = centroids[Number(key)];
+    const c = centroids[key];
     c.x /= c.count;
     c.y /= c.count;
   }
 
   if (deptCentroidsOut) {
     deptCentroidsOut.clear();
-    for (const key of centroidKeys) {
-      const k = Number(key);
+    for (const k of centroidKeys) {
       if (k !== -1) deptCentroidsOut.set(k, { x: centroids[k].x, y: centroids[k].y });
     }
   }
@@ -165,44 +167,66 @@ function deptClusterForce(
     for (const g of galaxyBoundaries) galaxyRadii.set(g.deptId, g.radius);
   }
 
-  const attractStrength = 0.35;
+  const deptKeys = centroidKeys.filter(k => k !== -1);
+  const maxGalaxyR = Math.max(...deptKeys.map(k => galaxyRadii.get(k) || 50), 50);
+  const orbitR = Math.max(DEPT_ORBIT_RADIUS, maxGalaxyR + 60);
+
+  for (const key of deptKeys) {
+    const c = centroids[key];
+    const dx = c.x - cx;
+    const dy = c.y - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const deviation = dist - orbitR;
+    const pullStrength = alpha * DEPT_ORBIT_SPRING;
+    const pullX = -(dx / dist) * deviation * pullStrength;
+    const pullY = -(dy / dist) * deviation * pullStrength;
+
+    for (const node of nodes) {
+      if ((node.deptId ?? -1) !== key || node.fx != null) continue;
+      node.vx = (node.vx || 0) + pullX;
+      node.vy = (node.vy || 0) + pullY;
+    }
+  }
+
+  for (let i = 0; i < deptKeys.length; i++) {
+    for (let j = i + 1; j < deptKeys.length; j++) {
+      const kA = deptKeys[i], kB = deptKeys[j];
+      const cA = centroids[kA], cB = centroids[kB];
+      const ddx = cA.x - cB.x;
+      const ddy = cA.y - cB.y;
+      const rawDist = Math.sqrt(ddx * ddx + ddy * ddy) || 1;
+      const rA = galaxyRadii.get(kA) || 50;
+      const rB = galaxyRadii.get(kB) || 50;
+      const minDist = rA + rB + 40;
+
+      if (rawDist < minDist) {
+        const overlap = minDist - rawDist;
+        const nx = ddx / rawDist;
+        const ny = ddy / rawDist;
+        const push = overlap * alpha * DEPT_SEPARATION_SPRING * 0.5;
+
+        for (const node of nodes) {
+          if (node.fx != null) continue;
+          const nk = node.deptId ?? -1;
+          if (nk === kA) {
+            node.vx = (node.vx || 0) + nx * push;
+            node.vy = (node.vy || 0) + ny * push;
+          } else if (nk === kB) {
+            node.vx = (node.vx || 0) - nx * push;
+            node.vy = (node.vy || 0) - ny * push;
+          }
+        }
+      }
+    }
+  }
+
   for (const node of nodes) {
+    if (node.fx != null) continue;
     const key = node.deptId ?? -1;
     const c = centroids[key];
     if (c) {
-      node.vx = (node.vx || 0) + (c.x - (node.x || 0)) * alpha * attractStrength;
-      node.vy = (node.vy || 0) + (c.y - (node.y || 0)) * alpha * attractStrength;
-
-      for (const otherKey of centroidKeys) {
-        const otherDept = Number(otherKey);
-        if (otherDept === key) continue;
-        const other = centroids[otherDept];
-        const dx = (node.x || 0) - other.x;
-        const dy = (node.y || 0) - other.y;
-        const rawDist = Math.sqrt(dx * dx + dy * dy);
-        const dist = Math.max(rawDist, DEPT_FORCE_DIST_CLAMP);
-        const nx = dx / dist;
-        const ny = dy / dist;
-
-        const rA = galaxyRadii.get(key) || 50;
-        const rB = galaxyRadii.get(otherDept) || 50;
-        const effectiveMinDist = Math.max(DEPT_BASE_MIN_DIST, rA + rB + 30);
-        const effectiveIdealDist = effectiveMinDist + 40;
-
-        let fMag = 0;
-        if (rawDist < effectiveMinDist) {
-          fMag = (effectiveMinDist - dist) / effectiveMinDist * alpha * 1.5;
-        } else if (rawDist > DEPT_MAX_DIST) {
-          fMag = -((dist - DEPT_MAX_DIST) / DEPT_MAX_DIST) * alpha * 0.3;
-        } else {
-          fMag = (dist - effectiveIdealDist) / effectiveIdealDist * alpha * -0.1;
-        }
-
-        fMag = Math.max(-DEPT_FORCE_VEL_CAP, Math.min(DEPT_FORCE_VEL_CAP, fMag));
-
-        node.vx = (node.vx || 0) + nx * fMag;
-        node.vy = (node.vy || 0) + ny * fMag;
-      }
+      node.vx = (node.vx || 0) + (c.x - (node.x || 0)) * alpha * DEPT_INTRA_ATTRACT;
+      node.vy = (node.vy || 0) + (c.y - (node.y || 0)) * alpha * DEPT_INTRA_ATTRACT;
     }
   }
 }
@@ -630,7 +654,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         "collision",
         d3.forceCollide<SimNode>().radius((d) => getRadius(d) * 2 + 2)
       )
-      .force("cluster", (alpha: number) => deptClusterForce(simNodes, alpha, deptCentroidsRef.current, galaxyDataRef.current));
+      .force("cluster", (alpha: number) => deptClusterForce(simNodes, alpha, deptCentroidsRef.current, galaxyDataRef.current, width / 2, height / 2));
 
     simulationRef.current = simulation;
 
