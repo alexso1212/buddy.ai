@@ -659,7 +659,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     orbitTopologyRef.current = topology;
 
     const simulation = d3.forceSimulation<SimNode>(simNodes)
-      .velocityDecay(0.5)
+      .velocityDecay(0.55)
       .force(
         "link",
         d3.forceLink<SimNode, SimLink>(simLinks)
@@ -667,11 +667,11 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
           .distance(35)
           .strength(0.8)
       )
-      .force("charge", d3.forceManyBody().strength(-50).distanceMax(400))
+      .force("charge", d3.forceManyBody().strength(-35).distanceMax(300))
       .force("center", d3.forceCenter(width / 2, height / 2).strength(0.05))
       .force(
         "collision",
-        d3.forceCollide<SimNode>().radius((d) => getRadius(d) * 1.5 + 2)
+        d3.forceCollide<SimNode>().radius((d) => getRadius(d) * 1.5 + 2).strength(0.9)
       )
       .force("cluster", (alpha: number) => deptClusterForce(simNodes, alpha, deptCentroidsRef.current, galaxyDataRef.current, width / 2, height / 2));
 
@@ -732,12 +732,14 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
                 clearTimeout(longPressTimerRef.current);
                 longPressTimerRef.current = null;
               }
-              if (!event.active) simulation.alphaTarget(0.02).restart();
+              if (!event.active) simulation.alphaTarget(0.05).restart();
             }
             d.fx = event.x;
             d.fy = event.y;
 
             const dragR = getRadius(d);
+            const PUSH_DAMPING = 0.35;
+            const MAX_PUSH = 12;
             for (const other of simNodes) {
               if (other.id === d.id) continue;
               const odx = (other.x || 0) - event.x;
@@ -746,16 +748,14 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
               const otherR = getRadius(other);
               const minDist = dragR + otherR + NODE_COLLISION_GAP;
               if (oDist < minDist) {
-                const push = minDist - oDist;
+                const overlap = minDist - oDist;
+                const push = Math.min(overlap * PUSH_DAMPING, MAX_PUSH);
                 const nx = odx / oDist;
                 const ny = ody / oDist;
                 other.x = (other.x || 0) + nx * push;
                 other.y = (other.y || 0) + ny * push;
-                if (other.fx == null) {
-                  other.fx = other.x;
-                  other.fy = other.y;
-                  setTimeout(() => { other.fx = null; other.fy = null; }, 200);
-                }
+                other.vx = (other.vx || 0) + nx * push * 0.5;
+                other.vy = (other.vy || 0) + ny * push * 0.5;
               }
             }
             nodeElements.attr("transform", (nd) => `translate(${nd.x},${nd.y})`);
