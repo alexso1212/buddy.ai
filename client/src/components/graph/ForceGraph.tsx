@@ -60,6 +60,7 @@ export interface HighlightedNode {
 
 export interface ForceGraphHandle {
   resetView: () => void;
+  getSvgElement: () => SVGSVGElement | null;
 }
 
 interface ForceGraphProps {
@@ -547,6 +548,9 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       if (simulationRef.current) {
         simulationRef.current.alpha(0.3).restart();
       }
+    },
+    getSvgElement() {
+      return svgRef.current;
     },
   }), []);
 

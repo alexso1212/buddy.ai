@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { X, Send, Sparkles } from "lucide-react";
+import { X, Send, Sparkles, Camera } from "lucide-react";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import type { ForceGraphHandle } from "@/components/graph/ForceGraph";
 
 interface ActionPayload {
   actionType: string;
@@ -25,11 +26,72 @@ interface Message {
   confirmed?: boolean | null;
   actionConfirmed?: (boolean | null)[];
   isStreaming?: boolean;
+  attachments?: { type: string; name: string; mimeType: string; base64: string; previewUrl?: string }[];
 }
 
 interface GraphChatFloatProps {
   open: boolean;
   onClose: () => void;
+  graphRef?: React.RefObject<ForceGraphHandle | null>;
+}
+
+async function captureGraphScreenshot(svg: SVGSVGElement): Promise<string> {
+  const clone = svg.cloneNode(true) as SVGSVGElement;
+  const w = svg.clientWidth || svg.getBoundingClientRect().width;
+  const h = svg.clientHeight || svg.getBoundingClientRect().height;
+  clone.setAttribute("width", String(w));
+  clone.setAttribute("height", String(h));
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+
+  const styles = document.querySelectorAll("style");
+  let cssText = "";
+  styles.forEach((s) => (cssText += s.textContent || ""));
+  if (cssText) {
+    const styleEl = document.createElementNS("http://www.w3.org/2000/svg", "style");
+    styleEl.textContent = cssText;
+    clone.insertBefore(styleEl, clone.firstChild);
+  }
+
+  const computed = getComputedStyle(svg);
+  clone.querySelectorAll("*").forEach((el) => {
+    const orig = svg.querySelector(`[data-node-id="${(el as HTMLElement).dataset?.nodeId}"]`);
+    if (!orig) return;
+    const cs = getComputedStyle(orig);
+    (el as SVGElement).style.fill = cs.fill;
+    (el as SVGElement).style.stroke = cs.stroke;
+    (el as SVGElement).style.opacity = cs.opacity;
+  });
+
+  const serializer = new XMLSerializer();
+  const svgStr = serializer.serializeToString(clone);
+  const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  return new Promise<string>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1600 / w, 1200 / h, 1);
+      const cw = Math.round(w * scale);
+      const ch = Math.round(h * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = cw;
+      canvas.height = ch;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { reject(new Error("No canvas context")); return; }
+      ctx.fillStyle = "#0D0D0D";
+      ctx.fillRect(0, 0, cw, ch);
+      ctx.drawImage(img, 0, 0, cw, ch);
+      URL.revokeObjectURL(url);
+      const base64 = canvas.toDataURL("image/png").split(",")[1];
+      resolve(base64);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Failed to render SVG to image"));
+    };
+    img.src = url;
+  });
 }
 
 let msgCounter = 0;
@@ -45,11 +107,13 @@ const INITIAL_MESSAGE: Message = {
   type: "text",
 };
 
-export default function GraphChatFloat({ open, onClose }: GraphChatFloatProps) {
+export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFloatProps) {
   const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
   const [loading, setLoading] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [visible, setVisible] = useState(false);
+  const [pendingScreenshot, setPendingScreenshot] = useState<string | null>(null);
+  const [capturing, setCapturing] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const conversationHistory = useRef<{ role: string; content: string }[]>([]);
@@ -81,11 +145,31 @@ export default function GraphChatFloat({ open, onClose }: GraphChatFloatProps) {
     setTimeout(onClose, 200);
   }, [onClose]);
 
+  const handleCapture = useCallback(async () => {
+    if (!graphRef?.current || capturing) return;
+    const svg = graphRef.current.getSvgElement();
+    if (!svg) return;
+    setCapturing(true);
+    try {
+      const base64 = await captureGraphScreenshot(svg);
+      setPendingScreenshot(base64);
+    } catch (err) {
+      console.error("Screenshot failed:", err);
+    } finally {
+      setCapturing(false);
+    }
+  }, [graphRef, capturing]);
+
   const handleSend = useCallback(async () => {
     const text = inputValue.trim();
-    if (!text || loading) return;
+    const hasScreenshot = !!pendingScreenshot;
+    if ((!text && !hasScreenshot) || loading) return;
+
+    const finalText = text || (hasScreenshot ? "请分析当前图谱画面" : "");
+    const screenshotBase64 = pendingScreenshot;
 
     setInputValue("");
+    setPendingScreenshot(null);
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
     }
@@ -97,13 +181,20 @@ export default function GraphChatFloat({ open, onClose }: GraphChatFloatProps) {
     const userMsg: Message = {
       id: nextId(),
       role: "user",
-      content: text,
+      content: finalText,
       type: "text",
+      attachments: screenshotBase64 ? [{
+        type: "image",
+        name: "graph-screenshot.png",
+        mimeType: "image/png",
+        base64: screenshotBase64,
+        previewUrl: `data:image/png;base64,${screenshotBase64}`,
+      }] : undefined,
     };
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
 
-    conversationHistory.current.push({ role: "user", content: text });
+    conversationHistory.current.push({ role: "user", content: finalText });
 
     const assistantMsgId = nextId();
     const streamingMsg: Message = {
@@ -125,14 +216,25 @@ export default function GraphChatFloat({ open, onClose }: GraphChatFloatProps) {
       const token = localStorage.getItem("buddy_token");
       if (token) streamHeaders["Authorization"] = `Bearer ${token}`;
 
+      const bodyPayload: Record<string, any> = {
+        message: finalText,
+        conversationHistory: conversationHistory.current.filter(m => m.content && m.content.trim() !== ''),
+        currentUserId: currentUserId || 1,
+      };
+
+      if (screenshotBase64) {
+        bodyPayload.attachments = [{
+          type: "image",
+          name: "graph-screenshot.png",
+          mimeType: "image/png",
+          base64: screenshotBase64,
+        }];
+      }
+
       const res = await fetch("/api/ai/chat/stream", {
         method: "POST",
         headers: streamHeaders,
-        body: JSON.stringify({
-          message: text,
-          conversationHistory: conversationHistory.current.filter(m => m.content && m.content.trim() !== ''),
-          currentUserId: currentUserId || 1,
-        }),
+        body: JSON.stringify(bodyPayload),
         signal: abortController.signal,
       });
 
@@ -570,69 +672,140 @@ export default function GraphChatFloat({ open, onClose }: GraphChatFloatProps) {
           flexShrink: 0,
           borderTop: "1px solid rgba(255,255,255,0.06)",
           padding: "10px 12px",
-          display: "flex",
-          alignItems: "flex-end",
-          gap: 8,
         }}
         data-testid="graph-chat-input-area"
       >
-        <textarea
-          ref={inputRef}
-          value={inputValue}
-          onChange={(e) => {
-            setInputValue(e.target.value);
-            adjustHeight();
-          }}
-          onKeyDown={handleKeyDown}
-          placeholder="分析图谱上的任务..."
-          disabled={loading}
-          rows={1}
-          style={{
-            flex: 1,
-            minHeight: 36,
-            maxHeight: 80,
-            padding: "8px 12px",
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 10,
-            color: "rgba(255,255,255,0.9)",
-            fontSize: 14,
-            lineHeight: 1.4,
-            resize: "none",
-            outline: "none",
-            fontFamily: "var(--font-sans)",
-            transition: "border-color 150ms",
-          }}
-          data-testid="graph-chat-input"
-        />
-        <button
-          onClick={handleSend}
-          disabled={!inputValue.trim() || loading}
-          style={{
-            width: 36,
-            height: 36,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            borderRadius: 10,
-            border: "none",
-            background:
-              inputValue.trim() && !loading
-                ? "rgba(139,92,246,0.6)"
-                : "rgba(255,255,255,0.05)",
-            color:
-              inputValue.trim() && !loading
-                ? "#fff"
-                : "rgba(255,255,255,0.25)",
-            cursor:
-              inputValue.trim() && !loading ? "pointer" : "not-allowed",
-            transition: "all 150ms",
-            flexShrink: 0,
-          }}
-          data-testid="graph-chat-send"
-        >
-          <Send size={16} strokeWidth={2} />
-        </button>
+        {pendingScreenshot && (
+          <div style={{
+            marginBottom: 8,
+            position: "relative",
+            display: "inline-block",
+          }}>
+            <img
+              src={`data:image/png;base64,${pendingScreenshot}`}
+              alt="Graph screenshot"
+              style={{
+                width: 120,
+                height: 72,
+                objectFit: "cover",
+                borderRadius: 8,
+                border: "1px solid rgba(255,255,255,0.12)",
+              }}
+              data-testid="graph-screenshot-preview"
+            />
+            <button
+              onClick={() => setPendingScreenshot(null)}
+              style={{
+                position: "absolute",
+                top: -6,
+                right: -6,
+                width: 20,
+                height: 20,
+                borderRadius: "50%",
+                background: "rgba(0,0,0,0.7)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                padding: 0,
+              }}
+              data-testid="graph-screenshot-remove"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+          {graphRef && (
+            <button
+              onClick={handleCapture}
+              disabled={loading || capturing}
+              title="截取图谱画面"
+              style={{
+                width: 36,
+                height: 36,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 10,
+                border: "none",
+                background: capturing
+                  ? "rgba(139,92,246,0.3)"
+                  : pendingScreenshot
+                    ? "rgba(139,92,246,0.2)"
+                    : "rgba(255,255,255,0.05)",
+                color: capturing || pendingScreenshot
+                  ? "#8b5cf6"
+                  : "rgba(255,255,255,0.4)",
+                cursor: loading || capturing ? "not-allowed" : "pointer",
+                transition: "all 150ms",
+                flexShrink: 0,
+              }}
+              data-testid="graph-chat-capture"
+            >
+              <Camera size={16} strokeWidth={2} />
+            </button>
+          )}
+          <textarea
+            ref={inputRef}
+            value={inputValue}
+            onChange={(e) => {
+              setInputValue(e.target.value);
+              adjustHeight();
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder={pendingScreenshot ? "添加分析要求（可选）..." : "分析图谱上的任务..."}
+            disabled={loading}
+            rows={1}
+            style={{
+              flex: 1,
+              minHeight: 36,
+              maxHeight: 80,
+              padding: "8px 12px",
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 10,
+              color: "rgba(255,255,255,0.9)",
+              fontSize: 14,
+              lineHeight: 1.4,
+              resize: "none",
+              outline: "none",
+              fontFamily: "var(--font-sans)",
+              transition: "border-color 150ms",
+            }}
+            data-testid="graph-chat-input"
+          />
+          <button
+            onClick={handleSend}
+            disabled={(!inputValue.trim() && !pendingScreenshot) || loading}
+            style={{
+              width: 36,
+              height: 36,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 10,
+              border: "none",
+              background:
+                (inputValue.trim() || pendingScreenshot) && !loading
+                  ? "rgba(139,92,246,0.6)"
+                  : "rgba(255,255,255,0.05)",
+              color:
+                (inputValue.trim() || pendingScreenshot) && !loading
+                  ? "#fff"
+                  : "rgba(255,255,255,0.25)",
+              cursor:
+                (inputValue.trim() || pendingScreenshot) && !loading ? "pointer" : "not-allowed",
+              transition: "all 150ms",
+              flexShrink: 0,
+            }}
+            data-testid="graph-chat-send"
+          >
+            <Send size={16} strokeWidth={2} />
+          </button>
+        </div>
       </div>
     </div>
   );

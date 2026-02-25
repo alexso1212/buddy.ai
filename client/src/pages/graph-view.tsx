@@ -288,7 +288,7 @@ export default function GraphView() {
 
       <GraphNodeSheet node={selectedNode} onClose={handleSheetClose} />
 
-      <GraphChatFloat open={showChat} onClose={() => setShowChat(false)} />
+      <GraphChatFloat open={showChat} onClose={() => setShowChat(false)} graphRef={graphRef} />
     </div>
   );
 }

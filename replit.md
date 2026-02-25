@@ -47,6 +47,7 @@ The system uses a 15-table PostgreSQL database schema, including `organizations`
     - **Task List/Detail:** Comprehensive task management, including subtasks, dependencies, comments, participant management, and verdict integration. Features inline status changes and filtering.
     - **Team:** User management, department hierarchy, and job role definitions.
     - **Settings:** Organization-level information.
+- **GraphChatFloat:** Floating AI chat panel on graph view. Features screenshot capture: camera button captures current SVG graph as PNG via Canvas, sends as base64 image attachment to Claude for visual analysis. AI can see the graph layout and analyze node positions, clusters, and visual patterns.
 - **AI Chat Components:** Includes a floating chat button, a main chat panel managing history and state, various message bubble types, action confirmation cards, and a robust input bar.
 - **Verdict Feature UI:** Integrated verdict displays with color-coding (green/yellow/red/blue) and actions for accepting or overriding verdicts.
 - **Needs Review Feature:** Tasks with incomplete information (`needsReview=true`) are flagged with warnings and a dedicated filter.
