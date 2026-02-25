@@ -260,7 +260,7 @@ export default function BloodVesselCanvas({
         const link = links[i];
         const src = link.source;
         const tgt = link.target;
-        if (src.x == null || tgt.x == null) continue;
+        if (src.x == null || tgt.x == null || !isFinite(src.x) || !isFinite(src.y) || !isFinite(tgt.x) || !isFinite(tgt.y)) continue;
 
         let opacity: number;
         let color: string;
@@ -315,7 +315,7 @@ export default function BloodVesselCanvas({
           const link = links[p.linkIdx];
           const src = link.source;
           const tgt = link.target;
-          if (src.x == null || tgt.x == null) continue;
+          if (src.x == null || tgt.x == null || !isFinite(src.x) || !isFinite(src.y) || !isFinite(tgt.x) || !isFinite(tgt.y)) continue;
 
           const style = getPipeStyle(src.status || '', tgt.status || '');
           const speed = style.hasParticles ? style.speed : 0.005;
@@ -353,7 +353,7 @@ export default function BloodVesselCanvas({
             for (let j = i + 1; j < ids.length; j++) {
               const a = centroids.get(ids[i]);
               const b = centroids.get(ids[j]);
-              if (!a || !b) continue;
+              if (!a || !b || !isFinite(a.x) || !isFinite(a.y) || !isFinite(b.x) || !isFinite(b.y)) continue;
 
               ctx.globalAlpha = 0.06;
               ctx.strokeStyle = '#8b8b8b';

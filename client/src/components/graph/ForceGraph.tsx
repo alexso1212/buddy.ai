@@ -126,6 +126,8 @@ function getNodeColor(node: GraphNode, colorBy: ColorByOption): string {
 const DEPT_IDEAL_DIST = 180;
 const DEPT_MIN_DIST = 120;
 const DEPT_MAX_DIST = 260;
+const DEPT_FORCE_DIST_CLAMP = 40;
+const DEPT_FORCE_VEL_CAP = 3;
 
 function deptClusterForce(nodes: SimNode[], alpha: number, deptCentroidsOut?: Map<number, { x: number; y: number }>) {
   const centroids: Record<number, { x: number; y: number; count: number }> = {};
@@ -167,22 +169,24 @@ function deptClusterForce(nodes: SimNode[], alpha: number, deptCentroidsOut?: Ma
         const other = centroids[otherDept];
         const dx = (node.x || 0) - other.x;
         const dy = (node.y || 0) - other.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const rawDist = Math.sqrt(dx * dx + dy * dy);
+        const dist = Math.max(rawDist, DEPT_FORCE_DIST_CLAMP);
+        const nx = dx / dist;
+        const ny = dy / dist;
 
-        if (dist < DEPT_MIN_DIST) {
-          const push = (DEPT_MIN_DIST - dist) / dist * alpha * 0.15;
-          node.vx = (node.vx || 0) + dx * push;
-          node.vy = (node.vy || 0) + dy * push;
-        } else if (dist > DEPT_MAX_DIST) {
-          const pull = (dist - DEPT_MAX_DIST) / dist * alpha * 0.08;
-          node.vx = (node.vx || 0) - dx * pull;
-          node.vy = (node.vy || 0) - dy * pull;
+        let fMag = 0;
+        if (rawDist < DEPT_MIN_DIST) {
+          fMag = (DEPT_MIN_DIST - dist) / DEPT_MIN_DIST * alpha * 0.8;
+        } else if (rawDist > DEPT_MAX_DIST) {
+          fMag = -((dist - DEPT_MAX_DIST) / DEPT_MAX_DIST) * alpha * 0.5;
         } else {
-          const diff = dist - DEPT_IDEAL_DIST;
-          const gentle = diff / dist * alpha * 0.02;
-          node.vx = (node.vx || 0) - dx * gentle;
-          node.vy = (node.vy || 0) - dy * gentle;
+          fMag = (dist - DEPT_IDEAL_DIST) / DEPT_IDEAL_DIST * alpha * -0.1;
         }
+
+        fMag = Math.max(-DEPT_FORCE_VEL_CAP, Math.min(DEPT_FORCE_VEL_CAP, fMag));
+
+        node.vx = (node.vx || 0) + nx * fMag;
+        node.vy = (node.vy || 0) + ny * fMag;
       }
     }
   }
@@ -564,7 +568,22 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       orbitIntervalRef.current = null;
     }
 
-    const simNodes: SimNode[] = nodes.map((n) => ({ ...n }));
+    const deptIds = [...new Set(nodes.map(n => n.deptId ?? -1))];
+    const deptAngle = (deptId: number) => {
+      const idx = deptIds.indexOf(deptId);
+      return (idx / Math.max(deptIds.length, 1)) * Math.PI * 2;
+    };
+    const spreadR = Math.min(width, height) * 0.2;
+
+    const simNodes: SimNode[] = nodes.map((n) => {
+      const angle = deptAngle(n.deptId ?? -1) + (Math.random() - 0.5) * 0.8;
+      const r = spreadR * (0.5 + Math.random() * 0.5);
+      return {
+        ...n,
+        x: width / 2 + Math.cos(angle) * r,
+        y: height / 2 + Math.sin(angle) * r,
+      };
+    });
     const simLinks: SimLink[] = links.map((l) => ({ ...l }));
     simLinksRef.current = simLinks;
 
@@ -579,14 +598,16 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     orbitTopologyRef.current = topology;
 
     const simulation = d3.forceSimulation<SimNode>(simNodes)
+      .velocityDecay(0.5)
       .force(
         "link",
         d3.forceLink<SimNode, SimLink>(simLinks)
           .id((d) => d.id)
           .distance(35)
+          .strength(0.8)
       )
-      .force("charge", d3.forceManyBody().strength(-60))
-      .force("center", d3.forceCenter(width / 2, height / 2))
+      .force("charge", d3.forceManyBody().strength(-25).distanceMax(200))
+      .force("center", d3.forceCenter(width / 2, height / 2).strength(0.05))
       .force(
         "collision",
         d3.forceCollide<SimNode>().radius((d) => getRadius(d) + 1)
@@ -884,12 +905,16 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       orbitIntervalRef.current = interval;
     });
 
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width: w, height: h } = entry.contentRect;
         svg.attr("width", w).attr("height", h);
-        simulation.force("center", d3.forceCenter(w / 2, h / 2));
-        simulation.alpha(0.3).restart();
+        simulation.force("center", d3.forceCenter(w / 2, h / 2).strength(0.05));
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          simulation.alpha(0.15).restart();
+        }, 200);
       }
     });
     resizeObserver.observe(container);
@@ -899,6 +924,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         clearInterval(orbitIntervalRef.current);
         orbitIntervalRef.current = null;
       }
+      if (resizeTimer) clearTimeout(resizeTimer);
       simulation.stop();
       resizeObserver.disconnect();
     };
