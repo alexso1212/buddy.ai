@@ -624,11 +624,11 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
           .distance(35)
           .strength(0.8)
       )
-      .force("charge", d3.forceManyBody().strength(-25).distanceMax(200))
+      .force("charge", d3.forceManyBody().strength(-50).distanceMax(400))
       .force("center", d3.forceCenter(width / 2, height / 2).strength(0.05))
       .force(
         "collision",
-        d3.forceCollide<SimNode>().radius((d) => getRadius(d) + 1)
+        d3.forceCollide<SimNode>().radius((d) => getRadius(d) * 2 + 2)
       )
       .force("cluster", (alpha: number) => deptClusterForce(simNodes, alpha, deptCentroidsRef.current, galaxyDataRef.current));
 
