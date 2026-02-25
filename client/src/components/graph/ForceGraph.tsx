@@ -1014,22 +1014,23 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
 
                 const pushedDepts: Set<number> | undefined = (this as any).__pushedDepts;
 
+                if (pushedDepts) {
+                  for (const pd of pushedDepts) {
+                    const pushed = simNodes.filter(n => (n.deptId ?? -1) === pd);
+                    for (const n of pushed) {
+                      n.fx = null;
+                      n.fy = null;
+                    }
+                  }
+                }
+
                 setTimeout(() => {
                   for (const n of data.deptNodes) {
                     n.fx = null;
                     n.fy = null;
                   }
-                  if (pushedDepts) {
-                    for (const pd of pushedDepts) {
-                      const pushed = simNodes.filter(n => (n.deptId ?? -1) === pd);
-                      for (const n of pushed) {
-                        n.fx = null;
-                        n.fy = null;
-                      }
-                    }
-                  }
-                  simulation.alpha(0.1).restart();
-                }, 2000);
+                  simulation.alpha(0.3).restart();
+                }, 100);
 
                 (this as any).__dragData = null;
                 (this as any).__pushedDepts = null;
