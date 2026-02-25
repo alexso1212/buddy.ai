@@ -525,7 +525,6 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
   const justClickedNodeRef = useRef(false);
   const downstreamCountsRef = useRef<Map<number, number>>(new Map());
   const tooltipRef = useRef<HTMLDivElement>(null);
-  const activeTouchCountRef = useRef(0);
 
   useEffect(() => { collabHealthRef.current = collabHealth; }, [collabHealth]);
   useEffect(() => { onNodeClickRef.current = onNodeClick; }, [onNodeClick]);
@@ -664,11 +663,13 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
 
     simulationRef.current = simulation;
 
-    const svgNode = svg.node()!;
-    const touchHandler = (e: TouchEvent) => { activeTouchCountRef.current = e.touches.length; };
-    svgNode.addEventListener('touchstart', touchHandler, { passive: true });
-    svgNode.addEventListener('touchend', touchHandler, { passive: true });
-    svgNode.addEventListener('touchcancel', touchHandler, { passive: true });
+    const isMultiTouch = (event: any) => {
+      const se = event?.sourceEvent;
+      if (!se) return false;
+      if (se.touches) return se.touches.length >= 2;
+      if (se.pointerType === 'touch' && se.isPrimary === false) return true;
+      return false;
+    };
 
     const NODE_COLLISION_GAP = 8;
 
@@ -682,7 +683,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         d3.drag<SVGGElement, SimNode>()
           .on("start", (event, d) => {
             if (event.sourceEvent) event.sourceEvent.preventDefault();
-            if (activeTouchCountRef.current >= 2) return;
+            if (isMultiTouch(event)) return;
             hasDraggedRef.current = false;
             longPressFiredRef.current = false;
             d.fx = d.x;
@@ -701,7 +702,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
             }, 400);
           })
           .on("drag", (event, d) => {
-            if (activeTouchCountRef.current >= 2) {
+            if (isMultiTouch(event)) {
               d.fx = null;
               d.fy = null;
               draggedNodeIdRef.current = null;
@@ -918,7 +919,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
                   event.sourceEvent.stopPropagation();
                   event.sourceEvent.preventDefault();
                 }
-                if (activeTouchCountRef.current >= 2) return;
+                if (isMultiTouch(event)) return;
                 d3.select(this).attr("cursor", "grabbing");
 
                 const deptNodes = simNodes.filter(n => (n.deptId ?? -1) === deptId);
@@ -940,7 +941,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
               .on("drag", function (event) {
                 const data = (this as any).__dragData;
                 if (!data) return;
-                if (activeTouchCountRef.current >= 2) {
+                if (isMultiTouch(event)) {
                   for (const n of data.deptNodes) { n.fx = null; n.fy = null; }
                   (this as any).__dragData = null;
                   d3.select(this).attr("cursor", "grab");
@@ -1261,9 +1262,6 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       if (resizeTimer) clearTimeout(resizeTimer);
       simulation.stop();
       resizeObserver.disconnect();
-      svgNode.removeEventListener('touchstart', touchHandler);
-      svgNode.removeEventListener('touchend', touchHandler);
-      svgNode.removeEventListener('touchcancel', touchHandler);
     };
   }, [nodes, links, projects, departments, getRadius]);
 
