@@ -868,11 +868,8 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
                 const data = (this as any).__dragData;
                 if (!data) return;
 
-                const scaledDx = event.dx;
-                const scaledDy = event.dy;
-
-                data.lastCx += scaledDx;
-                data.lastCy += scaledDy;
+                data.lastCx += event.dx;
+                data.lastCy += event.dy;
 
                 for (const off of data.offsets) {
                   const n = off.node;
@@ -882,8 +879,37 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
                   n.y = n.fy;
                 }
 
-                nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
                 deptCentroidsRef.current.set(deptId, { x: data.lastCx, y: data.lastCy });
+
+                const myRadius = galaxyDataRef.current.find(g => g.deptId === deptId)?.radius || 50;
+                for (const otherGal of galaxyDataRef.current) {
+                  if (otherGal.deptId === deptId) continue;
+                  const otherCentroid = deptCentroidsRef.current.get(otherGal.deptId);
+                  if (!otherCentroid) continue;
+                  const dx = otherCentroid.x - data.lastCx;
+                  const dy = otherCentroid.y - data.lastCy;
+                  const dist = Math.sqrt(dx * dx + dy * dy);
+                  const minDist = myRadius + (otherGal.radius || 50) + 30;
+                  if (dist < minDist && dist > 0.1) {
+                    const pushDist = minDist - dist;
+                    const nx = dx / dist;
+                    const ny = dy / dist;
+                    const otherNodes = simNodes.filter(n => (n.deptId ?? -1) === otherGal.deptId);
+                    for (const n of otherNodes) {
+                      n.x = (n.x || 0) + nx * pushDist;
+                      n.y = (n.y || 0) + ny * pushDist;
+                      n.fx = n.x;
+                      n.fy = n.y;
+                    }
+                    const newOx = otherCentroid.x + nx * pushDist;
+                    const newOy = otherCentroid.y + ny * pushDist;
+                    deptCentroidsRef.current.set(otherGal.deptId, { x: newOx, y: newOy });
+                    if (!(this as any).__pushedDepts) (this as any).__pushedDepts = new Set<number>();
+                    (this as any).__pushedDepts.add(otherGal.deptId);
+                  }
+                }
+
+                nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
                 updateGalaxyPositions();
               })
               .on("end", function () {
@@ -891,15 +917,27 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
                 const data = (this as any).__dragData;
                 if (!data) return;
 
+                const pushedDepts: Set<number> | undefined = (this as any).__pushedDepts;
+
                 setTimeout(() => {
                   for (const n of data.deptNodes) {
                     n.fx = null;
                     n.fy = null;
                   }
-                  simulation.alpha(0.05).restart();
+                  if (pushedDepts) {
+                    for (const pd of pushedDepts) {
+                      const pushed = simNodes.filter(n => (n.deptId ?? -1) === pd);
+                      for (const n of pushed) {
+                        n.fx = null;
+                        n.fy = null;
+                      }
+                    }
+                  }
+                  simulation.alpha(0.1).restart();
                 }, 2000);
 
                 (this as any).__dragData = null;
+                (this as any).__pushedDepts = null;
               })
           );
 
