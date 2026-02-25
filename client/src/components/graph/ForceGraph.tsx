@@ -126,10 +126,11 @@ function getNodeColor(node: GraphNode, colorBy: ColorByOption): string {
 }
 
 const DEPT_ORBIT_RADIUS = 180;
-const DEPT_ORBIT_SPRING = 0.6;
-const DEPT_INTRA_ATTRACT = 0.6;
-const DEPT_MAX_SPREAD = 120;
-const DEPT_SEPARATION_SPRING = 0.8;
+const DEPT_ORBIT_SPRING = 0.15;
+const DEPT_INTRA_ATTRACT = 0.15;
+const DEPT_MAX_SPREAD = 160;
+const DEPT_SEPARATION_SPRING = 0.3;
+const MAX_FORCE_PER_TICK = 5.0;
 
 function deptClusterForce(
   nodes: SimNode[],
@@ -180,8 +181,10 @@ function deptClusterForce(
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
     const deviation = dist - orbitR;
     const pullStrength = alpha * DEPT_ORBIT_SPRING;
-    const pullX = -(dx / dist) * deviation * pullStrength;
-    const pullY = -(dy / dist) * deviation * pullStrength;
+    let pullX = -(dx / dist) * deviation * pullStrength;
+    let pullY = -(dy / dist) * deviation * pullStrength;
+    if (Math.abs(pullX) > MAX_FORCE_PER_TICK) pullX = Math.sign(pullX) * MAX_FORCE_PER_TICK;
+    if (Math.abs(pullY) > MAX_FORCE_PER_TICK) pullY = Math.sign(pullY) * MAX_FORCE_PER_TICK;
 
     for (const node of nodes) {
       if ((node.deptId ?? -1) !== key || node.fx != null) continue;
@@ -206,12 +209,13 @@ function deptClusterForce(
 
       let fMag = 0;
       if (rawDist < idealDist - tolerance) {
-        fMag = (idealDist - rawDist) * alpha * 0.8;
+        fMag = (idealDist - rawDist) * alpha * 0.3;
       } else if (rawDist > idealDist + tolerance) {
-        fMag = -(rawDist - idealDist) * alpha * 0.5;
+        fMag = -(rawDist - idealDist) * alpha * 0.2;
       } else {
-        fMag = -(rawDist - idealDist) * alpha * 0.05;
+        fMag = -(rawDist - idealDist) * alpha * 0.02;
       }
+      fMag = Math.max(-MAX_FORCE_PER_TICK, Math.min(MAX_FORCE_PER_TICK, fMag));
 
       for (const node of nodes) {
         if (node.fx != null) continue;
@@ -238,11 +242,16 @@ function deptClusterForce(
 
       let strength = DEPT_INTRA_ATTRACT;
       if (distToCenter > DEPT_MAX_SPREAD) {
-        strength += (distToCenter - DEPT_MAX_SPREAD) / DEPT_MAX_SPREAD * 2.0;
+        strength += (distToCenter - DEPT_MAX_SPREAD) / DEPT_MAX_SPREAD * 0.5;
       }
+      strength = Math.min(strength, 0.6);
 
-      node.vx = (node.vx || 0) + toCx * alpha * strength;
-      node.vy = (node.vy || 0) + toCy * alpha * strength;
+      let dvx = toCx * alpha * strength;
+      let dvy = toCy * alpha * strength;
+      if (Math.abs(dvx) > MAX_FORCE_PER_TICK) dvx = Math.sign(dvx) * MAX_FORCE_PER_TICK;
+      if (Math.abs(dvy) > MAX_FORCE_PER_TICK) dvy = Math.sign(dvy) * MAX_FORCE_PER_TICK;
+      node.vx = (node.vx || 0) + dvx;
+      node.vy = (node.vy || 0) + dvy;
     }
   }
 }
@@ -372,9 +381,13 @@ function orbitForce(
       const targetX = (parent.x || 0) + Math.cos(baseAngle) * orbitR;
       const targetY = (parent.y || 0) + Math.sin(baseAngle) * orbitR;
 
-      const strength = 0.12;
-      child.vx = (child.vx || 0) + (targetX - (child.x || 0)) * strength;
-      child.vy = (child.vy || 0) + (targetY - (child.y || 0)) * strength;
+      const orbitStr = 0.05;
+      let odx = (targetX - (child.x || 0)) * orbitStr;
+      let ody = (targetY - (child.y || 0)) * orbitStr;
+      if (Math.abs(odx) > MAX_FORCE_PER_TICK) odx = Math.sign(odx) * MAX_FORCE_PER_TICK;
+      if (Math.abs(ody) > MAX_FORCE_PER_TICK) ody = Math.sign(ody) * MAX_FORCE_PER_TICK;
+      child.vx = (child.vx || 0) + odx;
+      child.vy = (child.vy || 0) + ody;
     }
   }
 }
@@ -662,15 +675,15 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     const MIN_HIT_RADIUS = 12;
 
     const simulation = d3.forceSimulation<SimNode>(simNodes)
-      .velocityDecay(0.18)
+      .velocityDecay(0.30)
       .force(
         "link",
         d3.forceLink<SimNode, SimLink>(simLinks)
           .id((d) => d.id)
           .distance(35)
-          .strength(0.8)
+          .strength(0.3)
       )
-      .force("charge", d3.forceManyBody().strength(-50).distanceMin(30).distanceMax(400))
+      .force("charge", d3.forceManyBody().strength(-30).distanceMin(30).distanceMax(400))
       .force("center", d3.forceCenter(width / 2, height / 2).strength(0.05))
       .force(
         "collision",
