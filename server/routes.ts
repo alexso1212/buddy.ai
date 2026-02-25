@@ -1465,6 +1465,81 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  app.post("/api/graph/ai-analysis", async (req, res) => {
+    try {
+      const allTasks = await storage.getTasks({});
+      const allDeps = await storage.getAllTaskDependencies();
+      const allUsers = await storage.getUsers();
+      const allProjects = await storage.getProjects();
+
+      const activeTasks = allTasks.filter(t => t.status !== 'done' && t.status !== 'cancelled');
+      const userMap = new Map(allUsers.map(u => [u.id, u.displayName || u.email || `User ${u.id}`]));
+      const projectMap = new Map(allProjects.map(p => [p.id, p.name]));
+
+      const depsByTask = new Map<number, number[]>();
+      for (const dep of allDeps) {
+        if (!depsByTask.has(dep.taskId)) depsByTask.set(dep.taskId, []);
+        depsByTask.get(dep.taskId)!.push(dep.dependsOnTaskId);
+      }
+
+      const taskSummaries = activeTasks.map(t => ({
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        priority: t.priority,
+        progress: t.progress ?? 0,
+        assignee: t.assigneeId ? userMap.get(t.assigneeId) || 'Unknown' : 'Unassigned',
+        project: projectMap.get(t.projectId) || 'Unknown',
+        dueDate: t.dueDate ? new Date(t.dueDate).toISOString().split('T')[0] : null,
+        isOverdue: t.dueDate ? new Date(t.dueDate) < new Date() : false,
+        dependsOn: depsByTask.get(t.id) || [],
+        blocksOthers: allDeps.filter(d => d.dependsOnTaskId === t.id).map(d => d.taskId),
+      }));
+
+      const OpenAI = (await import('openai')).default;
+      const client = new OpenAI({
+        baseURL: 'https://api.anthropic.com/v1/',
+        apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
+        timeout: 30000,
+      });
+
+      const systemPrompt = `You are a project management analyst. Analyze the following active tasks and identify:
+
+1. **followUp**: Tasks that most urgently need follow-up action (e.g., overdue, stalled, low progress with approaching deadline)
+2. **important**: The most strategically important tasks (e.g., milestones, high-weight tasks, tasks that many others depend on)
+3. **bottleneck**: Tasks that are blocking progress or are bottleneck/chokepoints (e.g., blocked tasks, tasks with many downstream dependencies that are not progressing)
+
+Today's date: ${new Date().toISOString().split('T')[0]}
+
+Return a JSON object with exactly this structure (no markdown, no code fence):
+{
+  "followUp": [{ "id": <taskId>, "reason": "<brief reason in Chinese>" }],
+  "important": [{ "id": <taskId>, "reason": "<brief reason in Chinese>" }],
+  "bottleneck": [{ "id": <taskId>, "reason": "<brief reason in Chinese>" }]
+}
+
+Each array should have 2-5 items. A task can appear in multiple categories. Keep reasons concise (under 20 chars).`;
+
+      const response = await client.chat.completions.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 2048,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: JSON.stringify(taskSummaries, null, 2) },
+        ],
+      });
+
+      const content = response.choices[0]?.message?.content || '{}';
+      const cleaned = content.replace(/```json\n?|```\n?/g, '').trim();
+      const analysis = JSON.parse(cleaned);
+
+      return res.json({ data: analysis });
+    } catch (e: any) {
+      console.error('AI graph analysis error:', e.message);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
   // ===================== Job Roles =====================
   app.get("/api/job-roles", async (_req, res) => {
     try {

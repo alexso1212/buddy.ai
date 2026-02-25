@@ -38,6 +38,11 @@ html, body {
   will-change: filter, opacity;
 }
 
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.85; }
+}
+
 :root {
   /* ===== 字体（全局共享） ===== */
   --font-serif: Georgia, 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;

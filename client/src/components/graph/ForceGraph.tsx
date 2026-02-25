@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useImperativeHandle, forwardRef } from "react";
 import * as d3 from "d3";
 import type { ColorByOption } from "./GraphSettings";
 import BloodVesselCanvas from "./BloodVesselCanvas";
@@ -51,6 +51,16 @@ export interface CollabHealth {
   metrics: { volume: number; completion: number; timeliness: number; flow: number };
 }
 
+export interface HighlightedNode {
+  id: number;
+  type: 'followUp' | 'important' | 'bottleneck';
+  reason: string;
+}
+
+export interface ForceGraphHandle {
+  resetView: () => void;
+}
+
 interface ForceGraphProps {
   nodes: GraphNode[];
   links: GraphLink[];
@@ -60,6 +70,7 @@ interface ForceGraphProps {
   colorBy?: ColorByOption;
   bloodFlow?: boolean;
   onNodeClick?: (node: GraphNode) => void;
+  highlightedNodes?: HighlightedNode[];
 }
 
 interface SimNode extends GraphNode, d3.SimulationNodeDatum {}
@@ -130,7 +141,7 @@ function deptClusterForce(nodes: SimNode[], alpha: number) {
     c.y /= c.count;
   }
   const attractStrength = 0.35;
-  const repelStrength = 0.08;
+  const repelStrength = 0.03;
   for (const node of nodes) {
     const key = node.deptId ?? -1;
     const c = centroids[key];
@@ -144,8 +155,8 @@ function deptClusterForce(nodes: SimNode[], alpha: number) {
           const dx = (node.x || 0) - other.x;
           const dy = (node.y || 0) - other.y;
           const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          node.vx = (node.vx || 0) + (dx / dist) * alpha * repelStrength * 60;
-          node.vy = (node.vy || 0) + (dy / dist) * alpha * repelStrength * 60;
+          node.vx = (node.vx || 0) + (dx / dist) * alpha * repelStrength * 30;
+          node.vy = (node.vy || 0) + (dy / dist) * alpha * repelStrength * 30;
         }
       }
     }
@@ -337,11 +348,18 @@ function computeGalaxyBoundaries(nodes: SimNode[], departments: DeptInfo[], padd
   return result;
 }
 
-export default function ForceGraph({ nodes, links, projects, departments = [], collabHealth = [], colorBy = 'department', bloodFlow = true, onNodeClick }: ForceGraphProps) {
+const HIGHLIGHT_COLORS: Record<string, string> = {
+  followUp: '#3b82f6',
+  important: '#f59e0b',
+  bottleneck: '#ef4444',
+};
+
+const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceGraph({ nodes, links, projects, departments = [], collabHealth = [], colorBy = 'department', bloodFlow = true, onNodeClick, highlightedNodes = [] }, ref) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const simulationRef = useRef<d3.Simulation<SimNode, SimLink> | null>(null);
   const zoomTransformRef = useRef<d3.ZoomTransform>(d3.zoomIdentity);
+  const zoomBehaviorRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const colorByRef = useRef(colorBy);
   const simLinksRef = useRef<any[]>([]);
   const hoveredNodeIdRef = useRef<number | null>(null);
@@ -358,14 +376,25 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
   useEffect(() => { collabHealthRef.current = collabHealth; }, [collabHealth]);
   useEffect(() => { onNodeClickRef.current = onNodeClick; }, [onNodeClick]);
 
+  useImperativeHandle(ref, () => ({
+    resetView() {
+      if (!svgRef.current || !zoomBehaviorRef.current) return;
+      const svg = d3.select(svgRef.current);
+      svg.transition().duration(500).call(zoomBehaviorRef.current.transform, d3.zoomIdentity);
+      if (simulationRef.current) {
+        simulationRef.current.alpha(0.3).restart();
+      }
+    },
+  }), []);
+
   const getRadius = useCallback((node: GraphNode) => {
     const priorityBase: Record<string, number> = {
-      critical: 4,
-      high: 3.5,
-      medium: 3,
-      low: 2.5,
+      critical: 2.5,
+      high: 2,
+      medium: 1.8,
+      low: 1.5,
     };
-    let r = (priorityBase[node.priority] || 3) + node.weight * 0.3;
+    let r = (priorityBase[node.priority] || 1.8) + node.weight * 0.15;
     if (node.type === 'milestone') r *= 1.2;
     return r;
   }, []);
@@ -405,6 +434,22 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
       grad.append("stop").attr("offset", "100%").attr("stop-color", c).attr("stop-opacity", 0.10);
     }
 
+    const nodeShadow = defs.append("filter")
+      .attr("id", "node-shadow")
+      .attr("x", "-50%").attr("y", "-50%")
+      .attr("width", "200%").attr("height", "200%");
+    nodeShadow.append("feDropShadow")
+      .attr("dx", 0).attr("dy", 0.5)
+      .attr("stdDeviation", 1.2)
+      .attr("flood-color", "#000")
+      .attr("flood-opacity", 0.35);
+
+    const nodeShine = defs.append("radialGradient")
+      .attr("id", "node-shine")
+      .attr("cx", "35%").attr("cy", "35%").attr("r", "65%");
+    nodeShine.append("stop").attr("offset", "0%").attr("stop-color", "#fff").attr("stop-opacity", 0.35);
+    nodeShine.append("stop").attr("offset", "100%").attr("stop-color", "#fff").attr("stop-opacity", 0);
+
     const g = svg.append("g");
 
     const galaxyGroup = g.append("g").attr("class", "galaxies");
@@ -437,7 +482,7 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
       .force("center", d3.forceCenter(width / 2, height / 2))
       .force(
         "collision",
-        d3.forceCollide<SimNode>().radius((d) => getRadius(d) + 2)
+        d3.forceCollide<SimNode>().radius((d) => getRadius(d) + 1)
       )
       .force("cluster", (alpha: number) => deptClusterForce(simNodes, alpha));
 
@@ -478,7 +523,13 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
         .attr("r", r)
         .attr("fill", fillColor)
         .attr("stroke", d.isOverdue ? "#ef4444" : "none")
-        .attr("stroke-width", d.isOverdue ? 1.5 : 0);
+        .attr("stroke-width", d.isOverdue ? 1 : 0)
+        .attr("filter", "url(#node-shadow)");
+
+      el.append("circle")
+        .attr("r", r * 0.8)
+        .attr("fill", "url(#node-shine)")
+        .attr("pointer-events", "none");
 
       if (d.status === 'blocked') {
         el.classed("blocked-breathing", true);
@@ -602,7 +653,7 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
       });
       d3.select(this).attr("transform", function () {
         const d = d3.select<SVGGElement, SimNode>(this as SVGGElement).datum();
-        return `translate(${d.x},${d.y}) scale(1.5)`;
+        return `translate(${d.x},${d.y}) scale(2)`;
       });
     });
 
@@ -636,6 +687,7 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
         g.attr("transform", event.transform);
         zoomTransformRef.current = event.transform;
       });
+    zoomBehaviorRef.current = zoom;
 
     svg.call(zoom);
 
@@ -684,6 +736,44 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
     };
   }, [nodes, links, projects, departments, getRadius]);
 
+  useEffect(() => {
+    if (!svgRef.current) return;
+    const svg = d3.select(svgRef.current);
+    svg.selectAll(".glow-highlight").remove();
+
+    if (highlightedNodes.length === 0) return;
+
+    const highlightMap = new Map<number, HighlightedNode>();
+    for (const h of highlightedNodes) highlightMap.set(h.id, h);
+
+    const nodeGroup = svg.select("g g.nodes");
+    nodeGroup.selectAll<SVGGElement, SimNode>("g").each(function (d) {
+      const hl = highlightMap.get(d.id);
+      if (!hl) return;
+      const el = d3.select(this);
+      const r = getRadius(d);
+      const color = HIGHLIGHT_COLORS[hl.type] || '#fff';
+
+      el.insert("circle", ":first-child")
+        .attr("class", "glow-highlight")
+        .attr("r", r + 5)
+        .attr("fill", "none")
+        .attr("stroke", color)
+        .attr("stroke-width", 1.5)
+        .attr("stroke-opacity", 0.7)
+        .style("animation", "glow-pulse 2s ease-in-out infinite");
+
+      el.insert("circle", ":first-child")
+        .attr("class", "glow-highlight")
+        .attr("r", r + 9)
+        .attr("fill", "none")
+        .attr("stroke", color)
+        .attr("stroke-width", 0.8)
+        .attr("stroke-opacity", 0.3)
+        .style("animation", "glow-pulse 2s ease-in-out 0.5s infinite");
+    });
+  }, [highlightedNodes, getRadius]);
+
   return (
     <div
       ref={containerRef}
@@ -694,6 +784,7 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
         simLinksRef={simLinksRef}
         zoomTransformRef={zoomTransformRef}
         hoveredNodeIdRef={hoveredNodeIdRef}
+        selectedNodeIdRef={selectedNodeIdRef}
         bloodFlow={bloodFlow}
         galaxyDataRef={galaxyDataRef}
         collabHealthRef={collabHealthRef}
@@ -704,4 +795,6 @@ export default function ForceGraph({ nodes, links, projects, departments = [], c
       />
     </div>
   );
-}
+});
+
+export default ForceGraph;

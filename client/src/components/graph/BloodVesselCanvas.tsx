@@ -8,12 +8,6 @@ interface Particle {
   radius: number;
 }
 
-interface CollabParticle {
-  pairIdx: number;
-  t: number;
-  radius: number;
-}
-
 interface PipeStyle {
   particleColor: string;
   baseColor: string;
@@ -53,15 +47,9 @@ function getPipeStyle(srcStatus: string, tgtStatus: string): PipeStyle {
   return style;
 }
 
-function getHealthColor(score: number): string {
-  if (score > 0.7) return '#10b981';
-  if (score > 0.3) return '#f59e0b';
-  return '#ef4444';
-}
-
 const BASE_MAX_PARTICLES = 600;
 
-function initParticles(links: any[], scale: number = 1): Particle[] {
+function initParticlesForSelected(links: any[], selectedId: number, scale: number = 1): Particle[] {
   const maxParticles = Math.floor(BASE_MAX_PARTICLES * scale);
   const particles: Particle[] = [];
   for (let i = 0; i < links.length && particles.length < maxParticles; i++) {
@@ -69,18 +57,30 @@ function initParticles(links: any[], scale: number = 1): Particle[] {
     const src = link.source;
     const tgt = link.target;
     if (!src || !tgt) continue;
+    if (src.id !== selectedId && tgt.id !== selectedId) continue;
     const style = getPipeStyle(src.status || '', tgt.status || '');
-    if (!style.hasParticles) continue;
-    const count = style.isBlocked
-      ? 10 + Math.floor(Math.random() * 4)
-      : 4 + Math.floor(Math.random() * 4);
-    for (let j = 0; j < count && particles.length < maxParticles; j++) {
-      particles.push({
-        linkIdx: i,
-        t: style.isBlocked ? Math.random() * 0.15 : Math.random(),
-        baseT: Math.random() * 0.15,
-        radius: 1 + Math.random() * 0.5,
-      });
+    if (!style.hasParticles) {
+      const count = 4 + Math.floor(Math.random() * 3);
+      for (let j = 0; j < count && particles.length < maxParticles; j++) {
+        particles.push({
+          linkIdx: i,
+          t: Math.random(),
+          baseT: Math.random() * 0.15,
+          radius: 0.8 + Math.random() * 0.4,
+        });
+      }
+    } else {
+      const count = style.isBlocked
+        ? 8 + Math.floor(Math.random() * 4)
+        : 5 + Math.floor(Math.random() * 4);
+      for (let j = 0; j < count && particles.length < maxParticles; j++) {
+        particles.push({
+          linkIdx: i,
+          t: style.isBlocked ? Math.random() * 0.15 : Math.random(),
+          baseT: Math.random() * 0.15,
+          radius: 0.8 + Math.random() * 0.4,
+        });
+      }
     }
   }
   return particles;
@@ -98,6 +98,7 @@ interface BloodVesselCanvasProps {
   simLinksRef: React.MutableRefObject<any[]>;
   zoomTransformRef: React.MutableRefObject<any>;
   hoveredNodeIdRef: React.MutableRefObject<number | null>;
+  selectedNodeIdRef: React.MutableRefObject<number | null>;
   bloodFlow: boolean;
   galaxyDataRef?: React.MutableRefObject<GalaxyBoundary[]>;
   collabHealthRef?: React.MutableRefObject<CollabHealth[]>;
@@ -107,17 +108,16 @@ export default function BloodVesselCanvas({
   simLinksRef,
   zoomTransformRef,
   hoveredNodeIdRef,
+  selectedNodeIdRef,
   bloodFlow,
   galaxyDataRef,
   collabHealthRef,
 }: BloodVesselCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particlesRef = useRef<Particle[]>([]);
-  const collabParticlesRef = useRef<CollabParticle[]>([]);
-  const collabPairCountRef = useRef(0);
   const animFrameRef = useRef<number>(0);
   const bloodFlowRef = useRef(bloodFlow);
-  const lastLinksRef = useRef<any[] | null>(null);
+  const lastSelectedIdRef = useRef<number | null>(null);
   const timeRef = useRef(0);
   const fpsFrameCount = useRef(0);
   const fpsLastTime = useRef(performance.now());
@@ -158,8 +158,6 @@ export default function BloodVesselCanvas({
           particleScaleRef.current *= 0.5;
           const keep = Math.floor(particlesRef.current.length * 0.5);
           particlesRef.current = particlesRef.current.slice(0, keep);
-          const cKeep = Math.floor(collabParticlesRef.current.length * 0.5);
-          collabParticlesRef.current = collabParticlesRef.current.slice(0, cKeep);
         }
       }
 
@@ -171,20 +169,31 @@ export default function BloodVesselCanvas({
         return;
       }
 
-      if (links !== lastLinksRef.current) {
-        lastLinksRef.current = links;
-        particlesRef.current = initParticles(links, particleScaleRef.current);
-      }
-
       const transform = zoomTransformRef.current;
       const hovId = hoveredNodeIdRef.current;
+      const selId = selectedNodeIdRef.current;
       const flowing = bloodFlowRef.current;
       const k = transform.k;
+
+      if (selId !== lastSelectedIdRef.current) {
+        lastSelectedIdRef.current = selId;
+        if (selId !== null) {
+          particlesRef.current = initParticlesForSelected(links, selId, particleScaleRef.current);
+        } else {
+          particlesRef.current = [];
+        }
+      }
 
       ctx.save();
       ctx.scale(dpr, dpr);
       ctx.translate(transform.x, transform.y);
       ctx.scale(k, k);
+
+      const isConnected = (srcId: number, tgtId: number) => {
+        if (selId !== null) return srcId === selId || tgtId === selId;
+        if (hovId !== null) return srcId === hovId || tgtId === hovId;
+        return true;
+      };
 
       for (let i = 0; i < links.length; i++) {
         const link = links[i];
@@ -201,26 +210,28 @@ export default function BloodVesselCanvas({
           const style = getPipeStyle(src.status || '', tgt.status || '');
           opacity = style.baseOpacity;
           color = style.baseColor;
-          lineWidth = 1.5;
+          lineWidth = 1;
           dashed = style.isDashed;
         } else {
           if (link.isBlocking) {
             opacity = 0.6;
             color = '#ef4444';
-            lineWidth = 3;
+            lineWidth = 2;
             dashed = false;
           } else {
             opacity = 0.4;
             color = '#10b981';
-            lineWidth = 1.5;
+            lineWidth = 1;
             dashed = true;
           }
         }
 
-        if (hovId !== null) {
-          if (src.id !== hovId && tgt.id !== hovId) {
-            opacity *= 0.2;
-          }
+        const connected = isConnected(src.id, tgt.id);
+        if (!connected) {
+          opacity *= 0.15;
+        } else if (selId !== null && (src.id === selId || tgt.id === selId)) {
+          opacity = Math.min(opacity * 2.5, 0.6);
+          lineWidth *= 1.5;
         }
 
         ctx.globalAlpha = opacity;
@@ -235,7 +246,7 @@ export default function BloodVesselCanvas({
 
       ctx.setLineDash([]);
 
-      if (flowing && k >= 0.3) {
+      if (flowing && k >= 0.3 && selId !== null) {
         const particles = particlesRef.current;
         for (let pi = 0; pi < particles.length; pi++) {
           const p = particles[pi];
@@ -244,99 +255,27 @@ export default function BloodVesselCanvas({
           const src = link.source;
           const tgt = link.target;
           if (src.x == null || tgt.x == null) continue;
+
           const style = getPipeStyle(src.status || '', tgt.status || '');
-          if (!style.hasParticles) continue;
+          const speed = style.hasParticles ? style.speed : 0.005;
+          const particleColor = style.hasParticles ? style.particleColor : style.baseColor;
 
           if (style.isBlocked) {
             p.t = p.baseT + Math.sin(t * 0.03 + p.baseT * 20) * 0.03;
             if (p.t < 0) p.t = 0;
           } else {
-            p.t += style.speed;
+            p.t += speed;
             if (p.t > 1) p.t -= 1;
           }
 
           const px = src.x + (tgt.x - src.x) * p.t;
           const py = src.y + (tgt.y - src.y) * p.t;
 
-          let pAlpha = 0.85;
-          if (hovId !== null && src.id !== hovId && tgt.id !== hovId) {
-            pAlpha = 0.12;
-          }
-
-          ctx.globalAlpha = pAlpha;
-          ctx.fillStyle = style.particleColor;
+          ctx.globalAlpha = 0.85;
+          ctx.fillStyle = particleColor;
           ctx.beginPath();
           ctx.arc(px, py, p.radius, 0, Math.PI * 2);
           ctx.fill();
-        }
-      }
-
-      if (flowing && galaxyDataRef && collabHealthRef) {
-        const galaxies = galaxyDataRef.current;
-        const health = collabHealthRef.current;
-        if (galaxies.length > 0 && health.length > 0) {
-          const galaxyMap = new Map(galaxies.map(gg => [gg.deptId, gg]));
-
-          const activePairs: Array<{
-            x1: number; y1: number; x2: number; y2: number;
-            color: string; speed: number;
-          }> = [];
-
-          for (let hi = 0; hi < health.length; hi++) {
-            const h = health[hi];
-            const gA = galaxyMap.get(h.deptA);
-            const gB = galaxyMap.get(h.deptB);
-            if (!gA || !gB) continue;
-
-            const dx = gB.cx - gA.cx;
-            const dy = gB.cy - gA.cy;
-            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-            const nx = dx / dist;
-            const ny = dy / dist;
-
-            activePairs.push({
-              x1: gA.cx + nx * gA.radius,
-              y1: gA.cy + ny * gA.radius,
-              x2: gB.cx - nx * gB.radius,
-              y2: gB.cy - ny * gB.radius,
-              color: getHealthColor(h.healthScore),
-              speed: 0.002 + h.healthScore * 0.012,
-            });
-          }
-
-          if (activePairs.length > 0 && activePairs.length !== collabPairCountRef.current) {
-            collabPairCountRef.current = activePairs.length;
-            const cp: CollabParticle[] = [];
-            for (let i = 0; i < activePairs.length; i++) {
-              const count = 6 + Math.floor(Math.random() * 4);
-              for (let j = 0; j < count; j++) {
-                cp.push({
-                  pairIdx: i,
-                  t: Math.random(),
-                  radius: 1.5 + Math.random() * 0.8,
-                });
-              }
-            }
-            collabParticlesRef.current = cp;
-          }
-
-          for (let ci = 0; ci < collabParticlesRef.current.length; ci++) {
-            const cp = collabParticlesRef.current[ci];
-            if (cp.pairIdx >= activePairs.length) continue;
-            const pair = activePairs[cp.pairIdx];
-
-            cp.t += pair.speed;
-            if (cp.t > 1) cp.t -= 1;
-
-            const px = pair.x1 + (pair.x2 - pair.x1) * cp.t;
-            const py = pair.y1 + (pair.y2 - pair.y1) * cp.t;
-
-            ctx.globalAlpha = 0.6;
-            ctx.fillStyle = pair.color;
-            ctx.beginPath();
-            ctx.arc(px, py, cp.radius, 0, Math.PI * 2);
-            ctx.fill();
-          }
         }
       }
 
@@ -351,7 +290,7 @@ export default function BloodVesselCanvas({
       cancelAnimationFrame(animFrameRef.current);
       ro.disconnect();
     };
-  }, [simLinksRef, zoomTransformRef, hoveredNodeIdRef, galaxyDataRef, collabHealthRef]);
+  }, [simLinksRef, zoomTransformRef, hoveredNodeIdRef, selectedNodeIdRef, galaxyDataRef, collabHealthRef]);
 
   return (
     <canvas

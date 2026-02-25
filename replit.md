@@ -42,6 +42,7 @@ The system uses a 15-table PostgreSQL database schema, including `organizations`
 - **Pages:**
     - **Dashboard:** Overview statistics and user-specific task lists.
     - **Agent:** Full-page AI chat interface with a welcome screen, suggestion cards, and structured options for AI interaction.
+    - **Graph View:** D3 force-directed graph with Obsidian-style tiny node dots (1.5-2.5px radius). Features: department galaxy clusters with bounding circles and radial gradients; orbital animation where dependent tasks revolve around upstream tasks; blood flow particles only on selected node's links; 3D node shadows (feDropShadow + radial shine gradient); one-click reset-view button; AI analysis button that calls Claude Haiku to identify followUp/important/bottleneck tasks and highlights them with animated glow halos (blue/gold/red); bottom sheet panel on node click showing task details with navigation to detail page; GraphSettings panel for color-by and blood-flow toggles.
     - **Project List/Detail:** Management and viewing of projects and their associated tasks.
     - **Task List/Detail:** Comprehensive task management, including subtasks, dependencies, comments, participant management, and verdict integration. Features inline status changes and filtering.
     - **Team:** User management, department hierarchy, and job role definitions.
