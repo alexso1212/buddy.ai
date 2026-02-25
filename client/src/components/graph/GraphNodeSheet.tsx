@@ -199,18 +199,33 @@ export default function GraphNodeSheet({ node, onClose }: GraphNodeSheetProps) {
                 flexShrink: 0,
               }}
             />
-            <span
-              style={{
-                fontSize: 15,
-                fontWeight: 600,
-                color: 'rgba(255,255,255,0.9)',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {node.title}
-            </span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <span
+                style={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: node.isBridge ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.9)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  display: 'block',
+                }}
+              >
+                {node.title}
+              </span>
+              {node.isBridge && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: 'rgba(255,255,255,0.35)',
+                    marginTop: 2,
+                    lineHeight: 1.3,
+                  }}
+                >
+                  此任务{node.status === 'done' ? '已完成' : '已取消'}，因连接未完成的上下游任务而暂时保留在图谱中
+                </div>
+              )}
+            </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
             <button

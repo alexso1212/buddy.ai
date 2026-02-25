@@ -22,6 +22,7 @@ export interface GraphNode {
   type: string;
   parentTaskId: number | null;
   hasSubtasks: boolean;
+  isBridge?: boolean;
 }
 
 export interface GraphLink {
@@ -633,15 +634,21 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
           .on("drag", (event, d) => {
             if (!hasDraggedRef.current) {
               hasDraggedRef.current = true;
-              if (!event.active) simulation.alphaTarget(0.1).restart();
+              if (!event.active) simulation.alphaTarget(0.05).restart();
             }
             d.fx = event.x;
             d.fy = event.y;
           })
           .on("end", (event, d) => {
             if (!event.active) simulation.alphaTarget(0);
-            d.fx = null;
-            d.fy = null;
+            if (hasDraggedRef.current) {
+              d.fx = null;
+              d.fy = null;
+            } else {
+              d.fx = d.x;
+              d.fy = d.y;
+              setTimeout(() => { d.fx = null; d.fy = null; }, 300);
+            }
             draggedNodeIdRef.current = null;
             hasDraggedRef.current = false;
           })
@@ -649,12 +656,17 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
 
     nodeElements.each(function (d) {
       const el = d3.select(this);
-      const dc = dsCounts.get(d.id) || 0;
+      const isBridge = !!(d as any).isBridge;
+      const dc = isBridge ? 0 : (dsCounts.get(d.id) || 0);
       const r = getRadius(d, dc);
-      const fillColor = getNodeColor(d, colorByRef.current);
+      const fillColor = isBridge ? '#6b7280' : getNodeColor(d, colorByRef.current);
       const daysLeft = getDaysUntilDue(d.dueDate);
 
-      if (d.isOverdue) {
+      if (isBridge) {
+        el.style("opacity", "0.4");
+      }
+
+      if (!isBridge && d.isOverdue) {
         el.append("circle")
           .attr("class", "overdue-glow")
           .attr("r", r + 3)
@@ -668,8 +680,8 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       el.append("circle")
         .attr("r", r)
         .attr("fill", fillColor)
-        .attr("stroke", d.isOverdue ? "#ef4444" : "none")
-        .attr("stroke-width", d.isOverdue ? 1 : 0)
+        .attr("stroke", (!isBridge && d.isOverdue) ? "#ef4444" : "none")
+        .attr("stroke-width", (!isBridge && d.isOverdue) ? 1 : 0)
         .attr("filter", "url(#node-shadow)");
 
       el.append("circle")
@@ -677,7 +689,15 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
         .attr("fill", "url(#node-shine)")
         .attr("pointer-events", "none");
 
-      if (d.status === 'blocked') {
+      if (isBridge) {
+        el.append("circle")
+          .attr("r", r + 2)
+          .attr("fill", "none")
+          .attr("stroke", "rgba(255,255,255,0.2)")
+          .attr("stroke-width", 0.5)
+          .attr("stroke-dasharray", "2,2")
+          .attr("pointer-events", "none");
+      } else if (d.status === 'blocked') {
         el.classed("blocked-breathing", true);
       } else if (d.isOverdue) {
         el.classed("urgent-pulse", true);
@@ -810,19 +830,28 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
 
       const tip = tooltipRef.current;
       if (tip) {
-        const dc = dsCounts.get(hoveredNode.id) || 0;
+        const isBridge = !!(hoveredNode as any).isBridge;
+        const dc = isBridge ? 0 : (dsCounts.get(hoveredNode.id) || 0);
         const daysLeft = getDaysUntilDue(hoveredNode.dueDate);
         let urgencyText = '';
-        if (hoveredNode.isOverdue) urgencyText = ' (已过期)';
-        else if (daysLeft !== null && daysLeft <= 3) urgencyText = ` (${daysLeft}天后到期)`;
-        else if (daysLeft !== null && daysLeft <= 7) urgencyText = ` (${daysLeft}天后到期)`;
+        if (!isBridge) {
+          if (hoveredNode.isOverdue) urgencyText = ' (已过期)';
+          else if (daysLeft !== null && daysLeft <= 3) urgencyText = ` (${daysLeft}天后到期)`;
+          else if (daysLeft !== null && daysLeft <= 7) urgencyText = ` (${daysLeft}天后到期)`;
+        }
 
         const STATUS_LABELS: Record<string, string> = {
           todo: '待办', in_progress: '进行中', in_review: '审核中', blocked: '阻塞',
+          done: '已完成', cancelled: '已取消',
         };
 
+        const bridgeTag = isBridge
+          ? `<div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:2px;border:1px solid rgba(255,255,255,0.15);border-radius:3px;display:inline-block;padding:0 4px">${hoveredNode.status === 'done' ? '✓ 已完成' : '✕ 已取消'} · 桥梁节点</div>`
+          : '';
+
         tip.innerHTML = `
-          <div style="font-weight:600;margin-bottom:3px;color:rgba(255,255,255,0.9);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${hoveredNode.title}</div>
+          ${bridgeTag}
+          <div style="font-weight:600;margin-bottom:3px;color:rgba(255,255,255,${isBridge ? '0.5' : '0.9'});font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${hoveredNode.title}</div>
           <div style="color:rgba(255,255,255,0.5);font-size:11px;line-height:1.5">
             ${hoveredNode.assigneeName ? `<span>${hoveredNode.assigneeName}</span> · ` : ''}${STATUS_LABELS[hoveredNode.status] || hoveredNode.status}${hoveredNode.dueDate ? ` · ${hoveredNode.dueDate.slice(0, 10)}${urgencyText}` : ''}${dc > 0 ? ` · ${dc}个下游依赖` : ''}
           </div>
@@ -841,16 +870,19 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       hoveredNodeIdRef.current = null;
       nodeElements.each(function (d) {
         const el = d3.select(this);
-        el.style("opacity", null);
+        const isBridge = !!(d as any).isBridge;
+        el.style("opacity", isBridge ? "0.4" : null);
         el.style("filter", null);
-        const daysLeft = getDaysUntilDue(d.dueDate);
-        if (d.status === 'blocked') {
-          el.classed("blocked-breathing", true);
-        }
-        if (d.isOverdue || (daysLeft !== null && daysLeft <= 3)) {
-          el.classed("urgent-pulse", true);
-        } else if (daysLeft !== null && daysLeft <= 7) {
-          el.classed("soon-pulse", true);
+        if (!isBridge) {
+          const daysLeft = getDaysUntilDue(d.dueDate);
+          if (d.status === 'blocked') {
+            el.classed("blocked-breathing", true);
+          }
+          if (d.isOverdue || (daysLeft !== null && daysLeft <= 3)) {
+            el.classed("urgent-pulse", true);
+          } else if (daysLeft !== null && daysLeft <= 7) {
+            el.classed("soon-pulse", true);
+          }
         }
       });
       nodeElements.attr("transform", (d) => `translate(${d.x},${d.y})`);
@@ -880,9 +912,15 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
 
     svg.call(zoom);
 
+    const VEL_CAP = 5;
     let tickCount = 0;
     simulation.on("tick", () => {
       tickCount++;
+
+      for (const n of simNodes) {
+        if (n.vx != null && Math.abs(n.vx) > VEL_CAP) n.vx = Math.sign(n.vx) * VEL_CAP;
+        if (n.vy != null && Math.abs(n.vy) > VEL_CAP) n.vy = Math.sign(n.vy) * VEL_CAP;
+      }
 
       orbitForce(simNodes, topology, orbitStatesRef.current, draggedNodeIdRef.current, simulation.alpha(), nodeMap);
 
@@ -906,15 +944,23 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     });
 
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastResizeW = width;
+    let lastResizeH = height;
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width: w, height: h } = entry.contentRect;
         svg.attr("width", w).attr("height", h);
-        simulation.force("center", d3.forceCenter(w / 2, h / 2).strength(0.05));
-        if (resizeTimer) clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => {
-          simulation.alpha(0.15).restart();
-        }, 200);
+        const dw = Math.abs(w - lastResizeW);
+        const dh = Math.abs(h - lastResizeH);
+        if (dw > 50 || dh > 50) {
+          lastResizeW = w;
+          lastResizeH = h;
+          simulation.force("center", d3.forceCenter(w / 2, h / 2).strength(0.05));
+          if (resizeTimer) clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => {
+            simulation.alpha(0.08).restart();
+          }, 300);
+        }
       }
     });
     resizeObserver.observe(container);

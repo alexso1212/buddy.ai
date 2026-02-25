@@ -287,6 +287,12 @@ export default function BloodVesselCanvas({
           }
         }
 
+        const srcBridge = !!(src.isBridge);
+        const tgtBridge = !!(tgt.isBridge);
+        if (srcBridge || tgtBridge) {
+          opacity *= 0.3;
+        }
+
         const connected = isConnected(src.id, tgt.id);
         if (!connected) {
           opacity *= 0.15;

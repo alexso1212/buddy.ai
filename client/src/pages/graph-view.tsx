@@ -196,9 +196,43 @@ export default function GraphView() {
   const projects = graphData?.projects ?? [];
   const departments = graphData?.departments ?? [];
 
-  const nodes = allNodes.filter(n => n.status !== 'done' && n.status !== 'cancelled');
-  const activeNodeIds = new Set(nodes.map(n => n.id));
-  const links = allLinks.filter(l => activeNodeIds.has(l.source) && activeNodeIds.has(l.target));
+  const activeNodes = allNodes.filter(n => n.status !== 'done' && n.status !== 'cancelled');
+  const activeIds = new Set(activeNodes.map(n => n.id));
+
+  const upstreamOf = new Map<number, number[]>();
+  const downstreamOf = new Map<number, number[]>();
+  for (const l of allLinks) {
+    if (!downstreamOf.has(l.source)) downstreamOf.set(l.source, []);
+    downstreamOf.get(l.source)!.push(l.target);
+    if (!upstreamOf.has(l.target)) upstreamOf.set(l.target, []);
+    upstreamOf.get(l.target)!.push(l.source);
+  }
+
+  function canReachActive(nodeId: number, getNeighbors: (id: number) => number[], visited: Set<number>): boolean {
+    if (activeIds.has(nodeId)) return true;
+    visited.add(nodeId);
+    for (const nb of (getNeighbors(nodeId) || [])) {
+      if (!visited.has(nb) && canReachActive(nb, getNeighbors, visited)) return true;
+    }
+    return false;
+  }
+
+  const bridgeIds = new Set<number>();
+  const inactiveNodes = allNodes.filter(n => n.status === 'done' || n.status === 'cancelled');
+  for (const n of inactiveNodes) {
+    const reachesDown = canReachActive(n.id, (id) => downstreamOf.get(id) || [], new Set([n.id]));
+    if (!reachesDown) continue;
+    const reachesUp = canReachActive(n.id, (id) => upstreamOf.get(id) || [], new Set([n.id]));
+    if (reachesUp) bridgeIds.add(n.id);
+  }
+
+  const bridgeNodes = inactiveNodes
+    .filter(n => bridgeIds.has(n.id))
+    .map(n => ({ ...n, isBridge: true }));
+
+  const nodes = [...activeNodes, ...bridgeNodes];
+  const finalNodeIds = new Set(nodes.map(n => n.id));
+  const links = allLinks.filter(l => finalNodeIds.has(l.source) && finalNodeIds.has(l.target));
 
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
 
