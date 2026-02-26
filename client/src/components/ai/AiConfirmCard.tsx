@@ -9,6 +9,7 @@ import {
   X,
   SkipForward,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -180,7 +181,7 @@ export default function AiConfirmCard({
               )}
               data-testid={index !== undefined ? `confirm-action-${index}` : "confirm-action"}
             >
-              <Check className="w-3.5 h-3.5" />
+              {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
               {isSubmitting ? "执行中..." : "确认执行"}
             </button>
             {onSkip && (

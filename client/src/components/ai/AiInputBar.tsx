@@ -489,6 +489,60 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
     el.style.height = Math.min(el.scrollHeight, maxHeight) + "px";
   }, []);
 
+  const processFiles = useCallback((files: File[]) => {
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = (reader.result as string).split(',')[1];
+        const isImage = file.type.startsWith('image/');
+        setAttachments(prev => [...prev, {
+          type: isImage ? 'image' : 'file',
+          name: file.name,
+          mimeType: file.type,
+          base64,
+          previewUrl: isImage ? URL.createObjectURL(file) : undefined,
+        }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const pastedFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].kind === 'file') {
+        const file = items[i].getAsFile();
+        if (file) pastedFiles.push(file);
+      }
+    }
+    if (pastedFiles.length > 0) {
+      e.preventDefault();
+      processFiles(pastedFiles);
+    }
+  }, [processFiles]);
+
+  const [isDragOver, setIsDragOver] = useState(false);
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }, []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }, []);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (e.dataTransfer?.files?.length) {
+      processFiles(Array.from(e.dataTransfer.files));
+    }
+  }, [processFiles]);
+
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
     if (!trimmed && attachments.length === 0) return;
@@ -528,14 +582,19 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
             boxShadow: showGlow
               ? `0 0 ${isPressed ? 24 : 14}px rgba(255,255,255,${isPressed ? 0.15 : 0.08})`
               : 'none',
+            outline: isDragOver ? '2px dashed rgba(212,162,127,0.5)' : 'none',
+            outlineOffset: 2,
             transition: showGlow && !isPressed
               ? 'background 0.5s ease, box-shadow 0.5s ease'
               : 'background 0.05s ease, box-shadow 0.05s ease',
           }}
           onPointerDown={handleComposerPointerDown}
           onPointerUp={handleComposerPointerUp}
-          onPointerLeave={handleComposerPointerUp}
+          onPointerLeave={(e) => { handleComposerPointerUp(e as any); handleDragLeave(e as any); }}
           onPointerCancel={handleComposerPointerUp}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
           data-testid="ai-composer"
         >
           <div style={{
@@ -551,6 +610,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
               adjustHeight();
             }}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
             placeholder="输入消息..."

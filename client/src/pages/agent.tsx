@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
 import type { Attachment } from "@/components/ai/AiInputBar";
-import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Pencil, X, Check, ListFilter, ChevronRight, Search, Star, FolderOpen, ArrowDown } from "lucide-react";
+import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Pencil, X, Check, ListFilter, ChevronRight, Search, Star, FolderOpen, ArrowDown, AlertCircle, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
@@ -64,6 +64,12 @@ interface Message {
   isStreaming?: boolean;
   searchResults?: { title: string; url: string; content: string }[];
   attachments?: { type: string; name: string; mimeType: string; base64: string; previewUrl?: string }[];
+  thinking?: string;
+  isThinking?: boolean;
+  thinkingDuration?: number;
+  tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+  retryPayload?: { text: string; attachments?: Attachment[] };
+  errorType?: 'network' | 'timeout' | 'rate_limit' | 'unknown';
 }
 
 interface Conversation {
@@ -82,7 +88,7 @@ interface Conversation {
   updatedAt: string;
 }
 
-const SUGGESTIONS = [
+const DEFAULT_SUGGESTIONS = [
   { text: "创建新任务", icon: ListPlus },
   { text: "查看项目进度", icon: BarChart3 },
   { text: "分析团队负载", icon: Users },
@@ -821,6 +827,58 @@ export default function Agent() {
   const activeConvId = params.get('conv') ? parseInt(params.get('conv')!) : null;
   const { currentUserId } = useAuth();
 
+  const { data: tasksData } = useQuery<{ data: any[] }>({
+    queryKey: ["/api/tasks"],
+    staleTime: 60000,
+  });
+
+  const smartSuggestions = useMemo(() => {
+    const tasks = tasksData?.data || [];
+    const myTasks = tasks.filter((t: any) => t.assigneeId === currentUserId);
+    const overdue = myTasks.filter((t: any) => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'done' && t.status !== 'cancelled');
+    const inProgress = myTasks.filter((t: any) => t.status === 'in_progress');
+    const todo = myTasks.filter((t: any) => t.status === 'todo');
+    const suggestions: { text: string; icon: any; description?: string }[] = [];
+
+    if (overdue.length > 0) {
+      suggestions.push({
+        text: `我有 ${overdue.length} 个逾期任务，帮我分析优先级`,
+        icon: AlertCircle,
+        description: '逾期任务分析',
+      });
+    }
+    if (inProgress.length > 0) {
+      suggestions.push({
+        text: `查看我正在进行的 ${inProgress.length} 个任务状态`,
+        icon: Clock,
+        description: '进行中任务',
+      });
+    }
+    if (todo.length > 0) {
+      suggestions.push({
+        text: `帮我规划今天的工作，我有 ${todo.length} 个待办任务`,
+        icon: CheckSquare,
+        description: '今日规划',
+      });
+    }
+    if (myTasks.length === 0) {
+      suggestions.push({
+        text: "创建新任务",
+        icon: ListPlus,
+        description: '快速创建',
+      });
+    }
+
+    while (suggestions.length < 4) {
+      const fallbacks = DEFAULT_SUGGESTIONS.filter(
+        (d) => !suggestions.some((s) => s.text === d.text)
+      );
+      if (fallbacks.length === 0) break;
+      suggestions.push(fallbacks[0]);
+    }
+    return suggestions.slice(0, 4);
+  }, [tasksData, currentUserId]);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -1031,11 +1089,42 @@ export default function Agent() {
         const decoder = new TextDecoder();
         let buffer = '';
         let fullText = '';
+        let thinkingText = '';
         let pendingAction: any = null;
+        let lastEventTime = Date.now();
+        let thinkingStartTime = 0;
+        let tokenUsageData: any = null;
 
+        let tokenBuffer = '';
+        let tokenFlushTimer: ReturnType<typeof setTimeout> | null = null;
+        const flushTokenBuffer = () => {
+          if (!tokenBuffer) return;
+          const buffered = tokenBuffer;
+          tokenBuffer = '';
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgId
+                ? { ...m, content: fullText, isThinking: false }
+                : m
+            )
+          );
+        };
+
+        const STREAM_TIMEOUT_MS = 45000;
+        let isTimeoutAbort = false;
+        const timeoutCheck = setInterval(() => {
+          if (Date.now() - lastEventTime > STREAM_TIMEOUT_MS) {
+            clearInterval(timeoutCheck);
+            isTimeoutAbort = true;
+            abortController.abort();
+          }
+        }, 5000);
+
+        try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
+          lastEventTime = Date.now();
 
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
@@ -1068,20 +1157,41 @@ export default function Agent() {
                   queryClient.invalidateQueries({ queryKey: ['/api/conversations'] });
                 }
                 if (convId) saveMessageToDB(convId, userMsg);
-              } else if (event.type === 'token' && event.content) {
-                fullText += event.content;
+              } else if (event.type === 'thinking' && event.content) {
+                if (!thinkingStartTime) thinkingStartTime = Date.now();
+                thinkingText += event.content;
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMsgId
-                      ? { ...m, content: fullText }
+                      ? { ...m, thinking: thinkingText, isThinking: true }
                       : m
                   )
                 );
+              } else if (event.type === 'token' && event.content) {
+                fullText += event.content;
+                tokenBuffer += event.content;
+                if (!tokenFlushTimer) {
+                  tokenFlushTimer = setTimeout(() => {
+                    tokenFlushTimer = null;
+                    flushTokenBuffer();
+                  }, 50);
+                }
               } else if (event.type === 'action') {
                 pendingAction = event;
               } else if (event.type === 'done') {
+                if (tokenFlushTimer) {
+                  clearTimeout(tokenFlushTimer);
+                  tokenFlushTimer = null;
+                }
+                tokenBuffer = '';
+
                 const finalText = event.fullText || fullText;
                 conversationHistory.current.push({ role: "assistant", content: finalText });
+                const thinkingDur = thinkingStartTime ? Date.now() - thinkingStartTime : undefined;
+
+                if (event.tokenUsage) {
+                  tokenUsageData = event.tokenUsage;
+                }
 
                 if (pendingAction) {
                   const msgType = pendingAction.actions ? "multi_confirm" : "confirm";
@@ -1092,11 +1202,15 @@ export default function Agent() {
                             ...m,
                             content: finalText,
                             isStreaming: false,
+                            isThinking: false,
                             type: msgType,
                             action: pendingAction.action || undefined,
                             actions: pendingAction.actions || undefined,
                             confirmed: pendingAction.action ? null : undefined,
                             actionConfirmed: pendingAction.actions ? pendingAction.actions.map(() => null) : undefined,
+                            thinking: thinkingText || undefined,
+                            thinkingDuration: thinkingDur,
+                            tokenUsage: tokenUsageData || undefined,
                           }
                         : m
                     )
@@ -1117,7 +1231,15 @@ export default function Agent() {
                   setMessages((prev) =>
                     prev.map((m) =>
                       m.id === assistantMsgId
-                        ? { ...m, content: finalText, isStreaming: false }
+                        ? {
+                            ...m,
+                            content: finalText,
+                            isStreaming: false,
+                            isThinking: false,
+                            thinking: thinkingText || undefined,
+                            thinkingDuration: thinkingDur,
+                            tokenUsage: tokenUsageData || undefined,
+                          }
                         : m
                     )
                   );
@@ -1138,13 +1260,17 @@ export default function Agent() {
             }
           }
         }
+        } finally {
+          clearInterval(timeoutCheck);
+          if (tokenFlushTimer) clearTimeout(tokenFlushTimer);
+        }
 
         if (fullText && !conversationHistory.current.some(m => m.content === fullText && m.role === 'assistant')) {
           conversationHistory.current.push({ role: "assistant", content: fullText });
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantMsgId
-                ? { ...m, content: fullText, isStreaming: false }
+                ? { ...m, content: fullText, isStreaming: false, isThinking: false }
                 : m
             )
           );
@@ -1158,7 +1284,7 @@ export default function Agent() {
           }
         }
       } catch (err: any) {
-        if (err.name === 'AbortError') {
+        if (err.name === 'AbortError' && !isTimeoutAbort) {
           setMessages((prev) => {
             const streamingMsg = prev.find(m => m.id === assistantMsgId);
             if (streamingMsg?.content) {
@@ -1166,17 +1292,43 @@ export default function Agent() {
             }
             return prev.map((m) =>
               m.id === assistantMsgId
-                ? { ...m, isStreaming: false }
+                ? { ...m, isStreaming: false, isThinking: false }
                 : m
             );
           });
-        } else {
+        } else if (err.name === 'AbortError' && isTimeoutAbort) {
           setMessages((prev) => {
             const filtered = prev.filter((m) => m.id !== assistantMsgId);
             return [...filtered, {
               id: nextId(),
               role: "system" as const,
-              content: err.message || "请求失败，请稍后重试",
+              content: '响应超时（45秒无数据），请重试',
+              errorType: 'timeout' as const,
+              retryPayload: { text, attachments },
+            }];
+          });
+        } else {
+          const errMsg = err.message || '';
+          let errorType: Message['errorType'] = 'unknown';
+          let displayMsg = errMsg || '请求失败，请稍后重试';
+          if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError') || errMsg.includes('network')) {
+            errorType = 'network';
+            displayMsg = '网络连接失败，请检查网络后重试';
+          } else if (errMsg.includes('rate') || errMsg.includes('429') || errMsg.includes('quota')) {
+            errorType = 'rate_limit';
+            displayMsg = 'AI 服务繁忙，请稍等片刻后重试';
+          } else if (errMsg.includes('timeout') || errMsg.includes('Timeout')) {
+            errorType = 'timeout';
+            displayMsg = '响应超时，请重试';
+          }
+          setMessages((prev) => {
+            const filtered = prev.filter((m) => m.id !== assistantMsgId);
+            return [...filtered, {
+              id: nextId(),
+              role: "system" as const,
+              content: displayMsg,
+              errorType,
+              retryPayload: { text, attachments },
             }];
           });
         }
@@ -1242,6 +1394,18 @@ export default function Agent() {
     [messages, handleSend, rebuildHistoryFromMessages]
   );
 
+  const handleRetry = useCallback(
+    (messageId: string) => {
+      const msg = messages.find(m => m.id === messageId);
+      if (!msg?.retryPayload) return;
+      const truncated = messages.filter(m => m.id !== messageId);
+      setMessages(truncated);
+      rebuildHistoryFromMessages(truncated);
+      setTimeout(() => handleSend(msg.retryPayload!.text, msg.retryPayload!.attachments), 0);
+    },
+    [messages, handleSend, rebuildHistoryFromMessages]
+  );
+
   const handleConfirm = useCallback(
     async (messageId: string, actionIndex?: number) => {
       const msg = messages.find((m) => m.id === messageId);
@@ -1303,6 +1467,11 @@ export default function Agent() {
         setMessages((prev) => [...prev, sysMsg]);
         if (activeConvId) saveMessageToDB(activeConvId, sysMsg);
 
+        conversationHistory.current.push({
+          role: "assistant" as const,
+          content: `[系统] 操作已执行: ${systemContent}`,
+        });
+
         queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
         queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
         queryClient.invalidateQueries({ queryKey: ["/api/stats/overview"] });
@@ -1361,13 +1530,19 @@ export default function Agent() {
           summaryParts.push(line);
         }
 
+        const batchSummary = summaryParts.join("\n");
         const sysMsg: Message = {
           id: nextId(),
           role: "system",
-          content: summaryParts.join("\n"),
+          content: batchSummary,
         };
         setMessages((prev) => [...prev, sysMsg]);
         if (activeConvId) saveMessageToDB(activeConvId, sysMsg);
+
+        conversationHistory.current.push({
+          role: "assistant" as const,
+          content: `[系统] 批量操作已执行: ${batchSummary}`,
+        });
 
         queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
         queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
@@ -1559,16 +1734,19 @@ export default function Agent() {
             <h1 className="font-serif text-2xl text-[var(--text-primary)]" data-testid="text-welcome-heading">有什么可以帮你的？</h1>
           </div>
           <div className="grid grid-cols-2 gap-3 w-full max-w-md">
-            {SUGGESTIONS.map((s) => {
+            {smartSuggestions.map((s) => {
               const SIcon = s.icon;
               return (
                 <button
                   key={s.text}
                   onClick={() => handleSend(s.text)}
                   className="rounded-card border border-[var(--border-subtle)] hover:bg-black/5 dark:hover:bg-white/5 p-4 cursor-pointer text-left transition-colors"
-                  data-testid={`suggestion-${s.text}`}
+                  data-testid={`suggestion-${s.description || s.text}`}
                 >
                   <SIcon className="w-4 h-4 text-[var(--text-secondary)] mb-2" />
+                  {s.description && (
+                    <span className="text-xs text-[var(--text-secondary)] block mb-1">{s.description}</span>
+                  )}
                   <span className="text-sm text-[var(--text-primary)]">{s.text}</span>
                 </button>
               );
@@ -1603,6 +1781,7 @@ export default function Agent() {
                   onStepAnswer={handleStepAnswer}
                   onRegenerate={handleRegenerate}
                   onEditMessage={handleEditMessage}
+                  onRetry={handleRetry}
                   isLastAssistant={idx === lastAssistantIdx}
                 />
               ));

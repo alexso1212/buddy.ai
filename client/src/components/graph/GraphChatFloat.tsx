@@ -27,6 +27,8 @@ interface Message {
   actionConfirmed?: (boolean | null)[];
   isStreaming?: boolean;
   attachments?: { type: string; name: string; mimeType: string; base64: string; previewUrl?: string }[];
+  thinking?: string;
+  isThinking?: boolean;
 }
 
 interface GraphChatFloatProps {
@@ -319,11 +321,19 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
           try {
             const event = JSON.parse(jsonStr);
 
-            if (event.type === "token" && event.content) {
+            if (event.type === "thinking" && event.content) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId
+                    ? { ...m, thinking: (m.thinking || '') + event.content, isThinking: true }
+                    : m
+                )
+              );
+            } else if (event.type === "token" && event.content) {
               fullText += event.content;
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === assistantMsgId ? { ...m, content: fullText } : m
+                  m.id === assistantMsgId ? { ...m, content: fullText, isThinking: false } : m
                 )
               );
             } else if (event.type === "action") {
@@ -348,6 +358,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
                           ...m,
                           content: finalText,
                           isStreaming: false,
+                          isThinking: false,
                           type: msgType,
                           action: pendingAction.action || undefined,
                           actions: pendingAction.actions || undefined,
@@ -374,7 +385,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMsgId
-                      ? { ...m, content: finalText, isStreaming: false }
+                      ? { ...m, content: finalText, isStreaming: false, isThinking: false }
                       : m
                   )
                 );

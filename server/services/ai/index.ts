@@ -469,7 +469,7 @@ function buildContextBlock(
     email: u.email,
   })));
   const projectsFormatted = formatProjectList(allProjects);
-  const tasksFormatted = formatTaskList(activeTasks, allUsers);
+  const tasksFormatted = formatTaskList(activeTasks, allUsers, ctx.currentUserId);
 
   return `## 当前系统上下文
 - 组织: Deltapex Education（金融教育公司）
@@ -669,14 +669,55 @@ async function executeQuery(actionType: string, data: Record<string, any>): Prom
   }
 }
 
-function formatTaskList(tasks: any[], users: any[]): string {
+function formatTaskList(tasks: any[], users: any[], currentUserId?: number): string {
   const userMap = new Map(users.map(u => [u.id, u.displayName]));
   if (tasks.length === 0) return '（暂无任务）';
-  return tasks.map(t => {
+
+  const now = new Date();
+  const myTasks = currentUserId ? tasks.filter(t => t.assigneeId === currentUserId) : [];
+  const otherTasks = currentUserId ? tasks.filter(t => t.assigneeId !== currentUserId) : tasks;
+
+  const urgentOthers = otherTasks.filter(t =>
+    t.priority === 'critical' || t.priority === 'high' ||
+    t.status === 'blocked' ||
+    (t.dueDate && new Date(t.dueDate) < now)
+  );
+  const normalOthers = otherTasks.filter(t => !urgentOthers.includes(t));
+
+  const formatOne = (t: any) => {
     const assignee = t.assigneeId ? userMap.get(t.assigneeId) || `ID:${t.assigneeId}` : '未分配';
     const due = t.dueDate ? new Date(t.dueDate).toLocaleDateString('zh-CN') : '';
     return `- ID:${t.id}「${t.title}」状态:${t.status} 优先级:${t.priority} 负责人:${assignee}${due ? ' 截止:' + due : ''} 进度:${t.progress}%`;
-  }).join('\n');
+  };
+
+  const formatCompact = (t: any) => {
+    const assignee = t.assigneeId ? userMap.get(t.assigneeId) || `${t.assigneeId}` : '-';
+    return `- ${t.id}:${t.title}|${t.status}|${t.priority}|${assignee}`;
+  };
+
+  const parts: string[] = [];
+
+  if (myTasks.length > 0) {
+    parts.push(`### 你的任务 (${myTasks.length})`);
+    parts.push(...myTasks.map(formatOne));
+  }
+
+  if (urgentOthers.length > 0) {
+    parts.push(`### 重要/紧急任务 (${urgentOthers.length})`);
+    parts.push(...urgentOthers.map(formatOne));
+  }
+
+  const MAX_NORMAL = 40;
+  if (normalOthers.length > 0) {
+    const shown = normalOthers.slice(0, MAX_NORMAL);
+    parts.push(`### 其他任务 (${normalOthers.length}${normalOthers.length > MAX_NORMAL ? `，显示前${MAX_NORMAL}` : ''})`);
+    parts.push(...shown.map(formatCompact));
+    if (normalOthers.length > MAX_NORMAL) {
+      parts.push(`...（还有 ${normalOthers.length - MAX_NORMAL} 个任务未列出，需要时可通过 query_tasks 查询）`);
+    }
+  }
+
+  return parts.join('\n');
 }
 
 export async function chat(
@@ -949,6 +990,9 @@ export async function* chatStream(
 
     for await (const chunk of stream as any) {
       const delta = chunk.choices?.[0]?.delta;
+      if ((delta as any)?.reasoning_content) {
+        yield { type: 'thinking', content: (delta as any).reasoning_content };
+      }
       if (delta?.content) {
         yield { type: 'token', content: delta.content };
       }

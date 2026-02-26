@@ -2280,7 +2280,9 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
       for await (const chunk of generator) {
         if (aborted || req.socket?.destroyed) break;
 
-        if (chunk.type === 'token' && chunk.content) {
+        if (chunk.type === 'thinking' && chunk.content) {
+          res.write(`data: ${JSON.stringify({ type: 'thinking', content: chunk.content })}\n\n`);
+        } else if (chunk.type === 'token' && chunk.content) {
           fullText += chunk.content;
           res.write(`data: ${JSON.stringify({ type: 'token', content: chunk.content })}\n\n`);
         } else if (chunk.type === 'done') {
@@ -2320,7 +2322,15 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
               console.error('Failed to parse action block:', parseErr);
             }
           }
-          res.write(`data: ${JSON.stringify({ type: 'done', fullText: displayText })}\n\n`);
+          const donePayload: any = { type: 'done', fullText: displayText };
+          if (chunk.tokenUsage) {
+            donePayload.tokenUsage = {
+              promptTokens: chunk.tokenUsage.promptTokens,
+              completionTokens: chunk.tokenUsage.completionTokens,
+              totalTokens: chunk.tokenUsage.totalTokens,
+            };
+          }
+          res.write(`data: ${JSON.stringify(donePayload)}\n\n`);
         } else if (chunk.type === 'error') {
           res.write(`data: ${JSON.stringify({ type: 'error', content: chunk.content })}\n\n`);
         }

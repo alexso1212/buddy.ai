@@ -1,13 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Organization } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, User, Lock, Loader2, UserPlus, Plus, Copy, Trash2 } from "lucide-react";
+import { Building2, User, Lock, Loader2, UserPlus, Plus, Copy, Trash2, BarChart3 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return n.toString();
+}
 
 export default function Settings() {
   const { user: authUser, updateUser } = useAuth();
@@ -76,6 +82,12 @@ export default function Settings() {
       setPasswordSaving(false);
     }
   };
+
+  const [tokenPeriod, setTokenPeriod] = useState('30d');
+  const { data: tokenStatsData, isLoading: tokenStatsLoading } = useQuery<{ data: any }>({
+    queryKey: [`/api/token-usage/stats?period=${tokenPeriod}`],
+  });
+  const tokenStats = tokenStatsData?.data;
 
   const [inviteRole, setInviteRole] = useState('member');
   const [inviteCreating, setInviteCreating] = useState(false);
@@ -226,6 +238,76 @@ export default function Settings() {
             </>
           ) : (
             <p className="text-muted-foreground">未找到组织信息</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2">
+          <BarChart3 className="w-5 h-5 text-muted-foreground" />
+          <CardTitle className="flex-1">AI 用量统计</CardTitle>
+          <div className="flex gap-1">
+            {(['7d', '30d', '90d'] as const).map(p => (
+              <button
+                key={p}
+                onClick={() => setTokenPeriod(p)}
+                className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                  tokenPeriod === p
+                    ? 'bg-foreground/10 text-foreground font-medium'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                data-testid={`button-period-${p}`}
+              >
+                {p === '7d' ? '7天' : p === '30d' ? '30天' : '90天'}
+              </button>
+            ))}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {tokenStatsLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+          ) : tokenStats ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 rounded-lg bg-muted/50 text-center">
+                  <div className="text-lg font-semibold" data-testid="text-total-tokens">
+                    {formatTokenCount(tokenStats.totalTokens)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">总 Tokens</div>
+                </div>
+                <div className="p-3 rounded-lg bg-muted/50 text-center">
+                  <div className="text-lg font-semibold" data-testid="text-prompt-tokens">
+                    {formatTokenCount(tokenStats.totalPromptTokens)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">输入</div>
+                </div>
+                <div className="p-3 rounded-lg bg-muted/50 text-center">
+                  <div className="text-lg font-semibold" data-testid="text-completion-tokens">
+                    {formatTokenCount(tokenStats.totalCompletionTokens)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">输出</div>
+                </div>
+              </div>
+              <div className="text-sm text-muted-foreground text-right" data-testid="text-total-cost">
+                预估费用: ${parseFloat(tokenStats.totalCostUsd || '0').toFixed(4)}
+              </div>
+              {tokenStats.byPurpose && Object.keys(tokenStats.byPurpose).length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-muted-foreground">按用途</div>
+                  {Object.entries(tokenStats.byPurpose).map(([purpose, data]: [string, any]) => (
+                    <div key={purpose} className="flex items-center justify-between text-sm py-1 border-b border-border/50 last:border-0">
+                      <span className="text-foreground capitalize">{purpose.replace(/_/g, ' ')}</span>
+                      <span className="text-muted-foreground">{formatTokenCount(data.tokens)} tokens</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">暂无使用数据</p>
           )}
         </CardContent>
       </Card>

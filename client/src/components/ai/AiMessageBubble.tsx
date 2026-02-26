@@ -1,10 +1,11 @@
 import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { Check, Copy, Share2, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink, FileText } from "lucide-react";
+import { Check, Copy, Share2, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink, FileText, RefreshCw } from "lucide-react";
 import AiConfirmCard from "./AiConfirmCard";
 import AiGuidedCreation from "./AiGuidedCreation";
 import AIMessageContent from "./AIMessageContent";
 import AgentLogo from "@/components/AgentLogo";
+import ThinkingBlock from "./ThinkingBlock";
 
 interface ActionPayload {
   actionType: string;
@@ -57,6 +58,12 @@ interface Message {
   isStreaming?: boolean;
   searchResults?: { title: string; url: string; content: string }[];
   attachments?: { type: string; name: string; mimeType: string; base64: string; previewUrl?: string }[];
+  thinking?: string;
+  isThinking?: boolean;
+  thinkingDuration?: number;
+  tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+  retryPayload?: { text: string; attachments?: any[] };
+  errorType?: 'network' | 'timeout' | 'rate_limit' | 'unknown';
 }
 
 interface AiMessageBubbleProps {
@@ -69,6 +76,7 @@ interface AiMessageBubbleProps {
   onStepAnswer?: (stepLabel: string, answerLabel: string) => void;
   onRegenerate?: (messageId: string) => void;
   onEditMessage?: (messageId: string, newContent: string) => void;
+  onRetry?: (messageId: string) => void;
   isLastAssistant?: boolean;
 }
 
@@ -217,7 +225,7 @@ function MultiConfirmGroup({
             )}
             data-testid={`confirm-all-${message.id}`}
           >
-            <Check className="w-3.5 h-3.5" />
+            {confirmingAll ? <RotateCcw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
             {confirmingAll ? "执行中..." : "全部确认"}
           </button>
         </div>
@@ -308,6 +316,22 @@ function SearchSourcesBar({ results }: { results: { title: string; url: string; 
   );
 }
 
+function TokenUsageBadge({ usage }: { usage: { promptTokens: number; completionTokens: number; totalTokens: number } }) {
+  const formatTokens = (n: number) => {
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+    return `${n}`;
+  };
+  return (
+    <span
+      className="text-[10px] text-[var(--text-tertiary)] ml-1"
+      title={`Prompt: ${usage.promptTokens} | Completion: ${usage.completionTokens} | Total: ${usage.totalTokens}`}
+      data-testid="token-usage-badge"
+    >
+      {formatTokens(usage.totalTokens)} tokens
+    </span>
+  );
+}
+
 export default function AiMessageBubble({
   message,
   onConfirm,
@@ -318,15 +342,17 @@ export default function AiMessageBubble({
   onStepAnswer,
   onRegenerate,
   onEditMessage,
+  onRetry,
   isLastAssistant,
 }: AiMessageBubbleProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.content);
   if (message.role === "system") {
     const isSuccess = message.content.includes("成功") || message.content.includes("已");
+    const isError = !!message.retryPayload;
     return (
       <div
-        className="flex justify-center px-3 mb-6"
+        className="flex flex-col items-center px-3 mb-6 gap-2"
         data-testid={`ai-message-${message.id}`}
       >
         <span
@@ -339,6 +365,21 @@ export default function AiMessageBubble({
         >
           {message.content}
         </span>
+        {isError && onRetry && (
+          <button
+            onClick={() => onRetry(message.id)}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors"
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              color: 'var(--text-secondary)',
+              border: '1px solid rgba(255,255,255,0.08)',
+            }}
+            data-testid="btn-retry"
+          >
+            <RefreshCw size={12} />
+            重试
+          </button>
+        )}
       </div>
     );
   }
@@ -559,6 +600,13 @@ export default function AiMessageBubble({
         <div className="mb-2">
           <BrandLogo />
         </div>
+        {message.thinking && (
+          <ThinkingBlock
+            content={message.thinking}
+            isStreaming={message.isThinking}
+            duration={message.thinkingDuration}
+          />
+        )}
         {message.searchResults && message.searchResults.length > 0 && (
           <SearchSourcesBar results={message.searchResults} />
         )}
@@ -566,11 +614,14 @@ export default function AiMessageBubble({
           <AIMessageContent content={message.content} />
         </div>
         {!message.isStreaming && (
-          <AiReplyActions
-            content={message.content}
-            onRegenerate={onRegenerate ? () => onRegenerate(message.id) : undefined}
-            isLastAssistant={isLastAssistant}
-          />
+          <div className="flex items-center">
+            <AiReplyActions
+              content={message.content}
+              onRegenerate={onRegenerate ? () => onRegenerate(message.id) : undefined}
+              isLastAssistant={isLastAssistant}
+            />
+            {message.tokenUsage && <TokenUsageBadge usage={message.tokenUsage} />}
+          </div>
         )}
       </div>
     </div>
