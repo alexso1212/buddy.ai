@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { X, Send, Sparkles, Camera, ArrowDown, Square } from "lucide-react";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AgentLogo from "@/components/AgentLogo";
@@ -280,13 +281,32 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
     };
   }, [open]);
 
-  const stopTouchPropagation = useCallback((e: React.TouchEvent) => {
-    e.stopPropagation();
-  }, []);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const stopPointerPropagation = useCallback((e: React.PointerEvent) => {
-    e.stopPropagation();
-  }, []);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !open) return;
+    const stop = (e: Event) => {
+      e.stopPropagation();
+    };
+    const opts: AddEventListenerOptions = { capture: true, passive: true };
+    el.addEventListener("touchstart", stop, opts);
+    el.addEventListener("touchmove", stop, opts);
+    el.addEventListener("touchend", stop, opts);
+    el.addEventListener("pointerdown", stop, opts);
+    el.addEventListener("pointermove", stop, opts);
+    el.addEventListener("pointerup", stop, opts);
+    el.addEventListener("wheel", stop, opts);
+    return () => {
+      el.removeEventListener("touchstart", stop, opts);
+      el.removeEventListener("touchmove", stop, opts);
+      el.removeEventListener("touchend", stop, opts);
+      el.removeEventListener("pointerdown", stop, opts);
+      el.removeEventListener("pointermove", stop, opts);
+      el.removeEventListener("pointerup", stop, opts);
+      el.removeEventListener("wheel", stop, opts);
+    };
+  }, [open]);
 
   const handleClose = useCallback(() => {
     setVisible(false);
@@ -895,15 +915,10 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
+      ref={containerRef}
       data-testid="graph-chat-float"
-      onTouchStart={stopTouchPropagation}
-      onTouchMove={stopTouchPropagation}
-      onTouchEnd={stopTouchPropagation}
-      onPointerDown={stopPointerPropagation}
-      onPointerMove={stopPointerPropagation}
-      onPointerUp={stopPointerPropagation}
       style={{
         position: "fixed",
         bottom: keyboardHeight > 0 ? keyboardHeight + 8 : 20,
@@ -1231,6 +1246,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
