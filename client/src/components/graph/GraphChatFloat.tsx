@@ -251,19 +251,33 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
     }
   }, [open, visible]);
 
-  const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
+  const [viewportHeight, setViewportHeight] = useState(
+    window.visualViewport?.height || window.innerHeight
+  );
 
   useEffect(() => {
     if (!open) return;
     const vv = window.visualViewport;
-    if (!vv) return;
-    const onResize = () => {
-      const kbH = window.innerHeight - vv.height;
-      setKeyboardHeight(kbH > 50 ? kbH : 0);
+    if (vv) {
       setViewportHeight(vv.height);
+    }
+    const onResize = () => {
+      if (vv) {
+        const kbH = window.innerHeight - vv.height;
+        setKeyboardHeight(kbH > 50 ? kbH : 0);
+        setViewportHeight(vv.height);
+      } else {
+        setViewportHeight(window.innerHeight);
+      }
     };
-    vv.addEventListener("resize", onResize);
-    return () => vv.removeEventListener("resize", onResize);
+    if (vv) {
+      vv.addEventListener("resize", onResize);
+    }
+    window.addEventListener("resize", onResize);
+    return () => {
+      if (vv) vv.removeEventListener("resize", onResize);
+      window.removeEventListener("resize", onResize);
+    };
   }, [open]);
 
   const stopTouchPropagation = useCallback((e: React.TouchEvent) => {
@@ -897,13 +911,13 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
         transform: `translateX(-50%) ${visible ? "translateY(0)" : "translateY(20px)"}`,
         zIndex: 90,
         width: "min(420px, calc(100vw - 32px))",
-        height: keyboardHeight > 0 ? Math.min(viewportHeight - 16, 400) : "40vh",
-        minHeight: keyboardHeight > 0 ? 200 : 280,
-        maxHeight: keyboardHeight > 0 ? viewportHeight - 16 : undefined,
-        background: "rgba(20, 19, 18, 0.88)",
+        height: keyboardHeight > 0 ? Math.min(viewportHeight - 16, 400) : Math.min(viewportHeight * 0.4, 400),
+        minHeight: keyboardHeight > 0 ? 200 : Math.min(280, viewportHeight - 60),
+        maxHeight: Math.max(viewportHeight - 40, 200),
+        background: "rgba(20, 19, 18, 0.92)",
         backdropFilter: "blur(24px)",
         WebkitBackdropFilter: "blur(24px)",
-        border: "1px solid rgba(255,255,255,0.08)",
+        border: "1px solid rgba(255,255,255,0.1)",
         borderRadius: 16,
         display: "flex",
         flexDirection: "column",
@@ -920,8 +934,9 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
           justifyContent: "space-between",
           gap: 8,
           padding: "10px 14px",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          borderBottom: "1px solid rgba(255,255,255,0.12)",
           flexShrink: 0,
+          background: "rgba(255,255,255,0.03)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -941,20 +956,20 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
           data-testid="graph-chat-close"
           onClick={handleClose}
           style={{
-            width: 24,
-            height: 24,
+            width: 32,
+            height: 32,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            borderRadius: 6,
-            border: "none",
-            background: "transparent",
-            color: "rgba(255,255,255,0.4)",
+            borderRadius: 8,
+            border: "1px solid rgba(255,255,255,0.1)",
+            background: "rgba(255,255,255,0.06)",
+            color: "rgba(255,255,255,0.7)",
             cursor: "pointer",
-            transition: "color 150ms",
+            transition: "color 150ms, background 150ms",
           }}
         >
-          <X size={14} />
+          <X size={16} />
         </button>
       </div>
 
@@ -1020,7 +1035,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
       <div
         style={{
           flexShrink: 0,
-          borderTop: "1px solid rgba(255,255,255,0.06)",
+          borderTop: "1px solid rgba(255,255,255,0.12)",
           padding: "10px 12px",
           outline: isDragOver ? '2px dashed rgba(139,92,246,0.5)' : 'none',
           outlineOffset: -2,
