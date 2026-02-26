@@ -14,11 +14,12 @@
 用户发送消息
   → buildContextualSystemPrompt(userId, orgId, model)
       ├─ 加载静态模板 (SYSTEM_PROMPT from prompts.ts)
-      ├─ loadBusinessContext(orgId)
-      │   ├─ storage.getAllUsers(orgId)      → 团队
-      │   ├─ storage.getAllProjects(orgId)   → 项目
-      │   ├─ storage.getActiveTasks(orgId)  → 任务
-      │   └─ storage.getDepartments(orgId)  → 部门
+      ├─ loadBusinessContext()
+      │   ├─ storage.getUsers()        → 团队
+      │   ├─ storage.getProjects()     → 项目
+      │   ├─ storage.getTasks({})      → 全部任务 (再按 status 分类)
+      │   ├─ storage.getDepartments()  → 部门
+      │   └─ storage.getJobRoles()     → 岗位角色
       ├─ buildContextBlock(users, projects, tasks, userId)
       │   ├─ 当前用户信息 (ID, 姓名, 角色)
       │   ├─ 当前时间
@@ -131,33 +132,45 @@ AI 看到的任务按三个优先级分层, 使用不同详细程度:
 |------|-----------|------|
 | `claude-opus-4-6` | 128,000 | Anthropic Direct API |
 | `claude-sonnet-4-6` | 64,000 | Anthropic Direct API |
-| `claude-haiku-4-5` | 16,384 | Anthropic Direct API |
+| `claude-haiku-4-5-20251001` | 8,192 | Anthropic Direct API |
+| `claude-sonnet-4-20250514` | 16,384 | Anthropic Direct API |
 | `gpt-4o` | 16,384 | OpenRouter |
-| `deepseek-chat` | 8,192 | OpenRouter |
-| 其他/默认 | 8,192 | — |
+| 其他/默认 | 16,384 | — |
 
 **注意**: 这是 max_tokens 参数, 控制 AI **输出**的最大长度, 不是输入上下文窗口大小
 
 ### 3.2 模型原生上下文窗口
 
-| 模型 | 输入上下文窗口 |
-|------|-------------|
-| Claude Opus 4.6 | ~200K tokens |
-| Claude Sonnet 4.6 | ~200K tokens |
-| Claude Haiku 4.5 | ~200K tokens |
-| GPT-4o | ~128K tokens |
-| DeepSeek Chat | ~128K tokens |
+| 模型 | 输入上下文窗口 | 备注 |
+|------|-------------|------|
+| Claude Opus 4.6 | ~200K tokens | Anthropic Direct |
+| Claude Sonnet 4.6 | ~200K tokens | Anthropic Direct |
+| Claude Haiku 4.5 | ~200K tokens | Anthropic Direct |
+| GPT-4o | ~128K tokens | OpenRouter |
+| 其他 OpenRouter 模型 | 取决于具体模型 | 按默认 max_tokens=16384 配置 |
 
-### 3.3 API 客户端路由
+### 3.3 Extended Thinking (扩展思维)
+
+Claude 模型支持 Extended Thinking 模式, 启用后 AI 在输出前进行内部推理:
+
+| 模型 | budget_tokens |
+|------|--------------|
+| `claude-opus-4-6` | 32,000 |
+| `claude-sonnet-4-6` / 其他 Claude | 16,000 |
+
+启用条件: 前端 `extendedThinking` 开关打开 + 模型为 Claude 系列
+
+### 3.4 API 客户端路由
 
 ```
 模型选择 → getMaxTokensForModel(model) → 决定输出限制
-         → 选择 API 客户端:
-             ├─ claude-opus-4-6    → Anthropic Direct (complex)
-             ├─ claude-sonnet-4-6  → Anthropic Direct (simple)
-             ├─ claude-haiku-4-5   → Anthropic Direct (simple)
-             ├─ gpt-4o             → OpenRouter
-             └─ deepseek-*         → OpenRouter
+         → getClientForModel(model) → 选择 API 客户端:
+             ├─ COMPLEX_MODELS: ['claude-opus-4-6']
+             │   → claudeComplexClient (Anthropic Direct, timeout 180s)
+             ├─ SIMPLE_MODELS: ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-sonnet-4-20250514']
+             │   → claudeSimpleClient (Anthropic Direct, timeout 90s)
+             └─ 其他 (gpt-4o, deepseek 等)
+                 → openrouterClient (OpenRouter, timeout 30s)
 ```
 
 ---
@@ -535,14 +548,14 @@ GET /api/token-usage/stats?period=30d
 | 风险 | 严重度 | 发生概率 | 当前缓解 | 状态 |
 |------|-------|---------|---------|------|
 | 长对话 token 爆炸 | 🔴 高 | 中 | 无 | ❌ 未处理 |
-| 页面离开流未中断 | 🟡 中 | 高 | 无 | ❌ 未处理 |
+| 页面离开流未中断 | 🟡 中 | 高 | abort 链 (Task 01 已修复) | ✅ 已处理 |
 | 记忆/标题生成未计费 | 🟡 中 | 100% | 无 | ❌ 未追踪 |
 | 大文件无限制上传 | 🟡 中 | 低 | mammoth 纯文本 | ⚠️ 部分缓解 |
 | 图片无压缩 | 🟢 低 | 中 | 无 | ❌ 未处理 |
 | 大规模组织上下文膨胀 | 🟢 低 | 低 | MAX_NORMAL=40 | ⚠️ 部分缓解 |
 | 记忆无去重/无上限 | 🟢 低 | 中 | 无 | ❌ 未处理 |
 | 用户无费用上限 | 🔴 高 | 中 | 无 | ❌ 未处理 |
-| 对话切换竞态 | 🟢 低 | 低 | isStreamingRef guard | ⚠️ 部分缓解 |
+| 对话切换竞态 | 🟢 低 | 低 | abort + 重新加载 (Task 01 已修复) | ✅ 已处理 |
 
 ---
 

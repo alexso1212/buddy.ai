@@ -363,11 +363,12 @@ opacity = Math.min(deltaX / sidebarWidth, 0.4)
 
 ```
 用户发送消息 → POST /api/ai/chat/stream
-  → loadBusinessContext(orgId):
-      ├─ storage.getAllUsers(orgId)      → 团队成员列表
-      ├─ storage.getAllProjects(orgId)   → 项目列表
-      ├─ storage.getActiveTasks(orgId)  → 活跃任务
-      └─ storage.getDepartments(orgId)  → 部门结构
+  → loadBusinessContext():
+      ├─ storage.getUsers()        → 团队成员列表
+      ├─ storage.getProjects()     → 项目列表
+      ├─ storage.getTasks({})      → 所有任务 (再按 status 分类)
+      ├─ storage.getDepartments()  → 部门结构
+      └─ storage.getJobRoles()     → 岗位角色
   → buildContextBlock(users, projects, tasks):
       生成 Markdown 格式的上下文块
   → buildContextualSystemPrompt(contextBlock, memories):
