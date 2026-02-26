@@ -472,6 +472,12 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
                 });
               }
 
+              const finalUsage = pendingUsage || (event.tokenUsage ? {
+                promptTokens: event.tokenUsage.promptTokens || 0,
+                completionTokens: event.tokenUsage.completionTokens || 0,
+                totalTokens: event.tokenUsage.totalTokens || 0,
+              } : undefined);
+
               if (pendingAction) {
                 const msgType = pendingAction.actions
                   ? "multi_confirm"
@@ -491,7 +497,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
                           actionConfirmed: pendingAction.actions
                             ? pendingAction.actions.map(() => null)
                             : undefined,
-                          tokenUsage: pendingUsage || undefined,
+                          tokenUsage: finalUsage,
                         }
                       : m
                   )
@@ -511,7 +517,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMsgId
-                      ? { ...m, content: doneText, isStreaming: false, isThinking: false, tokenUsage: pendingUsage || undefined }
+                      ? { ...m, content: doneText, isStreaming: false, isThinking: false, tokenUsage: finalUsage }
                       : m
                   )
                 );
