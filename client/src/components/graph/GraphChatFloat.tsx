@@ -252,28 +252,26 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
     }
   }, [open, visible]);
 
-  const [viewportHeight, setViewportHeight] = useState(
-    window.visualViewport?.height || window.innerHeight
-  );
+  const fullViewportHeight = useRef(window.innerHeight);
+  const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
 
   useEffect(() => {
     if (!open) return;
+    fullViewportHeight.current = window.innerHeight;
+    setViewportHeight(window.innerHeight);
     const vv = window.visualViewport;
-    if (vv) {
-      setViewportHeight(vv.height);
-    }
     const onResize = () => {
-      if (vv) {
-        const kbH = window.innerHeight - vv.height;
-        setKeyboardHeight(kbH > 50 ? kbH : 0);
-        setViewportHeight(vv.height);
+      const visH = vv ? vv.height : window.innerHeight;
+      const kbH = window.innerHeight - visH;
+      if (kbH > 80) {
+        setKeyboardHeight(kbH);
       } else {
-        setViewportHeight(window.innerHeight);
+        setKeyboardHeight(0);
+        fullViewportHeight.current = window.innerHeight;
       }
+      setViewportHeight(visH);
     };
-    if (vv) {
-      vv.addEventListener("resize", onResize);
-    }
+    if (vv) vv.addEventListener("resize", onResize);
     window.addEventListener("resize", onResize);
     return () => {
       if (vv) vv.removeEventListener("resize", onResize);
@@ -283,34 +281,10 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el || !open) return;
-    const stop = (e: Event) => {
-      e.stopPropagation();
-    };
-    const opts: AddEventListenerOptions = { capture: true, passive: true };
-    el.addEventListener("touchstart", stop, opts);
-    el.addEventListener("touchmove", stop, opts);
-    el.addEventListener("touchend", stop, opts);
-    el.addEventListener("pointerdown", stop, opts);
-    el.addEventListener("pointermove", stop, opts);
-    el.addEventListener("pointerup", stop, opts);
-    el.addEventListener("wheel", stop, opts);
-    return () => {
-      el.removeEventListener("touchstart", stop, opts);
-      el.removeEventListener("touchmove", stop, opts);
-      el.removeEventListener("touchend", stop, opts);
-      el.removeEventListener("pointerdown", stop, opts);
-      el.removeEventListener("pointermove", stop, opts);
-      el.removeEventListener("pointerup", stop, opts);
-      el.removeEventListener("wheel", stop, opts);
-    };
-  }, [open]);
-
   const handleClose = useCallback(() => {
     setVisible(false);
     setKeyboardHeight(0);
+    fullViewportHeight.current = window.innerHeight;
     setViewportHeight(window.innerHeight);
     inputRef.current?.blur();
     setTimeout(onClose, 200);
@@ -921,14 +895,18 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
       data-testid="graph-chat-float"
       style={{
         position: "fixed",
-        bottom: keyboardHeight > 0 ? keyboardHeight + 8 : 20,
+        bottom: keyboardHeight > 0 ? keyboardHeight + 4 : 20,
         left: "50%",
         transform: `translateX(-50%) ${visible ? "translateY(0)" : "translateY(20px)"}`,
         zIndex: 90,
         width: "min(420px, calc(100vw - 32px))",
-        height: keyboardHeight > 0 ? Math.min(viewportHeight - 16, 400) : Math.min(viewportHeight * 0.4, 400),
-        minHeight: keyboardHeight > 0 ? 200 : Math.min(280, viewportHeight - 60),
-        maxHeight: Math.max(viewportHeight - 40, 200),
+        height: keyboardHeight > 0
+          ? Math.max(viewportHeight - 12, 200)
+          : Math.min(fullViewportHeight.current * 0.4, 400),
+        minHeight: 200,
+        maxHeight: keyboardHeight > 0
+          ? viewportHeight - 8
+          : Math.max(fullViewportHeight.current - 40, 200),
         background: "rgba(20, 19, 18, 0.92)",
         backdropFilter: "blur(24px)",
         WebkitBackdropFilter: "blur(24px)",
@@ -988,7 +966,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
         </button>
       </div>
 
-      <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div
           ref={scrollRef}
           onScroll={handleScroll}
@@ -997,7 +975,8 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
             overflowY: "auto",
             overflowX: "hidden",
             padding: "12px 0",
-            touchAction: "pan-y",
+            minHeight: 0,
+            touchAction: "auto",
             overscrollBehavior: "contain",
             WebkitOverflowScrolling: "touch",
           }}
