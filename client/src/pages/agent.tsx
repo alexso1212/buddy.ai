@@ -1102,6 +1102,7 @@ export default function Agent() {
 
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
+      let isTimeoutAbort = false;
 
       try {
         const selectedModel = (() => { try { return localStorage.getItem('buddy_model') || undefined; } catch { return undefined; } })();
@@ -1162,7 +1163,6 @@ export default function Agent() {
         };
 
         const STREAM_TIMEOUT_MS = 45000;
-        let isTimeoutAbort = false;
         const timeoutCheck = setInterval(() => {
           if (Date.now() - lastEventTime > STREAM_TIMEOUT_MS) {
             clearInterval(timeoutCheck);
