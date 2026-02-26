@@ -16,6 +16,14 @@ interface ActionPayload {
   followUpQuestion?: string;
 }
 
+interface Attachment {
+  type: string;
+  name: string;
+  mimeType: string;
+  base64: string;
+  previewUrl?: string;
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant" | "system";
@@ -26,9 +34,12 @@ interface Message {
   confirmed?: boolean | null;
   actionConfirmed?: (boolean | null)[];
   isStreaming?: boolean;
-  attachments?: { type: string; name: string; mimeType: string; base64: string; previewUrl?: string }[];
+  attachments?: Attachment[];
   thinking?: string;
   isThinking?: boolean;
+  tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+  errorType?: 'network' | 'timeout' | 'rate_limit' | 'unknown';
+  retryPayload?: { text: string; attachments?: Attachment[] };
 }
 
 interface GraphChatFloatProps {
@@ -116,12 +127,68 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
   const [visible, setVisible] = useState(false);
   const [pendingScreenshot, setPendingScreenshot] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const conversationHistory = useRef<{ role: string; content: string }[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isStreamingRef = useRef(false);
   const conversationIdRef = useRef<number | null>(null);
   const { currentUserId } = useAuth();
+
+  const processFiles = useCallback((files: File[]) => {
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = (reader.result as string).split(',')[1];
+        const isImage = file.type.startsWith('image/');
+        setAttachments(prev => [...prev, {
+          type: isImage ? 'image' : 'file',
+          name: file.name,
+          mimeType: file.type,
+          base64,
+          previewUrl: isImage ? URL.createObjectURL(file) : undefined,
+        }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const pastedFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].kind === 'file') {
+        const file = items[i].getAsFile();
+        if (file) pastedFiles.push(file);
+      }
+    }
+    if (pastedFiles.length > 0) {
+      e.preventDefault();
+      processFiles(pastedFiles);
+    }
+  }, [processFiles]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }, []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }, []);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (e.dataTransfer?.files?.length) {
+      processFiles(Array.from(e.dataTransfer.files));
+    }
+  }, [processFiles]);
 
   const saveMessageToDB = useCallback(async (convId: number, msg: { role: string; content: string; type?: string; action?: any; actions?: any; confirmed?: boolean | null; actionConfirmed?: (boolean | null)[] }) => {
     try {
@@ -181,10 +248,10 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
     }
   }, [graphRef, capturing]);
 
-  const handleSend = useCallback(async () => {
-    const text = inputValue.trim();
+  const handleSendWithText = useCallback(async (text: string, sendAttachments?: Attachment[]) => {
     const hasScreenshot = !!pendingScreenshot;
-    if ((!text && !hasScreenshot) || loading) return;
+    const allAttachments = [...(sendAttachments || attachments)];
+    if ((!text && !hasScreenshot && allAttachments.length === 0) || loading) return;
 
     const finalText = text || (hasScreenshot ? "请分析当前图谱画面" : "");
 
@@ -202,6 +269,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
 
     setInputValue("");
     setPendingScreenshot(null);
+    setAttachments([]);
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
     }
@@ -210,21 +278,28 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
       abortControllerRef.current.abort();
     }
 
-    const userMsg: Message = {
-      id: nextId(),
-      role: "user",
-      content: finalText,
-      type: "text",
-      attachments: screenshotBase64 ? [{
+    const msgAttachments: Attachment[] = [];
+    if (screenshotBase64) {
+      msgAttachments.push({
         type: "image",
         name: "graph-screenshot.png",
         mimeType: "image/png",
         base64: screenshotBase64,
         previewUrl: `data:image/png;base64,${screenshotBase64}`,
-      }] : undefined,
+      });
+    }
+    msgAttachments.push(...allAttachments);
+
+    const userMsg: Message = {
+      id: nextId(),
+      role: "user",
+      content: finalText,
+      type: "text",
+      attachments: msgAttachments.length > 0 ? msgAttachments : undefined,
     };
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
+    isStreamingRef.current = true;
 
     conversationHistory.current.push({ role: "user", content: finalText });
 
@@ -262,6 +337,20 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
+    let lastEventTime = Date.now();
+    const STREAM_TIMEOUT_MS = 45000;
+    let isTimeoutAbort = false;
+    const timeoutCheck = setInterval(() => {
+      if (Date.now() - lastEventTime > STREAM_TIMEOUT_MS) {
+        clearInterval(timeoutCheck);
+        isTimeoutAbort = true;
+        abortController.abort();
+      }
+    }, 5000);
+
+    let tokenBuffer = '';
+    let tokenFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
     try {
       const streamHeaders: Record<string, string> = {
         "Content-Type": "application/json",
@@ -276,13 +365,25 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
         conversationId: conversationIdRef.current || undefined,
       };
 
+      const apiAttachments: any[] = [];
       if (screenshotBase64) {
-        bodyPayload.attachments = [{
+        apiAttachments.push({
           type: "image",
           name: "graph-screenshot.png",
           mimeType: "image/png",
           base64: screenshotBase64,
-        }];
+        });
+      }
+      for (const att of allAttachments) {
+        apiAttachments.push({
+          type: att.type,
+          name: att.name,
+          mimeType: att.mimeType,
+          base64: att.base64,
+        });
+      }
+      if (apiAttachments.length > 0) {
+        bodyPayload.attachments = apiAttachments;
       }
 
       const res = await fetch("/api/ai/chat/stream", {
@@ -304,10 +405,26 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
       let buffer = "";
       let fullText = "";
       let pendingAction: any = null;
+      let pendingUsage: any = null;
 
+      const flushTokenBuffer = () => {
+        if (tokenBuffer) {
+          fullText += tokenBuffer;
+          const captured = fullText;
+          tokenBuffer = '';
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgId ? { ...m, content: captured, isThinking: false } : m
+            )
+          );
+        }
+      };
+
+      try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        lastEventTime = Date.now();
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
@@ -330,20 +447,28 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
                 )
               );
             } else if (event.type === "token" && event.content) {
-              fullText += event.content;
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantMsgId ? { ...m, content: fullText, isThinking: false } : m
-                )
-              );
+              tokenBuffer += event.content;
+              if (!tokenFlushTimer) {
+                tokenFlushTimer = setTimeout(() => {
+                  flushTokenBuffer();
+                  tokenFlushTimer = null;
+                }, 50);
+              }
             } else if (event.type === "action") {
               pendingAction = event;
+            } else if (event.type === "usage") {
+              pendingUsage = {
+                promptTokens: event.promptTokens || 0,
+                completionTokens: event.completionTokens || 0,
+                totalTokens: event.totalTokens || 0,
+              };
             } else if (event.type === "done") {
-              const finalText = event.fullText || fullText;
-              if (finalText && finalText.trim()) {
+              flushTokenBuffer();
+              const doneText = event.fullText || fullText;
+              if (doneText && doneText.trim()) {
                 conversationHistory.current.push({
                   role: "assistant",
-                  content: finalText,
+                  content: doneText,
                 });
               }
 
@@ -356,7 +481,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
                     m.id === assistantMsgId
                       ? {
                           ...m,
-                          content: finalText,
+                          content: doneText,
                           isStreaming: false,
                           isThinking: false,
                           type: msgType,
@@ -366,6 +491,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
                           actionConfirmed: pendingAction.actions
                             ? pendingAction.actions.map(() => null)
                             : undefined,
+                          tokenUsage: pendingUsage || undefined,
                         }
                       : m
                   )
@@ -373,7 +499,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
                 if (conversationIdRef.current) {
                   saveMessageToDB(conversationIdRef.current, {
                     role: "assistant",
-                    content: finalText,
+                    content: doneText,
                     type: msgType,
                     action: pendingAction.action,
                     actions: pendingAction.actions,
@@ -385,12 +511,12 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMsgId
-                      ? { ...m, content: finalText, isStreaming: false, isThinking: false }
+                      ? { ...m, content: doneText, isStreaming: false, isThinking: false, tokenUsage: pendingUsage || undefined }
                       : m
                   )
                 );
-                if (conversationIdRef.current && finalText && finalText.trim()) {
-                  saveMessageToDB(conversationIdRef.current, { role: "assistant", content: finalText, type: "text" });
+                if (conversationIdRef.current && doneText && doneText.trim()) {
+                  saveMessageToDB(conversationIdRef.current, { role: "assistant", content: doneText, type: "text" });
                 }
               }
             } else if (event.type === "error") {
@@ -416,7 +542,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMsgId
-              ? { ...m, content: fullText, isStreaming: false }
+              ? { ...m, content: fullText, isStreaming: false, tokenUsage: pendingUsage || undefined }
               : m
           )
         );
@@ -424,8 +550,12 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
           saveMessageToDB(conversationIdRef.current, { role: "assistant", content: fullText, type: "text" });
         }
       }
+      } finally {
+        clearInterval(timeoutCheck);
+        if (tokenFlushTimer) clearTimeout(tokenFlushTimer);
+      }
     } catch (err: any) {
-      if (err.name === "AbortError") {
+      if (err.name === "AbortError" && !isTimeoutAbort) {
         setMessages((prev) => {
           const sm = prev.find((m) => m.id === assistantMsgId);
           if (sm?.content) {
@@ -441,24 +571,63 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
             m.id === assistantMsgId ? { ...m, isStreaming: false } : m
           );
         });
-      } else {
+      } else if (err.name === "AbortError" && isTimeoutAbort) {
         setMessages((prev) => {
           const filtered = prev.filter((m) => m.id !== assistantMsgId);
-          return [
-            ...filtered,
-            {
-              id: nextId(),
-              role: "system" as const,
-              content: err.message || "请求失败，请稍后重试",
-            },
-          ];
+          return [...filtered, {
+            id: nextId(),
+            role: "system" as const,
+            content: '响应超时（45秒无数据），请重试',
+            errorType: 'timeout' as const,
+            retryPayload: { text: finalText, attachments: allAttachments.length > 0 ? allAttachments : undefined },
+          }];
+        });
+      } else {
+        const errMsg = err.message || '';
+        let errorType: Message['errorType'] = 'unknown';
+        let displayMsg = errMsg || '请求失败，请稍后重试';
+        if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError') || errMsg.includes('network')) {
+          errorType = 'network';
+          displayMsg = '网络连接失败，请检查网络后重试';
+        } else if (errMsg.includes('rate') || errMsg.includes('429') || errMsg.includes('quota')) {
+          errorType = 'rate_limit';
+          displayMsg = 'AI 服务繁忙，请稍等片刻后重试';
+        } else if (errMsg.includes('timeout') || errMsg.includes('Timeout')) {
+          errorType = 'timeout';
+          displayMsg = '响应超时，请重试';
+        }
+        setMessages((prev) => {
+          const filtered = prev.filter((m) => m.id !== assistantMsgId);
+          return [...filtered, {
+            id: nextId(),
+            role: "system" as const,
+            content: displayMsg,
+            errorType,
+            retryPayload: { text: finalText, attachments: allAttachments.length > 0 ? allAttachments : undefined },
+          }];
         });
       }
     } finally {
       setLoading(false);
+      isStreamingRef.current = false;
       abortControllerRef.current = null;
     }
-  }, [inputValue, loading, currentUserId, saveMessageToDB]);
+  }, [inputValue, loading, currentUserId, saveMessageToDB, pendingScreenshot, attachments, graphRef]);
+
+  const handleSend = useCallback(async () => {
+    handleSendWithText(inputValue.trim());
+  }, [inputValue, handleSendWithText]);
+
+  const handleRetry = useCallback(
+    (messageId: string) => {
+      const msg = messages.find(m => m.id === messageId);
+      if (!msg?.retryPayload) return;
+      const truncated = messages.filter(m => m.id !== messageId);
+      setMessages(truncated);
+      setTimeout(() => handleSendWithText(msg.retryPayload!.text, msg.retryPayload!.attachments), 0);
+    },
+    [messages, handleSendWithText]
+  );
 
   const handleConfirm = useCallback(
     async (messageId: string, actionIndex?: number) => {
@@ -742,6 +911,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
             onConfirm={handleConfirm}
             onReject={handleReject}
             onConfirmAll={handleConfirmAll}
+            onRetry={handleRetry}
           />
         ))}
         {loading && (
@@ -756,9 +926,44 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
           flexShrink: 0,
           borderTop: "1px solid rgba(255,255,255,0.06)",
           padding: "10px 12px",
+          outline: isDragOver ? '2px dashed rgba(139,92,246,0.5)' : 'none',
+          outlineOffset: -2,
+          transition: 'outline 150ms',
         }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
         data-testid="graph-chat-input-area"
       >
+        {attachments.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+            {attachments.map((att, i) => (
+              <div key={i} style={{ position: 'relative', display: 'inline-block' }}>
+                {att.previewUrl ? (
+                  <img
+                    src={att.previewUrl}
+                    alt={att.name}
+                    style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 6, border: '1px solid rgba(255,255,255,0.12)' }}
+                  />
+                ) : (
+                  <div style={{ width: 48, height: 48, borderRadius: 6, background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>
+                    {att.name.split('.').pop()?.toUpperCase()}
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    if (att.previewUrl) URL.revokeObjectURL(att.previewUrl);
+                    setAttachments(prev => prev.filter((_, j) => j !== i));
+                  }}
+                  style={{ position: 'absolute', top: -4, right: -4, width: 16, height: 16, borderRadius: '50%', background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0, fontSize: 10 }}
+                  data-testid={`remove-attachment-${i}`}
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {pendingScreenshot && (
           <div style={{
             marginBottom: 8,
@@ -840,6 +1045,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
               adjustHeight();
             }}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={pendingScreenshot ? "添加分析要求（可选）..." : "分析图谱上的任务..."}
             disabled={loading}
             rows={1}
@@ -863,7 +1069,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
           />
           <button
             onClick={handleSend}
-            disabled={(!inputValue.trim() && !pendingScreenshot) || loading}
+            disabled={(!inputValue.trim() && !pendingScreenshot && attachments.length === 0) || loading}
             style={{
               width: 36,
               height: 36,
@@ -873,15 +1079,15 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
               borderRadius: 10,
               border: "none",
               background:
-                (inputValue.trim() || pendingScreenshot) && !loading
+                (inputValue.trim() || pendingScreenshot || attachments.length > 0) && !loading
                   ? "rgba(139,92,246,0.6)"
                   : "rgba(255,255,255,0.05)",
               color:
-                (inputValue.trim() || pendingScreenshot) && !loading
+                (inputValue.trim() || pendingScreenshot || attachments.length > 0) && !loading
                   ? "#fff"
                   : "rgba(255,255,255,0.25)",
               cursor:
-                (inputValue.trim() || pendingScreenshot) && !loading ? "pointer" : "not-allowed",
+                (inputValue.trim() || pendingScreenshot || attachments.length > 0) && !loading ? "pointer" : "not-allowed",
               transition: "all 150ms",
               flexShrink: 0,
             }}
