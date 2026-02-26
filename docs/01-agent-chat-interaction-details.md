@@ -485,21 +485,3 @@ catch(err) {
 3. **Web Search 状态不持久化**: 刷新页面后 webSearchEnabled 重置为 false
 4. **GraphChatFloat 功能子集**: 不支持文件按钮上传、模型选择、Web Search、Extended Thinking、消息编辑、重新生成、引导式创建
 5. **代码高亮语言有限**: 仅支持 13 种常用语言, 不支持 C/C++, PHP, Ruby, Swift 等
-
----
-
-## 附录: 源文件索引
-
-| 文档章节 | 关键源文件 | 核心函数/变量 |
-|---------|-----------|-------------|
-| 消息输入 (§2) | `client/src/components/ai/AiInputBar.tsx` | `handleSend`, `onPaste`, `onDragOver/Drop` |
-| 消息显示 (§3) | `client/src/components/ai/AiMessageBubble.tsx` | `MessageTimestamp`, `AiReplyActions` |
-| 代码高亮 (§3.4) | `client/src/components/ai/AIMessageContent.tsx` | `CodeBlock`, `hljs.highlight/highlightAuto` |
-| 确认卡片 (§3.5) | `client/src/components/ai/AiConfirmCard.tsx` | `ACTION_CONFIG`, `DATA_LABELS` |
-| 流式传输 (§4) | `client/src/pages/agent.tsx` | `handleSend` (SSE fetch), `abortControllerRef` |
-| 错误重试 (§5) | `client/src/pages/agent.tsx` | `handleRetry`, `retryPayload` |
-| 滚动行为 (§6) | `client/src/pages/agent.tsx`, `GraphChatFloat.tsx` | `showScrollBtn`, `isNearBottom` |
-| 模型选择 (§8) | `client/src/App.tsx` | `ModelSelector`, `localStorage('buddy_model')` |
-| 对话持久化 (§9) | `client/src/pages/agent.tsx`, `server/routes.ts` | `saveMessageToDB`, `POST /api/ai/chat/stream` |
-| Token 追踪 (§10) | `server/services/ai/tokenCost.ts`, `server/storage.ts` | `calculateCost`, `createTokenUsage` |
-| GraphChatFloat (§11) | `client/src/components/graph/GraphChatFloat.tsx` | `handleSendMessage`, `showScrollBtn` |

@@ -911,8 +911,7 @@ export async function* chatStream(
   message: string,
   conversationHistory: { role: string; content: string | any[] }[],
   context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean; orgId?: number },
-  attachments?: { type: string; name: string; mimeType: string; base64: string }[],
-  abortSignal?: AbortSignal
+  attachments?: { type: string; name: string; mimeType: string; base64: string }[]
 ): AsyncGenerator<{ type: 'token' | 'done' | 'error'; content?: string; tokenUsage?: ChatResponse['tokenUsage'] }> {
   const modelName = context.model || 'claude-sonnet-4-6';
   const { prompt: systemPrompt } = await buildContextualSystemPrompt(context, 'streaming');
@@ -985,7 +984,7 @@ export async function* chatStream(
   }
 
   try {
-    const stream = await aiClient.chat.completions.create(requestParams, abortSignal ? { signal: abortSignal } : undefined);
+    const stream = await aiClient.chat.completions.create(requestParams);
     let totalPromptTokens = 0;
     let totalCompletionTokens = 0;
 
@@ -1013,9 +1012,6 @@ export async function* chatStream(
       }
     };
   } catch (err: any) {
-    if (abortSignal?.aborted || err.name === 'AbortError') {
-      return;
-    }
     yield { type: 'error', content: err.message || 'Stream error' };
   }
 }
