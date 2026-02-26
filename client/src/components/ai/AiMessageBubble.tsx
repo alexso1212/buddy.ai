@@ -61,11 +61,10 @@ interface Message {
   thinking?: string;
   isThinking?: boolean;
   thinkingDuration?: number;
-  tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number; model?: string };
+  tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
   retryPayload?: { text: string; attachments?: any[] };
   errorType?: 'network' | 'timeout' | 'rate_limit' | 'unknown';
   timestamp?: number;
-  edited?: boolean;
 }
 
 interface AiMessageBubbleProps {
@@ -80,7 +79,6 @@ interface AiMessageBubbleProps {
   onEditMessage?: (messageId: string, newContent: string) => void;
   onRetry?: (messageId: string) => void;
   isLastAssistant?: boolean;
-  hasFollowingMessages?: boolean;
 }
 
 function BrandLogo() {
@@ -319,31 +317,18 @@ function SearchSourcesBar({ results }: { results: { title: string; url: string; 
   );
 }
 
-const USD_TO_CNY = 7.2;
-const MODEL_PRICING: Record<string, { promptPer1k: number; completionPer1k: number }> = {
-  'claude-sonnet-4-20250514': { promptPer1k: 0.003, completionPer1k: 0.015 },
-  'claude-sonnet-4-6': { promptPer1k: 0.003, completionPer1k: 0.015 },
-  'claude-opus-4-6': { promptPer1k: 0.015, completionPer1k: 0.075 },
-  'claude-haiku-4-5-20251001': { promptPer1k: 0.00025, completionPer1k: 0.00125 },
-  'gpt-4o': { promptPer1k: 0.005, completionPer1k: 0.015 },
-  'gpt-4o-mini': { promptPer1k: 0.00015, completionPer1k: 0.0006 },
-};
-const DEFAULT_PRICING = { promptPer1k: 0.003, completionPer1k: 0.015 };
-
-function TokenUsageBadge({ usage }: { usage: { promptTokens: number; completionTokens: number; totalTokens: number; model?: string } }) {
-  const model = usage.model || (() => { try { return localStorage.getItem('buddy_model') || ''; } catch { return ''; } })();
-  const pricing = MODEL_PRICING[model] || DEFAULT_PRICING;
-  const costUsd = (usage.promptTokens / 1000) * pricing.promptPer1k + (usage.completionTokens / 1000) * pricing.completionPer1k;
-  const costCny = costUsd * USD_TO_CNY;
-  const costDisplay = costCny < 0.01 ? '<¥0.01' : `¥${costCny.toFixed(2)}`;
-
+function TokenUsageBadge({ usage }: { usage: { promptTokens: number; completionTokens: number; totalTokens: number } }) {
+  const formatTokens = (n: number) => {
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+    return `${n}`;
+  };
   return (
     <span
       className="text-[10px] text-[var(--text-tertiary)] ml-1"
-      title={`输入: ${usage.promptTokens} | 输出: ${usage.completionTokens} | 共: ${usage.totalTokens} tokens`}
+      title={`Prompt: ${usage.promptTokens} | Completion: ${usage.completionTokens} | Total: ${usage.totalTokens}`}
       data-testid="token-usage-badge"
     >
-      {costDisplay}
+      {formatTokens(usage.totalTokens)} tokens
     </span>
   );
 }
@@ -371,11 +356,9 @@ export default function AiMessageBubble({
   onEditMessage,
   onRetry,
   isLastAssistant,
-  hasFollowingMessages,
 }: AiMessageBubbleProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.content);
-  const [showEditWarning, setShowEditWarning] = useState(false);
   if (message.role === "system") {
     const isSuccess = message.content.includes("成功") || message.content.includes("已");
     const isError = !!message.retryPayload;
@@ -478,48 +461,9 @@ export default function AiMessageBubble({
         style={{ animation: 'messageAppear 200ms ease-out' }}
         data-testid={`ai-message-${message.id}`}
       >
-        {showEditWarning && (
-          <div
-            className="self-start mt-2 mr-2 flex flex-col items-end gap-1.5 p-2.5 rounded-lg"
-            style={{
-              background: 'rgba(255, 180, 50, 0.08)',
-              border: '1px solid rgba(255, 180, 50, 0.2)',
-              fontSize: 12,
-              color: 'var(--text-secondary)',
-            }}
-            data-testid="edit-warning"
-          >
-            <span style={{ color: 'rgba(255, 180, 50, 0.9)' }}>编辑此消息将删除之后的回复</span>
-            <div className="flex gap-1.5">
-              <button
-                onClick={() => setShowEditWarning(false)}
-                className="px-2.5 py-1 rounded text-xs hover:bg-white/5 transition-colors"
-                style={{ color: 'var(--text-secondary)' }}
-                data-testid="btn-cancel-edit-warning"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => { setShowEditWarning(false); setEditText(message.content); setIsEditing(true); }}
-                className="px-2.5 py-1 rounded text-xs transition-colors"
-                style={{ background: 'rgba(255, 180, 50, 0.15)', color: 'rgba(255, 180, 50, 0.9)' }}
-                data-testid="btn-confirm-edit-warning"
-              >
-                继续编辑
-              </button>
-            </div>
-          </div>
-        )}
-        {onEditMessage && !showEditWarning && (
+        {onEditMessage && (
           <button
-            onClick={() => {
-              if (hasFollowingMessages) {
-                setShowEditWarning(true);
-              } else {
-                setEditText(message.content);
-                setIsEditing(true);
-              }
-            }}
+            onClick={() => { setEditText(message.content); setIsEditing(true); }}
             className="self-start mt-2 mr-2 flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors opacity-0 group-hover:opacity-100"
             title="编辑消息"
             data-testid="btn-edit-message"
@@ -581,12 +525,9 @@ export default function AiMessageBubble({
             </div>
           )}
           {message.content}
-          {(message.timestamp != null || message.edited) && (
-            <div className="flex justify-end items-center gap-1.5 mt-1">
-              {message.edited && (
-                <span className="text-[10px] text-[var(--text-tertiary)]" data-testid="edited-badge">(已编辑)</span>
-              )}
-              {message.timestamp != null && <MessageTimestamp timestamp={message.timestamp} />}
+          {message.timestamp != null && (
+            <div className="flex justify-end mt-1">
+              <MessageTimestamp timestamp={message.timestamp} />
             </div>
           )}
         </div>
