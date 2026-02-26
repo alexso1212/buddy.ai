@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
 import type { Attachment } from "@/components/ai/AiInputBar";
-import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Pencil, X, Check, ListFilter, ChevronRight, Search, Star, FolderOpen, ArrowDown, AlertCircle, Clock } from "lucide-react";
+import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Pencil, X, Check, ListFilter, ChevronRight, Search, Star, FolderOpen, ArrowDown, AlertCircle, Clock, CalendarClock, CalendarCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
@@ -67,10 +67,11 @@ interface Message {
   thinking?: string;
   isThinking?: boolean;
   thinkingDuration?: number;
-  tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+  tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number; model?: string };
   retryPayload?: { text: string; attachments?: Attachment[] };
   errorType?: 'network' | 'timeout' | 'rate_limit' | 'unknown';
   timestamp?: number;
+  edited?: boolean;
 }
 
 interface Conversation {
@@ -836,26 +837,49 @@ export default function Agent() {
   const smartSuggestions = useMemo(() => {
     const tasks = tasksData?.data || [];
     const myTasks = tasks.filter((t: any) => t.assigneeId === currentUserId);
-    const overdue = myTasks.filter((t: any) => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'done' && t.status !== 'cancelled');
+    const now = new Date();
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+    const dayOfWeek = now.getDay();
+    const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+    const weekEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysUntilSunday, 23, 59, 59);
+
+    const notDone = myTasks.filter((t: any) => t.status !== 'done' && t.status !== 'cancelled');
+    const overdue = notDone.filter((t: any) => t.dueDate && new Date(t.dueDate) < now);
+    const dueToday = notDone.filter((t: any) => t.dueDate && new Date(t.dueDate) >= now && new Date(t.dueDate) <= todayEnd);
+    const dueThisWeek = notDone.filter((t: any) => t.dueDate && new Date(t.dueDate) > todayEnd && new Date(t.dueDate) <= weekEnd);
     const inProgress = myTasks.filter((t: any) => t.status === 'in_progress');
     const todo = myTasks.filter((t: any) => t.status === 'todo');
     const suggestions: { text: string; icon: any; description?: string }[] = [];
 
-    if (overdue.length > 0) {
+    if (overdue.length > 0 && suggestions.length < 4) {
       suggestions.push({
         text: `我有 ${overdue.length} 个逾期任务，帮我分析优先级`,
         icon: AlertCircle,
         description: '逾期任务分析',
       });
     }
-    if (inProgress.length > 0) {
+    if (dueToday.length > 0 && suggestions.length < 4) {
+      suggestions.push({
+        text: `今天有 ${dueToday.length} 个任务到期，帮我安排优先级`,
+        icon: CalendarCheck,
+        description: '今日到期',
+      });
+    }
+    if (dueThisWeek.length > 0 && suggestions.length < 4) {
+      suggestions.push({
+        text: `本周还有 ${dueThisWeek.length} 个任务即将到期`,
+        icon: CalendarClock,
+        description: '本周到期',
+      });
+    }
+    if (inProgress.length > 0 && suggestions.length < 4) {
       suggestions.push({
         text: `查看我正在进行的 ${inProgress.length} 个任务状态`,
         icon: Clock,
         description: '进行中任务',
       });
     }
-    if (todo.length > 0) {
+    if (todo.length > 0 && suggestions.length < 4) {
       suggestions.push({
         text: `帮我规划今天的工作，我有 ${todo.length} 个待办任务`,
         icon: CheckSquare,
@@ -883,7 +907,9 @@ export default function Agent() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
-  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(() => {
+    try { return localStorage.getItem('buddy_web_search') === 'true'; } catch { return false; }
+  });
   const [replyStyle, setReplyStyle] = useState('normal');
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -893,6 +919,10 @@ export default function Agent() {
   const [showChat, setShowChat] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isStreamingRef = useRef(false);
+
+  useEffect(() => {
+    try { localStorage.setItem('buddy_web_search', String(webSearchEnabled)); } catch {}
+  }, [webSearchEnabled]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -1036,7 +1066,7 @@ export default function Agent() {
   }, []);
 
   const handleSend = useCallback(
-    async (text: string, attachments?: Attachment[]) => {
+    async (text: string, attachments?: Attachment[], options?: { edited?: boolean }) => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
@@ -1051,6 +1081,7 @@ export default function Agent() {
         type: "text",
         attachments: attachments,
         timestamp: Date.now(),
+        ...(options?.edited ? { edited: true } : {}),
       };
       setMessages((prev) => [...prev, userMsg]);
       setLoading(true);
@@ -1409,7 +1440,7 @@ export default function Agent() {
       setMessages(truncated);
       rebuildHistoryFromMessages(truncated);
 
-      setTimeout(() => handleSend(newContent), 0);
+      setTimeout(() => handleSend(newContent, undefined, { edited: true }), 0);
     },
     [messages, handleSend, rebuildHistoryFromMessages]
   );
@@ -1803,6 +1834,7 @@ export default function Agent() {
                   onEditMessage={handleEditMessage}
                   onRetry={handleRetry}
                   isLastAssistant={idx === lastAssistantIdx}
+                  hasFollowingMessages={idx < messages.length - 1}
                 />
               ));
             })()}
