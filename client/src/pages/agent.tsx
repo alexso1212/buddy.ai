@@ -895,17 +895,6 @@ export default function Agent() {
   const isStreamingRef = useRef(false);
 
   useEffect(() => {
-    const handleBeforeUnload = () => {
-      abortControllerRef.current?.abort();
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      abortControllerRef.current?.abort();
-    };
-  }, []);
-
-  useEffect(() => {
     if (!activeConvId) {
       setShowChat(false);
       setMessages([]);
@@ -915,12 +904,7 @@ export default function Agent() {
       return;
     }
 
-    if (isStreamingRef.current) {
-      abortControllerRef.current?.abort();
-      abortControllerRef.current = null;
-      isStreamingRef.current = false;
-      setLoading(false);
-    }
+    if (isStreamingRef.current) return;
 
     setMessagesLoading(true);
     (async () => {
