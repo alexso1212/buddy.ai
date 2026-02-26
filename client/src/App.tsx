@@ -1745,6 +1745,20 @@ function App() {
   const isChatsPage = location === '/chats';
   const isGraphPage = location === '/graph' || location.startsWith('/graph?');
   const isLoginPage = location === '/login' || location.startsWith('/login?');
+
+  const getPageTitle = () => {
+    if (isChatsPage) return 'Chats';
+    if (location === '/dashboard') return '仪表盘';
+    if (location === '/projects') return '项目';
+    if (location.startsWith('/projects/')) return '项目详情';
+    if (location === '/tasks') return '任务';
+    if (location.startsWith('/tasks/')) return '任务详情';
+    if (location === '/team') return '团队';
+    if (location === '/settings') return '设置';
+    if (location === '/notifications') return '通知';
+    if (location === '/artifacts') return '成果';
+    return 'Buddy';
+  };
   
   const dragRef = useRef({
     isDragging: false,
@@ -2031,7 +2045,7 @@ function App() {
                     fontSize: 17, fontWeight: 600,
                     color: 'var(--text-primary)',
                     fontFamily: 'var(--font-sans)',
-                  }} data-testid="top-bar-title">{isChatsPage ? 'Chats' : 'Buddy'}</span>
+                  }} data-testid="top-bar-title">{getPageTitle()}</span>
                 )}
                 <div style={{ width: 42 }} />
               </div>

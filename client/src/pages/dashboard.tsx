@@ -230,46 +230,46 @@ function Dashboard() {
       <h1 className="text-xl md:text-2xl font-bold text-foreground mb-6 md:mb-8">仪表盘</h1>
 
       {/* Stats Cards Row */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-        <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-total">
-          <div className="text-muted-foreground text-sm font-medium">总任务数</div>
-          <div className="text-2xl md:text-3xl font-bold text-foreground mt-2">{stats.totalTasks}</div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-8">
+        <div className="bg-card rounded-lg shadow-sm p-3 md:p-6" data-testid="stat-total">
+          <div className="text-muted-foreground text-xs md:text-sm font-medium truncate">总任务数</div>
+          <div className="text-lg md:text-3xl font-bold text-foreground mt-1 md:mt-2">{stats.totalTasks}</div>
         </div>
 
-        <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-in-progress">
-          <div className="text-muted-foreground text-sm font-medium">进行中</div>
-          <div className="text-2xl md:text-3xl font-bold text-yellow-600 mt-2">{stats.inProgressCount}</div>
+        <div className="bg-card rounded-lg shadow-sm p-3 md:p-6" data-testid="stat-in-progress">
+          <div className="text-muted-foreground text-xs md:text-sm font-medium truncate">进行中</div>
+          <div className="text-lg md:text-3xl font-bold text-yellow-600 mt-1 md:mt-2">{stats.inProgressCount}</div>
         </div>
 
-        <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-completed">
-          <div className="text-muted-foreground text-sm font-medium">已完成</div>
-          <div className="text-2xl md:text-3xl font-bold text-green-600 mt-2">{stats.completedCount}</div>
+        <div className="bg-card rounded-lg shadow-sm p-3 md:p-6" data-testid="stat-completed">
+          <div className="text-muted-foreground text-xs md:text-sm font-medium truncate">已完成</div>
+          <div className="text-lg md:text-3xl font-bold text-green-600 mt-1 md:mt-2">{stats.completedCount}</div>
         </div>
 
-        <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-overdue">
-          <div className="text-muted-foreground text-sm font-medium">逾期</div>
-          <div className="text-2xl md:text-3xl font-bold text-red-600 mt-2">{stats.overdueCount}</div>
+        <div className="bg-card rounded-lg shadow-sm p-3 md:p-6" data-testid="stat-overdue">
+          <div className="text-muted-foreground text-xs md:text-sm font-medium truncate">逾期</div>
+          <div className="text-lg md:text-3xl font-bold text-red-600 mt-1 md:mt-2">{stats.overdueCount}</div>
         </div>
 
-        <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-needs-review">
-          <div className="text-muted-foreground text-sm font-medium">待补充</div>
-          <div className="text-2xl md:text-3xl font-bold text-amber-600 mt-2">{stats.needsReviewCount}</div>
+        <div className="bg-card rounded-lg shadow-sm p-3 md:p-6" data-testid="stat-needs-review">
+          <div className="text-muted-foreground text-xs md:text-sm font-medium truncate">待补充</div>
+          <div className="text-lg md:text-3xl font-bold text-amber-600 mt-1 md:mt-2">{stats.needsReviewCount}</div>
         </div>
       </div>
 
       {/* Time-based Stats Row */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
-        <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-today-new">
-          <div className="text-muted-foreground text-sm font-medium">今日新增</div>
-          <div className="text-2xl md:text-3xl font-bold text-blue-600 mt-2">{stats.todayNew}</div>
+      <div className="grid grid-cols-3 gap-3 md:gap-4 mb-8">
+        <div className="bg-card rounded-lg shadow-sm p-3 md:p-6" data-testid="stat-today-new">
+          <div className="text-muted-foreground text-xs md:text-sm font-medium truncate">今日新增</div>
+          <div className="text-lg md:text-3xl font-bold text-blue-600 mt-1 md:mt-2">{stats.todayNew}</div>
         </div>
-        <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-week-new">
-          <div className="text-muted-foreground text-sm font-medium">本周新增</div>
-          <div className="text-2xl md:text-3xl font-bold text-indigo-600 mt-2">{stats.weekNew}</div>
+        <div className="bg-card rounded-lg shadow-sm p-3 md:p-6" data-testid="stat-week-new">
+          <div className="text-muted-foreground text-xs md:text-sm font-medium truncate">本周新增</div>
+          <div className="text-lg md:text-3xl font-bold text-indigo-600 mt-1 md:mt-2">{stats.weekNew}</div>
         </div>
-        <div className="bg-card rounded-lg shadow-sm p-4 md:p-6" data-testid="stat-month-new">
-          <div className="text-muted-foreground text-sm font-medium">本月新增</div>
-          <div className="text-2xl md:text-3xl font-bold text-purple-600 mt-2">{stats.monthNew}</div>
+        <div className="bg-card rounded-lg shadow-sm p-3 md:p-6" data-testid="stat-month-new">
+          <div className="text-muted-foreground text-xs md:text-sm font-medium truncate">本月新增</div>
+          <div className="text-lg md:text-3xl font-bold text-purple-600 mt-1 md:mt-2">{stats.monthNew}</div>
         </div>
       </div>
 
@@ -324,10 +324,12 @@ function Dashboard() {
                         <td className="w-1 px-0">
                           <div className={`w-1 h-full min-h-[48px] ${getRowIndicatorColor(reasons)}`} />
                         </td>
-                        <td className="px-6 py-4 text-sm text-foreground">
-                          {task.title}
+                        <td className="px-6 py-4 text-sm text-foreground max-w-[200px]">
+                          <span className="block truncate">{task.title}</span>
                         </td>
-                        <td className="px-6 py-4 text-sm text-muted-foreground">{getProjectName(task.projectId)}</td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground max-w-[120px]">
+                          <span className="block truncate">{getProjectName(task.projectId)}</span>
+                        </td>
                         <td className="px-6 py-4">
                           <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
                             {getStatusLabel(task.status)}
@@ -377,7 +379,7 @@ function Dashboard() {
                         {task.starred && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 flex-shrink-0" />}
                         <span className="truncate line-clamp-1">{task.title}</span>
                       </div>
-                      <div className="text-xs text-muted-foreground mb-3">
+                      <div className="text-xs text-muted-foreground mb-3 truncate min-w-0">
                         {getProjectName(task.projectId)}
                       </div>
                       <div className="flex flex-wrap gap-2 mb-3">

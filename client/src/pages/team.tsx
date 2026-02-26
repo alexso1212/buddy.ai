@@ -224,7 +224,9 @@ function MembersTab({
                 <TableBody>
                   {users.map((user) => (
                     <TableRow key={user.id} data-testid={`user-row-${user.id}`}>
-                      <TableCell>{user.displayName}</TableCell>
+                      <TableCell className="max-w-[150px]">
+                        <span className="block truncate">{user.displayName}</span>
+                      </TableCell>
                       <TableCell>{user.email}</TableCell>
                       <TableCell>
                         {user.deptId ? deptMap.get(user.deptId)?.name ?? "-" : "-"}
@@ -260,7 +262,7 @@ function MembersTab({
                       data-testid={`user-card-${user.id}`}
                     >
                       <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="font-medium">{user.displayName}</span>
+                        <span className="font-medium truncate min-w-0">{user.displayName}</span>
                         <Badge variant="secondary" className="text-xs">
                           {user.role}
                         </Badge>

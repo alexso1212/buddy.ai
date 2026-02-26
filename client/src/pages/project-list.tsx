@@ -338,7 +338,9 @@ export default function ProjectList() {
                   onClick={() => handleRowClick(project.id)}
                   data-testid={`project-row-${project.id}`}
                 >
-                  <TableCell className="font-medium">{project.name}</TableCell>
+                  <TableCell className="font-medium max-w-[240px]">
+                    <span className="block truncate">{project.name}</span>
+                  </TableCell>
                   <TableCell>
                     <Badge className={getStatusColor(project.status)}>
                       {project.status}
@@ -418,7 +420,7 @@ export default function ProjectList() {
             >
               {/* Project Name */}
               <div className="flex items-start justify-between gap-2">
-                <div className="font-medium mb-2">{project.name}</div>
+                <div className="font-medium mb-2 truncate min-w-0">{project.name}</div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button

@@ -351,6 +351,7 @@ export default function ProjectDetail() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
 
   const deleteProjectMutation = useMutation({
     mutationFn: async () => {
@@ -477,7 +478,16 @@ export default function ProjectDetail() {
         {project.description && (
           <div>
             <h3 className="font-semibold mb-2">Description</h3>
-            <p className="text-muted-foreground">{project.description}</p>
+            <p className={cn("text-muted-foreground", !descExpanded && "line-clamp-3")} data-testid="text-project-description">{project.description}</p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setDescExpanded(!descExpanded)}
+              className="px-0 h-auto text-sm mt-1"
+              data-testid="btn-toggle-description"
+            >
+              {descExpanded ? "收起" : "展开"}
+            </Button>
           </div>
         )}
         <div className="grid grid-cols-2 gap-4">

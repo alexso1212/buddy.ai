@@ -643,13 +643,15 @@ export default function TaskList() {
                       onClick={() => navigate(`/tasks/${task.id}`)}
                       className="cursor-pointer hover:bg-muted/50"
                     >
-                      <TableCell className="font-medium">
-                        <span className="flex items-center gap-1">
+                      <TableCell className="font-medium max-w-[240px]">
+                        <span className="flex items-center gap-1 min-w-0">
                           {task.needsReview && <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />}
-                          {task.title}
+                          <span className="truncate">{task.title}</span>
                         </span>
                       </TableCell>
-                      <TableCell>{projectMap.get(task.projectId)?.name ?? "-"}</TableCell>
+                      <TableCell className="max-w-[120px]">
+                        <span className="block truncate">{projectMap.get(task.projectId)?.name ?? "-"}</span>
+                      </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <StatusDropdown taskId={task.id} currentStatus={task.status} />
                       </TableCell>

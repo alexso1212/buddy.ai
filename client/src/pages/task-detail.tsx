@@ -238,6 +238,7 @@ export default function TaskDetail() {
   const [verdictLoading, setVerdictLoading] = useState(false);
   const [verdictAccepted, setVerdictAccepted] = useState<boolean | null>(null);
   const [detailTab, setDetailTab] = useState<"info" | "subtasks" | "deps" | "comments" | "activity">("info");
+  const [descExpanded, setDescExpanded] = useState(false);
 
   const { data: taskRes, isLoading: taskLoading } = useQuery<TaskDetailResponse>({
     queryKey: ['/api/tasks', id],
@@ -560,26 +561,28 @@ export default function TaskDetail() {
 
   const fromGraph = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('from') === 'graph';
   const handleBack = () => setLocation(fromGraph ? '/graph' : '/tasks');
-  const backLabel = fromGraph ? '返回图谱' : '返回任务列表';
 
   if (!task) {
     return (
       <div className="pt-16 md:pt-6 px-6 pb-6 max-w-4xl mx-auto">
-        <Button variant="ghost" onClick={handleBack} data-testid="btn-back-tasks">
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          {backLabel}
-        </Button>
-        <p className="mt-4 text-muted-foreground">任务不存在或加载失败。</p>
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={handleBack} data-testid="btn-back-tasks">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <p className="text-muted-foreground">任务不存在或加载失败。</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="pt-16 md:pt-6 px-6 pb-6 space-y-6 max-w-4xl mx-auto">
-      <Button variant="ghost" onClick={handleBack} data-testid="btn-back-tasks">
-        <ArrowLeft className="mr-2 h-4 w-4" />
-        {backLabel}
-      </Button>
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="icon" onClick={handleBack} data-testid="btn-back-tasks">
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <h1 className="text-xl md:text-3xl font-bold line-clamp-1 flex-1 min-w-0" data-testid="text-task-header">{task.title}</h1>
+      </div>
 
       <div className="flex gap-2 overflow-x-auto md:hidden pb-1" data-testid="mobile-tab-bar">
         {([
@@ -652,7 +655,18 @@ export default function TaskDetail() {
           <div className="space-y-3 flex-1 min-w-0">
             <h1 className="text-lg md:text-2xl font-bold line-clamp-2" data-testid="text-task-title">{task.needsReview && <AlertTriangle className="inline w-5 md:w-6 h-5 md:h-6 text-amber-500 mr-1 md:mr-1.5 align-text-bottom" />}{task.title}</h1>
             {task.description && (
-              <p className="text-muted-foreground">{task.description}</p>
+              <div>
+                <p className={`text-muted-foreground ${!descExpanded ? "line-clamp-3" : ""}`} data-testid="text-task-description">{task.description}</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setDescExpanded(!descExpanded)}
+                  className="px-0 h-auto text-sm mt-1"
+                  data-testid="btn-toggle-description"
+                >
+                  {descExpanded ? "收起" : "展开"}
+                </Button>
+              </div>
             )}
             <div className="flex items-center gap-2 flex-wrap">
               <Badge className={getStatusColor(task.status)}>{task.status}</Badge>
