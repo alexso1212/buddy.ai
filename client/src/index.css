@@ -627,3 +627,33 @@ html, body {
 .sidebar-item-active {
   background: #000 !important;
 }
+
+.hljs {
+  color: #c9d1d9;
+  background: transparent;
+}
+.hljs-keyword,
+.hljs-built_in,
+.hljs-type { color: #ff7b72; }
+.hljs-string,
+.hljs-attr { color: #a5d6ff; }
+.hljs-number,
+.hljs-literal { color: #79c0ff; }
+.hljs-comment,
+.hljs-doctag { color: #8b949e; font-style: italic; }
+.hljs-function .hljs-title,
+.hljs-title.function_,
+.hljs-title.class_ { color: #d2a8ff; }
+.hljs-variable,
+.hljs-template-variable { color: #ffa657; }
+.hljs-params { color: #c9d1d9; }
+.hljs-meta { color: #79c0ff; }
+.hljs-regexp { color: #7ee787; }
+.hljs-selector-tag,
+.hljs-selector-class { color: #7ee787; }
+.hljs-property { color: #79c0ff; }
+.hljs-punctuation { color: #c9d1d9; }
+.hljs-operator { color: #ff7b72; }
+.hljs-tag { color: #7ee787; }
+.hljs-name { color: #7ee787; }
+.hljs-attribute { color: #79c0ff; }

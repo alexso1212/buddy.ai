@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { X, Send, Sparkles, Camera } from "lucide-react";
+import { X, Send, Sparkles, Camera, ArrowDown, Square } from "lucide-react";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
@@ -40,6 +40,7 @@ interface Message {
   tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
   errorType?: 'network' | 'timeout' | 'rate_limit' | 'unknown';
   retryPayload?: { text: string; attachments?: Attachment[] };
+  timestamp?: number;
 }
 
 interface GraphChatFloatProps {
@@ -129,6 +130,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
   const [capturing, setCapturing] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const conversationHistory = useRef<{ role: string; content: string }[]>([]);
@@ -216,11 +218,31 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
     }
   }, [open]);
 
-  useEffect(() => {
+  const isNearBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+  }, []);
+
+  const scrollToBottom = useCallback((smooth = true) => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: smooth ? 'smooth' : 'auto',
+      });
     }
-  }, [messages, loading]);
+  }, []);
+
+  useEffect(() => {
+    if (isNearBottom()) {
+      scrollToBottom(false);
+    }
+    setShowScrollBtn(!isNearBottom());
+  }, [messages, loading, isNearBottom, scrollToBottom]);
+
+  const handleScroll = useCallback(() => {
+    setShowScrollBtn(!isNearBottom());
+  }, [isNearBottom]);
 
   useEffect(() => {
     if (open && visible) {
@@ -296,6 +318,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
       content: finalText,
       type: "text",
       attachments: msgAttachments.length > 0 ? msgAttachments : undefined,
+      timestamp: Date.now(),
     };
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
@@ -331,6 +354,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
       content: "",
       type: "text",
       isStreaming: true,
+      timestamp: Date.now(),
     };
     setMessages((prev) => [...prev, streamingMsg]);
 
@@ -900,30 +924,59 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
         </button>
       </div>
 
-      <div
-        ref={scrollRef}
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          overflowX: "hidden",
-          padding: "12px 0",
-        }}
-        data-testid="graph-chat-messages"
-      >
-        {messages.map((msg) => (
-          <AiMessageBubble
-            key={msg.id}
-            message={msg}
-            onConfirm={handleConfirm}
-            onReject={handleReject}
-            onConfirmAll={handleConfirmAll}
-            onRetry={handleRetry}
-          />
-        ))}
-        {loading && (
-          <div className="flex justify-start px-4 mb-4">
-            <ThinkingAnimation size={28} />
-          </div>
+      <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            overflowX: "hidden",
+            padding: "12px 0",
+          }}
+          data-testid="graph-chat-messages"
+        >
+          {messages.map((msg) => (
+            <AiMessageBubble
+              key={msg.id}
+              message={msg}
+              onConfirm={handleConfirm}
+              onReject={handleReject}
+              onConfirmAll={handleConfirmAll}
+              onRetry={handleRetry}
+            />
+          ))}
+          {loading && (
+            <div className="flex justify-start px-4 mb-4">
+              <ThinkingAnimation size={28} />
+            </div>
+          )}
+        </div>
+        {showScrollBtn && (
+          <button
+            onClick={() => scrollToBottom(true)}
+            data-testid="btn-scroll-bottom"
+            style={{
+              position: 'absolute',
+              bottom: 8,
+              right: 12,
+              width: 28,
+              height: 28,
+              borderRadius: '50%',
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(20,19,18,0.9)',
+              backdropFilter: 'blur(8px)',
+              color: 'rgba(255,255,255,0.6)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'opacity 150ms',
+              zIndex: 2,
+            }}
+          >
+            <ArrowDown size={14} />
+          </button>
         )}
       </div>
 
@@ -1073,34 +1126,57 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
             }}
             data-testid="graph-chat-input"
           />
-          <button
-            onClick={handleSend}
-            disabled={(!inputValue.trim() && !pendingScreenshot && attachments.length === 0) || loading}
-            style={{
-              width: 36,
-              height: 36,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: 10,
-              border: "none",
-              background:
-                (inputValue.trim() || pendingScreenshot || attachments.length > 0) && !loading
-                  ? "rgba(139,92,246,0.6)"
-                  : "rgba(255,255,255,0.05)",
-              color:
-                (inputValue.trim() || pendingScreenshot || attachments.length > 0) && !loading
-                  ? "#fff"
-                  : "rgba(255,255,255,0.25)",
-              cursor:
-                (inputValue.trim() || pendingScreenshot || attachments.length > 0) && !loading ? "pointer" : "not-allowed",
-              transition: "all 150ms",
-              flexShrink: 0,
-            }}
-            data-testid="graph-chat-send"
-          >
-            <Send size={16} strokeWidth={2} />
-          </button>
+          {loading ? (
+            <button
+              onClick={() => abortControllerRef.current?.abort()}
+              style={{
+                width: 36,
+                height: 36,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 10,
+                border: "none",
+                background: "rgba(239,68,68,0.2)",
+                color: "#f87171",
+                cursor: "pointer",
+                transition: "all 150ms",
+                flexShrink: 0,
+              }}
+              data-testid="graph-chat-stop"
+            >
+              <Square size={14} fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={!inputValue.trim() && !pendingScreenshot && attachments.length === 0}
+              style={{
+                width: 36,
+                height: 36,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 10,
+                border: "none",
+                background:
+                  inputValue.trim() || pendingScreenshot || attachments.length > 0
+                    ? "rgba(139,92,246,0.6)"
+                    : "rgba(255,255,255,0.05)",
+                color:
+                  inputValue.trim() || pendingScreenshot || attachments.length > 0
+                    ? "#fff"
+                    : "rgba(255,255,255,0.25)",
+                cursor:
+                  inputValue.trim() || pendingScreenshot || attachments.length > 0 ? "pointer" : "not-allowed",
+                transition: "all 150ms",
+                flexShrink: 0,
+              }}
+              data-testid="graph-chat-send"
+            >
+              <Send size={16} strokeWidth={2} />
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -64,6 +64,7 @@ interface Message {
   tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
   retryPayload?: { text: string; attachments?: any[] };
   errorType?: 'network' | 'timeout' | 'rate_limit' | 'unknown';
+  timestamp?: number;
 }
 
 interface AiMessageBubbleProps {
@@ -332,6 +333,17 @@ function TokenUsageBadge({ usage }: { usage: { promptTokens: number; completionT
   );
 }
 
+function MessageTimestamp({ timestamp }: { timestamp: number }) {
+  const time = new Date(timestamp);
+  const h = time.getHours().toString().padStart(2, '0');
+  const m = time.getMinutes().toString().padStart(2, '0');
+  return (
+    <span className="text-[10px] text-[var(--text-tertiary)] ml-auto" data-testid="message-timestamp">
+      {h}:{m}
+    </span>
+  );
+}
+
 export default function AiMessageBubble({
   message,
   onConfirm,
@@ -513,6 +525,11 @@ export default function AiMessageBubble({
             </div>
           )}
           {message.content}
+          {message.timestamp != null && (
+            <div className="flex justify-end mt-1">
+              <MessageTimestamp timestamp={message.timestamp} />
+            </div>
+          )}
         </div>
       </div>
     );
@@ -592,13 +609,16 @@ export default function AiMessageBubble({
 
   return (
     <div
-      className="flex justify-start px-3 mb-6"
+      className="group flex justify-start px-3 mb-6"
       style={{ animation: 'messageAppear 200ms ease-out' }}
       data-testid={`ai-message-${message.id}`}
     >
       <div className="max-w-full">
-        <div className="mb-2">
+        <div className="mb-2 flex items-center gap-2">
           <BrandLogo />
+          {message.timestamp != null && (
+            <MessageTimestamp timestamp={message.timestamp} />
+          )}
         </div>
         {message.thinking && (
           <ThinkingBlock
@@ -614,7 +634,7 @@ export default function AiMessageBubble({
           <AIMessageContent content={message.content} />
         </div>
         {!message.isStreaming && (
-          <div className="flex items-center">
+          <div className="flex items-center opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150">
             <AiReplyActions
               content={message.content}
               onRegenerate={onRegenerate ? () => onRegenerate(message.id) : undefined}

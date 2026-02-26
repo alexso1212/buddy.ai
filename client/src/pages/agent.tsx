@@ -70,6 +70,7 @@ interface Message {
   tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
   retryPayload?: { text: string; attachments?: Attachment[] };
   errorType?: 'network' | 'timeout' | 'rate_limit' | 'unknown';
+  timestamp?: number;
 }
 
 interface Conversation {
@@ -929,6 +930,7 @@ export default function Agent() {
             role: m.role as any,
             content: m.content,
             type: (m.type || 'text') as any,
+            timestamp: m.createdAt ? new Date(m.createdAt).getTime() : undefined,
           };
           if (m.metadata) {
             try {
@@ -967,7 +969,7 @@ export default function Agent() {
 
   const scrollToBottom = useCallback((smooth = true) => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: smooth ? 'smooth' : 'instant' });
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
     }
   }, []);
 
@@ -1032,6 +1034,7 @@ export default function Agent() {
         content: text,
         type: "text",
         attachments: attachments,
+        timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, userMsg]);
       setLoading(true);
@@ -1046,6 +1049,7 @@ export default function Agent() {
         content: "",
         type: "text",
         isStreaming: true,
+        timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, streamingMsg]);
 

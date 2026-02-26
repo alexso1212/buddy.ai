@@ -1,6 +1,44 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useState, type ReactNode } from 'react';
+import { useState, useMemo, type ReactNode } from 'react';
+import hljs from 'highlight.js/lib/core';
+import javascript from 'highlight.js/lib/languages/javascript';
+import typescript from 'highlight.js/lib/languages/typescript';
+import python from 'highlight.js/lib/languages/python';
+import css from 'highlight.js/lib/languages/css';
+import sql from 'highlight.js/lib/languages/sql';
+import json from 'highlight.js/lib/languages/json';
+import bash from 'highlight.js/lib/languages/bash';
+import xml from 'highlight.js/lib/languages/xml';
+import markdown from 'highlight.js/lib/languages/markdown';
+import yaml from 'highlight.js/lib/languages/yaml';
+import go from 'highlight.js/lib/languages/go';
+import java from 'highlight.js/lib/languages/java';
+import rust from 'highlight.js/lib/languages/rust';
+
+hljs.registerLanguage('javascript', javascript);
+hljs.registerLanguage('js', javascript);
+hljs.registerLanguage('jsx', javascript);
+hljs.registerLanguage('typescript', typescript);
+hljs.registerLanguage('ts', typescript);
+hljs.registerLanguage('tsx', typescript);
+hljs.registerLanguage('python', python);
+hljs.registerLanguage('py', python);
+hljs.registerLanguage('css', css);
+hljs.registerLanguage('sql', sql);
+hljs.registerLanguage('json', json);
+hljs.registerLanguage('bash', bash);
+hljs.registerLanguage('sh', bash);
+hljs.registerLanguage('shell', bash);
+hljs.registerLanguage('html', xml);
+hljs.registerLanguage('xml', xml);
+hljs.registerLanguage('markdown', markdown);
+hljs.registerLanguage('md', markdown);
+hljs.registerLanguage('yaml', yaml);
+hljs.registerLanguage('yml', yaml);
+hljs.registerLanguage('go', go);
+hljs.registerLanguage('java', java);
+hljs.registerLanguage('rust', rust);
 
 interface AIMessageContentProps {
   content: string;
@@ -8,6 +46,17 @@ interface AIMessageContentProps {
 
 function CodeBlock({ language, code }: { language: string; code: string }) {
   const [copied, setCopied] = useState(false);
+
+  const highlighted = useMemo(() => {
+    try {
+      if (language && language !== 'code' && hljs.getLanguage(language)) {
+        return hljs.highlight(code, { language }).value;
+      }
+      const auto = hljs.highlightAuto(code);
+      if (auto.relevance > 5) return auto.value;
+    } catch {}
+    return null;
+  }, [code, language]);
 
   const handleCopy = () => {
     try {
@@ -48,12 +97,24 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
         </button>
       </div>
       <pre style={{ padding: '14px 16px', margin: 0, overflowX: 'auto' }}>
-        <code style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 13.5,
-          lineHeight: 1.55,
-          color: 'var(--text-primary)',
-        }}>{code}</code>
+        {highlighted ? (
+          <code
+            className="hljs"
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 13.5,
+              lineHeight: 1.55,
+            }}
+            dangerouslySetInnerHTML={{ __html: highlighted }}
+          />
+        ) : (
+          <code style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 13.5,
+            lineHeight: 1.55,
+            color: 'var(--text-primary)',
+          }}>{code}</code>
+        )}
       </pre>
     </div>
   );
