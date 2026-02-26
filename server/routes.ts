@@ -2231,7 +2231,12 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
 
       let fullText = '';
       let aborted = false;
-      req.on('close', () => { aborted = true; });
+      const aiAbortController = new AbortController();
+      req.on('close', () => {
+        aborted = true;
+        aiAbortController.abort();
+        console.log(`Client disconnected, stream aborted for conv ${activeConvId}`);
+      });
 
       let effectiveSystemPrompt = systemPrompt || '';
       if (replyStyle && replyStyle !== 'normal') {
@@ -2274,7 +2279,8 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
         msgText,
         history,
         { currentUserId: userId, currentUserName: userName, customSystemPrompt: effectiveSystemPrompt || undefined, model: model || undefined, extendedThinking: extendedThinking || false, orgId },
-        attachments
+        attachments,
+        aiAbortController.signal
       );
 
       for await (const chunk of generator) {

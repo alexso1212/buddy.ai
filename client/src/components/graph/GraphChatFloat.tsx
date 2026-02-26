@@ -139,6 +139,12 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
   const conversationIdRef = useRef<number | null>(null);
   const { currentUserId } = useAuth();
 
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
   const processFiles = useCallback((files: File[]) => {
     files.forEach(file => {
       const reader = new FileReader();
@@ -251,6 +257,10 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
   }, [open, visible]);
 
   const handleClose = useCallback(() => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    isStreamingRef.current = false;
+    setLoading(false);
     setVisible(false);
     setTimeout(onClose, 200);
   }, [onClose]);
