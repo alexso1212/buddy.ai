@@ -33,6 +33,7 @@ A 15-table PostgreSQL database schema manages entities like `organizations`, `de
 - **GraphChatFloat Enhancements:** Scroll-to-bottom button; stop-generating button; all agent.tsx UX parity features.
 - **Verdict and Needs Review Features:** Integrated UI for displaying AI verdicts and flagging tasks requiring review.
 - **Mobile Optimization:** Responsive layouts with adaptations for smaller screens, including swipeable task cards and compact statistics.
+- **GraphChatFloat Mobile Fixes:** Touch/pointer event propagation blocking prevents D3 from capturing gestures inside the chat panel. `touch-action: pan-y` + `overscrollBehavior: contain` + `-webkit-overflow-scrolling: touch` enable native scrolling. `visualViewport` resize listener dynamically repositions the panel when the mobile keyboard opens, ensuring the close button stays accessible.
 
 **AI Subsystem:**
 - **Dual Claude Direct API + OpenRouter:** Utilizes three OpenAI SDK clients for model routing: Anthropic direct API for complex (Claude Opus 4) and simple (Claude Sonnet 4, Claude Haiku 3.5) models, and OpenRouter for other models (GPT-4o, DeepSeek).

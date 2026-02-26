@@ -131,6 +131,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const conversationHistory = useRef<{ role: string; content: string }[]>([]);
@@ -250,8 +251,34 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
     }
   }, [open, visible]);
 
+  const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
+
+  useEffect(() => {
+    if (!open) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => {
+      const kbH = window.innerHeight - vv.height;
+      setKeyboardHeight(kbH > 50 ? kbH : 0);
+      setViewportHeight(vv.height);
+    };
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, [open]);
+
+  const stopTouchPropagation = useCallback((e: React.TouchEvent) => {
+    e.stopPropagation();
+  }, []);
+
+  const stopPointerPropagation = useCallback((e: React.PointerEvent) => {
+    e.stopPropagation();
+  }, []);
+
   const handleClose = useCallback(() => {
     setVisible(false);
+    setKeyboardHeight(0);
+    setViewportHeight(window.innerHeight);
+    inputRef.current?.blur();
     setTimeout(onClose, 200);
   }, [onClose]);
 
@@ -857,15 +884,22 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
   return (
     <div
       data-testid="graph-chat-float"
+      onTouchStart={stopTouchPropagation}
+      onTouchMove={stopTouchPropagation}
+      onTouchEnd={stopTouchPropagation}
+      onPointerDown={stopPointerPropagation}
+      onPointerMove={stopPointerPropagation}
+      onPointerUp={stopPointerPropagation}
       style={{
         position: "fixed",
-        bottom: 20,
+        bottom: keyboardHeight > 0 ? keyboardHeight + 8 : 20,
         left: "50%",
         transform: `translateX(-50%) ${visible ? "translateY(0)" : "translateY(20px)"}`,
         zIndex: 90,
         width: "min(420px, calc(100vw - 32px))",
-        height: "40vh",
-        minHeight: 280,
+        height: keyboardHeight > 0 ? Math.min(viewportHeight - 16, 400) : "40vh",
+        minHeight: keyboardHeight > 0 ? 200 : 280,
+        maxHeight: keyboardHeight > 0 ? viewportHeight - 16 : undefined,
         background: "rgba(20, 19, 18, 0.88)",
         backdropFilter: "blur(24px)",
         WebkitBackdropFilter: "blur(24px)",
@@ -933,6 +967,9 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
             overflowY: "auto",
             overflowX: "hidden",
             padding: "12px 0",
+            touchAction: "pan-y",
+            overscrollBehavior: "contain",
+            WebkitOverflowScrolling: "touch",
           }}
           data-testid="graph-chat-messages"
         >
