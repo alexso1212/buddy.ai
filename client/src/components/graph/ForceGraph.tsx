@@ -72,9 +72,7 @@ interface ForceGraphProps {
   colorBy?: ColorByOption;
   bloodFlow?: boolean;
   onNodeClick?: (node: GraphNode) => void;
-  onNodeDrillIn?: (node: GraphNode) => void;
   highlightedNodes?: HighlightedNode[];
-  hierarchyLevel?: number;
 }
 
 interface SimNode extends GraphNode, d3.SimulationNodeDatum {}
@@ -526,7 +524,7 @@ const HIGHLIGHT_COLORS: Record<string, string> = {
   bottleneck: '#ef4444',
 };
 
-const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceGraph({ nodes, links, projects, departments = [], collabHealth = [], colorBy = 'department', bloodFlow = true, onNodeClick, onNodeDrillIn, highlightedNodes = [], hierarchyLevel = 2 }, ref) {
+const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceGraph({ nodes, links, projects, departments = [], collabHealth = [], colorBy = 'department', bloodFlow = true, onNodeClick, highlightedNodes = [] }, ref) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const simulationRef = useRef<d3.Simulation<SimNode, SimLink> | null>(null);
@@ -552,11 +550,9 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
   const downstreamCountsRef = useRef<Map<number, number>>(new Map());
   const tooltipRef = useRef<HTMLDivElement>(null);
   const postReleaseFramesRef = useRef(0);
-  const onNodeDrillInRef = useRef(onNodeDrillIn);
 
   useEffect(() => { collabHealthRef.current = collabHealth; }, [collabHealth]);
   useEffect(() => { onNodeClickRef.current = onNodeClick; }, [onNodeClick]);
-  useEffect(() => { onNodeDrillInRef.current = onNodeDrillIn; }, [onNodeDrillIn]);
 
   useImperativeHandle(ref, () => ({
     resetView() {
@@ -573,12 +569,6 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
   }), []);
 
   const getRadius = useCallback((node: GraphNode, downstreamCount?: number) => {
-    if (hierarchyLevel === 0) {
-      return 10 + (node.weight || 5) * 0.5;
-    }
-    if (hierarchyLevel === 1) {
-      return 6 + (node.weight || 5) * 0.3;
-    }
     const priorityBase: Record<string, number> = {
       critical: 2.5,
       high: 2,
@@ -590,7 +580,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
     const dc = downstreamCount ?? (downstreamCountsRef.current.get(node.id) || 0);
     r += Math.min(dc * 0.3, 2.0);
     return r;
-  }, [hierarchyLevel]);
+  }, []);
 
   useEffect(() => {
     colorByRef.current = colorBy;
@@ -693,23 +683,13 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
           .distance(35)
           .strength(0.3)
       )
-      .force("charge", d3.forceManyBody()
-        .strength(hierarchyLevel <= 1 ? -120 : -30)
-        .distanceMin(hierarchyLevel <= 1 ? 60 : 30)
-        .distanceMax(hierarchyLevel <= 1 ? 600 : 400)
-      )
+      .force("charge", d3.forceManyBody().strength(-30).distanceMin(30).distanceMax(400))
       .force("center", d3.forceCenter(width / 2, height / 2).strength(0.05))
       .force(
         "collision",
-        d3.forceCollide<SimNode>().radius((d) => {
-          const r = getRadius(d);
-          return hierarchyLevel <= 1 ? r * 2 + 20 : Math.max(r * 1.5 + 2, 12);
-        }).strength(1.0).iterations(3)
+        d3.forceCollide<SimNode>().radius((d) => Math.max(getRadius(d) * 1.5 + 2, 12)).strength(1.0).iterations(3)
       )
-      .force("cluster", hierarchyLevel >= 2
-        ? (alpha: number) => deptClusterForce(simNodes, alpha, deptCentroidsRef.current, galaxyDataRef.current, width / 2, height / 2)
-        : null
-      );
+      .force("cluster", (alpha: number) => deptClusterForce(simNodes, alpha, deptCentroidsRef.current, galaxyDataRef.current, width / 2, height / 2));
 
     simulationRef.current = simulation;
 
@@ -951,52 +931,6 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
           .attr("stroke-dasharray", "2,2")
           .attr("pointer-events", "none");
       }
-
-      if (hierarchyLevel <= 1 && !isBridge) {
-        el.append("text")
-          .attr("y", r + 14)
-          .attr("text-anchor", "middle")
-          .attr("font-size", hierarchyLevel === 0 ? 11 : 10)
-          .attr("font-weight", 500)
-          .attr("fill", "rgba(255,255,255,0.7)")
-          .attr("pointer-events", "none")
-          .text(d.title.length > 12 ? d.title.slice(0, 12) + '…' : d.title);
-
-        if (d.hasSubtasks) {
-          const agg = (d as any).aggregatedStatus;
-          const childCount = (d as any).childrenCount;
-          const subtitleText = childCount != null ? `${childCount} 子项` : '';
-          if (subtitleText) {
-            el.append("text")
-              .attr("y", r + 26)
-              .attr("text-anchor", "middle")
-              .attr("font-size", 9)
-              .attr("fill", "rgba(255,255,255,0.35)")
-              .attr("pointer-events", "none")
-              .text(subtitleText);
-          }
-        }
-
-        const progressPct = d.progress || 0;
-        if (progressPct > 0 && r > 5) {
-          const arcR = r + 3;
-          const startAngle = -Math.PI / 2;
-          const endAngle = startAngle + (progressPct / 100) * Math.PI * 2;
-          const x1 = Math.cos(startAngle) * arcR;
-          const y1 = Math.sin(startAngle) * arcR;
-          const x2 = Math.cos(endAngle) * arcR;
-          const y2 = Math.sin(endAngle) * arcR;
-          const largeArc = progressPct > 50 ? 1 : 0;
-          el.append("path")
-            .attr("d", `M ${x1} ${y1} A ${arcR} ${arcR} 0 ${largeArc} 1 ${x2} ${y2}`)
-            .attr("fill", "none")
-            .attr("stroke", progressPct === 100 ? '#10b981' : fillColor)
-            .attr("stroke-width", 2)
-            .attr("stroke-opacity", 0.5)
-            .attr("stroke-linecap", "round")
-            .attr("pointer-events", "none");
-        }
-      }
     });
 
 
@@ -1214,9 +1148,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       }
     }
 
-    if (hierarchyLevel >= 2) {
-      initGalaxyDOM();
-    }
+    initGalaxyDOM();
 
     nodeElements.on("mouseover", function (_event, hoveredNode) {
       if (draggedNodeIdRef.current !== null) return;
@@ -1265,14 +1197,12 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
           ? `<div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:2px;border:1px solid rgba(255,255,255,0.15);border-radius:3px;display:inline-block;padding:0 4px">${hoveredNode.status === 'done' ? '✓ 已完成' : '✕ 已取消'} · 桥梁节点</div>`
           : '';
 
-        const hasSubtasksHint = hoveredNode.hasSubtasks ? `<div style="color:rgba(255,255,255,0.35);font-size:10px;margin-top:2px">双击钻入</div>` : '';
         tip.innerHTML = `
           ${bridgeTag}
           <div style="font-weight:600;margin-bottom:3px;color:rgba(255,255,255,${isBridge ? '0.5' : '0.9'});font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${hoveredNode.title}</div>
           <div style="color:rgba(255,255,255,0.5);font-size:11px;line-height:1.5">
             ${hoveredNode.assigneeName ? `<span>${hoveredNode.assigneeName}</span> · ` : ''}${STATUS_LABELS[hoveredNode.status] || hoveredNode.status}${hoveredNode.dueDate ? ` · ${hoveredNode.dueDate.slice(0, 10)}${urgencyText}` : ''}${dc > 0 ? ` · ${dc}个下游依赖` : ''}
           </div>
-          ${hasSubtasksHint}
         `;
         const transform = zoomTransformRef.current;
         const sx = transform.x + (hoveredNode.x || 0) * transform.k;
@@ -1359,15 +1289,6 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
 
     svg.call(zoom)
       .on("dblclick.zoom", null);
-
-    nodeElements.on("dblclick", function (_event, d) {
-      _event.stopPropagation();
-      if (d.hasSubtasks && onNodeDrillInRef.current) {
-        onNodeDrillInRef.current(d);
-      } else if (onNodeClickRef.current) {
-        onNodeClickRef.current(d);
-      }
-    });
 
     svg.on("dblclick", (event) => {
       let el = event.target as Element | null;
@@ -1532,7 +1453,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       simulation.stop();
       resizeObserver.disconnect();
     };
-  }, [nodes, links, projects, departments, getRadius, hierarchyLevel]);
+  }, [nodes, links, projects, departments, getRadius]);
 
   useEffect(() => {
     if (!svgRef.current) return;

@@ -104,7 +104,6 @@ export default function GraphNodeSheet({ node, onClose }: GraphNodeSheetProps) {
 
   const handleNavigate = useCallback(() => {
     if (node) {
-      if (node.type === 'department' || node.type === 'project') return;
       onClose();
       setTimeout(() => navigate(`/tasks/${node.id}?from=graph`), 200);
     }
