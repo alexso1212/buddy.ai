@@ -1939,7 +1939,7 @@ export default function Agent() {
         </div>
       )}
 
-      {showScrollBtn && showChat && (
+      {showScrollBtn && messages.length > 0 && (
         <div className="absolute z-30 flex justify-center" style={{ bottom: 'calc(160px + 3.33vh)', left: 0, right: 0, pointerEvents: 'none' }}>
           <button
             onClick={() => scrollToBottom(true)}
