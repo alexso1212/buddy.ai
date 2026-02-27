@@ -1,0 +1,110 @@
+请在 server/routes.ts 中新增以下 API 路由。
+
+重要前提：
+- 项目已有 invitations 表和相关 CRUD（在 server/storage.ts 中），请复用现有逻辑
+- 查看 server/storage.ts 中现有的 invitations 相关方法，尽量复用而非重写
+- 参考现有路由的中间件用法（认证检查、orgIsolation 等）
+- 新增的 organizationJoinRequests 表需要在 storage.ts 中补充 CRUD 方法
+
+=== 3.1 在 storage.ts 中新增 joinRequests 的 CRUD 方法 ===
+
+参考现有 storage 方法风格，添加：
+
+- createJoinRequest(data: InsertOrganizationJoinRequest): Promise<OrganizationJoinRequest>
+- getJoinRequestsByOrgId(orgId: number, status?: string): Promise<Array<OrganizationJoinRequest & { user: { id, displayName, email, avatarUrl } }>>
+- getJoinRequestById(id: number): Promise<OrganizationJoinRequest | null>
+- updateJoinRequest(id: number, data: Partial<OrganizationJoinRequest>): Promise<OrganizationJoinRequest>
+- getPendingJoinRequestByUserId(userId: number, orgId: number): Promise<OrganizationJoinRequest | null>
+
+=== 3.2 POST /api/organizations — 创建组织 ===
+
+请求体：{ name: string, description?: string }
+权限：已登录用户（通过现有认证中间件）
+
+逻辑：
+1. 验证 name 不为空
+2. 插入 organizations 表（orgId 相关字段按现有逻辑处理）
+3. 生成邀请码，插入 invitations 表（复用现有 invitations 表，设置 isActive=true, maxUses=0 表示无限制）
+4. 更新当前用户：orgId = 新组织 id, role = "owner", onboardingCompleted = true
+5. 返回 { data: { organization, inviteCode } }
+
+邀请码生成：使用 server/utils/inviteCode.ts 中的 generateInviteCode 函数。
+插入前检查邀请码唯一性（查询 invitations 表），重复则重新生成，最多重试 5 次。
+
+=== 3.3 GET /api/organizations/search — 通过邀请码搜索组织 ===
+
+Query 参数：?code=xxx
+权限：已登录用户
+
+逻辑：
+1. 在 invitations 表中查找 inviteCode = code 且 isActive = true 的记录
+2. 如果找到，获取对应的 orgId，查询 organizations 表
+3. 额外查询该组织的成员数（count users where orgId = 该组织 id）
+4. 返回脱敏信息：{ data: { id, name, description, memberCount } }
+5. 没找到返回 404：{ error: "未找到该邀请码对应的组织" }
+
+=== 3.4 POST /api/organizations/:id/join-requests — 提交加入申请 ===
+
+请求体：{ inviteCode: string, message?: string }
+权限：已登录用户
+
+逻辑：
+1. 在 invitations 表中验证该邀请码存在、isActive=true、且 orgId 匹配 URL 中的 :id
+2. 如果 invitations 记录有 maxUses > 0，检查 usedCount < maxUses
+3. 检查当前用户是否已是该组织成员（user.orgId === id），是则返回 400
+4. 检查是否已有 status="pending" 的申请，有则返回 400
+5. 检查组织成员数是否达到 maxMembers 上限
+6. 插入 organization_join_requests 表（orgId, userId, message, inviteCode, status="pending"）
+7. 返回 { data: joinRequest }
+
+=== 3.5 GET /api/organizations/:id/join-requests — 获取申请列表 ===
+
+Query 参数：?status=pending（可选）
+权限：该组织的 owner 或 admin
+
+逻辑：
+1. 查询 organization_join_requests，JOIN users 表获取申请人信息
+2. 可按 status 筛选，默认返回所有
+3. 按 createdAt 降序
+4. 返回 { data: [{ ...joinRequest, user: { id, displayName, email, avatarUrl } }] }
+
+=== 3.6 PUT /api/organizations/:id/join-requests/:requestId — 审批 ===
+
+请求体：{ status: "approved" | "rejected", reviewNote?: string }
+权限：该组织的 owner 或 admin
+
+逻辑：
+1. 查找 requestId，不存在返回 404
+2. 检查 status 是否为 pending，非 pending 返回 400 "该申请已处理"
+3. 更新 join_request：status, reviewedBy=当前用户id, reviewedAt=now(), reviewNote
+4. 如果 approved：
+   a. 更新申请人 user 记录：orgId = :id, role = "member", onboardingCompleted = true
+   b. 递增 invitations 表中对应邀请码的 usedCount（调用现有 storage 方法）
+5. 返回 { data: joinRequest }
+
+=== 3.7 GET /api/organizations/:id/invite-code — 获取邀请码 ===
+
+权限：该组织的 owner 或 admin
+
+逻辑：
+1. 查询 invitations 表中 orgId = :id 且 isActive = true 的记录
+2. 如果有多个，返回最新创建的那个
+3. 返回 { data: { inviteCode, createdAt, maxUses, usedCount } }
+
+=== 3.8 POST /api/organizations/:id/invite-code/regenerate — 重新生成 ===
+
+权限：该组织的 owner
+
+逻辑：
+1. 将该组织所有现有的 isActive=true 的邀请记录设为 isActive=false
+2. 生成新邀请码，插入 invitations 表
+3. 返回 { data: { inviteCode } }
+
+=== 3.9 修改现有 GET /api/auth/me ===
+
+在返回的用户数据中确保包含：
+- onboardingCompleted 字段
+- 如果用户有 orgId，关联查询返回 organization 基本信息（name, description）
+- 同时查询该组织的活跃邀请码（从 invitations 表），附在返回中
+
+这样前端可以根据 onboardingCompleted 和 orgId 判断是否跳转 onboarding。
