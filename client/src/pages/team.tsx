@@ -12,6 +12,8 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -28,19 +30,40 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, X } from "lucide-react";
+import { useAuth } from "@/lib/auth";
+import { Plus, Pencil, Trash2, X, Check, Copy, RefreshCw, Inbox, ChevronDown, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
-type Tab = "members" | "departments" | "jobroles";
+function formatRelativeTime(date: string | Date | null | undefined): string {
+  if (!date) return "";
+  const now = Date.now();
+  const then = new Date(date).getTime();
+  const diffMs = now - then;
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes}分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}天前`;
+  const months = Math.floor(days / 30);
+  return `${months}个月前`;
+}
 
 export default function Team() {
-  const [activeTab, setActiveTab] = useState<Tab>("members");
   const [showAddUser, setShowAddUser] = useState(false);
   const [showAddDept, setShowAddDept] = useState(false);
   const [editingDept, setEditingDept] = useState<Department | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
+
+  const orgId = user?.orgId;
+  const isAdminOrOwner = user?.role === "owner" || user?.role === "admin";
 
   const { data: usersData, isLoading: usersLoading } = useQuery<{ data: User[] }>({
     queryKey: ["/api/users"],
@@ -53,6 +76,14 @@ export default function Team() {
   const { data: jobRolesData, isLoading: jobRolesLoading } = useQuery<{ data: JobRole[] }>({
     queryKey: ["/api/job-roles"],
   });
+
+  const { data: pendingRequestsData } = useQuery<{ data: Array<any> }>({
+    queryKey: ["/api/organizations", orgId, "join-requests", "pending"],
+    queryFn: () => apiRequest("GET", `/api/organizations/${orgId}/join-requests?status=pending`).then(r => r.json()),
+    enabled: !!orgId && isAdminOrOwner,
+  });
+
+  const pendingCount = pendingRequestsData?.data?.length ?? 0;
 
   const users = usersData?.data ?? [];
   const departments = deptsData?.data ?? [];
@@ -78,64 +109,73 @@ export default function Team() {
     <div className="p-6 space-y-6">
       <h1 className="text-xl md:text-2xl font-bold" data-testid="team-title">团队管理</h1>
 
-      <div className="flex gap-2">
-        <Button
-          variant={activeTab === "members" ? "default" : "outline"}
-          onClick={() => setActiveTab("members")}
-          data-testid="tab-members"
-        >
-          成员列表
-        </Button>
-        <Button
-          variant={activeTab === "departments" ? "default" : "outline"}
-          onClick={() => setActiveTab("departments")}
-          data-testid="tab-departments"
-        >
-          部门管理
-        </Button>
-        <Button
-          variant={activeTab === "jobroles" ? "default" : "outline"}
-          onClick={() => setActiveTab("jobroles")}
-          data-testid="tab-jobroles"
-        >
-          岗位定义
-        </Button>
-      </div>
+      <Tabs defaultValue="members">
+        <TabsList className="flex-wrap h-auto gap-1" data-testid="team-tabs">
+          <TabsTrigger value="members" data-testid="tab-members">成员</TabsTrigger>
+          <TabsTrigger value="departments" data-testid="tab-departments">部门管理</TabsTrigger>
+          <TabsTrigger value="jobroles" data-testid="tab-jobroles">岗位定义</TabsTrigger>
+          {isAdminOrOwner && (
+            <TabsTrigger value="requests" data-testid="tab-requests" className="gap-1.5">
+              加入申请
+              {pendingCount > 0 && (
+                <Badge variant="destructive" className="h-5 min-w-[20px] px-1.5 text-xs">
+                  {pendingCount}
+                </Badge>
+              )}
+            </TabsTrigger>
+          )}
+          {isAdminOrOwner && (
+            <TabsTrigger value="invite" data-testid="tab-invite">邀请码</TabsTrigger>
+          )}
+        </TabsList>
 
-      {activeTab === "members" && (
-        <MembersTab
-          users={users}
-          departments={departments}
-          deptMap={deptMap}
-          jobRoleMap={jobRoleMap}
-          isLoading={usersLoading || deptsLoading || jobRolesLoading}
-          showAddUser={showAddUser}
-          setShowAddUser={setShowAddUser}
-          toast={toast}
-        />
-      )}
+        <TabsContent value="members" className="space-y-4 mt-4">
+          <MembersTab
+            users={users}
+            departments={departments}
+            deptMap={deptMap}
+            jobRoleMap={jobRoleMap}
+            isLoading={usersLoading || deptsLoading || jobRolesLoading}
+            showAddUser={showAddUser}
+            setShowAddUser={setShowAddUser}
+            toast={toast}
+          />
+        </TabsContent>
 
-      {activeTab === "departments" && (
-        <DepartmentsTab
-          departments={departments}
-          deptTree={deptTree}
-          isLoading={deptsLoading}
-          showAddDept={showAddDept}
-          setShowAddDept={setShowAddDept}
-          editingDept={editingDept}
-          setEditingDept={setEditingDept}
-          toast={toast}
-        />
-      )}
+        <TabsContent value="departments" className="space-y-4 mt-4">
+          <DepartmentsTab
+            departments={departments}
+            deptTree={deptTree}
+            isLoading={deptsLoading}
+            showAddDept={showAddDept}
+            setShowAddDept={setShowAddDept}
+            editingDept={editingDept}
+            setEditingDept={setEditingDept}
+            toast={toast}
+          />
+        </TabsContent>
 
-      {activeTab === "jobroles" && (
-        <JobRolesTab
-          jobRoles={jobRoles}
-          departments={departments}
-          isLoading={jobRolesLoading}
-          toast={toast}
-        />
-      )}
+        <TabsContent value="jobroles" className="space-y-4 mt-4">
+          <JobRolesTab
+            jobRoles={jobRoles}
+            departments={departments}
+            isLoading={jobRolesLoading}
+            toast={toast}
+          />
+        </TabsContent>
+
+        {isAdminOrOwner && (
+          <TabsContent value="requests" className="space-y-4 mt-4">
+            <RequestsTab orgId={orgId} toast={toast} />
+          </TabsContent>
+        )}
+
+        {isAdminOrOwner && (
+          <TabsContent value="invite" className="space-y-4 mt-4">
+            <InviteTab orgId={orgId} userRole={user?.role} toast={toast} />
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   );
 }
@@ -957,6 +997,387 @@ function JobRolesTab({
               {(addMutation.isPending || editMutation.isPending) ? "提交中..." : isEditing ? "更新" : "创建"}
             </Button>
           </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+interface JoinRequest {
+  id: number;
+  orgId: number;
+  userId: number;
+  message: string | null;
+  inviteCode: string | null;
+  status: string;
+  reviewedBy: number | null;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  createdAt: string;
+  user: { id: number; displayName: string; email: string; avatarUrl: string | null };
+}
+
+function RequestsTab({
+  orgId,
+  toast,
+}: {
+  orgId: number | null | undefined;
+  toast: ReturnType<typeof useToast>["toast"];
+}) {
+  const [rejectTarget, setRejectTarget] = useState<JoinRequest | null>(null);
+  const [rejectNote, setRejectNote] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  const { data: pendingData, isLoading: pendingLoading, error: pendingError } = useQuery<{ data: JoinRequest[] }>({
+    queryKey: ["/api/organizations", orgId, "join-requests", "pending"],
+    queryFn: () => apiRequest("GET", `/api/organizations/${orgId}/join-requests?status=pending`).then(r => r.json()),
+    enabled: !!orgId,
+  });
+
+  const { data: allData, isLoading: allLoading } = useQuery<{ data: JoinRequest[] }>({
+    queryKey: ["/api/organizations", orgId, "join-requests", "all"],
+    queryFn: () => apiRequest("GET", `/api/organizations/${orgId}/join-requests`).then(r => r.json()),
+    enabled: !!orgId && historyOpen,
+  });
+
+  const pending = pendingData?.data ?? [];
+  const history = (allData?.data ?? []).filter(r => r.status !== "pending");
+
+  const approveMutation = useMutation({
+    mutationFn: async (requestId: number) => {
+      await apiRequest("PUT", `/api/organizations/${orgId}/join-requests/${requestId}`, { status: "approved" });
+    },
+    onSuccess: (_data, _vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations", orgId, "join-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: "已批准加入申请" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "操作失败", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async ({ requestId, reviewNote }: { requestId: number; reviewNote?: string }) => {
+      await apiRequest("PUT", `/api/organizations/${orgId}/join-requests/${requestId}`, {
+        status: "rejected",
+        reviewNote: reviewNote || undefined,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations", orgId, "join-requests"] });
+      setRejectTarget(null);
+      setRejectNote("");
+      toast({ title: "已拒绝加入申请" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "操作失败", description: err.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <>
+      <h2 className="text-lg font-semibold">加入申请</h2>
+
+      {pendingError ? (
+        <Card className="p-6">
+          <div className="text-center text-destructive" data-testid="error-requests">
+            加载失败：{(pendingError as Error).message}
+          </div>
+        </Card>
+      ) : pendingLoading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-20 w-full" />
+          ))}
+        </div>
+      ) : pending.length === 0 ? (
+        <Card className="p-8">
+          <div className="flex flex-col items-center text-muted-foreground gap-2" data-testid="empty-requests">
+            <Inbox className="w-10 h-10 opacity-40" />
+            <span>暂无待审批的加入申请</span>
+          </div>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {pending.map((req) => (
+            <Card key={req.id} className="p-4" data-testid={`request-card-${req.id}`}>
+              <div className="flex items-start gap-3">
+                <Avatar className="h-10 w-10 shrink-0">
+                  <AvatarImage src={req.user.avatarUrl ?? undefined} />
+                  <AvatarFallback>{req.user.displayName?.charAt(0)?.toUpperCase() ?? "?"}</AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="font-semibold truncate" data-testid={`request-name-${req.id}`}>{req.user.displayName}</span>
+                    <span className="text-sm text-muted-foreground truncate">{req.user.email}</span>
+                  </div>
+                  {req.message && (
+                    <p className="text-sm italic text-muted-foreground mt-1" data-testid={`request-message-${req.id}`}>{req.message}</p>
+                  )}
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                    <Clock className="w-3 h-3" />
+                    <span>{formatRelativeTime(req.createdAt)}</span>
+                  </div>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <Button
+                    size="sm"
+                    onClick={() => approveMutation.mutate(req.id)}
+                    disabled={approveMutation.isPending}
+                    data-testid={`btn-approve-${req.id}`}
+                  >
+                    <Check className="w-4 h-4 mr-1" />
+                    批准
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setRejectTarget(req)}
+                    disabled={rejectMutation.isPending}
+                    data-testid={`btn-reject-${req.id}`}
+                  >
+                    <X className="w-4 h-4 mr-1" />
+                    拒绝
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <Collapsible open={historyOpen} onOpenChange={setHistoryOpen}>
+        <CollapsibleTrigger asChild>
+          <Button variant="ghost" className="gap-1 text-muted-foreground" data-testid="btn-toggle-history">
+            <ChevronDown className={`w-4 h-4 transition-transform ${historyOpen ? "rotate-180" : ""}`} />
+            已处理的申请
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="mt-3 space-y-2">
+          {allLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 w-full" />
+              ))}
+            </div>
+          ) : history.length === 0 ? (
+            <p className="text-sm text-muted-foreground pl-2">暂无已处理的申请</p>
+          ) : (
+            history.map((req) => (
+              <Card key={req.id} className="p-3" data-testid={`history-card-${req.id}`}>
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-8 w-8 shrink-0">
+                    <AvatarImage src={req.user.avatarUrl ?? undefined} />
+                    <AvatarFallback>{req.user.displayName?.charAt(0)?.toUpperCase() ?? "?"}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm truncate">{req.user.displayName}</span>
+                      <Badge
+                        variant={req.status === "approved" ? "default" : "destructive"}
+                        className="text-xs"
+                        data-testid={`history-status-${req.id}`}
+                      >
+                        {req.status === "approved" ? "已批准" : "已拒绝"}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {formatRelativeTime(req.reviewedAt || req.createdAt)}
+                      {req.reviewNote && <span className="ml-2 italic">{req.reviewNote}</span>}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))
+          )}
+        </CollapsibleContent>
+      </Collapsible>
+
+      <Dialog open={!!rejectTarget} onOpenChange={(open) => { if (!open) { setRejectTarget(null); setRejectNote(""); } }}>
+        <DialogContent data-testid="modal-reject">
+          <DialogHeader>
+            <DialogTitle>拒绝加入申请</DialogTitle>
+            <DialogDescription>
+              确定拒绝 {rejectTarget?.user.displayName} 的加入申请吗？可以填写拒绝原因（可选）。
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            placeholder="拒绝原因（可选）"
+            value={rejectNote}
+            onChange={(e) => setRejectNote(e.target.value)}
+            data-testid="input-reject-note"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRejectTarget(null); setRejectNote(""); }} data-testid="btn-cancel-reject">
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (rejectTarget) {
+                  rejectMutation.mutate({ requestId: rejectTarget.id, reviewNote: rejectNote || undefined });
+                }
+              }}
+              disabled={rejectMutation.isPending}
+              data-testid="btn-confirm-reject"
+            >
+              {rejectMutation.isPending ? "处理中..." : "确认拒绝"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+interface InviteCodeData {
+  inviteCode: string;
+  createdAt: string;
+  maxUses: number | null;
+  usedCount: number;
+}
+
+function InviteTab({
+  orgId,
+  userRole,
+  toast,
+}: {
+  orgId: number | null | undefined;
+  userRole: string | undefined;
+  toast: ReturnType<typeof useToast>["toast"];
+}) {
+  const [copied, setCopied] = useState(false);
+  const [showRegenDialog, setShowRegenDialog] = useState(false);
+  const isOwner = userRole === "owner";
+
+  const { data: inviteData, isLoading, error: inviteError } = useQuery<{ data: InviteCodeData }>({
+    queryKey: ["/api/organizations", orgId, "invite-code"],
+    queryFn: () => apiRequest("GET", `/api/organizations/${orgId}/invite-code`).then(r => r.json()),
+    enabled: !!orgId,
+  });
+
+  const inviteCode = inviteData?.data;
+
+  const regenerateMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/organizations/${orgId}/invite-code/regenerate`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations", orgId, "invite-code"] });
+      setShowRegenDialog(false);
+      toast({ title: "邀请码已重新生成" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "生成失败", description: err.message, variant: "destructive" });
+    },
+  });
+
+  async function handleCopy() {
+    if (!inviteCode?.inviteCode) return;
+    try {
+      await navigator.clipboard.writeText(inviteCode.inviteCode);
+      setCopied(true);
+      toast({ title: "已复制到剪贴板" });
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast({ title: "复制失败", variant: "destructive" });
+    }
+  }
+
+  return (
+    <>
+      <h2 className="text-lg font-semibold">邀请码</h2>
+
+      {inviteError ? (
+        <Card className="p-6">
+          <div className="text-center text-destructive" data-testid="error-invite">
+            加载失败：{(inviteError as Error).message}
+          </div>
+        </Card>
+      ) : isLoading ? (
+        <Card className="p-8">
+          <Skeleton className="h-12 w-48 mx-auto" />
+        </Card>
+      ) : !inviteCode ? (
+        <Card className="p-8">
+          <div className="text-center text-muted-foreground" data-testid="no-invite-code">
+            暂无邀请码
+            {isOwner && (
+              <Button
+                variant="outline"
+                className="ml-3"
+                onClick={() => regenerateMutation.mutate()}
+                disabled={regenerateMutation.isPending}
+                data-testid="btn-generate-code"
+              >
+                <RefreshCw className="w-4 h-4 mr-1" />
+                生成邀请码
+              </Button>
+            )}
+          </div>
+        </Card>
+      ) : (
+        <Card className="p-6 space-y-4">
+          <div className="text-center space-y-3">
+            <div
+              className="font-mono text-3xl tracking-wider text-center select-all"
+              data-testid="text-invite-code"
+            >
+              {inviteCode.inviteCode}
+            </div>
+            <Button variant="outline" size="sm" onClick={handleCopy} data-testid="btn-copy-code">
+              {copied ? <Check className="w-4 h-4 mr-1" /> : <Copy className="w-4 h-4 mr-1" />}
+              {copied ? "已复制" : "复制邀请码"}
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground">
+            <span data-testid="text-invite-created">创建于 {new Date(inviteCode.createdAt).toLocaleDateString("zh-CN")}</span>
+            <span data-testid="text-invite-usage">
+              已使用 {inviteCode.usedCount}{inviteCode.maxUses ? `/${inviteCode.maxUses}` : ""} 次
+            </span>
+          </div>
+
+          {isOwner && (
+            <div className="text-center">
+              <Button
+                variant="outline"
+                onClick={() => setShowRegenDialog(true)}
+                data-testid="btn-regenerate-code"
+              >
+                <RefreshCw className="w-4 h-4 mr-1" />
+                重新生成
+              </Button>
+            </div>
+          )}
+
+          <p className="text-sm text-muted-foreground text-center">
+            将邀请码分享给同事，他们在注册后输入即可申请加入你的组织。
+          </p>
+        </Card>
+      )}
+
+      <Dialog open={showRegenDialog} onOpenChange={setShowRegenDialog}>
+        <DialogContent data-testid="modal-regenerate">
+          <DialogHeader>
+            <DialogTitle>重新生成邀请码</DialogTitle>
+            <DialogDescription>
+              重新生成后旧邀请码将立即失效，确定吗？
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRegenDialog(false)} data-testid="btn-cancel-regen">
+              取消
+            </Button>
+            <Button
+              onClick={() => regenerateMutation.mutate()}
+              disabled={regenerateMutation.isPending}
+              data-testid="btn-confirm-regen"
+            >
+              {regenerateMutation.isPending ? "生成中..." : "确认生成"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
