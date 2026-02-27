@@ -64,7 +64,7 @@ export default function ArtifactPanel({ content, title, isOpen, onClose }: Artif
           position: "fixed",
           inset: 0,
           background: "rgba(0,0,0,0.5)",
-          zIndex: 9990,
+          zIndex: 10000,
           transition: "opacity 200ms ease",
         }}
         data-testid="artifact-panel-backdrop"
@@ -79,7 +79,7 @@ export default function ArtifactPanel({ content, title, isOpen, onClose }: Artif
           background: "var(--bg-primary, #0a0a0a)",
           border: isFullscreen ? "none" : "1px solid rgba(255,255,255,0.1)",
           borderRadius: isFullscreen ? 0 : 12,
-          zIndex: 9991,
+          zIndex: 10001,
           display: "flex",
           flexDirection: "column",
           transition: "all 200ms ease",
