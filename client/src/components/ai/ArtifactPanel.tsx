@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from "react";
-import { X, Maximize2, Minimize2, Copy, Check, Download } from "lucide-react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { X, Maximize2, Minimize2, Copy, Check, Download, ChevronDown } from "lucide-react";
 import AIMessageContent from "./AIMessageContent";
 
 interface ArtifactPanelProps {
@@ -12,13 +12,33 @@ interface ArtifactPanelProps {
 export default function ArtifactPanel({ content, title, isOpen, onClose }: ArtifactPanelProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isOpen) {
       setIsFullscreen(false);
       setCopied(false);
+      setShowScrollBtn(false);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el || !isOpen) return;
+    const checkScroll = () => {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+      setShowScrollBtn(!nearBottom && el.scrollHeight > el.clientHeight + 100);
+    };
+    checkScroll();
+    el.addEventListener("scroll", checkScroll, { passive: true });
+    const observer = new MutationObserver(checkScroll);
+    observer.observe(el, { childList: true, subtree: true });
+    return () => {
+      el.removeEventListener("scroll", checkScroll);
+      observer.disconnect();
+    };
+  }, [isOpen, content]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -54,7 +74,20 @@ export default function ArtifactPanel({ content, title, isOpen, onClose }: Artif
     URL.revokeObjectURL(url);
   }, [content, title]);
 
+  const scrollToBottom = useCallback(() => {
+    contentRef.current?.scrollTo({ top: contentRef.current.scrollHeight, behavior: "smooth" });
+  }, []);
+
   if (!isOpen) return null;
+
+  const glassBtn: React.CSSProperties = {
+    background: "rgba(255,255,255,0.08)",
+    backdropFilter: "blur(24px)",
+    WebkitBackdropFilter: "blur(24px)",
+    border: "1px solid rgba(255,255,255,0.15)",
+    cursor: "pointer",
+    transition: "all 180ms ease",
+  };
 
   return (
     <>
@@ -116,8 +149,8 @@ export default function ArtifactPanel({ content, title, isOpen, onClose }: Artif
           <div className="flex items-center gap-1">
             <button
               onClick={handleCopy}
-              className="flex items-center justify-center w-8 h-8 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-              style={{ background: "none", border: "none", cursor: "pointer" }}
+              className="flex items-center justify-center w-8 h-8 rounded-lg text-[rgba(255,255,255,0.7)] hover:text-white"
+              style={glassBtn}
               title={copied ? "Copied" : "Copy"}
               data-testid="artifact-btn-copy"
             >
@@ -125,8 +158,8 @@ export default function ArtifactPanel({ content, title, isOpen, onClose }: Artif
             </button>
             <button
               onClick={handleDownload}
-              className="flex items-center justify-center w-8 h-8 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-              style={{ background: "none", border: "none", cursor: "pointer" }}
+              className="flex items-center justify-center w-8 h-8 rounded-lg text-[rgba(255,255,255,0.7)] hover:text-white"
+              style={glassBtn}
               title="Download as .md"
               data-testid="artifact-btn-download"
             >
@@ -134,8 +167,8 @@ export default function ArtifactPanel({ content, title, isOpen, onClose }: Artif
             </button>
             <button
               onClick={() => setIsFullscreen(!isFullscreen)}
-              className="flex items-center justify-center w-8 h-8 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-              style={{ background: "none", border: "none", cursor: "pointer" }}
+              className="flex items-center justify-center w-8 h-8 rounded-lg text-[rgba(255,255,255,0.7)] hover:text-white"
+              style={glassBtn}
               title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
               data-testid="artifact-btn-fullscreen"
             >
@@ -143,8 +176,8 @@ export default function ArtifactPanel({ content, title, isOpen, onClose }: Artif
             </button>
             <button
               onClick={onClose}
-              className="flex items-center justify-center w-8 h-8 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-              style={{ background: "none", border: "none", cursor: "pointer" }}
+              className="flex items-center justify-center w-8 h-8 rounded-lg text-[rgba(255,255,255,0.7)] hover:text-white"
+              style={glassBtn}
               title="Close"
               data-testid="artifact-btn-close"
             >
@@ -154,16 +187,44 @@ export default function ArtifactPanel({ content, title, isOpen, onClose }: Artif
         </div>
 
         <div
+          ref={contentRef}
           style={{
             flex: 1,
             overflowY: "auto",
             overflowX: "hidden",
             padding: "20px 24px",
+            position: "relative",
           }}
           data-testid="artifact-panel-content"
         >
           <AIMessageContent content={content} />
         </div>
+
+        {showScrollBtn && (
+          <button
+            onClick={scrollToBottom}
+            style={{
+              position: "absolute",
+              bottom: 24,
+              left: "50%",
+              transform: "translateX(-50%)",
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              ...glassBtn,
+              background: "rgba(255,255,255,0.12)",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)",
+              zIndex: 2,
+              color: "rgba(255,255,255,0.85)",
+            }}
+            data-testid="artifact-btn-scroll-bottom"
+          >
+            <ChevronDown className="w-5 h-5" />
+          </button>
+        )}
       </div>
     </>
   );

@@ -1943,20 +1943,22 @@ export default function Agent() {
         <div className="absolute z-30 flex justify-center" style={{ bottom: 'calc(160px + 3.33vh)', left: 0, right: 0, pointerEvents: 'none' }}>
           <button
             onClick={() => scrollToBottom(true)}
-            className="flex items-center justify-center shadow-lg hover:scale-105 transition-transform"
+            className="flex items-center justify-center hover:scale-105 transition-transform"
             style={{
               width: 36,
               height: 36,
               borderRadius: '50%',
-              background: 'rgba(40,39,37,0.9)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              backdropFilter: 'blur(8px)',
+              background: 'rgba(255,255,255,0.12)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              backdropFilter: 'blur(24px)',
+              WebkitBackdropFilter: 'blur(24px)',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)',
               pointerEvents: 'auto',
               cursor: 'pointer',
             }}
             data-testid="btn-scroll-bottom"
           >
-            <ArrowDown className="w-4 h-4 text-[var(--text-primary)]" strokeWidth={2} />
+            <ArrowDown className="w-4 h-4" style={{ color: 'rgba(255,255,255,0.85)' }} strokeWidth={2} />
           </button>
         </div>
       )}
