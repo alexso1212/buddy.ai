@@ -64,6 +64,8 @@ interface Message {
   followUpSubmitted?: boolean;
   isStreaming?: boolean;
   searchResults?: { title: string; url: string; content: string }[];
+  codeFiles?: string[];
+  codeFilesFailed?: string[];
   attachments?: { type: string; name: string; mimeType: string; base64: string; previewUrl?: string }[];
   thinking?: string;
   isThinking?: boolean;
@@ -720,7 +722,7 @@ function ConversationListView({
   );
 }
 
-function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearchToggle, replyStyle, onReplyStyleChange }: { onSend: (msg: string, attachments?: Attachment[]) => void; loading: boolean; onStop?: () => void; webSearchEnabled?: boolean; onWebSearchToggle?: (enabled: boolean) => void; replyStyle?: string; onReplyStyleChange?: (style: string) => void }) {
+function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearchToggle, codeContextEnabled, onCodeContextToggle, replyStyle, onReplyStyleChange }: { onSend: (msg: string, attachments?: Attachment[]) => void; loading: boolean; onStop?: () => void; webSearchEnabled?: boolean; onWebSearchToggle?: (enabled: boolean) => void; codeContextEnabled?: boolean; onCodeContextToggle?: (enabled: boolean) => void; replyStyle?: string; onReplyStyleChange?: (style: string) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const bgRef = useRef<HTMLDivElement>(null);
@@ -808,6 +810,8 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
               onStop={onStop}
               webSearchEnabled={webSearchEnabled}
               onWebSearchToggle={onWebSearchToggle}
+              codeContextEnabled={codeContextEnabled}
+              onCodeContextToggle={onCodeContextToggle}
               replyStyle={replyStyle}
               onReplyStyleChange={onReplyStyleChange}
             />
@@ -904,6 +908,7 @@ export default function Agent() {
   const [loading, setLoading] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [codeContextEnabled, setCodeContextEnabled] = useState(false);
   const [replyStyle, setReplyStyle] = useState('normal');
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1177,6 +1182,7 @@ export default function Agent() {
             extendedThinking,
             replyStyle: replyStyle !== 'normal' ? replyStyle : undefined,
             webSearchEnabled,
+            codeContextEnabled,
             attachments,
           }),
           signal: abortController.signal,
@@ -1251,6 +1257,18 @@ export default function Agent() {
                     prev.map((m) =>
                       m.id === assistantMsgId
                         ? { ...m, searchResults: event.results }
+                        : m
+                    )
+                  );
+                }
+              } else if (event.type === 'code_files' && event.files) {
+                if (isActiveStream()) {
+                  const codeInfo = `📂 已加载 ${event.files.length} 个代码文件` +
+                    (event.failedFiles?.length ? `，${event.failedFiles.length} 个文件未找到` : '');
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? { ...m, codeFiles: event.files, codeFilesFailed: event.failedFiles }
                         : m
                     )
                   );
@@ -1472,7 +1490,7 @@ export default function Agent() {
         if (convId) clearStreamState(convId);
       }
     },
-    [activeConvId, activeConvSystemPrompt, saveMessageToDB, navigate, currentUserId, replyStyle, webSearchEnabled]
+    [activeConvId, activeConvSystemPrompt, saveMessageToDB, navigate, currentUserId, replyStyle, webSearchEnabled, codeContextEnabled]
   );
 
   const rebuildHistoryFromMessages = useCallback((msgs: Message[]) => {
@@ -1969,6 +1987,8 @@ export default function Agent() {
         onStop={handleStop}
         webSearchEnabled={webSearchEnabled}
         onWebSearchToggle={setWebSearchEnabled}
+        codeContextEnabled={codeContextEnabled}
+        onCodeContextToggle={setCodeContextEnabled}
         replyStyle={replyStyle}
         onReplyStyleChange={setReplyStyle}
       />

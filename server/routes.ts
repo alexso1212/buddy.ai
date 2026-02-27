@@ -2211,7 +2211,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   // ===================== AI Chat Stream =====================
   app.post("/api/ai/chat/stream", async (req, res) => {
     try {
-      const { message, conversationHistory, conversationId, currentUserId, systemPrompt, model, extendedThinking, replyStyle, webSearchEnabled, attachments } = req.body;
+      const { message, conversationHistory, conversationId, currentUserId, systemPrompt, model, extendedThinking, replyStyle, webSearchEnabled, codeContextEnabled, attachments } = req.body;
       if ((!message || typeof message !== 'string') && (!attachments || attachments.length === 0)) {
         return res.status(400).json({ error: 'message is required' });
       }
@@ -2295,6 +2295,19 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
           }
         } catch (searchErr) {
           console.error('Web search failed:', searchErr);
+        }
+      }
+
+      if (codeContextEnabled) {
+        try {
+          const { buildCodeContextBlock } = await import('./services/ai/codeContext');
+          const { contextBlock, loadedFiles, failedFiles } = buildCodeContextBlock(msgText, true);
+          effectiveSystemPrompt = (effectiveSystemPrompt || '') + '\n\n' + contextBlock;
+          if (loadedFiles.length > 0 || failedFiles.length > 0) {
+            res.write(`data: ${JSON.stringify({ type: 'code_files', files: loadedFiles, failedFiles })}\n\n`);
+          }
+        } catch (codeErr) {
+          console.error('Code context failed:', codeErr);
         }
       }
 

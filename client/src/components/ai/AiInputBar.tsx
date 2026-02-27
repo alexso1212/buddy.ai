@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { ArrowUp, Plus, Square, X, Globe, Palette, FileText, Image, Camera, Atom, FolderOpen, LayoutGrid, ChevronRight } from "lucide-react";
+import { ArrowUp, Plus, Square, X, Globe, Palette, FileText, Image, Camera, Atom, FolderOpen, LayoutGrid, ChevronRight, Code } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface Attachment {
@@ -16,6 +16,8 @@ interface AiInputBarProps {
   onStop?: () => void;
   webSearchEnabled?: boolean;
   onWebSearchToggle?: (enabled: boolean) => void;
+  codeContextEnabled?: boolean;
+  onCodeContextToggle?: (enabled: boolean) => void;
   replyStyle?: string;
   onReplyStyleChange?: (style: string) => void;
 }
@@ -96,6 +98,8 @@ function AddToChatSheet({
   onClose,
   webSearchEnabled,
   onWebSearchToggle,
+  codeContextEnabled,
+  onCodeContextToggle,
   replyStyle,
   onReplyStyleChange,
   onAttach,
@@ -104,6 +108,8 @@ function AddToChatSheet({
   onClose: () => void;
   webSearchEnabled: boolean;
   onWebSearchToggle: (enabled: boolean) => void;
+  codeContextEnabled: boolean;
+  onCodeContextToggle: (enabled: boolean) => void;
   replyStyle: string;
   onReplyStyleChange: (style: string) => void;
   onAttach: (attachments: Attachment[]) => void;
@@ -343,6 +349,30 @@ function AddToChatSheet({
 
                 <div
                   className="flex items-center justify-between px-4 py-3.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                  onClick={() => onCodeContextToggle(!codeContextEnabled)}
+                  data-testid="toggle-code-context"
+                >
+                  <div className="flex items-center gap-3">
+                    <Code className="w-5 h-5 text-[var(--text-secondary)]" strokeWidth={1.5} />
+                    <span className="text-sm text-[var(--text-primary)]">代码上下文</span>
+                  </div>
+                  <div
+                    className="relative w-11 h-6 rounded-full transition-colors duration-200"
+                    style={{
+                      background: codeContextEnabled ? '#3B82F6' : 'rgba(255,255,255,0.15)',
+                    }}
+                  >
+                    <div
+                      className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
+                      style={{
+                        transform: codeContextEnabled ? 'translateX(22px)' : 'translateX(2px)',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div
+                  className="flex items-center justify-between px-4 py-3.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
                   data-testid="btn-add-to-project"
                 >
                   <div className="flex items-center gap-3">
@@ -392,7 +422,7 @@ function AddToChatSheet({
   );
 }
 
-export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled = false, onWebSearchToggle, replyStyle = 'normal', onReplyStyleChange }: AiInputBarProps) {
+export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled = false, onWebSearchToggle, codeContextEnabled = false, onCodeContextToggle, replyStyle = 'normal', onReplyStyleChange }: AiInputBarProps) {
   const [value, setValue] = useState("");
   const [showSheet, setShowSheet] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -754,6 +784,16 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
                   搜索
                 </div>
               )}
+              {codeContextEnabled && (
+                <div
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-xs"
+                  style={{ background: 'rgba(59,130,246,0.15)', color: '#60A5FA' }}
+                  data-testid="code-context-badge"
+                >
+                  <Code className="w-3 h-3" />
+                  代码
+                </div>
+              )}
             </div>
 
             {loading ? (
@@ -812,6 +852,10 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
         webSearchEnabled={webSearchEnabled}
         onWebSearchToggle={(enabled) => {
           onWebSearchToggle?.(enabled);
+        }}
+        codeContextEnabled={codeContextEnabled}
+        onCodeContextToggle={(enabled) => {
+          onCodeContextToggle?.(enabled);
         }}
         replyStyle={replyStyle}
         onReplyStyleChange={(style) => {

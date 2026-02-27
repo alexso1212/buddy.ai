@@ -58,6 +58,8 @@ interface Message {
   followUpSubmitted?: boolean;
   isStreaming?: boolean;
   searchResults?: { title: string; url: string; content: string }[];
+  codeFiles?: string[];
+  codeFilesFailed?: string[];
   attachments?: { type: string; name: string; mimeType: string; base64: string; previewUrl?: string }[];
   thinking?: string;
   isThinking?: boolean;
@@ -633,6 +635,19 @@ export default function AiMessageBubble({
         )}
         {message.searchResults && message.searchResults.length > 0 && (
           <SearchSourcesBar results={message.searchResults} />
+        )}
+        {message.codeFiles && message.codeFiles.length > 0 && (
+          <div
+            className="flex items-center gap-2 px-3 py-2 rounded-lg mb-2 text-xs"
+            style={{ background: 'rgba(59,130,246,0.1)', color: '#93C5FD' }}
+            data-testid="code-files-info"
+          >
+            <span style={{ fontSize: 14 }}>📂</span>
+            <span>已加载 {message.codeFiles.length} 个代码文件</span>
+            {message.codeFilesFailed && message.codeFilesFailed.length > 0 && (
+              <span style={{ color: '#FCA5A5' }}>· {message.codeFilesFailed.length} 个未找到</span>
+            )}
+          </div>
         )}
         <div className={message.isStreaming ? 'streaming-cursor' : ''}>
           <AIMessageContent content={message.content} />

@@ -47,6 +47,7 @@ A 15-table PostgreSQL database schema manages entities like `organizations`, `de
 - **Verdict Service:** AI-powered service for judging task assignments, scope, and confidence.
 - **Structured Follow-up:** Provides structured, clickable options for users to complete missing task details.
 - **Web Search Integration:** Tavily API provides real-time web search capabilities, injecting results into the system prompt and displaying them in the UI.
+- **Code Context Mode:** Toggle in Agent chat (`codeContextEnabled`) that injects project source code into AI system prompt. `server/services/ai/codeContext.ts` generates file tree (cached 5min), reads key files (schema.ts, routes summary, replit.md), and extracts `@filepath` references from user messages. Security: allowlist of safe directories (client/, server/, shared/, docs/), blocked patterns (.env, secrets, keys), extension whitelist. Frontend shows blue "代码" badge when enabled, and "已加载 X 个代码文件" info bar in AI responses.
 
 ## External Dependencies
 - **PostgreSQL:** Primary database.
