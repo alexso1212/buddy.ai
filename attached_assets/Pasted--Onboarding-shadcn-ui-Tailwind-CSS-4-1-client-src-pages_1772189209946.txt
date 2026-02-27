@@ -1,0 +1,135 @@
+请新建前端 Onboarding 页面，使用项目现有的 shadcn/ui 组件和 Tailwind CSS。
+
+=== 4.1 新建 client/src/pages/OnboardingPage.tsx ===
+
+多步骤引导页面，用 useState 管理步骤。
+
+type OnboardingStep = "welcome" | "create" | "create-success" | "join" | "join-preview" | "pending" | "complete";
+
+--- Step: welcome（首屏）---
+
+居中布局，max-w-lg mx-auto，垂直居中（min-h-screen flex items-center justify-center）。
+
+内容：
+- Buddy logo 或 🤖 emoji
+- 标题 "欢迎来到 Buddy"（text-2xl font-bold）
+- 副标题 "AI 驱动的团队协作空间"（text-muted-foreground）
+- 间距后，两张并排卡片（grid grid-cols-2 gap-4，移动端 grid-cols-1）：
+  - 左卡片（shadcn Card）：
+    - 图标 🏢（text-3xl 居中）
+    - 标题 "创建组织"（font-semibold）
+    - 描述 "创建你的团队工作空间"（text-sm text-muted-foreground）
+    - 整张卡片可点击，hover:border-primary 效果
+    - onClick → setStep("create")
+  - 右卡片：
+    - 图标 🔗
+    - 标题 "加入组织"
+    - 描述 "通过邀请码加入已有团队"
+    - onClick → setStep("join")
+
+--- Step: create（创建组织表单）---
+
+左上角返回按钮（← 图标 + "返回"），onClick → setStep("welcome")
+
+标题 "创建你的组织"
+表单（shadcn Form 或直接用 state）：
+- 组织名称（Input，required，placeholder "如 Deltapex Education"）
+- 组织描述（Textarea，optional，placeholder "简单描述你的团队..."）
+- 提交按钮（Button，"创建组织"，loading 状态显示 spinner）
+
+提交逻辑：
+- POST /api/organizations { name, description }
+- 成功：保存返回的 inviteCode 到 state，进入 "create-success"
+- 失败：toast.error(error.message)
+
+--- Step: create-success（创建成功 + 显示邀请码）---
+
+✅ 图标 + "组织创建成功！"
+
+显示邀请码卡片：
+- 大号字体显示邀请码（如 "DPE-X4NM"），font-mono text-2xl tracking-wider
+- 旁边一个复制按钮（点击复制到剪贴板，toast 提示 "已复制"）
+- 下方说明文字："将邀请码分享给同事，他们注册后输入即可申请加入"
+
+底部按钮："进入工作台"（Button variant="default"）
+- onClick → 刷新 auth 状态（重新调用 GET /api/auth/me），然后 navigate("/")
+
+--- Step: join（输入邀请码）---
+
+返回按钮 → setStep("welcome")
+
+标题 "加入组织"
+输入框：邀请码（Input，placeholder "输入邀请码，如 DPE-X4NM"）
+- 输入框可以自动转大写
+- 旁边或下方 "搜索" 按钮
+
+搜索逻辑：
+- GET /api/organizations/search?code=xxx
+- 找到：保存组织信息到 state，进入 "join-preview"
+- 没找到：toast.error("未找到该邀请码对应的组织")
+
+--- Step: join-preview（预览组织 + 提交申请）---
+
+返回按钮 → setStep("join")
+
+组织信息卡片（Card）：
+- 组织名称（font-semibold text-lg）
+- 组织描述
+- 👥 成员数
+
+申请留言（Textarea，optional，placeholder "向管理员介绍一下你自己..."）
+提交按钮 "申请加入"
+
+提交逻辑：
+- POST /api/organizations/:id/join-requests { inviteCode, message }
+- 成功 → setStep("pending")
+- 失败 → toast.error
+
+--- Step: pending（等待审批）---
+
+居中布局：
+- ⏳ 图标（animated pulse 效果）
+- 标题 "申请已提交"
+- 描述 "请等待组织管理员审批，审批通过后将自动进入工作台"
+
+轮询检测（useEffect + setInterval）：
+- 每 10 秒调用 GET /api/auth/me
+- 如果返回的用户数据中 orgId 不为 null → 进入 "complete"
+- 组件 unmount 时清除 interval
+
+底部小字链接："或者 创建自己的组织"（onClick → setStep("welcome")）
+
+--- Step: complete（完成）---
+
+✅ 大图标 + "欢迎加入！"
+3 秒后自动 navigate("/")
+或点击 "进入工作台" 立即跳转
+
+=== 4.2 修改 client/src/App.tsx ===
+
+1. 添加路由：/onboarding → <OnboardingPage />
+
+2. 在路由守卫中添加 onboarding 检测逻辑：
+
+找到现有的认证检查逻辑（判断用户是否登录的地方），在用户已登录的分支中添加：
+
+if (user && !user.onboardingCompleted && !user.orgId) {
+  // 未完成 onboarding 且没有组织 → 重定向到 /onboarding
+  // 如果当前不在 /onboarding 页面，跳转过去
+}
+
+确保：
+- 已完成 onboarding 的用户正常访问所有页面
+- 未完成 onboarding 的用户只能访问 /onboarding
+- /onboarding 页面不需要 orgId（因为用户此时还没有组织）
+
+3. 检查 use-auth.ts 或 auth.tsx 中的 user 类型定义，确保包含 onboardingCompleted 字段
+
+=== 4.3 样式要求 ===
+
+- 整体页面背景与现有登录页保持一致
+- 所有步骤都居中布局，max-w-lg
+- 卡片 hover 效果：hover:border-primary hover:shadow-md transition
+- 按钮使用 shadcn Button 的 default variant
+- 移动端适配：卡片在窄屏纵向排列
+- 步骤切换可以有淡入效果（opacity transition），但不是必须的
