@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Organization } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, User, Lock, Loader2, UserPlus, Plus, Copy, Trash2, BarChart3 } from "lucide-react";
+import { Building2, User, Lock, Loader2, UserPlus, Plus, Copy, Trash2, BarChart3, Wallet } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -96,19 +96,29 @@ export default function Settings() {
 
   const [budgetInput, setBudgetInput] = useState('');
   const [budgetSaving, setBudgetSaving] = useState(false);
+  const budgetInitialized = useRef(false);
 
   useEffect(() => {
-    if (balance?.budgetUsd !== undefined && balance?.budgetUsd !== null) {
+    if (!budgetInitialized.current && balance?.budgetUsd !== undefined && balance?.budgetUsd !== null) {
       setBudgetInput(String(balance.budgetUsd));
+      budgetInitialized.current = true;
     }
   }, [balance?.budgetUsd]);
 
   const handleSaveBudget = async () => {
+    if (budgetInput.trim() !== '') {
+      const parsed = parseFloat(budgetInput);
+      if (isNaN(parsed) || parsed < 0) {
+        toast({ title: '输入无效', description: '请输入有效的数字金额', variant: 'destructive' });
+        return;
+      }
+    }
     setBudgetSaving(true);
     try {
       const value = budgetInput.trim() === '' ? null : parseFloat(budgetInput);
       await apiRequest('PATCH', '/api/organization/budget', { tokenBudgetUsd: value });
       queryClient.invalidateQueries({ queryKey: ['/api/token-usage/balance'] });
+      budgetInitialized.current = false;
       toast({ title: '额度已更新' });
     } catch (e: any) {
       toast({ title: '更新失败', description: e.message, variant: 'destructive' });
@@ -343,7 +353,7 @@ export default function Settings() {
       {(authUser?.role === 'owner' || authUser?.role === 'admin') && (
         <Card>
           <CardHeader className="flex flex-row items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-muted-foreground" />
+            <Wallet className="w-5 h-5 text-muted-foreground" />
             <CardTitle>月度额度</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">

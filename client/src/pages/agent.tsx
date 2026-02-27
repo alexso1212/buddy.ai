@@ -1068,6 +1068,8 @@ export default function Agent() {
       isStreamingRef.current = true;
       streamConvIdRef.current = convId;
 
+      const isActiveStream = () => streamConvIdRef.current === convId;
+
       conversationHistory.current.push({ role: "user", content: text });
 
       const assistantMsgId = nextId();
@@ -1131,8 +1133,8 @@ export default function Agent() {
         let tokenFlushTimer: ReturnType<typeof setTimeout> | null = null;
         const flushTokenBuffer = () => {
           if (!tokenBuffer) return;
-          const buffered = tokenBuffer;
           tokenBuffer = '';
+          if (!isActiveStream()) return;
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantMsgId
@@ -1171,35 +1173,41 @@ export default function Agent() {
               const event = JSON.parse(jsonStr);
 
               if (event.type === 'search_results' && event.results) {
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMsgId
-                      ? { ...m, searchResults: event.results }
-                      : m
-                  )
-                );
+                if (isActiveStream()) {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? { ...m, searchResults: event.results }
+                        : m
+                    )
+                  );
+                }
               } else if (event.type === 'title' && event.title) {
-                setConvTitle(event.title);
+                if (isActiveStream()) setConvTitle(event.title);
                 queryClient.invalidateQueries({ queryKey: ['/api/conversations'] });
               } else if (event.type === 'start' && event.conversationId) {
                 if (!convId) {
                   convId = event.conversationId;
                   streamConvIdRef.current = convId;
-                  setConvTitle(text.slice(0, 30) + (text.length > 30 ? '...' : ''));
-                  navigate(`/agent?conv=${convId}`, { replace: true });
+                  if (isActiveStream()) {
+                    setConvTitle(text.slice(0, 30) + (text.length > 30 ? '...' : ''));
+                    navigate(`/agent?conv=${convId}`, { replace: true });
+                  }
                   queryClient.invalidateQueries({ queryKey: ['/api/conversations'] });
                 }
                 if (convId) saveMessageToDB(convId, userMsg);
               } else if (event.type === 'thinking' && event.content) {
                 if (!thinkingStartTime) thinkingStartTime = Date.now();
                 thinkingText += event.content;
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMsgId
-                      ? { ...m, thinking: thinkingText, isThinking: true }
-                      : m
-                  )
-                );
+                if (isActiveStream()) {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? { ...m, thinking: thinkingText, isThinking: true }
+                        : m
+                    )
+                  );
+                }
               } else if (event.type === 'token' && event.content) {
                 fullText += event.content;
                 tokenBuffer += event.content;
@@ -1228,26 +1236,28 @@ export default function Agent() {
 
                 if (pendingAction) {
                   const msgType = pendingAction.actions ? "multi_confirm" : "confirm";
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === assistantMsgId
-                        ? {
-                            ...m,
-                            content: finalText,
-                            isStreaming: false,
-                            isThinking: false,
-                            type: msgType,
-                            action: pendingAction.action || undefined,
-                            actions: pendingAction.actions || undefined,
-                            confirmed: pendingAction.action ? null : undefined,
-                            actionConfirmed: pendingAction.actions ? pendingAction.actions.map(() => null) : undefined,
-                            thinking: thinkingText || undefined,
-                            thinkingDuration: thinkingDur,
-                            tokenUsage: tokenUsageData || undefined,
-                          }
-                        : m
-                    )
-                  );
+                  if (isActiveStream()) {
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === assistantMsgId
+                          ? {
+                              ...m,
+                              content: finalText,
+                              isStreaming: false,
+                              isThinking: false,
+                              type: msgType,
+                              action: pendingAction.action || undefined,
+                              actions: pendingAction.actions || undefined,
+                              confirmed: pendingAction.action ? null : undefined,
+                              actionConfirmed: pendingAction.actions ? pendingAction.actions.map(() => null) : undefined,
+                              thinking: thinkingText || undefined,
+                              thinkingDuration: thinkingDur,
+                              tokenUsage: tokenUsageData || undefined,
+                            }
+                          : m
+                      )
+                    );
+                  }
                   if (convId) {
                     saveMessageToDB(convId, {
                       id: assistantMsgId,
@@ -1261,21 +1271,23 @@ export default function Agent() {
                     });
                   }
                 } else {
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === assistantMsgId
-                        ? {
-                            ...m,
-                            content: finalText,
-                            isStreaming: false,
-                            isThinking: false,
-                            thinking: thinkingText || undefined,
-                            thinkingDuration: thinkingDur,
-                            tokenUsage: tokenUsageData || undefined,
-                          }
-                        : m
-                    )
-                  );
+                  if (isActiveStream()) {
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === assistantMsgId
+                          ? {
+                              ...m,
+                              content: finalText,
+                              isStreaming: false,
+                              isThinking: false,
+                              thinking: thinkingText || undefined,
+                              thinkingDuration: thinkingDur,
+                              tokenUsage: tokenUsageData || undefined,
+                            }
+                          : m
+                      )
+                    );
+                  }
                   if (convId) {
                     saveMessageToDB(convId, {
                       id: assistantMsgId,
@@ -1300,13 +1312,15 @@ export default function Agent() {
 
         if (fullText && !conversationHistory.current.some(m => m.content === fullText && m.role === 'assistant')) {
           conversationHistory.current.push({ role: "assistant", content: fullText });
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMsgId
-                ? { ...m, content: fullText, isStreaming: false, isThinking: false }
-                : m
-            )
-          );
+          if (isActiveStream()) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMsgId
+                  ? { ...m, content: fullText, isStreaming: false, isThinking: false }
+                  : m
+              )
+            );
+          }
           if (convId) {
             saveMessageToDB(convId, {
               id: assistantMsgId,
@@ -1317,58 +1331,62 @@ export default function Agent() {
           }
         }
       } catch (err: any) {
-        if (err.name === 'AbortError' && !isTimeoutAbort) {
-          setMessages((prev) => {
-            const streamingMsg = prev.find(m => m.id === assistantMsgId);
-            if (streamingMsg?.content) {
-              conversationHistory.current.push({ role: "assistant", content: streamingMsg.content });
+        if (isActiveStream()) {
+          if (err.name === 'AbortError' && !isTimeoutAbort) {
+            setMessages((prev) => {
+              const streamingMsg = prev.find(m => m.id === assistantMsgId);
+              if (streamingMsg?.content) {
+                conversationHistory.current.push({ role: "assistant", content: streamingMsg.content });
+              }
+              return prev.map((m) =>
+                m.id === assistantMsgId
+                  ? { ...m, isStreaming: false, isThinking: false }
+                  : m
+              );
+            });
+          } else if (err.name === 'AbortError' && isTimeoutAbort) {
+            setMessages((prev) => {
+              const filtered = prev.filter((m) => m.id !== assistantMsgId);
+              return [...filtered, {
+                id: nextId(),
+                role: "system" as const,
+                content: '响应超时（45秒无数据），请重试',
+                errorType: 'timeout' as const,
+                retryPayload: { text, attachments },
+              }];
+            });
+          } else {
+            const errMsg = err.message || '';
+            let errorType: Message['errorType'] = 'unknown';
+            let displayMsg = errMsg || '请求失败，请稍后重试';
+            if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError') || errMsg.includes('network')) {
+              errorType = 'network';
+              displayMsg = '网络连接失败，请检查网络后重试';
+            } else if (errMsg.includes('rate') || errMsg.includes('429') || errMsg.includes('quota')) {
+              errorType = 'rate_limit';
+              displayMsg = 'AI 服务繁忙，请稍等片刻后重试';
+            } else if (errMsg.includes('timeout') || errMsg.includes('Timeout')) {
+              errorType = 'timeout';
+              displayMsg = '响应超时，请重试';
             }
-            return prev.map((m) =>
-              m.id === assistantMsgId
-                ? { ...m, isStreaming: false, isThinking: false }
-                : m
-            );
-          });
-        } else if (err.name === 'AbortError' && isTimeoutAbort) {
-          setMessages((prev) => {
-            const filtered = prev.filter((m) => m.id !== assistantMsgId);
-            return [...filtered, {
-              id: nextId(),
-              role: "system" as const,
-              content: '响应超时（45秒无数据），请重试',
-              errorType: 'timeout' as const,
-              retryPayload: { text, attachments },
-            }];
-          });
-        } else {
-          const errMsg = err.message || '';
-          let errorType: Message['errorType'] = 'unknown';
-          let displayMsg = errMsg || '请求失败，请稍后重试';
-          if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError') || errMsg.includes('network')) {
-            errorType = 'network';
-            displayMsg = '网络连接失败，请检查网络后重试';
-          } else if (errMsg.includes('rate') || errMsg.includes('429') || errMsg.includes('quota')) {
-            errorType = 'rate_limit';
-            displayMsg = 'AI 服务繁忙，请稍等片刻后重试';
-          } else if (errMsg.includes('timeout') || errMsg.includes('Timeout')) {
-            errorType = 'timeout';
-            displayMsg = '响应超时，请重试';
+            setMessages((prev) => {
+              const filtered = prev.filter((m) => m.id !== assistantMsgId);
+              return [...filtered, {
+                id: nextId(),
+                role: "system" as const,
+                content: displayMsg,
+                errorType,
+                retryPayload: { text, attachments },
+              }];
+            });
           }
-          setMessages((prev) => {
-            const filtered = prev.filter((m) => m.id !== assistantMsgId);
-            return [...filtered, {
-              id: nextId(),
-              role: "system" as const,
-              content: displayMsg,
-              errorType,
-              retryPayload: { text, attachments },
-            }];
-          });
         }
       } finally {
-        setLoading(false);
-        isStreamingRef.current = false;
-        streamConvIdRef.current = null;
+        if (isActiveStream()) {
+          setLoading(false);
+          isStreamingRef.current = false;
+          streamConvIdRef.current = null;
+        }
         abortControllerRef.current = null;
         if (convId) clearStreamState(convId);
       }
