@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useState, useMemo, type ReactNode } from 'react';
+import { useState, useRef, useMemo, useCallback, type ReactNode } from 'react';
 import hljs from 'highlight.js/lib/core';
 import javascript from 'highlight.js/lib/languages/javascript';
 import typescript from 'highlight.js/lib/languages/typescript';
@@ -15,6 +15,7 @@ import yaml from 'highlight.js/lib/languages/yaml';
 import go from 'highlight.js/lib/languages/go';
 import java from 'highlight.js/lib/languages/java';
 import rust from 'highlight.js/lib/languages/rust';
+import { Copy, Check, Share2 } from 'lucide-react';
 
 hljs.registerLanguage('javascript', javascript);
 hljs.registerLanguage('js', javascript);
@@ -44,9 +45,66 @@ interface AIMessageContentProps {
   content: string;
 }
 
-function CodeBlock({ language, code }: { language: string; code: string }) {
-  const [copied, setCopied] = useState(false);
+function ActionButton({ onClick, icon, label, doneLabel, doneIcon, testId }: {
+  onClick: () => Promise<void> | void;
+  icon: ReactNode;
+  label: string;
+  doneLabel: string;
+  doneIcon: ReactNode;
+  testId?: string;
+}) {
+  const [done, setDone] = useState(false);
 
+  const handleClick = useCallback(async () => {
+    try {
+      await onClick();
+      setDone(true);
+      setTimeout(() => setDone(false), 2000);
+    } catch {}
+  }, [onClick]);
+
+  return (
+    <button
+      onClick={handleClick}
+      style={{
+        fontSize: 12,
+        color: 'var(--text-secondary)',
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+        fontFamily: 'var(--font-sans)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        padding: '2px 6px',
+        borderRadius: 4,
+        transition: 'background 150ms',
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
+      data-testid={testId || `btn-${label.toLowerCase()}`}
+    >
+      {done ? doneIcon : icon}
+      <span>{done ? doneLabel : label}</span>
+    </button>
+  );
+}
+
+function copyText(text: string) {
+  return navigator.clipboard.writeText(text);
+}
+
+async function shareText(text: string) {
+  if (navigator.share) {
+    try {
+      await navigator.share({ text });
+      return;
+    } catch {}
+  }
+  await navigator.clipboard.writeText(text);
+}
+
+function CodeBlock({ language, code }: { language: string; code: string }) {
   const highlighted = useMemo(() => {
     try {
       if (language && language !== 'code' && hljs.getLanguage(language)) {
@@ -58,17 +116,6 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
     return null;
   }, [code, language]);
 
-  const handleCopy = () => {
-    try {
-      navigator.clipboard.writeText(code).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      });
-    } catch {
-      setCopied(false);
-    }
-  };
-
   return (
     <div style={{
       background: 'var(--bg-code)',
@@ -78,25 +125,38 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
     }}>
       <div style={{
         background: 'var(--bg-code-header)',
-        padding: '8px 12px',
+        padding: '6px 12px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
       }}>
         <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-sans)' }}>{language}</span>
-        <button
-          onClick={handleCopy}
-          style={{
-            fontSize: 12, color: 'var(--text-secondary)',
-            background: 'none', border: 'none', cursor: 'pointer',
-            fontFamily: 'var(--font-sans)',
-          }}
-          data-testid="code-copy-button"
-        >
-          {copied ? 'Copied!' : 'Copy'}
-        </button>
+        <div style={{ display: 'flex', gap: 2 }}>
+          <ActionButton
+            onClick={() => copyText(code)}
+            icon={<Copy className="w-3.5 h-3.5" />}
+            label="Copy"
+            doneLabel="Copied!"
+            doneIcon={<Check className="w-3.5 h-3.5" />}
+            testId="btn-copy-code"
+          />
+          <ActionButton
+            onClick={() => shareText(code)}
+            icon={<Share2 className="w-3.5 h-3.5" />}
+            label="Share"
+            doneLabel="Shared!"
+            doneIcon={<Check className="w-3.5 h-3.5" />}
+            testId="btn-share-code"
+          />
+        </div>
       </div>
-      <pre style={{ padding: '14px 16px', margin: 0, overflowX: 'auto' }}>
+      <pre style={{
+        padding: '14px 16px',
+        margin: 0,
+        overflowX: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        touchAction: 'pan-x pan-y',
+      }}>
         {highlighted ? (
           <code
             className="hljs"
@@ -116,6 +176,93 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
           }}>{code}</code>
         )}
       </pre>
+    </div>
+  );
+}
+
+function TableBlock({ children }: { children: ReactNode }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [showFade, setShowFade] = useState(false);
+
+  const checkScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const canScroll = el.scrollWidth > el.clientWidth;
+    const notAtEnd = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
+    setShowFade(canScroll && notAtEnd);
+  }, []);
+
+  const extractTableText = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return '';
+    const rows = container.querySelectorAll('tr');
+    const lines: string[] = [];
+    rows.forEach(row => {
+      const cells = row.querySelectorAll('th, td');
+      const cellTexts: string[] = [];
+      cells.forEach(cell => cellTexts.push((cell as HTMLElement).innerText.trim()));
+      lines.push(cellTexts.join('\t'));
+    });
+    return lines.join('\n');
+  }, []);
+
+  return (
+    <div ref={containerRef} style={{ margin: '16px 0', position: 'relative' }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'flex-end',
+        gap: 2,
+        marginBottom: 4,
+      }}>
+        <ActionButton
+          onClick={() => copyText(extractTableText())}
+          icon={<Copy className="w-3.5 h-3.5" />}
+          label="Copy"
+          doneLabel="Copied!"
+          doneIcon={<Check className="w-3.5 h-3.5" />}
+          testId="btn-copy-table"
+        />
+        <ActionButton
+          onClick={() => shareText(extractTableText())}
+          icon={<Share2 className="w-3.5 h-3.5" />}
+          label="Share"
+          doneLabel="Shared!"
+          doneIcon={<Check className="w-3.5 h-3.5" />}
+          testId="btn-share-table"
+        />
+      </div>
+      <div
+        ref={(el) => {
+          (scrollRef as any).current = el;
+          if (el) requestAnimationFrame(checkScroll);
+        }}
+        onScroll={checkScroll}
+        style={{
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          touchAction: 'pan-x pan-y',
+          borderRadius: 8,
+          border: '1px solid var(--border-subtle)',
+        }}
+        data-testid="table-scroll-container"
+      >
+        <table style={{ width: '100%', minWidth: 'max-content', borderCollapse: 'collapse', fontSize: 14 }}>
+          {children}
+        </table>
+      </div>
+      {showFade && (
+        <div style={{
+          position: 'absolute',
+          right: 0,
+          top: 24,
+          bottom: 0,
+          width: 40,
+          background: 'linear-gradient(to right, transparent, var(--bg-main))',
+          pointerEvents: 'none',
+          borderRadius: '0 8px 8px 0',
+        }} />
+      )}
     </div>
   );
 }
@@ -201,15 +348,24 @@ export default function AIMessageContent({ content }: AIMessageContentProps) {
             <hr style={{ border: 'none', borderTop: '1px solid var(--border-subtle)', margin: '24px 0' }} />
           ),
           table: ({ children }) => (
-            <div style={{ overflowX: 'auto', margin: '16px 0' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>{children}</table>
-            </div>
+            <TableBlock>{children}</TableBlock>
           ),
           th: ({ children }) => (
-            <th style={{ borderBottom: '2px solid var(--border-medium)', padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--text-bright)' }}>{children}</th>
+            <th style={{
+              borderBottom: '2px solid var(--border-medium)',
+              padding: '8px 12px',
+              textAlign: 'left',
+              fontWeight: 600,
+              color: 'var(--text-bright)',
+              whiteSpace: 'nowrap',
+            }}>{children}</th>
           ),
           td: ({ children }) => (
-            <td style={{ borderBottom: '1px solid var(--border-subtle)', padding: '8px 12px' }}>{children}</td>
+            <td style={{
+              borderBottom: '1px solid var(--border-subtle)',
+              padding: '8px 12px',
+              whiteSpace: 'nowrap',
+            }}>{children}</td>
           ),
         }}
       >
