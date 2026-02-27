@@ -42,6 +42,7 @@ interface Message {
   errorType?: 'network' | 'timeout' | 'rate_limit' | 'unknown';
   retryPayload?: { text: string; attachments?: Attachment[] };
   timestamp?: number;
+  toolCalls?: { toolName: string; label: string }[];
 }
 
 interface GraphChatFloatProps {
@@ -502,6 +503,14 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
                 prev.map((m) =>
                   m.id === assistantMsgId
                     ? { ...m, thinking: (m.thinking || '') + event.content, isThinking: true }
+                    : m
+                )
+              );
+            } else if (event.type === "tool_use" && event.label) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId
+                    ? { ...m, toolCalls: [...(m.toolCalls || []), { toolName: event.toolName, label: event.label }] }
                     : m
                 )
               );

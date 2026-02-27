@@ -74,6 +74,7 @@ interface Message {
   retryPayload?: { text: string; attachments?: Attachment[] };
   errorType?: 'network' | 'timeout' | 'rate_limit' | 'unknown';
   timestamp?: number;
+  toolCalls?: { toolName: string; label: string }[];
 }
 
 interface Conversation {
@@ -1014,6 +1015,7 @@ export default function Agent() {
             if (meta.thinkingDuration) base.thinkingDuration = meta.thinkingDuration;
             if (meta.searchResults) base.searchResults = meta.searchResults;
             if (meta.tokenUsage) base.tokenUsage = meta.tokenUsage;
+            if (meta.toolCalls) base.toolCalls = meta.toolCalls;
           } catch {}
         }
         return base;
@@ -1099,6 +1101,7 @@ export default function Agent() {
       if (msg.thinkingDuration) metadata.thinkingDuration = msg.thinkingDuration;
       if (msg.searchResults) metadata.searchResults = msg.searchResults;
       if (msg.tokenUsage) metadata.tokenUsage = msg.tokenUsage;
+      if (msg.toolCalls && msg.toolCalls.length > 0) metadata.toolCalls = msg.toolCalls;
 
       await apiRequest("POST", `/api/conversations/${conversationId}/messages`, {
         role: msg.role,
@@ -1272,6 +1275,16 @@ export default function Agent() {
                     prev.map((m) =>
                       m.id === assistantMsgId
                         ? { ...m, codeFiles: event.files, codeFilesFailed: event.failedFiles }
+                        : m
+                    )
+                  );
+                }
+              } else if (event.type === 'tool_use' && event.label) {
+                if (isActiveStream()) {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? { ...m, toolCalls: [...(m.toolCalls || []), { toolName: event.toolName, label: event.label }] }
                         : m
                     )
                   );

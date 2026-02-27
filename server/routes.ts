@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
-import { chat as aiChat, chatStream as aiChatStream, generateProjectTasks, extractMemories, generateConversationTitle } from "./services/ai/index";
+import { chat as aiChat, chatStream as aiChatStream, codeToolChatStream, generateProjectTasks, extractMemories, generateConversationTitle } from "./services/ai/index";
 import { executeAction, executeBatchActions } from "./services/ai/actionExecutor";
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
@@ -2597,17 +2597,27 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
         }
       }
 
-      const generator = aiChatStream(
-        msgText,
-        history,
-        { currentUserId: userId, currentUserName: userName, customSystemPrompt: effectiveSystemPrompt || undefined, model: model || undefined, extendedThinking: extendedThinking || false, orgId },
-        attachments
-      );
+      const useCodeTools = codeContextEnabled === true;
+      const generator = useCodeTools
+        ? codeToolChatStream(msgText, history, effectiveSystemPrompt || '', model || undefined)
+        : aiChatStream(
+            msgText,
+            history,
+            { currentUserId: userId, currentUserName: userName, customSystemPrompt: effectiveSystemPrompt || undefined, model: model || undefined, extendedThinking: extendedThinking || false, orgId },
+            attachments
+          );
 
       for await (const chunk of generator) {
         if (aborted || req.socket?.destroyed) break;
 
-        if (chunk.type === 'thinking' && chunk.content) {
+        if (chunk.type === 'tool_use' && (chunk as any).toolName) {
+          const toolChunk = chunk as any;
+          const toolLabel = toolChunk.toolName === 'read_file' ? `正在读取 ${toolChunk.toolInput?.file_path}...`
+            : toolChunk.toolName === 'list_directory' ? `正在浏览 ${toolChunk.toolInput?.directory || '项目根目录'}...`
+            : toolChunk.toolName === 'search_code' ? `正在搜索 "${toolChunk.toolInput?.query}"...`
+            : `正在使用工具 ${toolChunk.toolName}...`;
+          res.write(`data: ${JSON.stringify({ type: 'tool_use', toolName: toolChunk.toolName, toolInput: toolChunk.toolInput, label: toolLabel })}\n\n`);
+        } else if (chunk.type === 'thinking' && chunk.content) {
           res.write(`data: ${JSON.stringify({ type: 'thinking', content: chunk.content })}\n\n`);
         } else if (chunk.type === 'token' && chunk.content) {
           fullText += chunk.content;

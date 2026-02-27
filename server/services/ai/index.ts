@@ -1,8 +1,10 @@
 import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import mammoth from 'mammoth';
 import { SYSTEM_PROMPT } from './prompts';
 import { ACTION_SCHEMAS } from './actionSchemas';
 import { storage } from '../../storage';
+import { CODE_TOOLS, executeCodeTool } from './codeTools';
 
 const openrouterClient = new OpenAI({
   baseURL: process.env.AI_BASE_URL,
@@ -1172,4 +1174,105 @@ export async function generateConversationTitle(
 
   const title = (response.choices[0]?.message?.content || '').trim().slice(0, 50);
   return title || userMessage.slice(0, 30);
+}
+
+const anthropicClient = new Anthropic({
+  apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
+});
+
+export async function* codeToolChatStream(
+  message: string,
+  conversationHistory: { role: string; content: string | any[] }[],
+  systemPrompt: string,
+  modelName?: string,
+): AsyncGenerator<{ type: string; content?: string; toolName?: string; toolInput?: any; tokenUsage?: ChatResponse['tokenUsage'] }> {
+  const model = modelName || 'claude-sonnet-4-6';
+  const MAX_TOOL_ROUNDS = 8;
+
+  const messages: Anthropic.MessageParam[] = conversationHistory
+    .filter(msg => msg.content && (typeof msg.content === 'string' ? msg.content.trim() !== '' : true))
+    .map(msg => ({
+      role: msg.role as 'user' | 'assistant',
+      content: msg.content as string,
+    }));
+
+  messages.push({ role: 'user', content: message });
+
+  let totalPromptTokens = 0;
+  let totalCompletionTokens = 0;
+
+  const MAX_TOOL_RESULT_LENGTH = 15000;
+
+  function truncateToolResult(result: string): string {
+    if (result.length <= MAX_TOOL_RESULT_LENGTH) return result;
+    return result.slice(0, MAX_TOOL_RESULT_LENGTH) + `\n\n[内容已截断，共 ${result.length} 字符，已显示前 ${MAX_TOOL_RESULT_LENGTH} 字符]`;
+  }
+
+  try {
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      const response = await anthropicClient.messages.create({
+        model,
+        max_tokens: 8192,
+        system: systemPrompt,
+        tools: CODE_TOOLS as Anthropic.Tool[],
+        messages,
+      });
+
+      totalPromptTokens += response.usage?.input_tokens ?? 0;
+      totalCompletionTokens += response.usage?.output_tokens ?? 0;
+
+      if (response.stop_reason === 'tool_use') {
+        const assistantContent = response.content;
+        messages.push({ role: 'assistant', content: assistantContent });
+
+        const toolResults: Anthropic.ToolResultBlockParam[] = [];
+
+        for (const block of assistantContent) {
+          if (block.type === 'tool_use') {
+            yield { type: 'tool_use', toolName: block.name, toolInput: block.input };
+
+            const result = truncateToolResult(executeCodeTool(block.name, block.input as Record<string, any>));
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: block.id,
+              content: result,
+            });
+          }
+        }
+
+        messages.push({ role: 'user', content: toolResults });
+        continue;
+      }
+
+      for (const block of response.content) {
+        if (block.type === 'text') {
+          yield { type: 'token', content: block.text };
+        }
+      }
+
+      yield {
+        type: 'done',
+        tokenUsage: {
+          model,
+          promptTokens: totalPromptTokens,
+          completionTokens: totalCompletionTokens,
+          totalTokens: totalPromptTokens + totalCompletionTokens,
+        },
+      };
+      return;
+    }
+
+    yield { type: 'token', content: '\n\n[已达到最大工具调用轮次限制]' };
+    yield {
+      type: 'done',
+      tokenUsage: {
+        model,
+        promptTokens: totalPromptTokens,
+        completionTokens: totalCompletionTokens,
+        totalTokens: totalPromptTokens + totalCompletionTokens,
+      },
+    };
+  } catch (err: any) {
+    yield { type: 'error', content: err.message || 'Code tool stream error' };
+  }
 }

@@ -68,6 +68,7 @@ interface Message {
   retryPayload?: { text: string; attachments?: any[] };
   errorType?: 'network' | 'timeout' | 'rate_limit' | 'unknown';
   timestamp?: number;
+  toolCalls?: { toolName: string; label: string }[];
 }
 
 interface AiMessageBubbleProps {
@@ -647,6 +648,20 @@ export default function AiMessageBubble({
             {message.codeFilesFailed && message.codeFilesFailed.length > 0 && (
               <span style={{ color: '#FCA5A5' }}>· {message.codeFilesFailed.length} 个未找到</span>
             )}
+          </div>
+        )}
+        {message.toolCalls && message.toolCalls.length > 0 && (
+          <div className="flex flex-col gap-1 mb-2" data-testid="tool-calls-info">
+            {message.toolCalls.map((tc, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs"
+                style={{ background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.45)' }}
+              >
+                <span className={`inline-block w-1.5 h-1.5 rounded-full ${message.isStreaming && i === message.toolCalls!.length - 1 ? 'animate-pulse bg-blue-400' : 'bg-green-400'}`} />
+                <span>{tc.label}</span>
+              </div>
+            ))}
           </div>
         )}
         <div className={message.isStreaming ? 'streaming-cursor' : ''}>
