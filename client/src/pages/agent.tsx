@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
 import { useAuth } from "@/lib/auth";
-import { setStreamState, clearStreamState, getStreamState } from "@/stores/chatStreamStore";
+import { setStreamState, clearStreamState, getStreamState, takeoverStream, isBackgroundStreamActive } from "@/stores/chatStreamStore";
 
 interface ActionPayload {
   actionType: string;
@@ -913,8 +913,115 @@ export default function Agent() {
   const [showChat, setShowChat] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isStreamingRef = useRef(false);
+  const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
+  const streamFullTextRef = useRef('');
+  const streamThinkingTextRef = useRef('');
+  const streamThinkingDurationRef = useRef(0);
+  const streamAssistantMsgIdRef = useRef('');
+  const streamDecoderRef = useRef<TextDecoder | null>(null);
 
   const streamConvIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (isStreamingRef.current && streamConvIdRef.current) {
+        if (readerRef.current && streamDecoderRef.current) {
+          takeoverStream(
+            streamConvIdRef.current,
+            readerRef.current,
+            streamDecoderRef.current,
+            streamFullTextRef.current,
+            streamThinkingTextRef.current,
+            streamThinkingDurationRef.current,
+            streamAssistantMsgIdRef.current,
+          );
+          readerRef.current = null;
+          streamDecoderRef.current = null;
+          abortControllerRef.current = null;
+        } else if (streamFullTextRef.current && streamConvIdRef.current) {
+          const convId = streamConvIdRef.current;
+          const content = streamFullTextRef.current;
+          const thinking = streamThinkingTextRef.current;
+          const thinkingDur = streamThinkingDurationRef.current;
+          const token = localStorage.getItem('buddy_token');
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+          const metadata: Record<string, any> = {};
+          if (thinking) metadata.thinking = thinking;
+          if (thinkingDur) metadata.thinkingDuration = thinkingDur;
+          fetch(`/api/conversations/${convId}/messages`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              role: 'assistant',
+              content,
+              type: 'text',
+              metadata: Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null,
+            }),
+          }).catch(() => {});
+        }
+        isStreamingRef.current = false;
+      }
+    };
+  }, []);
+
+  const loadConversationMessages = useCallback(async (convIdToLoad: number) => {
+    setMessagesLoading(true);
+    try {
+      const convRes = await fetch(`/api/conversations/${convIdToLoad}`);
+      const convJson = await convRes.json();
+      if (convJson.data?.systemPrompt) {
+        setActiveConvSystemPrompt(convJson.data.systemPrompt);
+      } else {
+        setActiveConvSystemPrompt(undefined);
+      }
+      if (convJson.data?.title) {
+        setConvTitle(convJson.data.title);
+      }
+
+      const res = await fetch(`/api/conversations/${convIdToLoad}/messages`);
+      const json = await res.json();
+      const dbMessages: any[] = json.data || [];
+
+      const converted: Message[] = dbMessages.map(m => {
+        const base: Message = {
+          id: `db-${m.id}`,
+          role: m.role as any,
+          content: m.content,
+          type: (m.type || 'text') as any,
+          timestamp: m.createdAt ? new Date(m.createdAt).getTime() : undefined,
+        };
+        if (m.metadata) {
+          try {
+            const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata;
+            if (meta.action) base.action = meta.action;
+            if (meta.actions) base.actions = meta.actions;
+            if (meta.followUp) base.followUp = meta.followUp;
+            if (meta.confirmed !== undefined) base.confirmed = meta.confirmed;
+            if (meta.actionConfirmed) base.actionConfirmed = meta.actionConfirmed;
+            if (meta.actionSkipped) base.actionSkipped = meta.actionSkipped;
+            if (meta.followUpSubmitted) base.followUpSubmitted = meta.followUpSubmitted;
+            if (meta.skipped) base.skipped = meta.skipped;
+            if (meta.thinking) base.thinking = meta.thinking;
+            if (meta.thinkingDuration) base.thinkingDuration = meta.thinkingDuration;
+            if (meta.searchResults) base.searchResults = meta.searchResults;
+            if (meta.tokenUsage) base.tokenUsage = meta.tokenUsage;
+          } catch {}
+        }
+        return base;
+      });
+
+      setMessages(converted);
+
+      conversationHistory.current = converted
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => ({ role: m.role, content: m.content }));
+    } catch (err) {
+      console.error('Failed to load messages:', err);
+    } finally {
+      setMessagesLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!activeConvId) {
@@ -933,59 +1040,18 @@ export default function Agent() {
       isStreamingRef.current = false;
     }
 
-    setMessagesLoading(true);
-    (async () => {
-      try {
-        const convRes = await fetch(`/api/conversations/${activeConvId}`);
-        const convJson = await convRes.json();
-        if (convJson.data?.systemPrompt) {
-          setActiveConvSystemPrompt(convJson.data.systemPrompt);
-        } else {
-          setActiveConvSystemPrompt(undefined);
+    if (isBackgroundStreamActive(activeConvId)) {
+      setMessagesLoading(true);
+      const waitForBg = setInterval(() => {
+        if (!isBackgroundStreamActive(activeConvId)) {
+          clearInterval(waitForBg);
+          loadConversationMessages(activeConvId);
         }
-        if (convJson.data?.title) {
-          setConvTitle(convJson.data.title);
-        }
+      }, 500);
+      return () => clearInterval(waitForBg);
+    }
 
-        const res = await fetch(`/api/conversations/${activeConvId}/messages`);
-        const json = await res.json();
-        const dbMessages: any[] = json.data || [];
-
-        const converted: Message[] = dbMessages.map(m => {
-          const base: Message = {
-            id: `db-${m.id}`,
-            role: m.role as any,
-            content: m.content,
-            type: (m.type || 'text') as any,
-            timestamp: m.createdAt ? new Date(m.createdAt).getTime() : undefined,
-          };
-          if (m.metadata) {
-            try {
-              const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata;
-              if (meta.action) base.action = meta.action;
-              if (meta.actions) base.actions = meta.actions;
-              if (meta.followUp) base.followUp = meta.followUp;
-              if (meta.confirmed !== undefined) base.confirmed = meta.confirmed;
-              if (meta.actionConfirmed) base.actionConfirmed = meta.actionConfirmed;
-              if (meta.actionSkipped) base.actionSkipped = meta.actionSkipped;
-              if (meta.followUpSubmitted) base.followUpSubmitted = meta.followUpSubmitted;
-              if (meta.skipped) base.skipped = meta.skipped;
-            } catch {}
-          }
-          return base;
-        });
-
-        setMessages(converted);
-
-        conversationHistory.current = converted
-          .filter(m => m.role === 'user' || m.role === 'assistant')
-          .map(m => ({ role: m.role, content: m.content }));
-      } catch (err) {
-        console.error('Failed to load messages:', err);
-      } finally {
-        setMessagesLoading(false);
-      }
-    })();
+    loadConversationMessages(activeConvId);
   }, [activeConvId]);
 
   const isNearBottom = useCallback(() => {
@@ -1021,6 +1087,10 @@ export default function Agent() {
       if (msg.actionSkipped) metadata.actionSkipped = msg.actionSkipped;
       if (msg.followUpSubmitted) metadata.followUpSubmitted = msg.followUpSubmitted;
       if (msg.skipped) metadata.skipped = msg.skipped;
+      if (msg.thinking) metadata.thinking = msg.thinking;
+      if (msg.thinkingDuration) metadata.thinkingDuration = msg.thinkingDuration;
+      if (msg.searchResults) metadata.searchResults = msg.searchResults;
+      if (msg.tokenUsage) metadata.tokenUsage = msg.tokenUsage;
 
       await apiRequest("POST", `/api/conversations/${conversationId}/messages`, {
         role: msg.role,
@@ -1119,8 +1189,11 @@ export default function Agent() {
 
         const reader = res.body?.getReader();
         if (!reader) throw new Error('No response body');
+        readerRef.current = reader;
+        streamAssistantMsgIdRef.current = assistantMsgId;
 
         const decoder = new TextDecoder();
+        streamDecoderRef.current = decoder;
         let buffer = '';
         let fullText = '';
         let thinkingText = '';
@@ -1199,6 +1272,7 @@ export default function Agent() {
               } else if (event.type === 'thinking' && event.content) {
                 if (!thinkingStartTime) thinkingStartTime = Date.now();
                 thinkingText += event.content;
+                streamThinkingTextRef.current = thinkingText;
                 if (isActiveStream()) {
                   setMessages((prev) =>
                     prev.map((m) =>
@@ -1210,6 +1284,7 @@ export default function Agent() {
                 }
               } else if (event.type === 'token' && event.content) {
                 fullText += event.content;
+                streamFullTextRef.current = fullText;
                 tokenBuffer += event.content;
                 if (!tokenFlushTimer) {
                   tokenFlushTimer = setTimeout(() => {
@@ -1387,6 +1462,12 @@ export default function Agent() {
           isStreamingRef.current = false;
           streamConvIdRef.current = null;
         }
+        readerRef.current = null;
+        streamDecoderRef.current = null;
+        streamFullTextRef.current = '';
+        streamThinkingTextRef.current = '';
+        streamThinkingDurationRef.current = 0;
+        streamAssistantMsgIdRef.current = '';
         abortControllerRef.current = null;
         if (convId) clearStreamState(convId);
       }
