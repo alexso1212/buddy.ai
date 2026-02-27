@@ -89,6 +89,34 @@ export default function Settings() {
   });
   const tokenStats = tokenStatsData?.data;
 
+  const { data: balanceData } = useQuery<{ data: any }>({
+    queryKey: ['/api/token-usage/balance'],
+  });
+  const balance = balanceData?.data;
+
+  const [budgetInput, setBudgetInput] = useState('');
+  const [budgetSaving, setBudgetSaving] = useState(false);
+
+  useEffect(() => {
+    if (balance?.budgetUsd !== undefined && balance?.budgetUsd !== null) {
+      setBudgetInput(String(balance.budgetUsd));
+    }
+  }, [balance?.budgetUsd]);
+
+  const handleSaveBudget = async () => {
+    setBudgetSaving(true);
+    try {
+      const value = budgetInput.trim() === '' ? null : parseFloat(budgetInput);
+      await apiRequest('PATCH', '/api/organization/budget', { tokenBudgetUsd: value });
+      queryClient.invalidateQueries({ queryKey: ['/api/token-usage/balance'] });
+      toast({ title: '额度已更新' });
+    } catch (e: any) {
+      toast({ title: '更新失败', description: e.message, variant: 'destructive' });
+    } finally {
+      setBudgetSaving(false);
+    }
+  };
+
   const [inviteRole, setInviteRole] = useState('member');
   const [inviteCreating, setInviteCreating] = useState(false);
 
@@ -311,6 +339,67 @@ export default function Settings() {
           )}
         </CardContent>
       </Card>
+
+      {(authUser?.role === 'owner' || authUser?.role === 'admin') && (
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2">
+            <BarChart3 className="w-5 h-5 text-muted-foreground" />
+            <CardTitle>月度额度</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {balance && balance.budgetUsd !== null ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">本月已用</span>
+                  <span className="font-medium" data-testid="text-budget-used">
+                    ${balance.usedUsd.toFixed(4)} / ${balance.budgetUsd.toFixed(2)}
+                  </span>
+                </div>
+                <div className="w-full h-2.5 rounded-full bg-muted overflow-hidden" data-testid="budget-progress-bar">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${Math.min(100, balance.percentUsed || 0)}%`,
+                      background: (balance.percentUsed || 0) > 80
+                        ? ((balance.percentUsed || 0) > 95 ? '#ef4444' : '#f59e0b')
+                        : 'var(--brand)',
+                    }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>剩余 ${balance.remainingUsd?.toFixed(4)}</span>
+                  <span>{(balance.percentUsed || 0).toFixed(1)}% 已用</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">未设置月度额度</p>
+            )}
+            <div className="pt-2 border-t border-border/50 space-y-2">
+              <label className="text-sm text-muted-foreground block">月度预算 (USD)</label>
+              <div className="flex items-center gap-2">
+                <input
+                  data-testid="input-budget"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={budgetInput}
+                  onChange={e => setBudgetInput(e.target.value)}
+                  placeholder="例如 10.00"
+                  className="flex-1 px-3 py-2 text-sm rounded-md border border-border bg-background"
+                />
+                <Button
+                  size="sm"
+                  onClick={handleSaveBudget}
+                  disabled={budgetSaving}
+                  data-testid="btn-save-budget"
+                >
+                  {budgetSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : '保存'}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {(authUser?.role === 'owner' || authUser?.role === 'admin') && (
         <Card>

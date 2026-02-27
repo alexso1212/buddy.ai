@@ -1,11 +1,12 @@
 import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { Check, Copy, Share2, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink, FileText, RefreshCw } from "lucide-react";
+import { Check, Copy, Share2, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink, FileText, RefreshCw, PanelRightOpen } from "lucide-react";
 import AiConfirmCard from "./AiConfirmCard";
 import AiGuidedCreation from "./AiGuidedCreation";
 import AIMessageContent from "./AIMessageContent";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingBlock from "./ThinkingBlock";
+import ArtifactPanel, { isLongContent, extractArtifactTitle } from "./ArtifactPanel";
 
 interface ActionPayload {
   actionType: string;
@@ -359,6 +360,7 @@ export default function AiMessageBubble({
 }: AiMessageBubbleProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.content);
+  const [artifactOpen, setArtifactOpen] = useState(false);
   if (message.role === "system") {
     const isSuccess = message.content.includes("成功") || message.content.includes("已");
     const isError = !!message.retryPayload;
@@ -607,6 +609,8 @@ export default function AiMessageBubble({
     );
   }
 
+  const showArtifactButton = !message.isStreaming && isLongContent(message.content);
+
   return (
     <div
       className="group flex justify-start px-3 mb-6"
@@ -633,6 +637,21 @@ export default function AiMessageBubble({
         <div className={message.isStreaming ? 'streaming-cursor' : ''}>
           <AIMessageContent content={message.content} />
         </div>
+        {showArtifactButton && (
+          <button
+            onClick={() => setArtifactOpen(true)}
+            className="flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              color: 'var(--text-secondary)',
+              border: '1px solid rgba(255,255,255,0.08)',
+            }}
+            data-testid={`btn-open-artifact-${message.id}`}
+          >
+            <PanelRightOpen className="w-3.5 h-3.5" strokeWidth={1.5} />
+            Open in panel
+          </button>
+        )}
         {!message.isStreaming && (
           <div className="flex items-center opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150">
             <AiReplyActions
@@ -644,6 +663,14 @@ export default function AiMessageBubble({
           </div>
         )}
       </div>
+      {artifactOpen && (
+        <ArtifactPanel
+          content={message.content}
+          title={extractArtifactTitle(message.content)}
+          isOpen={artifactOpen}
+          onClose={() => setArtifactOpen(false)}
+        />
+      )}
     </div>
   );
 }

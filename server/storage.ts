@@ -546,6 +546,34 @@ export class DatabaseStorage {
     await db.delete(chatMessages).where(eq(chatMessages.conversationId, conversationId));
   }
 
+  async deleteChatMessagesAfter(conversationId: number, afterMessageId: number): Promise<number> {
+    const result = await db.delete(chatMessages)
+      .where(and(
+        eq(chatMessages.conversationId, conversationId),
+        sql`${chatMessages.id} > ${afterMessageId}`
+      ))
+      .returning();
+    return result.length;
+  }
+
+  async truncateChatMessages(conversationId: number, keepCount: number): Promise<number> {
+    const allMessages = await db.select({ id: chatMessages.id })
+      .from(chatMessages)
+      .where(eq(chatMessages.conversationId, conversationId))
+      .orderBy(chatMessages.createdAt);
+
+    if (allMessages.length <= keepCount) return 0;
+
+    const idsToDelete = allMessages.slice(keepCount).map(m => m.id);
+    const result = await db.delete(chatMessages)
+      .where(and(
+        eq(chatMessages.conversationId, conversationId),
+        inArray(chatMessages.id, idsToDelete)
+      ))
+      .returning();
+    return result.length;
+  }
+
   // ==================== Token Usage ====================
   async createTokenUsage(data: InsertTokenUsage): Promise<TokenUsage> {
     const [result] = await db.insert(tokenUsage).values(data).returning();
@@ -737,7 +765,7 @@ export class DatabaseStorage {
     return result;
   }
 
-  async updateOrganization(id: number, data: Partial<{ name: string; type: string; description: string | null }>): Promise<Organization | undefined> {
+  async updateOrganization(id: number, data: Partial<{ name: string; type: string; description: string | null; tokenBudgetUsd: string | null; budgetResetDay: number }>): Promise<Organization | undefined> {
     const [result] = await db.update(organizations).set({ ...data, updatedAt: new Date() }).where(eq(organizations.id, id)).returning();
     return result;
   }

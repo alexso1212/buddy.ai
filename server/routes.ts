@@ -2040,6 +2040,34 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
+  app.delete("/api/conversations/:id/messages/after/:messageId", authMiddleware, async (req: any, res) => {
+    try {
+      const conversationId = parseInt(req.params.id);
+      const afterMessageId = parseInt(req.params.messageId);
+      if (isNaN(conversationId) || isNaN(afterMessageId)) {
+        return res.status(400).json({ error: 'Invalid parameters' });
+      }
+      const deletedCount = await storage.deleteChatMessagesAfter(conversationId, afterMessageId);
+      return res.json({ data: { deletedCount } });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/conversations/:id/messages/truncate", authMiddleware, async (req: any, res) => {
+    try {
+      const conversationId = parseInt(req.params.id);
+      const { keepCount } = req.body;
+      if (isNaN(conversationId) || typeof keepCount !== 'number' || keepCount < 0) {
+        return res.status(400).json({ error: 'Invalid parameters' });
+      }
+      const deletedCount = await storage.truncateChatMessages(conversationId, keepCount);
+      return res.json({ data: { deletedCount } });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
   // ===================== AI Guided Options =====================
   app.get("/api/ai/guided-options", async (req, res) => {
     try {
@@ -2569,6 +2597,62 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
       return res.json({ data: batchResult });
     } catch (e: any) {
       console.error('AI Confirm Batch error:', e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== Token Budget Balance =====================
+  app.get("/api/token-usage/balance", authMiddleware, async (req: any, res) => {
+    try {
+      const orgId = req.orgId;
+      const org = await storage.getOrganizationById(orgId);
+      if (!org) return res.status(404).json({ error: 'Organization not found' });
+
+      const budget = org.tokenBudgetUsd ? parseFloat(org.tokenBudgetUsd) : null;
+      const resetDay = org.budgetResetDay || 1;
+
+      const now = new Date();
+      let cycleStart: Date;
+      if (now.getDate() >= resetDay) {
+        cycleStart = new Date(now.getFullYear(), now.getMonth(), resetDay);
+      } else {
+        cycleStart = new Date(now.getFullYear(), now.getMonth() - 1, resetDay);
+      }
+
+      const stats = await storage.getTokenUsageStats(orgId, cycleStart);
+      const used = parseFloat(stats.totalCostUsd);
+
+      return res.json({
+        data: {
+          budgetUsd: budget,
+          usedUsd: used,
+          remainingUsd: budget !== null ? Math.max(0, budget - used) : null,
+          percentUsed: budget !== null && budget > 0 ? Math.min(100, (used / budget) * 100) : null,
+          cycleStart: cycleStart.toISOString(),
+          resetDay,
+        }
+      });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/organization/budget", authMiddleware, async (req: any, res) => {
+    try {
+      const orgId = req.orgId;
+      const currentUserId = req.currentUserId;
+      const userOrg = await storage.getOrgMembershipByUserAndOrg(currentUserId, orgId);
+      if (!userOrg || (userOrg.role !== 'owner' && userOrg.role !== 'admin')) {
+        return res.status(403).json({ error: 'Only owner/admin can update budget' });
+      }
+      const { tokenBudgetUsd, budgetResetDay } = req.body;
+      const updates: Record<string, any> = {};
+      if (tokenBudgetUsd !== undefined) updates.tokenBudgetUsd = String(tokenBudgetUsd);
+      if (budgetResetDay !== undefined) updates.budgetResetDay = budgetResetDay;
+      if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No fields to update' });
+      await storage.updateOrganization(orgId, updates);
+      return res.json({ data: { success: true } });
+    } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }
   });

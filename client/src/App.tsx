@@ -23,6 +23,7 @@ import GraphView from "@/pages/graph-view";
 import Artifacts from "@/pages/artifacts";
 import ChatsPage from "@/pages/chats";
 import SettingsPage from "@/components/SettingsPage";
+import { useStreamingConvIds } from "@/stores/chatStreamStore";
 import {
   LayoutDashboard,
   FolderKanban,
@@ -406,7 +407,8 @@ function Sidebar({
     return () => touchHL.bindScroll(null);
   }, []);
 
-  // Fetch conversations from API
+  const streamingConvIds = useStreamingConvIds();
+
   const { data: conversationsData } = useQuery<{ data: any[] }>({
     queryKey: ['/api/conversations'],
   });
@@ -521,8 +523,14 @@ function Sidebar({
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap' as const,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
           }}>
-            {convo.title}
+            {streamingConvIds.includes(convo.id) && (
+              <span className="inline-block w-2 h-2 rounded-full animate-pulse flex-shrink-0" style={{ background: '#D4A574' }} data-testid={`streaming-indicator-${convo.id}`} />
+            )}
+            <span className="overflow-hidden text-ellipsis">{convo.title}</span>
           </div>
           {convo.projectName && (
             <div style={{

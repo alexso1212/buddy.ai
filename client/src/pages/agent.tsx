@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
 import { useAuth } from "@/lib/auth";
+import { setStreamState, clearStreamState, getStreamState } from "@/stores/chatStreamStore";
 
 interface ActionPayload {
   actionType: string;
@@ -833,6 +834,12 @@ export default function Agent() {
     staleTime: 60000,
   });
 
+  const { data: balanceData } = useQuery<{ data: any }>({
+    queryKey: ['/api/token-usage/balance'],
+    staleTime: 300000,
+  });
+  const balance = balanceData?.data;
+
   const smartSuggestions = useMemo(() => {
     const tasks = tasksData?.data || [];
     const myTasks = tasks.filter((t: any) => t.assigneeId === currentUserId);
@@ -880,6 +887,19 @@ export default function Agent() {
     return suggestions.slice(0, 4);
   }, [tasksData, currentUserId]);
 
+  const lowBalanceWarned = useRef(false);
+  const { toast } = useToast();
+  useEffect(() => {
+    if (balance && balance.budgetUsd !== null && balance.percentUsed > 80 && !lowBalanceWarned.current) {
+      lowBalanceWarned.current = true;
+      toast({
+        title: '额度即将用尽',
+        description: `本月已使用 ${balance.percentUsed.toFixed(0)}%（$${balance.usedUsd.toFixed(2)} / $${balance.budgetUsd.toFixed(2)}）`,
+        variant: 'destructive',
+      });
+    }
+  }, [balance]);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -894,6 +914,8 @@ export default function Agent() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const isStreamingRef = useRef(false);
 
+  const streamConvIdRef = useRef<number | null>(null);
+
   useEffect(() => {
     if (!activeConvId) {
       setShowChat(false);
@@ -904,7 +926,12 @@ export default function Agent() {
       return;
     }
 
-    if (isStreamingRef.current) return;
+    if (isStreamingRef.current && streamConvIdRef.current === activeConvId) return;
+
+    if (isStreamingRef.current && streamConvIdRef.current && streamConvIdRef.current !== activeConvId) {
+      setStreamState(streamConvIdRef.current, { isStreaming: true });
+      isStreamingRef.current = false;
+    }
 
     setMessagesLoading(true);
     (async () => {
@@ -1039,6 +1066,7 @@ export default function Agent() {
       setMessages((prev) => [...prev, userMsg]);
       setLoading(true);
       isStreamingRef.current = true;
+      streamConvIdRef.current = convId;
 
       conversationHistory.current.push({ role: "user", content: text });
 
@@ -1156,6 +1184,7 @@ export default function Agent() {
               } else if (event.type === 'start' && event.conversationId) {
                 if (!convId) {
                   convId = event.conversationId;
+                  streamConvIdRef.current = convId;
                   setConvTitle(text.slice(0, 30) + (text.length > 30 ? '...' : ''));
                   navigate(`/agent?conv=${convId}`, { replace: true });
                   queryClient.invalidateQueries({ queryKey: ['/api/conversations'] });
@@ -1339,7 +1368,9 @@ export default function Agent() {
       } finally {
         setLoading(false);
         isStreamingRef.current = false;
+        streamConvIdRef.current = null;
         abortControllerRef.current = null;
+        if (convId) clearStreamState(convId);
       }
     },
     [activeConvId, activeConvSystemPrompt, saveMessageToDB, navigate, currentUserId, replyStyle, webSearchEnabled]
@@ -1380,7 +1411,7 @@ export default function Agent() {
   );
 
   const handleEditMessage = useCallback(
-    (messageId: string, newContent: string) => {
+    async (messageId: string, newContent: string) => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
@@ -1393,9 +1424,19 @@ export default function Agent() {
       setMessages(truncated);
       rebuildHistoryFromMessages(truncated);
 
+      if (activeConvId) {
+        try {
+          await apiRequest("POST", `/api/conversations/${activeConvId}/messages/truncate`, {
+            keepCount: truncated.filter(m => m.role === 'user' || m.role === 'assistant' || m.role === 'system').length,
+          });
+        } catch (err) {
+          console.error('Failed to truncate DB messages:', err);
+        }
+      }
+
       setTimeout(() => handleSend(newContent), 0);
     },
-    [messages, handleSend, rebuildHistoryFromMessages]
+    [messages, handleSend, rebuildHistoryFromMessages, activeConvId]
   );
 
   const handleRetry = useCallback(
