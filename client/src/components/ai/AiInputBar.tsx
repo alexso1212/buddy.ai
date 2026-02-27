@@ -18,6 +18,8 @@ interface AiInputBarProps {
   onWebSearchToggle?: (enabled: boolean) => void;
   codeContextEnabled?: boolean;
   onCodeContextToggle?: (enabled: boolean) => void;
+  researchEnabled?: boolean;
+  onResearchToggle?: (enabled: boolean) => void;
   replyStyle?: string;
   onReplyStyleChange?: (style: string) => void;
 }
@@ -100,6 +102,8 @@ function AddToChatSheet({
   onWebSearchToggle,
   codeContextEnabled,
   onCodeContextToggle,
+  researchEnabled,
+  onResearchToggle,
   replyStyle,
   onReplyStyleChange,
   onAttach,
@@ -110,12 +114,13 @@ function AddToChatSheet({
   onWebSearchToggle: (enabled: boolean) => void;
   codeContextEnabled: boolean;
   onCodeContextToggle: (enabled: boolean) => void;
+  researchEnabled: boolean;
+  onResearchToggle: (enabled: boolean) => void;
   replyStyle: string;
   onReplyStyleChange: (style: string) => void;
   onAttach: (attachments: Attachment[]) => void;
 }) {
   const [showStylePicker, setShowStylePicker] = useState(false);
-  const [researchEnabled, setResearchEnabled] = useState(false);
   const sheetScrollRef = useRef<HTMLDivElement>(null);
   useSheetBounce(sheetScrollRef);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -301,7 +306,7 @@ function AddToChatSheet({
               <div className="px-5 space-y-1">
                 <div
                   className="flex items-center justify-between px-4 py-3.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
-                  onClick={() => setResearchEnabled(!researchEnabled)}
+                  onClick={() => onResearchToggle(!researchEnabled)}
                   data-testid="toggle-research"
                 >
                   <div className="flex items-center gap-3">
@@ -422,7 +427,7 @@ function AddToChatSheet({
   );
 }
 
-export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled = false, onWebSearchToggle, codeContextEnabled = false, onCodeContextToggle, replyStyle = 'normal', onReplyStyleChange }: AiInputBarProps) {
+export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled = false, onWebSearchToggle, codeContextEnabled = false, onCodeContextToggle, researchEnabled = false, onResearchToggle, replyStyle = 'normal', onReplyStyleChange }: AiInputBarProps) {
   const [value, setValue] = useState("");
   const [showSheet, setShowSheet] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -794,6 +799,16 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
                   代码
                 </div>
               )}
+              {researchEnabled && (
+                <div
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-xs"
+                  style={{ background: 'rgba(139,92,246,0.15)', color: '#A78BFA' }}
+                  data-testid="research-badge"
+                >
+                  <Atom className="w-3 h-3" />
+                  深度
+                </div>
+              )}
             </div>
 
             {loading ? (
@@ -856,6 +871,10 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
         codeContextEnabled={codeContextEnabled}
         onCodeContextToggle={(enabled) => {
           onCodeContextToggle?.(enabled);
+        }}
+        researchEnabled={researchEnabled}
+        onResearchToggle={(enabled) => {
+          onResearchToggle?.(enabled);
         }}
         replyStyle={replyStyle}
         onReplyStyleChange={(style) => {

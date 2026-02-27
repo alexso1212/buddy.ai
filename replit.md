@@ -10,7 +10,7 @@ I prefer iterative development with clear, concise explanations at each step. I 
 The application is built with an Express.js backend, a React (TypeScript) frontend utilizing Vite, and PostgreSQL with Drizzle ORM for data persistence. Tailwind CSS and shadcn/ui components are used for styling and UI elements, while `wouter` handles frontend routing.
 
 **Core Data Model:**
-A 15-table PostgreSQL database schema manages entities like `organizations`, `departments`, `users`, `projects`, `tasks`, `activity_logs`, `notifications`, `conversations`, `chat_messages`, `token_usage`, and `user_memories`. All tables use serial integer IDs.
+A 16-table PostgreSQL database schema manages entities like `organizations`, `departments`, `users`, `projects`, `tasks`, `activity_logs`, `notifications`, `conversations`, `chat_messages`, `token_usage`, `user_memories`, `org_memberships`, `invitations`, and `organization_join_requests`. All tables use serial integer IDs. The `organizations` table includes `inviteCode`, `maxMembers`, and `isPublic` fields. The `users` table includes `onboardingCompleted`. The `invitations` table supports multiple types (`code`/`email`/`link`) with `status`, `acceptedAt`, `acceptedBy` tracking.
 
 **Backend (API):**
 - **RESTful API:** Provides full CRUD operations with unified `{data}/{error}` response formats, Zod validation, and automatic activity logging.

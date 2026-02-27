@@ -13,6 +13,9 @@ export const organizations = pgTable('organizations', {
   type: varchar('type', { length: 50 }).notNull().default('project'),
   tokenBudgetUsd: numeric('token_budget_usd', { precision: 10, scale: 4 }),
   budgetResetDay: integer('budget_reset_day').default(1),
+  inviteCode: text('invite_code').unique(),
+  maxMembers: integer('max_members').default(50),
+  isPublic: boolean('is_public').default(false),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -64,6 +67,7 @@ export const users = pgTable('users', {
   lastLoginAt: timestamp('last_login_at'),
   authProvider: varchar('auth_provider', { length: 50 }),
   authProviderId: varchar('auth_provider_id', { length: 255 }),
+  onboardingCompleted: boolean('onboarding_completed').default(false),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -89,13 +93,34 @@ export const invitations = pgTable('invitations', {
   id: serial('id').primaryKey(),
   orgId: integer('org_id').references(() => organizations.id).notNull(),
   inviteCode: varchar('invite_code', { length: 50 }).notNull().unique(),
+  type: text('type').default('code'),
+  email: text('email'),
   role: varchar('role', { length: 50 }).notNull().default('member'),
   createdBy: integer('created_by').references(() => users.id).notNull(),
   expiresAt: timestamp('expires_at'),
   maxUses: integer('max_uses'),
   usedCount: integer('used_count').notNull().default(0),
   isActive: boolean('is_active').default(true).notNull(),
+  status: text('status').default('pending'),
+  acceptedAt: timestamp('accepted_at'),
+  acceptedBy: integer('accepted_by').references(() => users.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// ============================================================
+// organizationJoinRequests（组织加入申请）
+// ============================================================
+export const organizationJoinRequests = pgTable('organization_join_requests', {
+  id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').notNull().references(() => organizations.id),
+  userId: integer('user_id').notNull().references(() => users.id),
+  message: text('message'),
+  inviteCode: text('invite_code'),
+  status: text('status').default('pending'),
+  reviewedBy: integer('reviewed_by').references(() => users.id),
+  reviewedAt: timestamp('reviewed_at'),
+  reviewNote: text('review_note'),
+  createdAt: timestamp('created_at').defaultNow(),
 });
 
 // ============================================================
@@ -558,6 +583,29 @@ export const invitationsRelations = relations(invitations, ({ one }) => ({
   creator: one(users, {
     fields: [invitations.createdBy],
     references: [users.id],
+    relationName: 'invitationCreator',
+  }),
+  acceptedByUser: one(users, {
+    fields: [invitations.acceptedBy],
+    references: [users.id],
+    relationName: 'invitationAcceptor',
+  }),
+}));
+
+export const organizationJoinRequestsRelations = relations(organizationJoinRequests, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [organizationJoinRequests.organizationId],
+    references: [organizations.id],
+  }),
+  user: one(users, {
+    fields: [organizationJoinRequests.userId],
+    references: [users.id],
+    relationName: 'joinRequestUser',
+  }),
+  reviewer: one(users, {
+    fields: [organizationJoinRequests.reviewedBy],
+    references: [users.id],
+    relationName: 'joinRequestReviewer',
   }),
 }));
 
@@ -702,5 +750,12 @@ export const insertInvitationSchema = createInsertSchema(invitations).omit({
 });
 export type InsertInvitation = z.infer<typeof insertInvitationSchema>;
 export type Invitation = typeof invitations.$inferSelect;
+
+export const insertOrganizationJoinRequestSchema = createInsertSchema(organizationJoinRequests).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertOrganizationJoinRequest = z.infer<typeof insertOrganizationJoinRequestSchema>;
+export type OrganizationJoinRequest = typeof organizationJoinRequests.$inferSelect;
 
 export * from "./models/auth";

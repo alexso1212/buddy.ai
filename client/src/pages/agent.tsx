@@ -722,7 +722,7 @@ function ConversationListView({
   );
 }
 
-function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearchToggle, codeContextEnabled, onCodeContextToggle, replyStyle, onReplyStyleChange }: { onSend: (msg: string, attachments?: Attachment[]) => void; loading: boolean; onStop?: () => void; webSearchEnabled?: boolean; onWebSearchToggle?: (enabled: boolean) => void; codeContextEnabled?: boolean; onCodeContextToggle?: (enabled: boolean) => void; replyStyle?: string; onReplyStyleChange?: (style: string) => void }) {
+function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearchToggle, codeContextEnabled, onCodeContextToggle, researchEnabled, onResearchToggle, replyStyle, onReplyStyleChange }: { onSend: (msg: string, attachments?: Attachment[]) => void; loading: boolean; onStop?: () => void; webSearchEnabled?: boolean; onWebSearchToggle?: (enabled: boolean) => void; codeContextEnabled?: boolean; onCodeContextToggle?: (enabled: boolean) => void; researchEnabled?: boolean; onResearchToggle?: (enabled: boolean) => void; replyStyle?: string; onReplyStyleChange?: (style: string) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const bgRef = useRef<HTMLDivElement>(null);
@@ -812,6 +812,8 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
               onWebSearchToggle={onWebSearchToggle}
               codeContextEnabled={codeContextEnabled}
               onCodeContextToggle={onCodeContextToggle}
+              researchEnabled={researchEnabled}
+              onResearchToggle={onResearchToggle}
               replyStyle={replyStyle}
               onReplyStyleChange={onReplyStyleChange}
             />
@@ -909,6 +911,7 @@ export default function Agent() {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [codeContextEnabled, setCodeContextEnabled] = useState(false);
+  const [researchEnabled, setResearchEnabled] = useState(false);
   const [replyStyle, setReplyStyle] = useState('normal');
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1989,6 +1992,8 @@ export default function Agent() {
         onWebSearchToggle={setWebSearchEnabled}
         codeContextEnabled={codeContextEnabled}
         onCodeContextToggle={setCodeContextEnabled}
+        researchEnabled={researchEnabled}
+        onResearchToggle={setResearchEnabled}
         replyStyle={replyStyle}
         onReplyStyleChange={setReplyStyle}
       />
