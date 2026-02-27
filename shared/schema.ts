@@ -13,7 +13,6 @@ export const organizations = pgTable('organizations', {
   type: varchar('type', { length: 50 }).notNull().default('project'),
   tokenBudgetUsd: numeric('token_budget_usd', { precision: 10, scale: 4 }),
   budgetResetDay: integer('budget_reset_day').default(1),
-  inviteCode: text('invite_code').unique(),
   maxMembers: integer('max_members').default(50),
   isPublic: boolean('is_public').default(false),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -112,15 +111,15 @@ export const invitations = pgTable('invitations', {
 // ============================================================
 export const organizationJoinRequests = pgTable('organization_join_requests', {
   id: serial('id').primaryKey(),
-  organizationId: integer('organization_id').notNull().references(() => organizations.id),
+  orgId: integer('org_id').notNull().references(() => organizations.id),
   userId: integer('user_id').notNull().references(() => users.id),
   message: text('message'),
-  inviteCode: text('invite_code'),
-  status: text('status').default('pending'),
+  inviteCode: varchar('invite_code', { length: 50 }),
+  status: varchar('status', { length: 50 }).default('pending').notNull(),
   reviewedBy: integer('reviewed_by').references(() => users.id),
   reviewedAt: timestamp('reviewed_at'),
   reviewNote: text('review_note'),
-  createdAt: timestamp('created_at').defaultNow(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
 // ============================================================
@@ -594,7 +593,7 @@ export const invitationsRelations = relations(invitations, ({ one }) => ({
 
 export const organizationJoinRequestsRelations = relations(organizationJoinRequests, ({ one }) => ({
   organization: one(organizations, {
-    fields: [organizationJoinRequests.organizationId],
+    fields: [organizationJoinRequests.orgId],
     references: [organizations.id],
   }),
   user: one(users, {
@@ -751,11 +750,8 @@ export const insertInvitationSchema = createInsertSchema(invitations).omit({
 export type InsertInvitation = z.infer<typeof insertInvitationSchema>;
 export type Invitation = typeof invitations.$inferSelect;
 
-export const insertOrganizationJoinRequestSchema = createInsertSchema(organizationJoinRequests).omit({
-  id: true,
-  createdAt: true,
-});
-export type InsertOrganizationJoinRequest = z.infer<typeof insertOrganizationJoinRequestSchema>;
+export const insertOrganizationJoinRequestSchema = createInsertSchema(organizationJoinRequests);
 export type OrganizationJoinRequest = typeof organizationJoinRequests.$inferSelect;
+export type InsertOrganizationJoinRequest = typeof organizationJoinRequests.$inferInsert;
 
 export * from "./models/auth";
