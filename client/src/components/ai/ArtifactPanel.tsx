@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { X, Maximize2, Minimize2, Copy, Check, Download, ChevronDown } from "lucide-react";
 import AIMessageContent from "./AIMessageContent";
 
@@ -89,7 +90,7 @@ export default function ArtifactPanel({ content, title, isOpen, onClose }: Artif
     transition: "all 180ms ease",
   };
 
-  return (
+  return createPortal(
     <>
       <div
         onClick={onClose}
@@ -226,7 +227,8 @@ export default function ArtifactPanel({ content, title, isOpen, onClose }: Artif
           </button>
         )}
       </div>
-    </>
+    </>,
+    document.body
   );
 }
 
