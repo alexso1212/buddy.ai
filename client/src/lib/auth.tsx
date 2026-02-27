@@ -5,10 +5,11 @@ interface AuthUser {
   email: string;
   displayName: string;
   role: string;
-  orgId: number;
+  orgId: number | null;
   avatarUrl: string | null;
   orgName?: string;
   orgType?: string;
+  onboardingCompleted?: boolean;
 }
 
 interface AuthContextType {
@@ -21,6 +22,7 @@ interface AuthContextType {
   logout: () => void;
   updateUser: (updates: Partial<AuthUser>) => void;
   switchOrg: (orgId: number) => Promise<void>;
+  refreshAuth: () => Promise<AuthUser | null>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -33,6 +35,7 @@ const AuthContext = createContext<AuthContextType>({
   logout: () => {},
   updateUser: () => {},
   switchOrg: async () => {},
+  refreshAuth: async () => null,
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -150,6 +153,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const refreshAuth = useCallback(async (): Promise<AuthUser | null> => {
+    const token = localStorage.getItem('buddy_token');
+    if (!token) return null;
+    try {
+      const res = await fetch('/api/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const u = data.user || data;
+      setUser(u);
+      localStorage.setItem('buddy_user', JSON.stringify(u));
+      if (data.token) {
+        localStorage.setItem('buddy_token', data.token);
+      }
+      return u;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const switchOrg = useCallback(async (orgId: number) => {
     const token = localStorage.getItem('buddy_token');
     if (!token) throw new Error('Not authenticated');
@@ -191,6 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         updateUser,
         switchOrg,
+        refreshAuth,
       }}
     >
       {children}

@@ -554,7 +554,9 @@ export async function registerRoutes(server: Server, app: Express) {
         role: 'owner',
       });
 
-      res.json({ data: { organization: org, inviteCode } });
+      const newToken = generateToken({ userId: req.currentUserId, orgId: org.id, role: 'owner' });
+
+      res.json({ data: { organization: org, inviteCode, token: newToken } });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

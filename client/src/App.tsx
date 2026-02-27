@@ -22,6 +22,7 @@ import Settings from "@/pages/settings";
 import GraphView from "@/pages/graph-view";
 import Artifacts from "@/pages/artifacts";
 import ChatsPage from "@/pages/chats";
+import OnboardingPage from "@/pages/OnboardingPage";
 import SettingsPage from "@/components/SettingsPage";
 import { useStreamingConvIds } from "@/stores/chatStreamStore";
 import {
@@ -1443,13 +1444,19 @@ function Sidebar({
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
 
   useEffect(() => {
     if (!loading && !user) {
       navigate('/login');
     }
   }, [loading, user, navigate]);
+
+  useEffect(() => {
+    if (!loading && user && !user.onboardingCompleted && !user.orgId && location !== '/onboarding') {
+      navigate('/onboarding');
+    }
+  }, [loading, user, location, navigate]);
 
   if (loading) {
     return (
@@ -1485,6 +1492,7 @@ function Router() {
       <Route>
         <AuthGuard>
           <Switch>
+            <Route path="/onboarding" component={OnboardingPage} />
             <Route path="/"><Redirect to="/agent" /></Route>
             <Route path="/chats" component={ChatsPage} />
             <Route path="/dashboard" component={Dashboard} />
@@ -1753,6 +1761,7 @@ function App() {
   const isChatsPage = location === '/chats';
   const isGraphPage = location === '/graph' || location.startsWith('/graph?');
   const isLoginPage = location === '/login' || location.startsWith('/login?');
+  const isOnboardingPage = location === '/onboarding';
 
   const getPageTitle = () => {
     if (isChatsPage) return 'Chats';
@@ -2010,10 +2019,10 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <OrgThemeSync />
       <div className="flex bg-[var(--bg-primary)]" style={{ height: '100dvh' }}>
-        {!isLoginPage && <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} sidebarRef={sidebarRef} overlayRef={overlayRef} />}
+        {!isLoginPage && !isOnboardingPage && <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} sidebarRef={sidebarRef} overlayRef={overlayRef} />}
 
         <div ref={contentRef} className="flex-1 flex flex-col overflow-hidden relative md:!transform-none">
-          {!isGraphPage && !isLoginPage && (
+          {!isGraphPage && !isLoginPage && !isOnboardingPage && (
           <>
             <div className="md:hidden" style={{
               position: 'absolute',
@@ -2061,7 +2070,7 @@ function App() {
           )}
 
           <main
-            className={`flex-1 overflow-auto relative ${isLoginPage ? 'ml-0' : 'ml-0 md:ml-[260px]'} ${!isGraphPage && !isLoginPage && !isAgentPage ? 'pt-[60px] md:pt-0' : ''}`}
+            className={`flex-1 overflow-auto relative ${isLoginPage || isOnboardingPage ? 'ml-0' : 'ml-0 md:ml-[260px]'} ${!isGraphPage && !isLoginPage && !isOnboardingPage && !isAgentPage ? 'pt-[60px] md:pt-0' : ''}`}
             data-testid="content-area"
           >
             <Router />
