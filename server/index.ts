@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { orgIsolation } from "./middleware/orgIsolation";
+import { migrateOnboarding } from "./migrations/onboardingMigration";
 
 const app = express();
 const httpServer = createServer(app);
@@ -62,6 +63,12 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  try {
+    await migrateOnboarding();
+  } catch (err) {
+    console.error("Migration: onboarding migration failed:", err);
+  }
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
