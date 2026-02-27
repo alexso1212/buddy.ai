@@ -10,11 +10,12 @@ I prefer iterative development with clear, concise explanations at each step. I 
 The application is built with an Express.js backend, a React (TypeScript) frontend utilizing Vite, and PostgreSQL with Drizzle ORM for data persistence. Tailwind CSS and shadcn/ui components are used for styling and UI elements, while `wouter` handles frontend routing.
 
 **Core Data Model:**
-A 16-table PostgreSQL database schema manages entities like `organizations`, `departments`, `users`, `projects`, `tasks`, `activity_logs`, `notifications`, `conversations`, `chat_messages`, `token_usage`, `user_memories`, `org_memberships`, `invitations`, and `organization_join_requests`. All tables use serial integer IDs. The `organizations` table includes `inviteCode`, `maxMembers`, and `isPublic` fields. The `users` table includes `onboardingCompleted`. The `invitations` table supports multiple types (`code`/`email`/`link`) with `status`, `acceptedAt`, `acceptedBy` tracking.
+A 16-table PostgreSQL database schema manages entities like `organizations`, `departments`, `users`, `projects`, `tasks`, `activity_logs`, `notifications`, `conversations`, `chat_messages`, `token_usage`, `user_memories`, `org_memberships`, `invitations`, and `organization_join_requests`. All tables use serial integer IDs. The `organizations` table includes `maxMembers` and `isPublic` fields. The `users` table includes `onboardingCompleted`. The `invitations` table supports multiple types (`code`/`email`/`link`) with `status`, `acceptedAt`, `acceptedBy` tracking.
 
 **Backend (API):**
 - **RESTful API:** Provides full CRUD operations with unified `{data}/{error}` response formats, Zod validation, and automatic activity logging.
 - **Role-Based Access Control:** Implements differentiated access for 'owner', 'admin', 'head', and 'member' roles.
+- **Organization Management API:** POST /api/organizations (create), GET /api/organizations/search (search by invite code), POST/GET/PUT /api/organizations/:id/join-requests (submit/list/approve), GET/POST /api/organizations/:id/invite-code (get/regenerate). Uses `generateInviteCode()` from `server/utils/inviteCode.ts` for human-readable codes (e.g., `DPE-X4NM`).
 - **AI Integration:** Dedicated API endpoints for AI chat, action confirmation, verdict judgment, and assignment auto-judgment.
 - **JWT Authentication:** Comprehensive user authentication with bcryptjs for password hashing and jsonwebtoken for JWT. Supports multi-provider authentication (email/password, Google/Apple/GitHub via Replit Auth OIDC, Telegram Login Widget).
 - **Multi-Tenant Isolation:** `orgIsolation` middleware manages `orgId` and `currentUserId` context, supporting both JWT and header-based identification.

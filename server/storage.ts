@@ -57,6 +57,9 @@ import {
   type InsertOrgMembership,
   type Invitation,
   type InsertInvitation,
+  organizationJoinRequests,
+  type OrganizationJoinRequest,
+  type InsertOrganizationJoinRequest,
 } from "@shared/schema";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -768,6 +771,85 @@ export class DatabaseStorage {
   async updateOrganization(id: number, data: Partial<{ name: string; type: string; description: string | null; tokenBudgetUsd: string | null; budgetResetDay: number }>): Promise<Organization | undefined> {
     const [result] = await db.update(organizations).set({ ...data, updatedAt: new Date() }).where(eq(organizations.id, id)).returning();
     return result;
+  }
+
+  // ==================== Organization Join Requests ====================
+  async createJoinRequest(data: InsertOrganizationJoinRequest): Promise<OrganizationJoinRequest> {
+    const [result] = await db.insert(organizationJoinRequests).values(data).returning();
+    return result;
+  }
+
+  async getJoinRequestsByOrgId(orgId: number, status?: string): Promise<Array<OrganizationJoinRequest & { user: { id: number; displayName: string; email: string; avatarUrl: string | null } }>> {
+    const conditions = [eq(organizationJoinRequests.orgId, orgId)];
+    if (status) {
+      conditions.push(eq(organizationJoinRequests.status, status));
+    }
+    const results = await db.select({
+      id: organizationJoinRequests.id,
+      orgId: organizationJoinRequests.orgId,
+      userId: organizationJoinRequests.userId,
+      message: organizationJoinRequests.message,
+      inviteCode: organizationJoinRequests.inviteCode,
+      status: organizationJoinRequests.status,
+      reviewedBy: organizationJoinRequests.reviewedBy,
+      reviewedAt: organizationJoinRequests.reviewedAt,
+      reviewNote: organizationJoinRequests.reviewNote,
+      createdAt: organizationJoinRequests.createdAt,
+      user: {
+        id: users.id,
+        displayName: users.displayName,
+        email: users.email,
+        avatarUrl: users.avatarUrl,
+      },
+    })
+    .from(organizationJoinRequests)
+    .innerJoin(users, eq(organizationJoinRequests.userId, users.id))
+    .where(and(...conditions))
+    .orderBy(desc(organizationJoinRequests.createdAt));
+    return results;
+  }
+
+  async getJoinRequestById(id: number): Promise<OrganizationJoinRequest | undefined> {
+    const [result] = await db.select().from(organizationJoinRequests).where(eq(organizationJoinRequests.id, id));
+    return result;
+  }
+
+  async updateJoinRequest(id: number, data: Partial<OrganizationJoinRequest>): Promise<OrganizationJoinRequest | undefined> {
+    const [result] = await db.update(organizationJoinRequests).set(data).where(eq(organizationJoinRequests.id, id)).returning();
+    return result;
+  }
+
+  async getPendingJoinRequestByUserId(userId: number, orgId: number): Promise<OrganizationJoinRequest | undefined> {
+    const [result] = await db.select().from(organizationJoinRequests)
+      .where(and(
+        eq(organizationJoinRequests.userId, userId),
+        eq(organizationJoinRequests.orgId, orgId),
+        eq(organizationJoinRequests.status, 'pending')
+      ));
+    return result;
+  }
+
+  async cancelOtherPendingJoinRequests(userId: number, orgId: number, excludeId: number): Promise<void> {
+    await db.update(organizationJoinRequests)
+      .set({ status: 'cancelled' })
+      .where(and(
+        eq(organizationJoinRequests.userId, userId),
+        eq(organizationJoinRequests.orgId, orgId),
+        eq(organizationJoinRequests.status, 'pending'),
+        sql`${organizationJoinRequests.id} != ${excludeId}`
+      ));
+  }
+
+  async deactivateOrgInvitations(orgId: number): Promise<void> {
+    await db.update(invitations).set({ isActive: false }).where(
+      and(eq(invitations.orgId, orgId), eq(invitations.isActive, true))
+    );
+  }
+
+  async countOrgMembers(orgId: number): Promise<number> {
+    const result = await db.select({ count: sql<number>`count(*)::int` }).from(orgMemberships)
+      .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.isActive, true)));
+    return result[0]?.count ?? 0;
   }
 }
 

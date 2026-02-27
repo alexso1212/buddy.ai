@@ -23,6 +23,7 @@ import {
 } from "@shared/schema";
 import { judgeTaskAssignment } from "./services/ai/verdictService";
 import { searchWeb } from "./services/ai/webSearch";
+import { generateInviteCode } from "./utils/inviteCode";
 
 function getActivityUserId(body: any, fallback: number = 1): number {
   return body?.userId ?? body?.creatorId ?? fallback;
@@ -297,7 +298,15 @@ export async function registerRoutes(server: Server, app: Express) {
         return res.status(404).json({ error: '用户不存在' });
       }
 
-      const org = await storage.getOrganizationById(user.orgId);
+      const org = user.orgId ? await storage.getOrganizationById(user.orgId) : undefined;
+
+      let activeInviteCode: string | undefined;
+      if (user.orgId) {
+        const orgInvitations = await storage.getOrgInvitations(user.orgId);
+        if (orgInvitations.length > 0) {
+          activeInviteCode = orgInvitations[0].inviteCode;
+        }
+      }
 
       const userData = {
         id: user.id,
@@ -306,8 +315,11 @@ export async function registerRoutes(server: Server, app: Express) {
         role: user.role,
         orgId: user.orgId,
         avatarUrl: user.avatarUrl,
+        onboardingCompleted: user.onboardingCompleted ?? false,
         orgName: org?.name,
         orgType: org?.type || 'project',
+        orgDescription: org?.description,
+        activeInviteCode,
       };
 
       const authHeader = req.headers.authorization;
@@ -492,6 +504,278 @@ export async function registerRoutes(server: Server, app: Express) {
 
       const org = await storage.getOrganizationById(invitation.orgId);
       res.json({ data: { orgName: org?.name, orgType: org?.type, role: invitation.role } });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ==================== 3.2 POST /api/organizations — 创建组织 ====================
+  app.post("/api/organizations", authMiddleware, async (req: any, res) => {
+    try {
+      const { name, description } = req.body;
+      if (!name || !name.trim()) {
+        return res.status(400).json({ error: '组织名称不能为空' });
+      }
+
+      const org = await storage.createOrganization({ name: name.trim(), description: description || null });
+
+      let inviteCode = '';
+      for (let i = 0; i < 5; i++) {
+        const code = generateInviteCode(name);
+        const existing = await storage.getInvitationByCode(code);
+        if (!existing) {
+          inviteCode = code;
+          break;
+        }
+      }
+      if (!inviteCode) {
+        inviteCode = generateInviteCode(name) + Math.floor(Math.random() * 100);
+      }
+
+      await storage.createInvitation({
+        orgId: org.id,
+        inviteCode,
+        role: 'member',
+        createdBy: req.currentUserId,
+        isActive: true,
+        maxUses: 0,
+        usedCount: 0,
+      });
+
+      await storage.updateUser(req.currentUserId, {
+        orgId: org.id,
+        role: 'owner',
+        onboardingCompleted: true,
+      } as any);
+
+      await storage.createOrgMembership({
+        userId: req.currentUserId,
+        orgId: org.id,
+        role: 'owner',
+      });
+
+      res.json({ data: { organization: org, inviteCode } });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ==================== 3.3 GET /api/organizations/search — 通过邀请码搜索组织 ====================
+  app.get("/api/organizations/search", authMiddleware, async (req: any, res) => {
+    try {
+      const code = req.query.code as string;
+      if (!code) {
+        return res.status(400).json({ error: '请提供邀请码' });
+      }
+
+      const invitation = await storage.getInvitationByCode(code);
+      if (!invitation || !invitation.isActive) {
+        return res.status(404).json({ error: '未找到该邀请码对应的组织' });
+      }
+
+      const org = await storage.getOrganizationById(invitation.orgId);
+      if (!org) {
+        return res.status(404).json({ error: '未找到该邀请码对应的组织' });
+      }
+
+      const memberCount = await storage.countOrgMembers(org.id);
+
+      res.json({ data: { id: org.id, name: org.name, description: org.description, memberCount } });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ==================== 3.4 POST /api/organizations/:id/join-requests — 提交加入申请 ====================
+  app.post("/api/organizations/:id/join-requests", authMiddleware, async (req: any, res) => {
+    try {
+      const orgId = Number(req.params.id);
+      const { inviteCode: code, message } = req.body;
+
+      if (!code) {
+        return res.status(400).json({ error: '请提供邀请码' });
+      }
+
+      const invitation = await storage.getInvitationByCode(code);
+      if (!invitation || !invitation.isActive || invitation.orgId !== orgId) {
+        return res.status(400).json({ error: '邀请码无效或不属于该组织' });
+      }
+
+      if (invitation.maxUses && invitation.maxUses > 0 && invitation.usedCount >= invitation.maxUses) {
+        return res.status(400).json({ error: '该邀请码已达到使用上限' });
+      }
+
+      const user = await storage.getUserById(req.currentUserId);
+      if (user && user.orgId === orgId) {
+        return res.status(400).json({ error: '你已经是该组织的成员' });
+      }
+
+      const existingRequest = await storage.getPendingJoinRequestByUserId(req.currentUserId, orgId);
+      if (existingRequest) {
+        return res.status(400).json({ error: '你已有待审批的加入申请' });
+      }
+
+      const org = await storage.getOrganizationById(orgId);
+      if (org && org.maxMembers) {
+        const memberCount = await storage.countOrgMembers(orgId);
+        if (memberCount >= org.maxMembers) {
+          return res.status(400).json({ error: '该组织已达到最大成员数' });
+        }
+      }
+
+      const joinRequest = await storage.createJoinRequest({
+        orgId,
+        userId: req.currentUserId,
+        message: message || null,
+        inviteCode: code,
+        status: 'pending',
+      });
+
+      res.json({ data: joinRequest });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ==================== 3.5 GET /api/organizations/:id/join-requests — 获取申请列表 ====================
+  app.get("/api/organizations/:id/join-requests", authMiddleware, async (req: any, res) => {
+    try {
+      const orgId = Number(req.params.id);
+
+      const membership = await storage.getOrgMembershipByUserAndOrg(req.currentUserId, orgId);
+      if (!membership || !['owner', 'admin'].includes(membership.role)) {
+        return res.status(403).json({ error: '仅组织 owner 或 admin 可查看申请列表' });
+      }
+
+      const status = req.query.status as string | undefined;
+      const requests = await storage.getJoinRequestsByOrgId(orgId, status);
+
+      res.json({ data: requests });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ==================== 3.6 PUT /api/organizations/:id/join-requests/:requestId — 审批 ====================
+  app.put("/api/organizations/:id/join-requests/:requestId", authMiddleware, async (req: any, res) => {
+    try {
+      const orgId = Number(req.params.id);
+      const requestId = Number(req.params.requestId);
+
+      const membership = await storage.getOrgMembershipByUserAndOrg(req.currentUserId, orgId);
+      if (!membership || !['owner', 'admin'].includes(membership.role)) {
+        return res.status(403).json({ error: '仅组织 owner 或 admin 可审批申请' });
+      }
+
+      const joinRequest = await storage.getJoinRequestById(requestId);
+      if (!joinRequest) {
+        return res.status(404).json({ error: '申请不存在' });
+      }
+
+      if (joinRequest.status !== 'pending') {
+        return res.status(400).json({ error: '该申请已处理' });
+      }
+
+      const { status, reviewNote } = req.body;
+      if (!['approved', 'rejected'].includes(status)) {
+        return res.status(400).json({ error: 'status 必须为 approved 或 rejected' });
+      }
+
+      const updated = await storage.updateJoinRequest(requestId, {
+        status,
+        reviewedBy: req.currentUserId,
+        reviewedAt: new Date(),
+        reviewNote: reviewNote || null,
+      });
+
+      if (status === 'approved') {
+        await storage.updateUser(joinRequest.userId, {
+          orgId,
+          role: 'member',
+          onboardingCompleted: true,
+        } as any);
+
+        await storage.createOrgMembership({
+          userId: joinRequest.userId,
+          orgId,
+          role: 'member',
+        });
+
+        if (joinRequest.inviteCode) {
+          const invitation = await storage.getInvitationByCode(joinRequest.inviteCode);
+          if (invitation) {
+            await storage.incrementInvitationUsedCount(invitation.id);
+          }
+        }
+
+        await storage.cancelOtherPendingJoinRequests(joinRequest.userId, orgId, requestId);
+      }
+
+      res.json({ data: updated });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ==================== 3.7 GET /api/organizations/:id/invite-code — 获取邀请码 ====================
+  app.get("/api/organizations/:id/invite-code", authMiddleware, async (req: any, res) => {
+    try {
+      const orgId = Number(req.params.id);
+
+      const membership = await storage.getOrgMembershipByUserAndOrg(req.currentUserId, orgId);
+      if (!membership || !['owner', 'admin'].includes(membership.role)) {
+        return res.status(403).json({ error: '仅组织 owner 或 admin 可查看邀请码' });
+      }
+
+      const orgInvitations = await storage.getOrgInvitations(orgId);
+      if (orgInvitations.length === 0) {
+        return res.status(404).json({ error: '该组织没有活跃的邀请码' });
+      }
+
+      const latest = orgInvitations[0];
+      res.json({ data: { inviteCode: latest.inviteCode, createdAt: latest.createdAt, maxUses: latest.maxUses, usedCount: latest.usedCount } });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ==================== 3.8 POST /api/organizations/:id/invite-code/regenerate — 重新生成 ====================
+  app.post("/api/organizations/:id/invite-code/regenerate", authMiddleware, async (req: any, res) => {
+    try {
+      const orgId = Number(req.params.id);
+
+      const membership = await storage.getOrgMembershipByUserAndOrg(req.currentUserId, orgId);
+      if (!membership || membership.role !== 'owner') {
+        return res.status(403).json({ error: '仅组织 owner 可重新生成邀请码' });
+      }
+
+      await storage.deactivateOrgInvitations(orgId);
+
+      const org = await storage.getOrganizationById(orgId);
+      let inviteCode = '';
+      for (let i = 0; i < 5; i++) {
+        const code = generateInviteCode(org?.name || 'ORG');
+        const existing = await storage.getInvitationByCode(code);
+        if (!existing) {
+          inviteCode = code;
+          break;
+        }
+      }
+      if (!inviteCode) {
+        inviteCode = generateInviteCode(org?.name || 'ORG') + Math.floor(Math.random() * 100);
+      }
+
+      await storage.createInvitation({
+        orgId,
+        inviteCode,
+        role: 'member',
+        createdBy: req.currentUserId,
+        isActive: true,
+        maxUses: 0,
+        usedCount: 0,
+      });
+
+      res.json({ data: { inviteCode } });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
