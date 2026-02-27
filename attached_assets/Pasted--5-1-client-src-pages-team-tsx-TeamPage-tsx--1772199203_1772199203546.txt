@@ -1,0 +1,94 @@
+请修改团队管理页面，新增加入申请审批和邀请码管理功能。
+
+=== 5.1 找到团队页面 ===
+
+查看 client/src/pages/team.tsx（或 TeamPage.tsx），这是现有的团队/成员管理页面。
+
+=== 5.2 添加 Tabs 布局 ===
+
+使用 shadcn Tabs 组件，将页面内容组织为三个 Tab：
+
+<Tabs defaultValue="members">
+  <TabsList>
+    <TabsTrigger value="members">成员</TabsTrigger>
+    <TabsTrigger value="requests">
+      加入申请 {pendingCount > 0 && <Badge>{pendingCount}</Badge>}
+    </TabsTrigger>
+    <TabsTrigger value="invite">邀请码</TabsTrigger>
+  </TabsList>
+  
+  <TabsContent value="members">
+    {/* 现有的成员列表内容移到这里 */}
+  </TabsContent>
+  
+  <TabsContent value="requests">
+    {/* 新增：加入申请列表 */}
+  </TabsContent>
+  
+  <TabsContent value="invite">
+    {/* 新增：邀请码管理 */}
+  </TabsContent>
+</Tabs>
+
+=== 5.3 "加入申请" Tab 实现 ===
+
+数据获取：
+- useQuery 调用 GET /api/organizations/:orgId/join-requests?status=pending
+- orgId 从当前用户的 auth context 获取
+
+列表渲染（每条申请一张 Card）：
+- 左侧：用户头像（Avatar 组件，首字母 fallback）
+- 中间：
+  - 用户名（font-semibold）+ 邮箱（text-muted-foreground）
+  - 申请留言（如有，text-sm italic）
+  - 申请时间（相对时间，如 "2小时前"，用 date-fns 或手写格式化）
+- 右侧：两个按钮
+  - ✅ 批准（Button variant="default" size="sm"）
+  - ❌ 拒绝（Button variant="outline" size="sm"）
+
+批准操作：
+- 调用 PUT /api/organizations/:orgId/join-requests/:requestId { status: "approved" }
+- 成功后 invalidate query 刷新列表
+- toast.success("已批准 xxx 的加入申请")
+
+拒绝操作：
+- 点击后弹出 Dialog 或 Popover，输入拒绝原因（可选）
+- 调用 PUT API { status: "rejected", reviewNote: "..." }
+- 成功后刷新列表
+
+空状态：
+- 列表为空时显示 "暂无待审批的加入申请" + 一个灰色图标
+
+底部折叠区域（Collapsible 或 Accordion）：
+- "已处理的申请" — 显示 approved 和 rejected 的历史记录
+- 每条显示状态标签（绿色 Badge "已批准" / 红色 "已拒绝"）
+
+=== 5.4 "邀请码" Tab 实现 ===
+
+数据获取：
+- useQuery 调用 GET /api/organizations/:orgId/invite-code
+
+显示：
+- 邀请码大字展示：font-mono text-3xl tracking-wider text-center
+  - 如 "DPE-X4NM"
+- 复制按钮（点击 → navigator.clipboard.writeText → toast "已复制到剪贴板"）
+- 邮件码信息：创建时间、已使用次数/最大使用次数
+
+操作：
+- "重新生成" 按钮（Button variant="outline"）
+- 点击弹出确认 Dialog："重新生成后旧邀请码将立即失效，确定吗？"
+- 确认后调用 POST /api/organizations/:orgId/invite-code/regenerate
+- 成功后刷新显示
+
+提示文字（text-sm text-muted-foreground）：
+"将邀请码分享给同事，他们在注册后输入即可申请加入你的组织。"
+
+=== 5.5 权限控制 ===
+
+从 auth context 获取当前用户的 role。
+
+- "加入申请" 和 "邀请码" 两个 Tab：仅 owner 和 admin 可见
+- "重新生成邀请码" 按钮：仅 owner 可见
+- 普通 member 进入 /team 页面只看到 "成员" Tab
+
+实现方式：根据 role 条件渲染 TabsTrigger 和 TabsContent。
