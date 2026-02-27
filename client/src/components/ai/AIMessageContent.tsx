@@ -197,14 +197,19 @@ function TableBlock({ children }: { children: ReactNode }) {
     const container = containerRef.current;
     if (!container) return '';
     const rows = container.querySelectorAll('tr');
-    const lines: string[] = [];
+    const mdLines: string[] = [];
+    let isFirstRow = true;
     rows.forEach(row => {
       const cells = row.querySelectorAll('th, td');
       const cellTexts: string[] = [];
       cells.forEach(cell => cellTexts.push((cell as HTMLElement).innerText.trim()));
-      lines.push(cellTexts.join('\t'));
+      mdLines.push('| ' + cellTexts.join(' | ') + ' |');
+      if (isFirstRow) {
+        mdLines.push('| ' + cellTexts.map(() => '---').join(' | ') + ' |');
+        isFirstRow = false;
+      }
     });
-    return lines.join('\n');
+    return mdLines.join('\n');
   }, []);
 
   return (
