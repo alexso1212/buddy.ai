@@ -98,6 +98,42 @@ function parseJsonArray(val: string | null): string[] {
   }
 }
 
+function robustJsonParse(raw: string): any {
+  let cleaned = raw.trim();
+  if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
+  if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
+  if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
+  cleaned = cleaned.trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {}
+
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  if (match) {
+    let extracted = match[0];
+    try {
+      return JSON.parse(extracted);
+    } catch {}
+
+    extracted = extracted.replace(/,\s*([\]}])/g, '$1');
+    try {
+      return JSON.parse(extracted);
+    } catch {}
+
+    extracted = extracted.replace(/[\x00-\x1F\x7F]/g, (ch) => {
+      if (ch === '\n' || ch === '\r' || ch === '\t') return ch;
+      return '';
+    });
+    try {
+      return JSON.parse(extracted);
+    } catch {}
+  }
+
+  console.error('robustJsonParse failed. Raw content:', raw.slice(0, 500));
+  throw new Error('AI 返回的判定结果格式异常，请重试');
+}
+
 async function buildUserWithRole(userId: number): Promise<UserWithRole | null> {
   const user = await storage.getUserById(userId);
   if (!user) return null;
@@ -245,13 +281,7 @@ export async function judgeTaskAssignment(
   
   const content = response.choices[0]?.message?.content || '{}';
   
-  let cleaned = content.trim();
-  if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
-  if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
-  if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
-  cleaned = cleaned.trim();
-  
-  const result: VerdictResultWithUsage = JSON.parse(cleaned);
+  const result: VerdictResultWithUsage = robustJsonParse(content);
 
   const usage = response.usage;
   if (usage) {

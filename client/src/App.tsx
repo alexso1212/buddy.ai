@@ -2061,7 +2061,7 @@ function App() {
           )}
 
           <main
-            className={`flex-1 overflow-auto relative ${isLoginPage ? 'ml-0' : 'ml-0 md:ml-[260px]'}`}
+            className={`flex-1 overflow-auto relative ${isLoginPage ? 'ml-0' : 'ml-0 md:ml-[260px]'} ${!isGraphPage && !isLoginPage && !isAgentPage ? 'pt-[60px] md:pt-0' : ''}`}
             data-testid="content-area"
           >
             <Router />
