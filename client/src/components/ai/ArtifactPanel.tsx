@@ -72,10 +72,10 @@ export default function ArtifactPanel({ content, title, isOpen, onClose }: Artif
       <div
         style={{
           position: "fixed",
-          top: isFullscreen ? 0 : 8,
-          right: isFullscreen ? 0 : 8,
-          bottom: isFullscreen ? 0 : 8,
-          width: isFullscreen ? "100%" : "min(680px, calc(100vw - 16px))",
+          top: isFullscreen ? 0 : 56,
+          right: isFullscreen ? 0 : 12,
+          bottom: isFullscreen ? 0 : 12,
+          width: isFullscreen ? "100%" : "min(680px, calc(100vw - 24px))",
           background: "var(--bg-primary, #0a0a0a)",
           border: isFullscreen ? "none" : "1px solid rgba(255,255,255,0.1)",
           borderRadius: isFullscreen ? 0 : 12,
