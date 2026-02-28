@@ -60,6 +60,12 @@ import {
   organizationJoinRequests,
   type OrganizationJoinRequest,
   type InsertOrganizationJoinRequest,
+  taskDeliverables,
+  taskSubmissions,
+  type TaskDeliverable,
+  type InsertTaskDeliverable,
+  type TaskSubmission,
+  type InsertTaskSubmission,
 } from "@shared/schema";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -850,6 +856,133 @@ export class DatabaseStorage {
     const result = await db.select({ count: sql<number>`count(*)::int` }).from(orgMemberships)
       .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.isActive, true)));
     return result[0]?.count ?? 0;
+  }
+
+  async createDeliverable(data: InsertTaskDeliverable): Promise<TaskDeliverable> {
+    const [deliverable] = await db.insert(taskDeliverables).values(data).returning();
+    return deliverable;
+  }
+
+  async getDeliverablesByTaskId(taskId: number, onlyLatest = false): Promise<Array<TaskDeliverable & { submitter: { id: number; displayName: string | null; avatarUrl: string | null } }>> {
+    const conditions = [eq(taskDeliverables.taskId, taskId)];
+    if (onlyLatest) conditions.push(eq(taskDeliverables.isLatest, true));
+
+    const rows = await db
+      .select({
+        deliverable: taskDeliverables,
+        submitterId: users.id,
+        submitterName: users.displayName,
+        submitterAvatar: users.avatarUrl,
+      })
+      .from(taskDeliverables)
+      .leftJoin(users, eq(taskDeliverables.submittedBy, users.id))
+      .where(and(...conditions))
+      .orderBy(desc(taskDeliverables.version), desc(taskDeliverables.createdAt));
+
+    return rows.map(r => ({
+      ...r.deliverable,
+      submitter: { id: r.submitterId!, displayName: r.submitterName, avatarUrl: r.submitterAvatar },
+    }));
+  }
+
+  async getDeliverableById(id: number): Promise<TaskDeliverable | null> {
+    const [row] = await db.select().from(taskDeliverables).where(eq(taskDeliverables.id, id));
+    return row ?? null;
+  }
+
+  async updateDeliverable(id: number, data: Partial<TaskDeliverable>): Promise<TaskDeliverable> {
+    const [updated] = await db.update(taskDeliverables).set({ ...data, updatedAt: new Date() }).where(eq(taskDeliverables.id, id)).returning();
+    return updated;
+  }
+
+  async deleteDeliverable(id: number): Promise<void> {
+    const allSubmissions = await db.select().from(taskSubmissions);
+    const linked = allSubmissions.some(s => {
+      const ids = s.deliverableIds as number[] | null;
+      return ids && ids.includes(id);
+    });
+    if (linked) throw new Error('该交付物已关联提交记录，无法删除');
+    await db.delete(taskDeliverables).where(eq(taskDeliverables.id, id));
+  }
+
+  async markPreviousVersions(taskId: number, type: string, title: string): Promise<void> {
+    await db.update(taskDeliverables)
+      .set({ isLatest: false, updatedAt: new Date() })
+      .where(and(
+        eq(taskDeliverables.taskId, taskId),
+        eq(taskDeliverables.type, type),
+        eq(taskDeliverables.title, title),
+        eq(taskDeliverables.isLatest, true),
+      ));
+  }
+
+  async createSubmission(data: InsertTaskSubmission): Promise<TaskSubmission> {
+    const [submission] = await db.insert(taskSubmissions).values(data).returning();
+    return submission;
+  }
+
+  async getSubmissionsByTaskId(taskId: number): Promise<Array<TaskSubmission & { submitter: { id: number; displayName: string | null; avatarUrl: string | null }; deliverables: TaskDeliverable[] }>> {
+    const rows = await db
+      .select({
+        submission: taskSubmissions,
+        submitterId: users.id,
+        submitterName: users.displayName,
+        submitterAvatar: users.avatarUrl,
+      })
+      .from(taskSubmissions)
+      .leftJoin(users, eq(taskSubmissions.submittedBy, users.id))
+      .where(eq(taskSubmissions.taskId, taskId))
+      .orderBy(desc(taskSubmissions.createdAt));
+
+    const results = [];
+    for (const r of rows) {
+      const ids = (r.submission.deliverableIds as number[] | null) || [];
+      let deliverables: TaskDeliverable[] = [];
+      if (ids.length > 0) {
+        deliverables = await db.select().from(taskDeliverables).where(inArray(taskDeliverables.id, ids));
+      }
+      results.push({
+        ...r.submission,
+        submitter: { id: r.submitterId!, displayName: r.submitterName, avatarUrl: r.submitterAvatar },
+        deliverables,
+      });
+    }
+    return results;
+  }
+
+  async getSubmissionById(id: number): Promise<TaskSubmission | null> {
+    const [row] = await db.select().from(taskSubmissions).where(eq(taskSubmissions.id, id));
+    return row ?? null;
+  }
+
+  async updateSubmission(id: number, data: Partial<TaskSubmission>): Promise<TaskSubmission> {
+    const [updated] = await db.update(taskSubmissions).set(data).where(eq(taskSubmissions.id, id)).returning();
+    return updated;
+  }
+
+  async getPendingSubmissionsByOrgId(orgId: number): Promise<Array<TaskSubmission & { task: { id: number; title: string }; submitter: { id: number; displayName: string | null } }>> {
+    const rows = await db
+      .select({
+        submission: taskSubmissions,
+        taskId: tasks.id,
+        taskTitle: tasks.title,
+        submitterId: users.id,
+        submitterName: users.displayName,
+      })
+      .from(taskSubmissions)
+      .innerJoin(tasks, eq(taskSubmissions.taskId, tasks.id))
+      .innerJoin(users, eq(taskSubmissions.submittedBy, users.id))
+      .where(and(
+        eq(taskSubmissions.orgId, orgId),
+        eq(taskSubmissions.status, 'pending'),
+      ))
+      .orderBy(taskSubmissions.createdAt);
+
+    return rows.map(r => ({
+      ...r.submission,
+      task: { id: r.taskId, title: r.taskTitle },
+      submitter: { id: r.submitterId, displayName: r.submitterName },
+    }));
   }
 }
 
