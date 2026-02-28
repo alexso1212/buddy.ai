@@ -1,4 +1,4 @@
-import { pgTable, serial, varchar, text, integer, boolean, timestamp, numeric, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, serial, varchar, text, integer, boolean, timestamp, numeric, jsonb, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -152,6 +152,7 @@ export const tasks = pgTable('tasks', {
   description: text('description'),
   type: varchar('type', { length: 50 }).notNull().default('task'),
 
+  // status 可选值：todo | in_progress | submitted | reviewing | done | cancelled
   status: varchar('status', { length: 50 }).notNull().default('todo'),
   priority: varchar('priority', { length: 50 }).notNull().default('medium'),
 
@@ -176,6 +177,65 @@ export const tasks = pgTable('tasks', {
 
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ============================================================
+// 5b. task_deliverables（任务交付物）
+// ============================================================
+export const taskDeliverables = pgTable("task_deliverables", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  orgId: integer("org_id").notNull().references(() => organizations.id),
+
+  type: varchar("type", { length: 50 }).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+
+  fileUrl: text("file_url"),
+  fileName: text("file_name"),
+  fileSize: integer("file_size"),
+  fileMimeType: varchar("file_mime_type", { length: 200 }),
+
+  linkUrl: text("link_url"),
+
+  content: text("content"),
+
+  submittedBy: integer("submitted_by").notNull().references(() => users.id),
+  submittedAt: timestamp("submitted_at").defaultNow().notNull(),
+
+  version: integer("version").default(1).notNull(),
+  isLatest: boolean("is_latest").default(true).notNull(),
+
+  reviewStatus: varchar("review_status", { length: 50 }).default("pending"),
+  reviewScore: integer("review_score"),
+  reviewFeedback: text("review_feedback"),
+  reviewedBy: integer("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ============================================================
+// 5c. task_submissions（任务提交记录）
+// ============================================================
+export const taskSubmissions = pgTable("task_submissions", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  orgId: integer("org_id").notNull().references(() => organizations.id),
+  submittedBy: integer("submitted_by").notNull().references(() => users.id),
+
+  note: text("note"),
+  deliverableIds: jsonb("deliverable_ids").$type<number[]>().default([]),
+
+  status: varchar("status", { length: 50 }).default("pending").notNull(),
+
+  reviewedBy: integer("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNote: text("review_note"),
+  overallScore: integer("overall_score"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // ============================================================
@@ -426,6 +486,8 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
   }),
   comments: many(taskComments),
   participants: many(taskParticipants),
+  deliverables: many(taskDeliverables),
+  submissions: many(taskSubmissions),
 }));
 
 export const taskDependenciesRelations = relations(taskDependencies, ({ one }) => ({
@@ -461,6 +523,20 @@ export const taskParticipantsRelations = relations(taskParticipants, ({ one }) =
     fields: [taskParticipants.userId],
     references: [users.id],
   }),
+}));
+
+export const taskDeliverablesRelations = relations(taskDeliverables, ({ one }) => ({
+  task: one(tasks, { fields: [taskDeliverables.taskId], references: [tasks.id] }),
+  organization: one(organizations, { fields: [taskDeliverables.orgId], references: [organizations.id] }),
+  submitter: one(users, { fields: [taskDeliverables.submittedBy], references: [users.id], relationName: 'deliverableSubmitter' }),
+  reviewer: one(users, { fields: [taskDeliverables.reviewedBy], references: [users.id], relationName: 'deliverableReviewer' }),
+}));
+
+export const taskSubmissionsRelations = relations(taskSubmissions, ({ one }) => ({
+  task: one(tasks, { fields: [taskSubmissions.taskId], references: [tasks.id] }),
+  organization: one(organizations, { fields: [taskSubmissions.orgId], references: [organizations.id] }),
+  submitter: one(users, { fields: [taskSubmissions.submittedBy], references: [users.id], relationName: 'submissionSubmitter' }),
+  reviewer: one(users, { fields: [taskSubmissions.reviewedBy], references: [users.id], relationName: 'submissionReviewer' }),
 }));
 
 export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
@@ -753,5 +829,21 @@ export type Invitation = typeof invitations.$inferSelect;
 export const insertOrganizationJoinRequestSchema = createInsertSchema(organizationJoinRequests);
 export type OrganizationJoinRequest = typeof organizationJoinRequests.$inferSelect;
 export type InsertOrganizationJoinRequest = typeof organizationJoinRequests.$inferInsert;
+
+export const insertTaskDeliverableSchema = createInsertSchema(taskDeliverables).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  submittedAt: true,
+});
+export type InsertTaskDeliverable = z.infer<typeof insertTaskDeliverableSchema>;
+export type TaskDeliverable = typeof taskDeliverables.$inferSelect;
+
+export const insertTaskSubmissionSchema = createInsertSchema(taskSubmissions).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertTaskSubmission = z.infer<typeof insertTaskSubmissionSchema>;
+export type TaskSubmission = typeof taskSubmissions.$inferSelect;
 
 export * from "./models/auth";
