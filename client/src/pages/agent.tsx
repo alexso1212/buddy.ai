@@ -932,45 +932,45 @@ export default function Agent() {
   const streamConvIdRef = useRef<number | null>(null);
 
   useEffect(() => {
-    return () => {
-      if (isStreamingRef.current && streamConvIdRef.current) {
-        if (readerRef.current && streamDecoderRef.current) {
-          takeoverStream(
-            streamConvIdRef.current,
-            readerRef.current,
-            streamDecoderRef.current,
-            streamFullTextRef.current,
-            streamThinkingTextRef.current,
-            streamThinkingDurationRef.current,
-            streamAssistantMsgIdRef.current,
-          );
-          readerRef.current = null;
-          streamDecoderRef.current = null;
-          abortControllerRef.current = null;
-        } else if (streamFullTextRef.current && streamConvIdRef.current) {
-          const convId = streamConvIdRef.current;
-          const content = streamFullTextRef.current;
-          const thinking = streamThinkingTextRef.current;
-          const thinkingDur = streamThinkingDurationRef.current;
-          const token = localStorage.getItem('buddy_token');
-          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-          if (token) headers['Authorization'] = `Bearer ${token}`;
-          const metadata: Record<string, any> = {};
-          if (thinking) metadata.thinking = thinking;
-          if (thinkingDur) metadata.thinkingDuration = thinkingDur;
-          fetch(`/api/conversations/${convId}/messages`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              role: 'assistant',
-              content,
-              type: 'text',
-              metadata: Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null,
-            }),
-          }).catch(() => {});
-        }
-        isStreamingRef.current = false;
+    const handleBeforeUnload = () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+
+      if (isStreamingRef.current && streamConvIdRef.current && streamFullTextRef.current) {
+        const convId = streamConvIdRef.current;
+        const content = streamFullTextRef.current;
+        const thinking = streamThinkingTextRef.current;
+        const thinkingDur = streamThinkingDurationRef.current;
+        const token = localStorage.getItem('buddy_token');
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const metadata: Record<string, any> = {};
+        if (thinking) metadata.thinking = thinking;
+        if (thinkingDur) metadata.thinkingDuration = thinkingDur;
+        fetch(`/api/conversations/${convId}/messages`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            role: 'assistant',
+            content,
+            type: 'text',
+            metadata: Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null,
+          }),
+        }).catch(() => {});
+      }
+      isStreamingRef.current = false;
     };
   }, []);
 
