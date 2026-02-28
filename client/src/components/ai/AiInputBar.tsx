@@ -466,6 +466,10 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
     };
   }, []);
 
+  const [spotPos, setSpotPos] = useState<{ x: number; y: number } | null>(null);
+  const [spotVisible, setSpotVisible] = useState(false);
+  const spotFadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const updateGlowPos = useCallback((clientX: number, clientY: number) => {
     const el = composerWrapRef.current;
     if (!el) return;
@@ -474,12 +478,18 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
       x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
       y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height)),
     });
+    setSpotPos({
+      x: clientX - rect.left,
+      y: clientY - rect.top,
+    });
   }, []);
 
   const handleComposerPointerDown = useCallback((e: React.PointerEvent) => {
     setIsPressed(true);
     setShowGlow(true);
+    setSpotVisible(true);
     if (glowFadeTimer.current) clearTimeout(glowFadeTimer.current);
+    if (spotFadeTimer.current) clearTimeout(spotFadeTimer.current);
     updateGlowPos(e.clientX, e.clientY);
     if (navigator.vibrate) navigator.vibrate(10);
     const el = composerWrapRef.current;
@@ -514,6 +524,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
       deformState.current.moveHandler = null;
     }
     glowFadeTimer.current = setTimeout(() => setShowGlow(false), 600);
+    spotFadeTimer.current = setTimeout(() => setSpotVisible(false), 300);
   }, []);
 
   const adjustHeight = useCallback(() => {
@@ -636,7 +647,27 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
             background: '#1A1918',
             borderRadius: 19,
             overflow: 'hidden',
+            position: 'relative',
           }}>
+          {spotPos && (
+            <div
+              style={{
+                position: 'absolute',
+                width: '150%',
+                height: 0,
+                paddingBottom: '150%',
+                borderRadius: '50%',
+                background: 'radial-gradient(circle at center, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 30%, rgba(255,255,255,0.01) 60%, rgba(255,255,255,0) 100%)',
+                pointerEvents: 'none',
+                transform: 'translate(-50%, -50%)',
+                left: spotPos.x - 1,
+                top: spotPos.y - 1,
+                opacity: spotVisible ? 1 : 0,
+                transition: 'opacity 300ms ease-out',
+                zIndex: 0,
+              }}
+            />
+          )}
           <textarea
             ref={textareaRef}
             value={value}
@@ -665,6 +696,8 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
               outline: 'none',
               resize: 'none',
               display: 'block',
+              position: 'relative',
+              zIndex: 1,
             }}
             className={cn(
               "placeholder:text-[var(--text-placeholder)]",
@@ -754,6 +787,8 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
               justifyContent: 'space-between',
               alignItems: 'center',
               padding: '4px 10px 10px 10px',
+              position: 'relative',
+              zIndex: 1,
             }}
             data-testid="ai-toolbar"
           >
