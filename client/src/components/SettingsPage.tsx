@@ -1200,7 +1200,12 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
   const [subVisible, setSubVisible] = useState(false);
   const [subSlideIn, setSubSlideIn] = useState(false);
   const [hapticFeedback, setHapticFeedback] = useState(true);
+  const [animationDone, setAnimationDone] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) setAnimationDone(false);
+  }, [open]);
 
   useEffect(() => {
     if (open) {
@@ -1292,6 +1297,7 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
       <div
         ref={containerRef}
         onClick={(e) => e.stopPropagation()}
+        onAnimationEnd={() => setAnimationDone(true)}
         style={{
           position: 'fixed',
           bottom: 0,
@@ -1304,7 +1310,7 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
           zIndex: 60,
           display: 'flex',
           flexDirection: 'column',
-          animation: 'settingsSheetIn 300ms cubic-bezier(0.32, 0.72, 0, 1) both',
+          animation: animationDone ? 'none' : 'settingsSheetIn 300ms cubic-bezier(0.32, 0.72, 0, 1) both',
         }}
         data-testid="settings-page"
       >
