@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -30,7 +29,7 @@ const scrollStyle: React.CSSProperties = {
   overflowY: 'auto',
   overflowX: 'hidden',
   WebkitOverflowScrolling: 'touch' as any,
-  overscrollBehavior: 'auto',
+  overscrollBehavior: 'contain',
 };
 
 function BounceScroll({ children, style, className }: { children: React.ReactNode; style?: React.CSSProperties; className?: string }) {
@@ -1200,12 +1199,7 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
   const [subVisible, setSubVisible] = useState(false);
   const [subSlideIn, setSubSlideIn] = useState(false);
   const [hapticFeedback, setHapticFeedback] = useState(true);
-  const [animationDone, setAnimationDone] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) setAnimationDone(false);
-  }, [open]);
 
   useEffect(() => {
     if (open) {
@@ -1239,10 +1233,10 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
     if (!subVisible) return null;
 
     const subStyle: React.CSSProperties = {
-      position: 'fixed',
+      position: 'absolute',
       inset: 0,
       background: '#1E1D1A',
-      zIndex: 70,
+      zIndex: 2,
       transform: subSlideIn ? 'translateX(0)' : 'translateX(100%)',
       transition: 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)',
     };
@@ -1271,170 +1265,143 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
     }
   };
 
-  return createPortal(
-    <>
-      <div
-        onClick={onClose}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 59,
-          background: 'rgba(0,0,0,0.5)',
-          animation: 'settingsOverlayIn 200ms ease both',
-        }}
-        data-testid="settings-overlay"
-      />
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 60,
+        background: '#1E1D1A',
+        animation: 'settingsPageIn 300ms cubic-bezier(0.32, 0.72, 0, 1) forwards',
+        overflow: 'hidden',
+      }}
+      data-testid="settings-page"
+    >
       <style>{`
-        @keyframes settingsOverlayIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes settingsSheetIn {
-          from { transform: translateY(100%); }
-          to { transform: translateY(0); }
+        @keyframes settingsPageIn {
+          from { opacity: 0; transform: scale(0.97) translateY(8px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
         }
       `}</style>
-      <div
-        ref={containerRef}
-        onClick={(e) => e.stopPropagation()}
-        onAnimationEnd={() => setAnimationDone(true)}
-        style={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          maxHeight: '70vh',
-          background: '#2B2A27',
-          borderRadius: '16px 16px 0 0',
-          boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
-          zIndex: 60,
+
+      <div style={{
+        position: 'relative',
+        height: '100%',
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+      }}>
+        <div style={{
           display: 'flex',
           flexDirection: 'column',
-          animation: animationDone ? 'none' : 'settingsSheetIn 300ms cubic-bezier(0.32, 0.72, 0, 1) both',
-        }}
-        data-testid="settings-page"
-      >
-        <div style={{
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-          background: 'rgba(255,255,255,0.2)',
-          margin: '10px auto 0',
-          flexShrink: 0,
-        }} data-testid="settings-drag-handle" />
-
-        <div style={{
-          flex: 1,
-          overflowY: 'auto',
-          WebkitOverflowScrolling: 'touch' as any,
-          overscrollBehaviorY: 'contain',
-          padding: '16px 20px',
-          paddingBottom: 'calc(24px + env(safe-area-inset-bottom, 0px))',
+          height: '100%',
           minHeight: 0,
-        } as React.CSSProperties}
-        data-testid="settings-scroll-area"
-        >
-          <div style={{
-            padding: '14px 16px',
-            borderRadius: 14,
-            background: 'rgba(255,255,255,0.04)',
-            marginBottom: 16,
-          }}>
-            <div style={{ fontSize: 14, color: '#9A9893' }}>{authUser?.email || ''}</div>
-          </div>
+        }}>
+          <PageHeader title="设置" onClose={onClose} />
 
-          <GroupLabel text="账号" />
-          <SettingsGroup>
-            <SettingsItem icon={User} label="个人资料" onClick={() => navigateTo('profile')} testId="settings-nav-profile" />
-            <Divider />
-            <SettingsItem icon={CreditCard} label="订阅" value="免费版" testId="settings-nav-billing" />
-          </SettingsGroup>
+          <BounceScroll style={{ flex: 1, minHeight: 0 }}>
+            <div style={{
+              margin: '4px 20px 16px',
+              padding: '14px 16px',
+              borderRadius: 14,
+              background: 'rgba(255,255,255,0.04)',
+            }}>
+              <div style={{ fontSize: 14, color: '#9A9893' }}>{authUser?.email || ''}</div>
+            </div>
 
-          <GroupSpacer />
+            <GroupLabel text="账号" />
+            <SettingsGroup>
+              <SettingsItem icon={User} label="个人资料" onClick={() => navigateTo('profile')} testId="settings-nav-profile" />
+              <Divider />
+              <SettingsItem icon={CreditCard} label="订阅" value="免费版" testId="settings-nav-billing" />
+            </SettingsGroup>
 
-          <GroupLabel text="工作空间" />
-          <SettingsGroup>
-            <SettingsItem icon={Building2} label="组织管理" value={authUser?.orgName || ''} onClick={() => navigateTo('organization')} testId="settings-nav-organization" />
-            <Divider />
-            <SettingsItem
-              icon={Users}
-              label="切换组织"
-              onClick={() => { onClose(); onOpenOrgSwitcher(); }}
-              testId="settings-nav-switch-org"
-            />
-            <Divider />
-            <SettingsItem icon={Settings2} label="功能设置" onClick={() => navigateTo('capabilities')} testId="settings-nav-capabilities" />
-            <Divider />
-            <SettingsItem icon={Blocks} label="集成连接" onClick={() => navigateTo('connectors')} testId="settings-nav-connectors" />
-            {(authUser?.role === 'owner' || authUser?.role === 'admin') && (
-              <>
-                <Divider />
-                <SettingsItem icon={Shield} label="权限管理" onClick={() => navigateTo('permissions')} testId="settings-nav-permissions" />
-              </>
-            )}
-          </SettingsGroup>
+            <GroupSpacer />
 
-          <GroupSpacer />
+            <GroupLabel text="工作空间" />
+            <SettingsGroup>
+              <SettingsItem icon={Building2} label="组织管理" value={authUser?.orgName || ''} onClick={() => navigateTo('organization')} testId="settings-nav-organization" />
+              <Divider />
+              <SettingsItem
+                icon={Users}
+                label="切换组织"
+                onClick={() => { onClose(); onOpenOrgSwitcher(); }}
+                testId="settings-nav-switch-org"
+              />
+              <Divider />
+              <SettingsItem icon={Settings2} label="功能设置" onClick={() => navigateTo('capabilities')} testId="settings-nav-capabilities" />
+              <Divider />
+              <SettingsItem icon={Blocks} label="集成连接" onClick={() => navigateTo('connectors')} testId="settings-nav-connectors" />
+              {(authUser?.role === 'owner' || authUser?.role === 'admin') && (
+                <>
+                  <Divider />
+                  <SettingsItem icon={Shield} label="权限管理" onClick={() => navigateTo('permissions')} testId="settings-nav-permissions" />
+                </>
+              )}
+            </SettingsGroup>
 
-          <GroupLabel text="偏好设置" />
-          <SettingsGroup>
-            <SettingsItem
-              icon={Moon}
-              label="外观"
-              rightElement={<ThemeToggle />}
-              testId="settings-nav-appearance"
-            />
-            <Divider />
-            <SettingsItem icon={Globe} label="语言" value="中文" testId="settings-nav-language" />
-            <Divider />
-            <SettingsItem icon={Bell} label="通知" onClick={() => navigateTo('notifications')} testId="settings-nav-notifications" />
-          </SettingsGroup>
+            <GroupSpacer />
 
-          <GroupSpacer />
+            <GroupLabel text="偏好设置" />
+            <SettingsGroup>
+              <SettingsItem
+                icon={Moon}
+                label="外观"
+                rightElement={<ThemeToggle />}
+                testId="settings-nav-appearance"
+              />
+              <Divider />
+              <SettingsItem icon={Globe} label="语言" value="中文" testId="settings-nav-language" />
+              <Divider />
+              <SettingsItem icon={Bell} label="通知" onClick={() => navigateTo('notifications')} testId="settings-nav-notifications" />
+            </SettingsGroup>
 
-          <GroupLabel text="更多" />
-          <SettingsGroup>
-            <SettingsItem icon={Lock} label="隐私" onClick={() => navigateTo('privacy')} testId="settings-nav-privacy" />
-            <Divider />
-            <SettingsItem icon={HelpCircle} label="帮助与反馈" onClick={() => { window.location.href = 'mailto:support@buddy.app'; }} testId="settings-nav-help" />
-            <Divider />
-            <SettingsItem icon={Info} label="关于" value="v0.1.0" onClick={() => navigateTo('about')} testId="settings-nav-about" />
-          </SettingsGroup>
+            <GroupSpacer />
 
-          <GroupSpacer />
+            <GroupLabel text="更多" />
+            <SettingsGroup>
+              <SettingsItem icon={Lock} label="隐私" onClick={() => navigateTo('privacy')} testId="settings-nav-privacy" />
+              <Divider />
+              <SettingsItem icon={HelpCircle} label="帮助与反馈" onClick={() => { window.location.href = 'mailto:support@buddy.app'; }} testId="settings-nav-help" />
+              <Divider />
+              <SettingsItem icon={Info} label="关于" value="v0.1.0" onClick={() => navigateTo('about')} testId="settings-nav-about" />
+            </SettingsGroup>
 
-          <SettingsGroup>
-            <SettingsItem icon={Link2} label="共享链接" onClick={() => navigateTo('shared-links')} testId="settings-nav-shared-links" />
-            <Divider />
-            <SettingsToggleItem
-              icon={Smartphone}
-              label="触觉反馈"
-              checked={hapticFeedback}
-              onChange={setHapticFeedback}
-              testId="toggle-haptic-feedback"
-            />
-          </SettingsGroup>
+            <GroupSpacer />
 
-          <GroupSpacer />
+            <SettingsGroup>
+              <SettingsItem icon={Link2} label="共享链接" onClick={() => navigateTo('shared-links')} testId="settings-nav-shared-links" />
+              <Divider />
+              <SettingsToggleItem
+                icon={Smartphone}
+                label="触觉反馈"
+                checked={hapticFeedback}
+                onChange={setHapticFeedback}
+                testId="toggle-haptic-feedback"
+              />
+            </SettingsGroup>
 
-          <SettingsGroup>
-            <SettingsItem
-              icon={LogOut}
-              label="退出登录"
-              destructive
-              onClick={() => {
-                onClose();
-                onCloseSidebar();
-                logout();
-              }}
-              testId="settings-nav-logout"
-            />
-          </SettingsGroup>
+            <GroupSpacer />
+
+            <SettingsGroup>
+              <SettingsItem
+                icon={LogOut}
+                label="退出登录"
+                destructive
+                onClick={() => {
+                  onClose();
+                  onCloseSidebar();
+                  logout();
+                }}
+                testId="settings-nav-logout"
+              />
+            </SettingsGroup>
+
+            <div style={{ height: 'calc(40px + env(safe-area-inset-bottom, 0px))' }} />
+          </BounceScroll>
         </div>
-      </div>
 
-      {page !== 'main' && renderSubPage()}
-    </>,
-    document.body
+        {page !== 'main' && renderSubPage()}
+      </div>
+    </div>
   );
 }
