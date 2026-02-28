@@ -1274,15 +1274,14 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
         inset: 0,
         zIndex: 60,
         background: '#1E1D1A',
-        animation: 'settingsPageIn 300ms cubic-bezier(0.32, 0.72, 0, 1) forwards',
-        overflow: 'hidden',
+        animation: 'settingsPageFadeIn 300ms cubic-bezier(0.32, 0.72, 0, 1) both',
       }}
       data-testid="settings-page"
     >
       <style>{`
-        @keyframes settingsPageIn {
-          from { opacity: 0; transform: scale(0.97) translateY(8px); }
-          to { opacity: 1; transform: scale(1) translateY(0); }
+        @keyframes settingsPageFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
         }
       `}</style>
 
@@ -1290,6 +1289,7 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
         position: 'relative',
         height: '100%',
         paddingTop: 'env(safe-area-inset-top, 0px)',
+        overflow: 'clip' as any,
       }}>
         <div style={{
           display: 'flex',
