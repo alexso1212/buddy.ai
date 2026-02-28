@@ -1447,6 +1447,278 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // ===================== Task Deliverables =====================
+  const express = (await import('express')).default;
+  app.use('/uploads', express.static('uploads'));
+
+  const multer = (await import('multer')).default;
+  const pathModule = await import('path');
+  const uploadStorage = multer.diskStorage({
+    destination: (_req: any, _file: any, cb: any) => cb(null, 'uploads/'),
+    filename: (_req: any, file: any, cb: any) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+      const ext = pathModule.extname(file.originalname);
+      cb(null, uniqueSuffix + ext);
+    },
+  });
+  const upload = multer({ storage: uploadStorage, limits: { fileSize: 50 * 1024 * 1024 } });
+
+  app.post("/api/tasks/:taskId/deliverables", upload.single('file'), async (req: any, res) => {
+    try {
+      const taskId = parseInt(req.params.taskId);
+      const task = await storage.getTaskById(taskId);
+      if (!task) return res.status(404).json({ error: "任务不存在" });
+
+      const orgId = req.orgId || task.orgId;
+      const userId = req.currentUserId;
+      if (task.orgId !== orgId) return res.status(403).json({ error: "无权访问该任务" });
+
+      let deliverableData: any = {
+        taskId,
+        orgId,
+        submittedBy: userId,
+      };
+
+      if (req.file) {
+        deliverableData.type = 'file';
+        deliverableData.title = req.body.title || req.file.originalname;
+        deliverableData.description = req.body.description || null;
+        deliverableData.fileUrl = `/uploads/${req.file.filename}`;
+        deliverableData.fileName = req.file.originalname;
+        deliverableData.fileSize = req.file.size;
+        deliverableData.fileMimeType = req.file.mimetype;
+      } else {
+        const { type, title, description, linkUrl, content } = req.body;
+        if (!type || !title) return res.status(400).json({ error: "type 和 title 为必填项" });
+        deliverableData.type = type;
+        deliverableData.title = title;
+        deliverableData.description = description || null;
+        if (type === 'link') deliverableData.linkUrl = linkUrl;
+        if (type === 'text') deliverableData.content = content;
+      }
+
+      const existing = await storage.getDeliverablesByTaskId(taskId);
+      const sameTitle = existing.filter(d => d.title === deliverableData.title && d.type === deliverableData.type);
+      const maxVersion = sameTitle.length > 0 ? Math.max(...sameTitle.map(d => d.version)) : 0;
+      deliverableData.version = maxVersion + 1;
+
+      if (maxVersion > 0) {
+        await storage.markPreviousVersions(taskId, deliverableData.type, deliverableData.title);
+      }
+
+      const deliverable = await storage.createDeliverable(deliverableData);
+
+      await storage.createActivityLog({
+        orgId,
+        userId: getActivityUserId(req.body, userId),
+        entityType: "task",
+        entityId: taskId,
+        action: "add_deliverable",
+        changes: JSON.stringify({ deliverableId: deliverable.id, type: deliverable.type, title: deliverable.title }),
+        source: "manual",
+      });
+
+      return res.json({ data: deliverable });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/tasks/:taskId/deliverables", async (req, res) => {
+    try {
+      const taskId = parseInt(req.params.taskId);
+      const task = await storage.getTaskById(taskId);
+      if (!task) return res.status(404).json({ error: "任务不存在" });
+
+      const onlyLatest = req.query.latest === 'true';
+      const data = await storage.getDeliverablesByTaskId(taskId, onlyLatest);
+      return res.json({ data });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/tasks/:taskId/deliverables/:id", async (req, res) => {
+    try {
+      const taskId = parseInt(req.params.taskId);
+      const id = parseInt(req.params.id);
+      const deliverable = await storage.getDeliverableById(id);
+      if (!deliverable) return res.status(404).json({ error: "交付物不存在" });
+      if (deliverable.taskId !== taskId) return res.status(400).json({ error: "交付物不属于该任务" });
+
+      const userId = req.currentUserId;
+      const orgId = req.orgId;
+      const user = await storage.getUserById(userId);
+      if (deliverable.submittedBy !== userId && user?.role !== 'owner' && user?.role !== 'admin') {
+        return res.status(403).json({ error: "无权删除该交付物" });
+      }
+
+      if (deliverable.fileUrl) {
+        try {
+          const fs = await import('fs');
+          const filePath = (await import('path')).join(process.cwd(), deliverable.fileUrl);
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        } catch {}
+      }
+
+      await storage.deleteDeliverable(id);
+
+      await storage.createActivityLog({
+        orgId: orgId || deliverable.orgId,
+        userId: getActivityUserId(req.body, userId),
+        entityType: "task",
+        entityId: taskId,
+        action: "delete_deliverable",
+        changes: JSON.stringify({ deliverableId: id, title: deliverable.title }),
+        source: "manual",
+      });
+
+      return res.json({ data: { success: true } });
+    } catch (e: any) {
+      if (e.message.includes('已关联')) return res.status(400).json({ error: e.message });
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== Task Submissions =====================
+  app.post("/api/tasks/:taskId/submissions", async (req, res) => {
+    try {
+      const taskId = parseInt(req.params.taskId);
+      const task = await storage.getTaskById(taskId);
+      if (!task) return res.status(404).json({ error: "任务不存在" });
+
+      const userId = req.currentUserId;
+      const orgId = req.orgId || task.orgId;
+
+      if (task.assigneeId !== userId) {
+        return res.status(403).json({ error: "只有任务负责人才能提交审核" });
+      }
+
+      if (!['in_progress'].includes(task.status)) {
+        return res.status(400).json({ error: `当前任务状态为「${task.status}」，只有「进行中」的任务可以提交审核` });
+      }
+
+      const { note, deliverableIds } = req.body;
+      if (!deliverableIds || !Array.isArray(deliverableIds) || deliverableIds.length === 0) {
+        return res.status(400).json({ error: "请选择至少一个交付物" });
+      }
+
+      const deliverables = await storage.getDeliverablesByTaskId(taskId);
+      const validIds = new Set(deliverables.map(d => d.id));
+      const invalidIds = deliverableIds.filter((id: number) => !validIds.has(id));
+      if (invalidIds.length > 0) {
+        return res.status(400).json({ error: `以下交付物不属于该任务: ${invalidIds.join(', ')}` });
+      }
+
+      const submission = await storage.createSubmission({
+        taskId,
+        orgId,
+        submittedBy: userId,
+        note: note || null,
+        deliverableIds,
+        status: 'pending',
+      });
+
+      await storage.updateTask(taskId, { status: 'submitted' } as any);
+
+      await storage.createActivityLog({
+        orgId,
+        userId: getActivityUserId(req.body, userId),
+        entityType: "task",
+        entityId: taskId,
+        action: "submit_for_review",
+        changes: JSON.stringify({ submissionId: submission.id, deliverableCount: deliverableIds.length }),
+        source: "manual",
+      });
+
+      return res.json({ data: submission });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/tasks/:taskId/submissions", async (req, res) => {
+    try {
+      const taskId = parseInt(req.params.taskId);
+      const task = await storage.getTaskById(taskId);
+      if (!task) return res.status(404).json({ error: "任务不存在" });
+
+      const data = await storage.getSubmissionsByTaskId(taskId);
+      return res.json({ data });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/organizations/:orgId/pending-reviews", async (req, res) => {
+    try {
+      const orgId = parseInt(req.params.orgId);
+      const userId = req.currentUserId;
+      const user = await storage.getUserById(userId);
+      if (!user || (user.role !== 'owner' && user.role !== 'admin' && user.role !== 'head')) {
+        return res.status(403).json({ error: "无权查看待审核列表" });
+      }
+
+      const data = await storage.getPendingSubmissionsByOrgId(orgId);
+      return res.json({ data });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/tasks/:taskId/submissions/:submissionId/review", async (req, res) => {
+    try {
+      const taskId = parseInt(req.params.taskId);
+      const submissionId = parseInt(req.params.submissionId);
+      const task = await storage.getTaskById(taskId);
+      if (!task) return res.status(404).json({ error: "任务不存在" });
+
+      const userId = req.currentUserId;
+      const user = await storage.getUserById(userId);
+      if (!user || (user.role !== 'owner' && user.role !== 'admin' && user.role !== 'head')) {
+        return res.status(403).json({ error: "无权审核" });
+      }
+
+      const submission = await storage.getSubmissionById(submissionId);
+      if (!submission) return res.status(404).json({ error: "提交记录不存在" });
+      if (submission.taskId !== taskId) return res.status(400).json({ error: "提交记录不属于该任务" });
+      if (submission.status !== 'pending') return res.status(400).json({ error: "该提交已被审核" });
+
+      const { status, reviewNote, overallScore } = req.body;
+      if (!['approved', 'rejected', 'revision_requested'].includes(status)) {
+        return res.status(400).json({ error: "无效的审核状态" });
+      }
+
+      const updated = await storage.updateSubmission(submissionId, {
+        status,
+        reviewedBy: userId,
+        reviewedAt: new Date(),
+        reviewNote: reviewNote || null,
+        overallScore: overallScore || null,
+      });
+
+      if (status === 'approved') {
+        await storage.updateTask(taskId, { status: 'done', completedAt: new Date() } as any);
+      } else if (status === 'rejected' || status === 'revision_requested') {
+        await storage.updateTask(taskId, { status: 'in_progress' } as any);
+      }
+
+      await storage.createActivityLog({
+        orgId: task.orgId,
+        userId: getActivityUserId(req.body, userId),
+        entityType: "task",
+        entityId: taskId,
+        action: status === 'approved' ? 'approve_submission' : status === 'rejected' ? 'reject_submission' : 'request_revision',
+        changes: JSON.stringify({ submissionId, status, score: overallScore }),
+        source: "manual",
+      });
+
+      return res.json({ data: updated });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
   // ===================== Activity Logs =====================
   app.get("/api/activity-logs", async (req, res) => {
     try {
