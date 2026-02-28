@@ -1212,14 +1212,14 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
       setSubVisible(false);
       setSubSlideIn(false);
       setAnimationDone(false);
-      const t = setTimeout(() => setAnimationDone(true), 440);
+      const t = setTimeout(() => setAnimationDone(true), 520);
       return () => clearTimeout(t);
     } else if (mounted) {
       setClosing(true);
       const t = setTimeout(() => {
         setClosing(false);
         setMounted(false);
-      }, 350);
+      }, 440);
       return () => clearTimeout(t);
     }
   }, [open]);
@@ -1293,10 +1293,10 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
           zIndex: 59,
           background: 'rgba(0,0,0,0.6)',
           animation: closing
-            ? 'settingsBackdropOut 350ms ease forwards'
+            ? 'settingsBackdropOut 420ms ease forwards'
             : animationDone
               ? 'none'
-              : 'settingsBackdropIn 420ms ease forwards',
+              : 'settingsBackdropIn 500ms ease forwards',
         }}
         onClick={handleClose}
         data-testid="settings-backdrop"
@@ -1318,10 +1318,10 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
           flexDirection: 'column',
           overflow: 'hidden',
           animation: closing
-            ? 'settingsSheetOut 350ms cubic-bezier(0.32, 0.72, 0, 1) forwards'
+            ? 'settingsSheetOut 420ms cubic-bezier(0.4, 0, 0.2, 1) forwards'
             : animationDone
               ? 'none'
-              : 'settingsSheetIn 420ms cubic-bezier(0.32, 0.72, 0, 1) both',
+              : 'settingsSheetIn 500ms cubic-bezier(0.16, 1, 0.3, 1) both',
         }}
         data-testid="settings-page"
       >
