@@ -617,9 +617,9 @@ function ProfilePage({ onBack }: { onBack: () => void }) {
   const profileChanged = displayName.trim() !== (authUser?.displayName || '') || nickname.trim() !== '';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <PageHeader title="Profile" onBack={onBack} />
-      <BounceScroll style={{ flex: 1, padding: '0 20px 40px' }}>
+      <BounceScroll style={{ flex: 1, minHeight: 0, padding: '0 20px 40px' }}>
 
         <div style={{ marginBottom: 16 }}>
           <label style={sectionLabelStyle}>Full Name</label>
@@ -799,9 +799,9 @@ function OrganizationPage({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <PageHeader title="Organization" onBack={onBack} />
-      <BounceScroll style={{ flex: 1, padding: '0 20px 40px' }}>
+      <BounceScroll style={{ flex: 1, minHeight: 0, padding: '0 20px 40px' }}>
         {isLoading ? (
           <div style={{ padding: '40px 0', textAlign: 'center', color: '#7A7874' }}>
             <Loader2 size={24} className="animate-spin" style={{ margin: '0 auto 8px' }} />
@@ -939,9 +939,9 @@ function CapabilitiesPage({ onBack }: { onBack: () => void }) {
   const [autoDeps, setAutoDeps] = useState(false);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <PageHeader title="Capabilities" onBack={onBack} />
-      <BounceScroll style={{ flex: 1, padding: '0 0 40px' }}>
+      <BounceScroll style={{ flex: 1, minHeight: 0, padding: '0 0 40px' }}>
         <SettingsGroup>
           <SettingsToggleItem
             icon={Bot}
@@ -1072,9 +1072,9 @@ function ConnectorsPage({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <PageHeader title="Connectors" onBack={onBack} />
-      <BounceScroll style={{ flex: 1, padding: '0 0 40px' }}>
+      <BounceScroll style={{ flex: 1, minHeight: 0, padding: '0 0 40px' }}>
 
         <div style={{ padding: '12px 20px 16px' }}>
           <div style={{ fontSize: 13, color: '#7A7874', lineHeight: '1.5' }}>
@@ -1158,9 +1158,9 @@ function PermissionsPage({ onBack }: { onBack: () => void }) {
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <PageHeader title="Permissions" onBack={onBack} />
-      <BounceScroll style={{ flex: 1, padding: '0 0 40px' }}>
+      <BounceScroll style={{ flex: 1, minHeight: 0, padding: '0 0 40px' }}>
 
         <div style={{ padding: '4px 20px 16px' }}>
           <div style={{
@@ -1218,9 +1218,9 @@ function PermissionsPage({ onBack }: { onBack: () => void }) {
 
 function ComingSoonPage({ title, onBack }: { title: string; onBack: () => void }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <PageHeader title={title} onBack={onBack} />
-      <BounceScroll style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <BounceScroll style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{
             width: 48,
@@ -1244,9 +1244,9 @@ function ComingSoonPage({ title, onBack }: { title: string; onBack: () => void }
 
 function AboutPage({ onBack }: { onBack: () => void }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <PageHeader title="About" onBack={onBack} />
-      <BounceScroll style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+      <BounceScroll style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
         <div style={{
           width: 72,
           height: 72,
@@ -1397,10 +1397,11 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
           display: 'flex',
           flexDirection: 'column',
           height: '100%',
+          minHeight: 0,
         }}>
           <PageHeader title="Settings" onClose={onClose} />
 
-          <BounceScroll style={{ flex: 1 }}>
+          <BounceScroll style={{ flex: 1, minHeight: 0 }}>
             <div style={{
               margin: '4px 20px 16px',
               padding: '14px 16px',
