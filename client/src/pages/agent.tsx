@@ -8,6 +8,7 @@ import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
 import type { Attachment } from "@/components/ai/AiInputBar";
 import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Pencil, X, Check, ListFilter, ChevronRight, Search, Star, FolderOpen, ArrowDown, AlertCircle, Clock } from "lucide-react";
+import InteractiveInputWidget, { formatAnswersForDisplay, formatAnswersForAI, type InteractiveQuestion } from "@/components/ai/InteractiveInputWidget";
 import { Button } from "@/components/ui/button";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
@@ -915,6 +916,7 @@ export default function Agent() {
   const [researchEnabled, setResearchEnabled] = useState(false);
   const [replyStyle, setReplyStyle] = useState('normal');
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [interactiveInput, setInteractiveInput] = useState<InteractiveQuestion[] | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const conversationHistory = useRef<{ role: string; content: string }[]>([]);
   const [activeConvSystemPrompt, setActiveConvSystemPrompt] = useState<string | undefined>();
@@ -1034,6 +1036,7 @@ export default function Agent() {
   }, []);
 
   useEffect(() => {
+    setInteractiveInput(null);
     if (!activeConvId) {
       setShowChat(false);
       setMessages([]);
@@ -1127,8 +1130,27 @@ export default function Agent() {
     }
   }, []);
 
+  const handleInteractiveSubmit = useCallback(
+    (answers: Record<string, string[]>) => {
+      if (!interactiveInput) return;
+      const displayText = formatAnswersForDisplay(interactiveInput, answers);
+      const structuredData = formatAnswersForAI(interactiveInput, answers);
+      setInteractiveInput(null);
+      const responseText = `[用户选择] ${displayText}\n\n${JSON.stringify(structuredData)}`;
+      handleSendRef.current?.(responseText);
+    },
+    [interactiveInput]
+  );
+
+  const handleInteractiveDismiss = useCallback(() => {
+    setInteractiveInput(null);
+  }, []);
+
+  const handleSendRef = useRef<((text: string, attachments?: Attachment[]) => void) | null>(null);
+
   const handleSend = useCallback(
     async (text: string, attachments?: Attachment[]) => {
+      setInteractiveInput(null);
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
@@ -1326,6 +1348,10 @@ export default function Agent() {
                     flushTokenBuffer();
                   }, 50);
                 }
+              } else if (event.type === 'interactive_input' && event.questions) {
+                if (isActiveStream()) {
+                  setInteractiveInput(event.questions);
+                }
               } else if (event.type === 'action') {
                 pendingAction = event;
               } else if (event.type === 'done') {
@@ -1508,6 +1534,8 @@ export default function Agent() {
     },
     [activeConvId, activeConvSystemPrompt, saveMessageToDB, navigate, currentUserId, replyStyle, webSearchEnabled, codeContextEnabled]
   );
+
+  handleSendRef.current = handleSend;
 
   const rebuildHistoryFromMessages = useCallback((msgs: Message[]) => {
     conversationHistory.current = msgs
@@ -1994,6 +2022,22 @@ export default function Agent() {
           >
             <ArrowDown className="w-4 h-4" style={{ color: 'rgba(255,255,255,0.85)' }} strokeWidth={2} />
           </button>
+        </div>
+      )}
+
+      {interactiveInput && (
+        <div
+          className="absolute left-0 right-0 z-20"
+          style={{ bottom: 'calc(120px + 3.33vh)' }}
+          data-testid="interactive-widget-container"
+        >
+          <div className="max-w-3xl mx-auto px-4">
+            <InteractiveInputWidget
+              questions={interactiveInput}
+              onSubmit={handleInteractiveSubmit}
+              onDismiss={handleInteractiveDismiss}
+            />
+          </div>
         </div>
       )}
 

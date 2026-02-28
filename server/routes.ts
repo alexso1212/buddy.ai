@@ -2924,7 +2924,9 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
             displayText = fullText.slice(0, fullText.indexOf('<<<ACTIONS>>>')).trim();
             try {
               const actionData = JSON.parse(actionMatch[1].trim());
-              if (actionData && (actionData.action || actionData.actions)) {
+              if (actionData && actionData.type === 'interactive_input' && actionData.questions) {
+                res.write(`data: ${JSON.stringify({ type: 'interactive_input', questions: actionData.questions })}\n\n`);
+              } else if (actionData && (actionData.action || actionData.actions)) {
                 res.write(`data: ${JSON.stringify({ type: 'action', ...actionData })}\n\n`);
               }
             } catch (parseErr) {

@@ -4,6 +4,7 @@ import { X, Send, Sparkles, Camera, ArrowDown, Square } from "lucide-react";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
+import InteractiveInputWidget, { formatAnswersForDisplay, formatAnswersForAI, type InteractiveQuestion } from "@/components/ai/InteractiveInputWidget";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import type { ForceGraphHandle } from "@/components/graph/ForceGraph";
@@ -134,6 +135,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
   const [isDragOver, setIsDragOver] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [interactiveInput, setInteractiveInput] = useState<InteractiveQuestion[] | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const conversationHistory = useRef<{ role: string; content: string }[]>([]);
@@ -306,7 +308,26 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
     }
   }, [graphRef, capturing]);
 
+  const handleSendRef = useRef<((text: string, sendAttachments?: Attachment[]) => void) | null>(null);
+
+  const handleInteractiveSubmit = useCallback(
+    (answers: Record<string, string[]>) => {
+      if (!interactiveInput) return;
+      const displayText = formatAnswersForDisplay(interactiveInput, answers);
+      const structuredData = formatAnswersForAI(interactiveInput, answers);
+      setInteractiveInput(null);
+      const responseText = `[用户选择] ${displayText}\n\n${JSON.stringify(structuredData)}`;
+      handleSendRef.current?.(responseText);
+    },
+    [interactiveInput]
+  );
+
+  const handleInteractiveDismiss = useCallback(() => {
+    setInteractiveInput(null);
+  }, []);
+
   const handleSendWithText = useCallback(async (text: string, sendAttachments?: Attachment[]) => {
+    setInteractiveInput(null);
     const hasScreenshot = !!pendingScreenshot;
     const allAttachments = [...(sendAttachments || attachments)];
     if ((!text && !hasScreenshot && allAttachments.length === 0) || loading) return;
@@ -522,6 +543,8 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
                   tokenFlushTimer = null;
                 }, 50);
               }
+            } else if (event.type === "interactive_input" && event.questions) {
+              setInteractiveInput(event.questions);
             } else if (event.type === "action") {
               pendingAction = event;
             } else if (event.type === "usage") {
@@ -687,6 +710,8 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
       abortControllerRef.current = null;
     }
   }, [inputValue, loading, currentUserId, saveMessageToDB, pendingScreenshot, attachments, graphRef]);
+
+  handleSendRef.current = handleSendWithText;
 
   const handleSend = useCallback(async () => {
     handleSendWithText(inputValue.trim());
@@ -1051,6 +1076,15 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
         onDrop={handleDrop}
         data-testid="graph-chat-input-area"
       >
+        {interactiveInput && (
+          <div style={{ marginBottom: 8 }} data-testid="graph-interactive-widget-container">
+            <InteractiveInputWidget
+              questions={interactiveInput}
+              onSubmit={handleInteractiveSubmit}
+              onDismiss={handleInteractiveDismiss}
+            />
+          </div>
+        )}
         {attachments.length > 0 && (
           <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
             {attachments.map((att, i) => (
