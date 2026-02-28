@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -29,7 +30,7 @@ const scrollStyle: React.CSSProperties = {
   overflowY: 'auto',
   overflowX: 'hidden',
   WebkitOverflowScrolling: 'touch' as any,
-  overscrollBehavior: 'contain',
+  overscrollBehavior: 'auto',
 };
 
 function BounceScroll({ children, style, className }: { children: React.ReactNode; style?: React.CSSProperties; className?: string }) {
@@ -1265,7 +1266,7 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
     }
   };
 
-  return (
+  return createPortal(
     <div
       ref={containerRef}
       style={{
@@ -1402,6 +1403,7 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
 
         {page !== 'main' && renderSubPage()}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
