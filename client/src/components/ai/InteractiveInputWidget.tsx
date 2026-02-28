@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Reorder } from "framer-motion";
+import { motion, AnimatePresence, Reorder } from "framer-motion";
+import type { PanInfo } from "framer-motion";
 import { ChevronLeft, ChevronRight, X, Paperclip, GripVertical } from "lucide-react";
 
 export interface InteractiveQuestion {
@@ -53,12 +54,40 @@ export function formatAnswersForAI(
   };
 }
 
+const springTransition = {
+  type: "spring" as const,
+  damping: 30,
+  stiffness: 350,
+  mass: 0.8,
+};
+
+const cardVariants = {
+  enter: (direction: number) => ({
+    x: direction < 0 ? "100%" : "-100%",
+    scale: 0.92,
+    opacity: 0.6,
+  }),
+  center: {
+    x: 0,
+    scale: 1,
+    opacity: 1,
+    transition: { type: "spring", damping: 28, stiffness: 300 },
+  },
+  exit: (direction: number) => ({
+    x: direction < 0 ? "-100%" : "100%",
+    scale: 0.92,
+    opacity: 0.6,
+    transition: { type: "spring", damping: 28, stiffness: 300 },
+  }),
+};
+
 export default function InteractiveInputWidget({
   questions,
   onSubmit,
   onDismiss,
 }: Props) {
   const [currentPage, setCurrentPage] = useState(0);
+  const [direction, setDirection] = useState(0);
   const [answers, setAnswers] = useState<InteractiveAnswers>(() => {
     const init: InteractiveAnswers = {};
     questions.forEach((q) => {
@@ -69,116 +98,70 @@ export default function InteractiveInputWidget({
     return init;
   });
   const [customText, setCustomText] = useState("");
-  const [isExiting, setIsExiting] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  const panelRef = useRef<HTMLDivElement>(null);
-  const [isPressed, setIsPressed] = useState(false);
-  const [glowPos, setGlowPos] = useState({ x: 0.5, y: 0.5 });
-  const [showGlow, setShowGlow] = useState(false);
-  const glowFadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const deformState = useRef({ pressed: false, moveHandler: null as ((e: PointerEvent) => void) | null });
+  const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const totalPages = questions.length;
   const currentQ = questions[currentPage];
 
+  const [spotPos, setSpotPos] = useState<{ x: number; y: number } | null>(null);
+  const [spotVisible, setSpotVisible] = useState(false);
+  const spotFadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    const raf = requestAnimationFrame(() => {
-      requestAnimationFrame(() => setMounted(true));
-    });
     return () => {
-      cancelAnimationFrame(raf);
-      if (glowFadeTimer.current) clearTimeout(glowFadeTimer.current);
-      if (deformState.current.moveHandler) {
-        window.removeEventListener("pointermove", deformState.current.moveHandler);
-      }
+      if (spotFadeTimer.current) clearTimeout(spotFadeTimer.current);
+      if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
     };
   }, []);
 
-  const computeDeform = useCallback((clientX: number, clientY: number) => {
-    const el = panelRef.current;
-    if (!el) return { transform: "" };
-    const rect = el.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const rawDx = clientX - cx;
-    const rawDy = clientY - cy;
-    const dist = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
-    const maxDist = Math.max(rect.width, rect.height) * 0.8;
-    const norm = Math.min(dist / Math.max(maxDist, 1), 1.2);
-    const angle = Math.atan2(rawDy, rawDx);
-    const cosA = Math.cos(angle);
-    const sinA = Math.sin(angle);
-    const stretch = 0.015;
-    const stretchAlong = norm * stretch;
-    const compressPerp = norm * stretch * 0.55;
-    const scaleX = 1.0 + stretchAlong * Math.abs(cosA) - compressPerp * Math.abs(sinA);
-    const scaleY = 1.0 + stretchAlong * Math.abs(sinA) - compressPerp * Math.abs(cosA);
-    const tx = cosA * norm * 1.2;
-    const ty = sinA * norm * 1.2;
-    return {
-      transform: `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scaleX(${scaleX.toFixed(4)}) scaleY(${scaleY.toFixed(4)})`,
-    };
-  }, []);
-
-  const updateGlowPos = useCallback((clientX: number, clientY: number) => {
-    const el = panelRef.current;
+  const updateSpot = useCallback((clientX: number, clientY: number) => {
+    const el = cardRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    setGlowPos({
-      x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
-      y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height)),
+    setSpotPos({
+      x: clientX - rect.left,
+      y: clientY - rect.top,
     });
   }, []);
 
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest("button, input, textarea, [data-no-deform]")) return;
-    setIsPressed(true);
-    setShowGlow(true);
-    if (glowFadeTimer.current) clearTimeout(glowFadeTimer.current);
-    updateGlowPos(e.clientX, e.clientY);
-    if (navigator.vibrate) navigator.vibrate(10);
-    const el = panelRef.current;
-    if (!el) return;
-    deformState.current.pressed = true;
-    el.style.willChange = "transform";
-    const { transform } = computeDeform(e.clientX, e.clientY);
-    el.style.transition = "transform 180ms cubic-bezier(0.25,0.46,0.45,0.94)";
-    el.style.transform = transform;
-    const onMove = (ev: PointerEvent) => {
-      if (!deformState.current.pressed || !panelRef.current) return;
-      const result = computeDeform(ev.clientX, ev.clientY);
-      panelRef.current.style.transition = "transform 50ms ease-out";
-      panelRef.current.style.transform = result.transform;
-      updateGlowPos(ev.clientX, ev.clientY);
-    };
-    deformState.current.moveHandler = onMove;
-    window.addEventListener("pointermove", onMove);
-  }, [computeDeform, updateGlowPos]);
+  const handleCardPointerDown = useCallback((e: React.PointerEvent) => {
+    setSpotVisible(true);
+    if (spotFadeTimer.current) clearTimeout(spotFadeTimer.current);
+    updateSpot(e.clientX, e.clientY);
+    if (navigator.vibrate) navigator.vibrate(8);
+  }, [updateSpot]);
 
-  const handlePointerUp = useCallback(() => {
-    setIsPressed(false);
-    deformState.current.pressed = false;
-    const el = panelRef.current;
-    if (el) {
-      el.style.transition = "transform 360ms cubic-bezier(0.34,1.56,0.64,1)";
-      el.style.transform = "translate(0px, 0px) scaleX(1) scaleY(1)";
-      el.style.willChange = "";
-    }
-    if (deformState.current.moveHandler) {
-      window.removeEventListener("pointermove", deformState.current.moveHandler);
-      deformState.current.moveHandler = null;
-    }
-    glowFadeTimer.current = setTimeout(() => setShowGlow(false), 600);
+  const handleCardPointerMove = useCallback((e: React.PointerEvent) => {
+    if (spotVisible) updateSpot(e.clientX, e.clientY);
+  }, [spotVisible, updateSpot]);
+
+  const handleCardPointerUp = useCallback(() => {
+    spotFadeTimer.current = setTimeout(() => setSpotVisible(false), 300);
   }, []);
+
+  const goToPage = useCallback((newPage: number) => {
+    if (newPage < 0 || newPage >= totalPages || newPage === currentPage) return;
+    setDirection(newPage > currentPage ? -1 : 1);
+    setCurrentPage(newPage);
+    setCustomText("");
+  }, [currentPage, totalPages]);
+
+  const handleDragEnd = useCallback((_e: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    const swipeThreshold = 80;
+    if (info.offset.x < -swipeThreshold && currentPage < totalPages - 1) {
+      goToPage(currentPage + 1);
+    } else if (info.offset.x > swipeThreshold && currentPage > 0) {
+      goToPage(currentPage - 1);
+    }
+  }, [currentPage, totalPages, goToPage]);
 
   const handleSelect = useCallback(
     (questionId: string, option: string, type: string) => {
       setAnswers((prev) => {
         const current = prev[questionId] || [];
         if (type === "single_select") {
-          const newVal = current[0] === option ? [] : [option];
-          return { ...prev, [questionId]: newVal };
+          return { ...prev, [questionId]: current[0] === option ? [] : [option] };
         } else {
           return {
             ...prev,
@@ -221,14 +204,24 @@ export default function InteractiveInputWidget({
         const current = answers[q.id] || [];
         const newVal = current[0] === option ? [] : [option];
         setAnswers((prev) => ({ ...prev, [q.id]: newVal }));
-        if (newVal.length > 0 && currentPage < totalPages - 1) {
-          setTimeout(() => setCurrentPage((p) => p + 1), 200);
+        if (newVal.length > 0) {
+          if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
+          if (currentPage < totalPages - 1) {
+            autoAdvanceTimer.current = setTimeout(() => {
+              goToPage(currentPage + 1);
+            }, 400);
+          } else {
+            autoAdvanceTimer.current = setTimeout(() => {
+              const finalAnswers = { ...answers, [q.id]: newVal };
+              onSubmit(finalAnswers);
+            }, 400);
+          }
         }
       } else {
         handleSelect(q.id, option, q.type);
       }
     },
-    [currentPage, totalPages, questions, answers, handleSelect]
+    [currentPage, totalPages, questions, answers, handleSelect, goToPage, onSubmit]
   );
 
   const canSubmitCurrent = (() => {
@@ -241,338 +234,372 @@ export default function InteractiveInputWidget({
 
   const handleConfirmCurrent = useCallback(() => {
     if (currentPage < totalPages - 1) {
-      setCurrentPage((p) => p + 1);
+      goToPage(currentPage + 1);
     } else {
-      setIsExiting(true);
-      setTimeout(() => onSubmit(answers), 440);
+      onSubmit(answers);
     }
-  }, [currentPage, totalPages, answers, onSubmit]);
-
-  const handleDismissWithAnimation = useCallback(() => {
-    setIsExiting(true);
-    setTimeout(() => onDismiss(), 440);
-  }, [onDismiss]);
+  }, [currentPage, totalPages, answers, onSubmit, goToPage]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") handleDismissWithAnimation();
+      if (e.key === "Escape") onDismiss();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [handleDismissWithAnimation]);
+  }, [onDismiss]);
 
   const isSelected = (option: string) => (answers[currentQ?.id] || []).includes(option);
 
   if (!currentQ) return null;
 
   return (
-    <div
-      ref={panelRef}
-      style={{
-        borderRadius: 16,
-        position: "relative",
-        padding: 1,
-        background: showGlow
-          ? `radial-gradient(ellipse 150px 100px at ${glowPos.x * 100}% ${glowPos.y * 100}%, rgba(255,255,255,${isPressed ? 0.55 : 0.3}) 0%, rgba(255,255,255,${isPressed ? 0.2 : 0.12}) 50%, rgba(255,255,255,0.06) 100%)`
-          : "linear-gradient(to bottom, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.07) 40%, rgba(255,255,255,0.04) 100%)",
-        boxShadow: showGlow
-          ? `0 0 ${isPressed ? 20 : 12}px rgba(255,255,255,${isPressed ? 0.12 : 0.06})`
-          : "none",
-        opacity: isExiting ? 0 : mounted ? 1 : 0,
-        transform: isExiting
-          ? "translateY(40px) scale(0.97)"
-          : mounted
-            ? "translateY(0) scale(1)"
-            : "translateY(40px) scale(0.97)",
-        transition: isExiting
-          ? "opacity 380ms cubic-bezier(0.4, 0, 1, 1), transform 420ms cubic-bezier(0.4, 0, 1, 1), background 0.05s ease, box-shadow 0.05s ease"
-          : mounted
-            ? (showGlow && !isPressed
-                ? "opacity 500ms cubic-bezier(0.16, 1, 0.3, 1), transform 500ms cubic-bezier(0.16, 1, 0.3, 1), background 0.5s ease, box-shadow 0.5s ease"
-                : "opacity 500ms cubic-bezier(0.16, 1, 0.3, 1), transform 500ms cubic-bezier(0.16, 1, 0.3, 1), background 0.05s ease, box-shadow 0.05s ease")
-            : "opacity 0s, transform 0s",
-      }}
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-      data-testid="interactive-input-widget"
-    >
-      <div
+    <>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.25 }}
         style={{
-          background: "#1A1918",
-          borderRadius: 15,
-          overflow: "hidden",
-          display: "flex",
-          flexDirection: "column",
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0, 0, 0, 0.5)",
+          zIndex: 99,
         }}
+        onClick={onDismiss}
+        data-testid="interactive-overlay"
+      />
+
+      <motion.div
+        initial={{ y: "100%", opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: "100%", opacity: 0 }}
+        transition={springTransition}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "fixed",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 100,
+          padding: "0 12px 16px",
+          paddingBottom: "max(16px, env(safe-area-inset-bottom))",
+        }}
+        data-testid="interactive-input-widget"
       >
         <div
+          ref={cardRef}
           style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "12px 16px 8px",
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            background: "#1c1c1e",
+            borderRadius: 16,
+            overflow: "hidden",
+            position: "relative",
+            maxWidth: 560,
+            margin: "0 auto",
           }}
+          onPointerDown={handleCardPointerDown}
+          onPointerMove={handleCardPointerMove}
+          onPointerUp={handleCardPointerUp}
+          onPointerLeave={handleCardPointerUp}
+          onPointerCancel={handleCardPointerUp}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {totalPages > 1 && (
-              <>
-                <button
-                  onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-                  disabled={currentPage === 0}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: currentPage === 0 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.5)",
-                    cursor: currentPage === 0 ? "default" : "pointer",
-                    padding: 2,
-                    display: "flex",
-                  }}
-                  data-testid="btn-prev-question"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <span style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", userSelect: "none" }}>
-                  {currentPage + 1} of {totalPages}
-                </span>
-                <button
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
-                  disabled={currentPage === totalPages - 1}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: currentPage === totalPages - 1 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.5)",
-                    cursor: currentPage === totalPages - 1 ? "default" : "pointer",
-                    padding: 2,
-                    display: "flex",
-                  }}
-                  data-testid="btn-next-question"
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </>
-            )}
-          </div>
-          <button
-            onClick={handleDismissWithAnimation}
-            style={{
-              background: "none",
-              border: "none",
-              color: "rgba(255,255,255,0.4)",
-              cursor: "pointer",
-              padding: 2,
-              display: "flex",
-              transition: "color 150ms",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.4)")}
-            data-testid="btn-dismiss-widget"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <div style={{ padding: "14px 16px 6px" }}>
-          <p
-            style={{
-              fontSize: 15,
-              fontWeight: 500,
-              color: "rgba(255,255,255,0.88)",
-              margin: 0,
-              lineHeight: 1.4,
-            }}
-          >
-            {currentQ.question}
-          </p>
-        </div>
-
-        <div
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            overscrollBehavior: "contain",
-            WebkitOverflowScrolling: "touch",
-          }}
-        >
-          {currentQ.type === "rank_priorities" ? (
-            <div style={{ padding: "4px 8px" }} data-no-deform>
-              <Reorder.Group
-                axis="y"
-                values={answers[currentQ.id] || currentQ.options}
-                onReorder={(newOrder) => handleReorder(currentQ.id, newOrder)}
-                style={{ listStyle: "none", padding: 0, margin: 0 }}
-              >
-                {(answers[currentQ.id] || currentQ.options).map((option, index) => (
-                  <Reorder.Item
-                    key={option}
-                    value={option}
-                    whileDrag={{
-                      scale: 1.02,
-                      boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
-                      cursor: "grabbing",
-                    }}
-                    transition={{ duration: 0.2 }}
-                    style={{
-                      cursor: "grab",
-                      touchAction: "none",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 14,
-                      padding: "14px 16px",
-                      borderBottom: "1px solid rgba(255,255,255,0.06)",
-                      userSelect: "none",
-                    }}
-                    data-testid={`rank-item-${option}`}
-                  >
-                    <span
-                      style={{
-                        fontSize: 15,
-                        fontWeight: 600,
-                        color: "rgba(255,255,255,0.35)",
-                        width: 20,
-                        textAlign: "center",
-                        flexShrink: 0,
-                      }}
-                    >
-                      {index + 1}
-                    </span>
-                    <span
-                      style={{
-                        flex: 1,
-                        fontSize: 15,
-                        color: "rgba(255,255,255,0.85)",
-                      }}
-                    >
-                      {option}
-                    </span>
-                    <GripVertical
-                      size={16}
-                      style={{ color: "rgba(255,255,255,0.2)", flexShrink: 0 }}
-                    />
-                  </Reorder.Item>
-                ))}
-              </Reorder.Group>
-            </div>
-          ) : (
-            <div>
-              {currentQ.options.map((option, index) => (
-                <button
-                  key={option}
-                  onClick={() => handleOptionClick(option)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 14,
-                    width: "100%",
-                    padding: "14px 16px",
-                    background: isSelected(option) ? "rgba(212,184,150,0.1)" : "transparent",
-                    border: "none",
-                    borderBottom: "1px solid rgba(255,255,255,0.06)",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    transition: "background 120ms ease",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isSelected(option)) e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = isSelected(option) ? "rgba(212,184,150,0.1)" : "transparent";
-                  }}
-                  tabIndex={0}
-                  data-testid={`option-chip-${currentQ.id}-${option}`}
-                >
-                  <span
-                    style={{
-                      fontSize: 15,
-                      fontWeight: 600,
-                      color: isSelected(option) ? "#D4B896" : "rgba(255,255,255,0.35)",
-                      width: 20,
-                      textAlign: "center",
-                      flexShrink: 0,
-                      transition: "color 120ms ease",
-                    }}
-                  >
-                    {index + 1}
-                  </span>
-                  <span
-                    style={{
-                      flex: 1,
-                      fontSize: 15,
-                      color: isSelected(option) ? "#D4B896" : "rgba(255,255,255,0.85)",
-                      transition: "color 120ms ease",
-                    }}
-                  >
-                    {option}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {(currentQ.type !== "single_select" || currentPage === totalPages - 1) && (
-          <div style={{ padding: "8px 16px 10px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-            <button
-              onClick={handleConfirmCurrent}
-              disabled={!canSubmitCurrent}
+          {spotPos && (
+            <div
               style={{
-                width: "100%",
-                padding: "10px 0",
-                borderRadius: 10,
-                border: "none",
-                fontSize: 14,
-                fontWeight: 500,
-                cursor: canSubmitCurrent ? "pointer" : "not-allowed",
-                background: canSubmitCurrent ? "rgba(212,184,150,0.15)" : "rgba(255,255,255,0.04)",
-                color: canSubmitCurrent ? "#D4B896" : "rgba(255,255,255,0.2)",
-                transition: "all 150ms ease",
+                position: "absolute",
+                width: 300,
+                height: 300,
+                borderRadius: "50%",
+                background: "radial-gradient(circle at center, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.05) 40%, rgba(255,255,255,0) 70%)",
+                pointerEvents: "none",
+                transform: "translate(-50%, -50%)",
+                left: spotPos.x,
+                top: spotPos.y,
+                opacity: spotVisible ? 1 : 0,
+                transition: "opacity 300ms ease-out",
+                zIndex: 1,
               }}
-              data-testid="btn-confirm-selection"
-            >
-              {currentPage < totalPages - 1 ? "下一题" : "确认"}
-            </button>
-          </div>
-        )}
+            />
+          )}
 
-        {currentQ.type !== "rank_priorities" && (
           <div
             style={{
+              position: "relative",
+              zIndex: 2,
               display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "8px 12px 10px",
-              borderTop: "1px solid rgba(255,255,255,0.06)",
+              flexDirection: "column",
             }}
           >
-            <Paperclip size={16} style={{ color: "rgba(255,255,255,0.25)", flexShrink: 0 }} />
-            <input
-              type="text"
-              value={customText}
-              onChange={(e) => setCustomText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && customText.trim()) {
-                  e.preventDefault();
-                  handleCustomSubmit();
-                }
-              }}
-              placeholder="Type your answer..."
+            <div
               style={{
-                flex: 1,
-                background: "transparent",
-                border: "none",
-                outline: "none",
-                fontSize: 15,
-                color: "rgba(255,255,255,0.85)",
-                lineHeight: 1.4,
-                padding: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "14px 16px 10px",
               }}
-              data-testid="interactive-custom-input"
-            />
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {totalPages > 1 && (
+                  <>
+                    <button
+                      onClick={() => goToPage(currentPage - 1)}
+                      disabled={currentPage === 0}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: currentPage === 0 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.5)",
+                        cursor: currentPage === 0 ? "default" : "pointer",
+                        padding: "4px 8px",
+                        display: "flex",
+                        fontSize: 18,
+                      }}
+                      data-testid="btn-prev-question"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <span style={{ fontSize: 14, color: "rgba(255,255,255,0.5)", userSelect: "none" }}>
+                      {currentPage + 1} of {totalPages}
+                    </span>
+                    <button
+                      onClick={() => goToPage(currentPage + 1)}
+                      disabled={currentPage === totalPages - 1}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: currentPage === totalPages - 1 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.5)",
+                        cursor: currentPage === totalPages - 1 ? "default" : "pointer",
+                        padding: "4px 8px",
+                        display: "flex",
+                        fontSize: 18,
+                      }}
+                      data-testid="btn-next-question"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </>
+                )}
+              </div>
+              <button
+                onClick={onDismiss}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "rgba(255,255,255,0.5)",
+                  cursor: "pointer",
+                  padding: "4px 8px",
+                  display: "flex",
+                  fontSize: 20,
+                }}
+                data-testid="btn-dismiss-widget"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ overflow: "hidden", position: "relative", minHeight: 120 }}>
+              <AnimatePresence initial={false} custom={direction} mode="popLayout">
+                <motion.div
+                  key={currentPage}
+                  custom={direction}
+                  variants={cardVariants}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  drag={totalPages > 1 ? "x" : false}
+                  dragConstraints={{ left: 0, right: 0 }}
+                  dragElastic={0.8}
+                  onDragEnd={handleDragEnd}
+                  style={{ touchAction: totalPages > 1 ? "pan-y" : "auto" }}
+                >
+                  <div style={{ padding: "4px 20px 14px" }}>
+                    <h3
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 600,
+                        color: "#ffffff",
+                        margin: "0 0 16px 0",
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {currentQ.question}
+                    </h3>
+
+                    {currentQ.type === "rank_priorities" ? (
+                      <div data-no-deform>
+                        <Reorder.Group
+                          axis="y"
+                          values={answers[currentQ.id] || currentQ.options}
+                          onReorder={(newOrder) => handleReorder(currentQ.id, newOrder)}
+                          style={{ listStyle: "none", padding: 0, margin: 0 }}
+                        >
+                          {(answers[currentQ.id] || currentQ.options).map((option, index) => (
+                            <Reorder.Item
+                              key={option}
+                              value={option}
+                              whileDrag={{
+                                scale: 1.03,
+                                boxShadow: "0 6px 20px rgba(0,0,0,0.5)",
+                                cursor: "grabbing",
+                              }}
+                              transition={{ duration: 0.2 }}
+                              style={{
+                                cursor: "grab",
+                                touchAction: "none",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 16,
+                                padding: "14px 0",
+                                borderBottom: index < (answers[currentQ.id] || currentQ.options).length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
+                                userSelect: "none",
+                              }}
+                              data-testid={`rank-item-${option}`}
+                            >
+                              <span
+                                style={{
+                                  fontSize: 16,
+                                  fontWeight: 500,
+                                  color: "rgba(255,255,255,0.4)",
+                                  width: 24,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {index + 1}
+                              </span>
+                              <span
+                                style={{
+                                  flex: 1,
+                                  fontSize: 16,
+                                  color: "rgba(255,255,255,0.9)",
+                                }}
+                              >
+                                {option}
+                              </span>
+                              <GripVertical
+                                size={16}
+                                style={{ color: "rgba(255,255,255,0.2)", flexShrink: 0 }}
+                              />
+                            </Reorder.Item>
+                          ))}
+                        </Reorder.Group>
+                      </div>
+                    ) : (
+                      <div>
+                        {currentQ.options.map((option, index) => {
+                          const selected = isSelected(option);
+                          return (
+                            <button
+                              key={option}
+                              onClick={() => handleOptionClick(option)}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 16,
+                                width: "100%",
+                                padding: "14px 0",
+                                background: selected ? "rgba(255,255,255,0.08)" : "transparent",
+                                border: "none",
+                                borderBottom: index < currentQ.options.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
+                                borderRadius: selected ? 8 : 0,
+                                cursor: "pointer",
+                                textAlign: "left",
+                                transition: "background 120ms ease",
+                                position: "relative",
+                                overflow: "hidden",
+                              }}
+                              tabIndex={0}
+                              data-testid={`option-chip-${currentQ.id}-${option}`}
+                            >
+                              <span
+                                style={{
+                                  fontSize: 16,
+                                  color: "rgba(255,255,255,0.4)",
+                                  width: 24,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {index + 1}
+                              </span>
+                              <span
+                                style={{
+                                  flex: 1,
+                                  fontSize: 16,
+                                  color: "rgba(255,255,255,0.9)",
+                                }}
+                              >
+                                {option}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+
+            {(currentQ.type === "multi_select" || currentQ.type === "rank_priorities") && (
+              <div style={{ padding: "6px 20px 10px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                <button
+                  onClick={handleConfirmCurrent}
+                  disabled={!canSubmitCurrent}
+                  style={{
+                    width: "100%",
+                    padding: "11px 0",
+                    borderRadius: 10,
+                    border: "none",
+                    fontSize: 15,
+                    fontWeight: 500,
+                    cursor: canSubmitCurrent ? "pointer" : "not-allowed",
+                    background: canSubmitCurrent ? "rgba(212,184,150,0.15)" : "rgba(255,255,255,0.04)",
+                    color: canSubmitCurrent ? "#D4B896" : "rgba(255,255,255,0.2)",
+                    transition: "all 150ms ease",
+                  }}
+                  data-testid="btn-confirm-selection"
+                >
+                  {currentPage < totalPages - 1 ? "下一题" : "确认"}
+                </button>
+              </div>
+            )}
+
+            {currentQ.type !== "rank_priorities" && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "10px 20px 14px",
+                  borderTop: "1px solid rgba(255,255,255,0.08)",
+                }}
+              >
+                <Paperclip size={16} style={{ color: "rgba(255,255,255,0.3)", flexShrink: 0 }} />
+                <input
+                  type="text"
+                  value={customText}
+                  onChange={(e) => setCustomText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && customText.trim()) {
+                      e.preventDefault();
+                      handleCustomSubmit();
+                    }
+                  }}
+                  placeholder="Type your answer..."
+                  style={{
+                    flex: 1,
+                    background: "transparent",
+                    border: "none",
+                    outline: "none",
+                    fontSize: 15,
+                    color: "rgba(255,255,255,0.4)",
+                    lineHeight: 1.4,
+                    padding: 0,
+                  }}
+                  data-testid="interactive-custom-input"
+                />
+              </div>
+            )}
           </div>
-        )}
-      </div>
-    </div>
+        </div>
+      </motion.div>
+    </>
   );
 }

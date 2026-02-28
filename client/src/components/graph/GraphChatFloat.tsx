@@ -1063,20 +1063,11 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
       </div>
 
       {interactiveInput && (
-        <div
-          style={{
-            flexShrink: 0,
-            borderTop: "1px solid rgba(255,255,255,0.12)",
-            padding: "8px 10px",
-          }}
-          data-testid="graph-interactive-widget-container"
-        >
-          <InteractiveInputWidget
-            questions={interactiveInput}
-            onSubmit={handleInteractiveSubmit}
-            onDismiss={handleInteractiveDismiss}
-          />
-        </div>
+        <InteractiveInputWidget
+          questions={interactiveInput}
+          onSubmit={handleInteractiveSubmit}
+          onDismiss={handleInteractiveDismiss}
+        />
       )}
       <div
         style={{
@@ -1086,7 +1077,6 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
           outline: isDragOver ? '2px dashed rgba(139,92,246,0.5)' : 'none',
           outlineOffset: -2,
           transition: 'outline 150ms',
-          display: interactiveInput ? 'none' : 'block',
         }}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}

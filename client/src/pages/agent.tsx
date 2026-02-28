@@ -2046,35 +2046,27 @@ export default function Agent() {
         </button>
       )}
 
-      {interactiveInput ? (
-        <div
-          className="absolute left-0 right-0 bottom-0 z-20"
-          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-          data-testid="interactive-widget-container"
-        >
-          <div className="max-w-3xl mx-auto px-3">
-            <InteractiveInputWidget
-              questions={interactiveInput}
-              onSubmit={handleInteractiveSubmit}
-              onDismiss={handleInteractiveDismiss}
-            />
-          </div>
-        </div>
-      ) : (
-        <BottomInputArea
-          onSend={handleSend}
-          loading={loading}
-          onStop={handleStop}
-          webSearchEnabled={webSearchEnabled}
-          onWebSearchToggle={setWebSearchEnabled}
-          codeContextEnabled={codeContextEnabled}
-          onCodeContextToggle={setCodeContextEnabled}
-          researchEnabled={researchEnabled}
-          onResearchToggle={setResearchEnabled}
-          replyStyle={replyStyle}
-          onReplyStyleChange={setReplyStyle}
+      {interactiveInput && (
+        <InteractiveInputWidget
+          questions={interactiveInput}
+          onSubmit={handleInteractiveSubmit}
+          onDismiss={handleInteractiveDismiss}
         />
       )}
+
+      <BottomInputArea
+        onSend={handleSend}
+        loading={loading}
+        onStop={handleStop}
+        webSearchEnabled={webSearchEnabled}
+        onWebSearchToggle={setWebSearchEnabled}
+        codeContextEnabled={codeContextEnabled}
+        onCodeContextToggle={setCodeContextEnabled}
+        researchEnabled={researchEnabled}
+        onResearchToggle={setResearchEnabled}
+        replyStyle={replyStyle}
+        onReplyStyleChange={setReplyStyle}
+      />
     </div>
   );
 }
