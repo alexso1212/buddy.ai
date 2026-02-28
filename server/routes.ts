@@ -1594,8 +1594,8 @@ export async function registerRoutes(server: Server, app: Express) {
         return res.status(403).json({ error: "只有任务负责人才能提交审核" });
       }
 
-      if (!['in_progress'].includes(task.status)) {
-        return res.status(400).json({ error: `当前任务状态为「${task.status}」，只有「进行中」的任务可以提交审核` });
+      if (!['in_progress', 'revision_requested'].includes(task.status)) {
+        return res.status(400).json({ error: `当前任务状态为「${task.status}」，只有「进行中」或「需要修改」的任务可以提交审核` });
       }
 
       const { note, deliverableIds } = req.body;
