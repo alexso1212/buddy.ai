@@ -25,119 +25,17 @@ interface SettingsPageProps {
   onCloseSidebar: () => void;
 }
 
-function useIOSBounceScroll(scrollRef: React.RefObject<HTMLDivElement | null>) {
-  const lastY = useRef(0);
-  const pulling = useRef(false);
-  const pullDir = useRef<'top' | 'bottom' | null>(null);
-  const accumulated = useRef(0);
-  const edgeY = useRef(0);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-
-    const getContentEl = () => el.firstElementChild as HTMLElement | null;
-
-    const onTouchStart = (e: TouchEvent) => {
-      lastY.current = e.touches[0].clientY;
-      const content = getContentEl();
-      if (content) {
-        content.style.transition = 'none';
-        content.style.transform = 'translateY(0)';
-      }
-      pulling.current = false;
-      pullDir.current = null;
-      accumulated.current = 0;
-      edgeY.current = 0;
-    };
-
-    const onTouchMove = (e: TouchEvent) => {
-      const content = getContentEl();
-      if (!content) return;
-
-      const touchY = e.touches[0].clientY;
-      const moveDir = touchY - lastY.current;
-      lastY.current = touchY;
-
-      const atTop = el.scrollTop <= 1;
-      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 1;
-
-      if (pulling.current) {
-        const rawDelta = touchY - edgeY.current;
-        if (pullDir.current === 'top' && rawDelta <= 0) {
-          content.style.transform = 'translateY(0)';
-          pulling.current = false;
-          pullDir.current = null;
-          accumulated.current = 0;
-          return;
-        }
-        if (pullDir.current === 'bottom' && rawDelta >= 0) {
-          content.style.transform = 'translateY(0)';
-          pulling.current = false;
-          pullDir.current = null;
-          accumulated.current = 0;
-          return;
-        }
-        const dampened = rawDelta * 0.4;
-        accumulated.current = dampened;
-        content.style.transform = `translateY(${dampened}px)`;
-        e.preventDefault();
-        return;
-      }
-
-      if (atTop && moveDir > 0) {
-        pulling.current = true;
-        pullDir.current = 'top';
-        edgeY.current = touchY;
-        accumulated.current = 0;
-        e.preventDefault();
-      } else if (atBottom && moveDir < 0) {
-        pulling.current = true;
-        pullDir.current = 'bottom';
-        edgeY.current = touchY;
-        accumulated.current = 0;
-        e.preventDefault();
-      }
-    };
-
-    const onTouchEnd = () => {
-      const content = getContentEl();
-      if (!content) return;
-
-      if (pulling.current && accumulated.current !== 0) {
-        content.style.transition = 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)';
-        content.style.transform = 'translateY(0)';
-      }
-      pulling.current = false;
-      pullDir.current = null;
-      accumulated.current = 0;
-    };
-
-    el.addEventListener('touchstart', onTouchStart, { passive: true });
-    el.addEventListener('touchmove', onTouchMove, { passive: false });
-    el.addEventListener('touchend', onTouchEnd, { passive: true });
-
-    return () => {
-      el.removeEventListener('touchstart', onTouchStart);
-      el.removeEventListener('touchmove', onTouchMove);
-      el.removeEventListener('touchend', onTouchEnd);
-    };
-  }, [scrollRef]);
-}
-
 const scrollStyle: React.CSSProperties = {
   overflowY: 'auto',
   overflowX: 'hidden',
   WebkitOverflowScrolling: 'touch' as any,
-  overscrollBehavior: 'none',
+  overscrollBehavior: 'contain',
 };
 
 function BounceScroll({ children, style, className }: { children: React.ReactNode; style?: React.CSSProperties; className?: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useIOSBounceScroll(ref);
   return (
-    <div ref={ref} style={{ ...scrollStyle, ...style }} className={className}>
-      <div>{children}</div>
+    <div style={{ ...scrollStyle, ...style }} className={className}>
+      {children}
     </div>
   );
 }
