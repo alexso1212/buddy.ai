@@ -1200,18 +1200,33 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
   const [subSlideIn, setSubSlideIn] = useState(false);
   const [hapticFeedback, setHapticFeedback] = useState(true);
   const [animationDone, setAnimationDone] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
+      setMounted(true);
+      setClosing(false);
       setPage('main');
       setSubVisible(false);
       setSubSlideIn(false);
       setAnimationDone(false);
-      const t = setTimeout(() => setAnimationDone(true), 320);
+      const t = setTimeout(() => setAnimationDone(true), 440);
+      return () => clearTimeout(t);
+    } else if (mounted) {
+      setClosing(true);
+      const t = setTimeout(() => {
+        setClosing(false);
+        setMounted(false);
+      }, 350);
       return () => clearTimeout(t);
     }
   }, [open]);
+
+  const handleClose = useCallback(() => {
+    onClose();
+  }, [onClose]);
 
   const navigateTo = useCallback((target: PageId) => {
     setPage(target);
@@ -1231,7 +1246,7 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
     }, 300);
   }, []);
 
-  if (!open) return null;
+  if (!mounted && !closing) return null;
 
   const renderSubPage = () => {
     if (!subVisible) return null;
@@ -1277,9 +1292,13 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
           inset: 0,
           zIndex: 59,
           background: 'rgba(0,0,0,0.6)',
-          animation: animationDone ? 'none' : 'settingsBackdropIn 300ms ease forwards',
+          animation: closing
+            ? 'settingsBackdropOut 350ms ease forwards'
+            : animationDone
+              ? 'none'
+              : 'settingsBackdropIn 420ms ease forwards',
         }}
-        onClick={onClose}
+        onClick={handleClose}
         data-testid="settings-backdrop"
       />
 
@@ -1298,7 +1317,11 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          animation: animationDone ? 'none' : 'settingsSheetIn 300ms cubic-bezier(0.32, 0.72, 0, 1) both',
+          animation: closing
+            ? 'settingsSheetOut 350ms cubic-bezier(0.32, 0.72, 0, 1) forwards'
+            : animationDone
+              ? 'none'
+              : 'settingsSheetIn 420ms cubic-bezier(0.32, 0.72, 0, 1) both',
         }}
         data-testid="settings-page"
       >
@@ -1307,9 +1330,17 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
             from { transform: translateY(100%); }
             to { transform: translateY(0); }
           }
+          @keyframes settingsSheetOut {
+            from { transform: translateY(0); }
+            to { transform: translateY(100%); }
+          }
           @keyframes settingsBackdropIn {
             from { opacity: 0; }
             to { opacity: 1; }
+          }
+          @keyframes settingsBackdropOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
           }
         `}</style>
 
@@ -1330,7 +1361,7 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
             position: 'relative',
           }}>
             <button
-              onClick={onClose}
+              onClick={handleClose}
               data-testid="settings-close-btn"
               style={{
                 width: 36,
