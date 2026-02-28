@@ -1,0 +1,123 @@
+请修改 shared/schema.ts，新增任务交付物相关的数据模型。
+
+=== 1.1 新建 taskDeliverables 表 ===
+
+在 tasks 表定义之后，新增：
+
+export const taskDeliverables = pgTable("task_deliverables", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  orgId: integer("org_id").notNull().references(() => organizations.id),
+  
+  // 交付物类型
+  type: varchar("type", { length: 50 }).notNull(),  // "file" | "link" | "text" | "ai_generated"
+  
+  // 内容（根据 type 使用不同字段）
+  title: text("title").notNull(),                     // 交付物标题，如 "产品调研报告 v2"
+  description: text("description"),                    // 补充说明
+  
+  // file 类型
+  fileUrl: text("file_url"),                          // 文件存储地址
+  fileName: text("file_name"),                        // 原始文件名
+  fileSize: integer("file_size"),                     // 文件大小（字节）
+  fileMimeType: varchar("file_mime_type", { length: 200 }),  // MIME 类型
+  
+  // link 类型
+  linkUrl: text("link_url"),                          // 外部链接
+  
+  // text 类型
+  content: text("content"),                           // 文本内容（支持 Markdown）
+  
+  // 提交信息
+  submittedBy: integer("submitted_by").notNull().references(() => users.id),
+  submittedAt: timestamp("submitted_at").defaultNow().notNull(),
+  
+  // 版本控制
+  version: integer("version").default(1).notNull(),   // 版本号，重新提交时递增
+  isLatest: boolean("is_latest").default(true).notNull(),  // 是否为最新版本
+  
+  // 审核结果（P4/P5 阶段会用到，先预留字段）
+  reviewStatus: varchar("review_status", { length: 50 }).default("pending"),  // pending | approved | rejected | scored
+  reviewScore: integer("review_score"),               // AI 评分 0-100
+  reviewFeedback: text("review_feedback"),            // AI 审核反馈
+  reviewedBy: integer("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+=== 1.2 修改 tasks 表，扩展状态机 ===
+
+找到 tasks 表中 status 字段的定义。当前状态值应该是 "todo" | "in_progress" | "done" | "cancelled"。
+
+不需要改 schema 中 status 的类型定义（它应该是 varchar），但需要在代码注释中标注新增状态：
+
+// status 可选值：todo | in_progress | submitted | reviewing | done | cancelled
+// 新增 submitted（已提交待审核）和 reviewing（审核中）
+
+=== 1.3 新增任务提交记录表 ===
+
+export const taskSubmissions = pgTable("task_submissions", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  orgId: integer("org_id").notNull().references(() => organizations.id),
+  submittedBy: integer("submitted_by").notNull().references(() => users.id),
+  
+  // 提交说明
+  note: text("note"),                                  // 提交时的备注，如 "第二版，修改了数据部分"
+  
+  // 关联的交付物 ID 列表（JSON 数组）
+  deliverableIds: jsonb("deliverable_ids").$type<number[]>().default([]),
+  
+  // 状态
+  status: varchar("status", { length: 50 }).default("pending").notNull(),  // pending | approved | rejected | revision_requested
+  
+  // 审核
+  reviewedBy: integer("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNote: text("review_note"),                    // 审核意见
+  overallScore: integer("overall_score"),             // 综合评分 0-100
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+=== 1.4 添加 Zod schema 和类型导出 ===
+
+参考现有表的写法，为两张新表添加：
+
+export const insertTaskDeliverableSchema = createInsertSchema(taskDeliverables);
+export type TaskDeliverable = typeof taskDeliverables.$inferSelect;
+export type InsertTaskDeliverable = typeof taskDeliverables.$inferInsert;
+
+export const insertTaskSubmissionSchema = createInsertSchema(taskSubmissions);
+export type TaskSubmission = typeof taskSubmissions.$inferSelect;
+export type InsertTaskSubmission = typeof taskSubmissions.$inferInsert;
+
+=== 1.5 添加 relations ===
+
+在 relations 部分添加：
+
+export const taskDeliverablesRelations = relations(taskDeliverables, ({ one }) => ({
+  task: one(tasks, { fields: [taskDeliverables.taskId], references: [tasks.id] }),
+  organization: one(organizations, { fields: [taskDeliverables.orgId], references: [organizations.id] }),
+  submitter: one(users, { fields: [taskDeliverables.submittedBy], references: [users.id] }),
+  reviewer: one(users, { fields: [taskDeliverables.reviewedBy], references: [users.id] }),
+}));
+
+export const taskSubmissionsRelations = relations(taskSubmissions, ({ one }) => ({
+  task: one(tasks, { fields: [taskSubmissions.taskId], references: [tasks.id] }),
+  organization: one(organizations, { fields: [taskSubmissions.orgId], references: [organizations.id] }),
+  submitter: one(users, { fields: [taskSubmissions.submittedBy], references: [users.id] }),
+  reviewer: one(users, { fields: [taskSubmissions.reviewedBy], references: [users.id] }),
+}));
+
+同时在现有的 tasksRelations 中添加：
+deliverables: many(taskDeliverables),
+submissions: many(taskSubmissions),
+
+=== 1.6 完成后运行 ===
+
+npm run db:push
+
+确认无报错，两张新表已创建。
