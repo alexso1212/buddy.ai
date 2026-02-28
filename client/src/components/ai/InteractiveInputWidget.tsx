@@ -83,8 +83,11 @@ export default function InteractiveInputWidget({
   const currentQ = questions[currentPage];
 
   useEffect(() => {
-    requestAnimationFrame(() => setMounted(true));
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(() => setMounted(true));
+    });
     return () => {
+      cancelAnimationFrame(raf);
       if (glowFadeTimer.current) clearTimeout(glowFadeTimer.current);
       if (deformState.current.moveHandler) {
         window.removeEventListener("pointermove", deformState.current.moveHandler);
@@ -241,13 +244,13 @@ export default function InteractiveInputWidget({
       setCurrentPage((p) => p + 1);
     } else {
       setIsExiting(true);
-      setTimeout(() => onSubmit(answers), 280);
+      setTimeout(() => onSubmit(answers), 440);
     }
   }, [currentPage, totalPages, answers, onSubmit]);
 
   const handleDismissWithAnimation = useCallback(() => {
     setIsExiting(true);
-    setTimeout(() => onDismiss(), 280);
+    setTimeout(() => onDismiss(), 440);
   }, [onDismiss]);
 
   useEffect(() => {
@@ -276,10 +279,18 @@ export default function InteractiveInputWidget({
           ? `0 0 ${isPressed ? 20 : 12}px rgba(255,255,255,${isPressed ? 0.12 : 0.06})`
           : "none",
         opacity: isExiting ? 0 : mounted ? 1 : 0,
-        transform: isExiting ? "translateY(16px)" : mounted ? "translateY(0)" : "translateY(16px)",
-        transition: showGlow && !isPressed
-          ? "background 0.5s ease, box-shadow 0.5s ease, opacity 280ms ease, transform 280ms ease"
-          : "background 0.05s ease, box-shadow 0.05s ease, opacity 280ms ease, transform 280ms ease",
+        transform: isExiting
+          ? "translateY(40px) scale(0.97)"
+          : mounted
+            ? "translateY(0) scale(1)"
+            : "translateY(40px) scale(0.97)",
+        transition: isExiting
+          ? "opacity 380ms cubic-bezier(0.4, 0, 1, 1), transform 420ms cubic-bezier(0.4, 0, 1, 1), background 0.05s ease, box-shadow 0.05s ease"
+          : mounted
+            ? (showGlow && !isPressed
+                ? "opacity 500ms cubic-bezier(0.16, 1, 0.3, 1), transform 500ms cubic-bezier(0.16, 1, 0.3, 1), background 0.5s ease, box-shadow 0.5s ease"
+                : "opacity 500ms cubic-bezier(0.16, 1, 0.3, 1), transform 500ms cubic-bezier(0.16, 1, 0.3, 1), background 0.05s ease, box-shadow 0.05s ease")
+            : "opacity 0s, transform 0s",
       }}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
