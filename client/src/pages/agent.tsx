@@ -728,6 +728,7 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
   const containerRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const bgRef = useRef<HTMLDivElement>(null);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
 
   const updateMask = useCallback(() => {
     const container = containerRef.current;
@@ -767,6 +768,24 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
     if (containerRef.current) observer.observe(containerRef.current);
     if (composerRef.current) observer.observe(composerRef.current);
     window.addEventListener('resize', updateMask);
+
+    const vv = window.visualViewport;
+    if (vv) {
+      const handleViewportResize = () => {
+        const offset = window.innerHeight - vv.height - vv.offsetTop;
+        setKeyboardOffset(Math.max(0, offset));
+        updateMask();
+      };
+      vv.addEventListener('resize', handleViewportResize);
+      vv.addEventListener('scroll', handleViewportResize);
+      return () => {
+        observer.disconnect();
+        window.removeEventListener('resize', updateMask);
+        vv.removeEventListener('resize', handleViewportResize);
+        vv.removeEventListener('scroll', handleViewportResize);
+      };
+    }
+
     return () => {
       observer.disconnect();
       window.removeEventListener('resize', updateMask);
@@ -776,8 +795,13 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
   return (
     <div
       ref={containerRef}
-      className="absolute bottom-0 left-0 right-0"
-      style={{ zIndex: 10, pointerEvents: 'none' }}
+      className="absolute left-0 right-0"
+      style={{
+        zIndex: 10,
+        pointerEvents: 'none',
+        bottom: keyboardOffset,
+        transition: keyboardOffset > 0 ? 'none' : 'bottom 250ms ease-out',
+      }}
       data-testid="agent-input"
     >
       <div
@@ -823,7 +847,7 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
         </div>
       </div>
       <div style={{
-        height: 'calc(3.33vh + env(safe-area-inset-bottom, 0px))',
+        height: keyboardOffset > 0 ? 4 : 'calc(3.33vh + env(safe-area-inset-bottom, 0px))',
         pointerEvents: 'none',
       }} />
     </div>
