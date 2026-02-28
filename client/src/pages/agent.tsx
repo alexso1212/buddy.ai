@@ -2025,6 +2025,27 @@ export default function Agent() {
         </div>
       )}
 
+      {process.env.NODE_ENV === 'development' && !interactiveInput && (
+        <button
+          onClick={() => setInteractiveInput([
+            { id: "q1", question: "这个任务归哪个部门？", type: "single_select", options: ["产品部", "技术部", "运营部", "市场部"] },
+            { id: "q2", question: "涉及哪些领域？", type: "multi_select", options: ["数据分析", "用户研究", "竞品分析"] },
+            { id: "q3", question: "请排列优先级", type: "rank_priorities", options: ["成本控制", "交付速度", "质量标准", "团队满意度"] },
+          ])}
+          className="absolute z-30 text-xs px-3 py-1.5 rounded-full"
+          style={{
+            top: 60,
+            right: 16,
+            background: 'rgba(212,184,150,0.2)',
+            color: '#D4B896',
+            border: '1px solid rgba(212,184,150,0.3)',
+          }}
+          data-testid="btn-test-widget"
+        >
+          测试 Widget
+        </button>
+      )}
+
       {interactiveInput && (
         <div
           className="absolute left-0 right-0 z-20"
