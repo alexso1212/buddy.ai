@@ -306,10 +306,10 @@ export default function InteractiveInputWidget({
             <div
               style={{
                 position: "absolute",
-                width: 300,
-                height: 300,
+                width: 600,
+                height: 600,
                 borderRadius: "50%",
-                background: "radial-gradient(circle at center, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.05) 40%, rgba(255,255,255,0) 70%)",
+                background: "radial-gradient(circle at center, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 30%, rgba(255,255,255,0.01) 60%, rgba(255,255,255,0) 100%)",
                 pointerEvents: "none",
                 transform: "translate(-50%, -50%)",
                 left: spotPos.x,
