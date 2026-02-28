@@ -59,8 +59,8 @@ function useIOSBounceScroll(scrollRef: React.RefObject<HTMLDivElement | null>) {
       const moveDir = touchY - lastY.current;
       lastY.current = touchY;
 
-      const atTop = el.scrollTop <= 0;
-      const atBottom = Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight;
+      const atTop = el.scrollTop <= 1;
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 1;
 
       if (pulling.current) {
         const rawDelta = touchY - edgeY.current;
@@ -298,7 +298,6 @@ function GroupLabel({ text }: { text: string }) {
       fontSize: 12,
       fontWeight: 500,
       color: '#7A7874',
-      textTransform: 'uppercase',
       letterSpacing: '0.5px',
       padding: '0 4px',
       marginBottom: 6,
@@ -368,9 +367,9 @@ function PageHeader({
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
   const options: { value: string; label: string; icon: typeof Sun }[] = [
-    { value: 'system', label: 'System', icon: Monitor },
-    { value: 'light', label: 'Light', icon: Sun },
-    { value: 'dark', label: 'Dark', icon: Moon },
+    { value: 'system', label: '自动', icon: Monitor },
+    { value: 'light', label: '浅色', icon: Sun },
+    { value: 'dark', label: '深色', icon: Moon },
   ];
 
   return (
@@ -549,7 +548,7 @@ function ProfilePage({ onBack }: { onBack: () => void }) {
 
   const handleProfileSave = async () => {
     if (!displayName.trim()) {
-      toast({ title: 'Please enter a name', variant: 'destructive' });
+      toast({ title: '请输入名称', variant: 'destructive' });
       return;
     }
     setProfileSaving(true);
@@ -563,9 +562,9 @@ function ProfilePage({ onBack }: { onBack: () => void }) {
           category: 'context',
         });
       }
-      toast({ title: 'Profile updated' });
+      toast({ title: '个人资料已更新' });
     } catch (e: any) {
-      toast({ title: 'Update failed', description: e.message, variant: 'destructive' });
+      toast({ title: '更新失败', description: e.message, variant: 'destructive' });
     } finally {
       setProfileSaving(false);
     }
@@ -579,9 +578,9 @@ function ProfilePage({ onBack }: { onBack: () => void }) {
         category: 'preferences',
       });
       queryClient.invalidateQueries({ queryKey: ['/api/user-memories'] });
-      toast({ title: 'Preferences saved' });
+      toast({ title: '偏好已保存' });
     } catch (e: any) {
-      toast({ title: 'Save failed', description: e.message, variant: 'destructive' });
+      toast({ title: '保存失败', description: e.message, variant: 'destructive' });
     } finally {
       setPrefSaving(false);
     }
@@ -589,26 +588,26 @@ function ProfilePage({ onBack }: { onBack: () => void }) {
 
   const handlePasswordChange = async () => {
     if (!currentPassword) {
-      toast({ title: 'Please enter current password', variant: 'destructive' });
+      toast({ title: '请输入当前密码', variant: 'destructive' });
       return;
     }
     if (newPassword.length < 8) {
-      toast({ title: 'New password must be at least 8 characters', variant: 'destructive' });
+      toast({ title: '新密码至少需要8个字符', variant: 'destructive' });
       return;
     }
     if (newPassword !== confirmPassword) {
-      toast({ title: 'Passwords do not match', variant: 'destructive' });
+      toast({ title: '两次密码输入不一致', variant: 'destructive' });
       return;
     }
     setPasswordSaving(true);
     try {
       await apiRequest('PUT', '/api/auth/password', { currentPassword, newPassword });
-      toast({ title: 'Password changed' });
+      toast({ title: '密码已修改' });
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch (e: any) {
-      toast({ title: 'Failed', description: e.message, variant: 'destructive' });
+      toast({ title: '操作失败', description: e.message, variant: 'destructive' });
     } finally {
       setPasswordSaving(false);
     }
@@ -618,11 +617,11 @@ function ProfilePage({ onBack }: { onBack: () => void }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <PageHeader title="Profile" onBack={onBack} />
+      <PageHeader title="个人资料" onBack={onBack} />
       <BounceScroll style={{ flex: 1, minHeight: 0, padding: '0 20px 40px' }}>
 
         <div style={{ marginBottom: 16 }}>
-          <label style={sectionLabelStyle}>Full Name</label>
+          <label style={sectionLabelStyle}>姓名</label>
           <input
             value={displayName}
             onChange={e => setDisplayName(e.target.value)}
@@ -632,18 +631,18 @@ function ProfilePage({ onBack }: { onBack: () => void }) {
         </div>
 
         <div style={{ marginBottom: 16 }}>
-          <label style={sectionLabelStyle}>Nickname</label>
+          <label style={sectionLabelStyle}>昵称</label>
           <input
             value={nickname}
             onChange={e => setNickname(e.target.value)}
-            placeholder="How AI should call you"
+            placeholder="AI 对你的称呼"
             style={inputStyle}
             data-testid="input-settings-nickname"
           />
         </div>
 
         <div style={{ marginBottom: 20 }}>
-          <label style={sectionLabelStyle}>Email</label>
+          <label style={sectionLabelStyle}>邮箱</label>
           <input
             value={authUser?.email || ''}
             disabled
@@ -658,17 +657,17 @@ function ProfilePage({ onBack }: { onBack: () => void }) {
           loading={profileSaving}
           testId="button-update-profile"
         >
-          Update Profile
+          更新资料
         </PrimaryButton>
 
         <SectionDivider />
 
-        <div style={{ fontSize: 14, color: '#9A9893', marginBottom: 12, fontWeight: 500 }}>Personal Preferences</div>
+        <div style={{ fontSize: 14, color: '#9A9893', marginBottom: 12, fontWeight: 500 }}>个人偏好</div>
         <div style={{ marginBottom: 16 }}>
           <textarea
             value={preferences}
             onChange={e => setPreferences(e.target.value)}
-            placeholder="Tell the AI about your work style, communication preferences, or anything else you'd like it to know..."
+            placeholder="告诉 AI 你的工作风格、沟通偏好，或任何你希望它了解的信息..."
             rows={4}
             style={{
               ...inputStyle,
@@ -688,15 +687,15 @@ function ProfilePage({ onBack }: { onBack: () => void }) {
           loading={prefSaving}
           testId="button-save-preferences"
         >
-          Save Preferences
+          保存偏好
         </SecondaryButton>
 
         <SectionDivider />
 
-        <div style={{ fontSize: 14, color: '#9A9893', marginBottom: 12, fontWeight: 500 }}>Change Password</div>
+        <div style={{ fontSize: 14, color: '#9A9893', marginBottom: 12, fontWeight: 500 }}>修改密码</div>
 
         <div style={{ marginBottom: 12 }}>
-          <label style={sectionLabelStyle}>Current Password</label>
+          <label style={sectionLabelStyle}>当前密码</label>
           <input
             type="password"
             value={currentPassword}
@@ -707,19 +706,19 @@ function ProfilePage({ onBack }: { onBack: () => void }) {
         </div>
 
         <div style={{ marginBottom: 12 }}>
-          <label style={sectionLabelStyle}>New Password</label>
+          <label style={sectionLabelStyle}>新密码</label>
           <input
             type="password"
             value={newPassword}
             onChange={e => setNewPassword(e.target.value)}
-            placeholder="At least 8 characters"
+            placeholder="至少8个字符"
             style={inputStyle}
             data-testid="input-settings-new-password"
           />
         </div>
 
         <div style={{ marginBottom: 16 }}>
-          <label style={sectionLabelStyle}>Confirm New Password</label>
+          <label style={sectionLabelStyle}>确认新密码</label>
           <input
             type="password"
             value={confirmPassword}
@@ -735,7 +734,7 @@ function ProfilePage({ onBack }: { onBack: () => void }) {
           loading={passwordSaving}
           testId="button-change-password"
         >
-          Change Password
+          修改密码
         </SecondaryButton>
 
         <SectionDivider />
@@ -752,7 +751,7 @@ function ProfilePage({ onBack }: { onBack: () => void }) {
           data-testid="button-delete-account"
         >
           <Trash2 size={18} color="#E5534B" />
-          <span style={{ fontSize: 15, color: '#E5534B' }}>Delete account</span>
+          <span style={{ fontSize: 15, color: '#E5534B' }}>删除账号</span>
         </div>
       </BounceScroll>
     </div>
@@ -780,9 +779,9 @@ function OrganizationPage({ onBack }: { onBack: () => void }) {
     try {
       await apiRequest('POST', '/api/invitations', { role: inviteRole });
       queryClient.invalidateQueries({ queryKey: ['/api/invitations'] });
-      toast({ title: 'Invite link generated' });
+      toast({ title: '邀请链接已生成' });
     } catch (e: any) {
-      toast({ title: 'Failed', description: e.message, variant: 'destructive' });
+      toast({ title: '操作失败', description: e.message, variant: 'destructive' });
     } finally {
       setInviteCreating(false);
     }
@@ -792,15 +791,15 @@ function OrganizationPage({ onBack }: { onBack: () => void }) {
     try {
       await apiRequest('DELETE', `/api/invitations/${id}`);
       queryClient.invalidateQueries({ queryKey: ['/api/invitations'] });
-      toast({ title: 'Invite deactivated' });
+      toast({ title: '邀请已停用' });
     } catch (e: any) {
-      toast({ title: 'Failed', description: e.message, variant: 'destructive' });
+      toast({ title: '操作失败', description: e.message, variant: 'destructive' });
     }
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <PageHeader title="Organization" onBack={onBack} />
+      <PageHeader title="组织管理" onBack={onBack} />
       <BounceScroll style={{ flex: 1, minHeight: 0, padding: '0 20px 40px' }}>
         {isLoading ? (
           <div style={{ padding: '40px 0', textAlign: 'center', color: '#7A7874' }}>
@@ -814,19 +813,19 @@ function OrganizationPage({ onBack }: { onBack: () => void }) {
               padding: '16px',
               marginBottom: 24,
             }}>
-              <div style={{ fontSize: 13, color: '#7A7874', marginBottom: 4 }}>Organization</div>
+              <div style={{ fontSize: 13, color: '#7A7874', marginBottom: 4 }}>组织</div>
               <div style={{ fontSize: 18, fontWeight: 600, color: '#ECECEC' }} data-testid="settings-org-name">{org.name}</div>
               {org.description && (
                 <div style={{ fontSize: 14, color: '#9A9893', marginTop: 6 }}>{org.description}</div>
               )}
               <div style={{ fontSize: 13, color: '#7A7874', marginTop: 8 }}>
-                Created {new Date(org.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                创建于 {new Date(org.createdAt).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}
               </div>
             </div>
 
             {(authUser?.role === 'owner' || authUser?.role === 'admin') && (
               <>
-                <div style={{ fontSize: 14, color: '#9A9893', marginBottom: 12, fontWeight: 500 }}>Invite Members</div>
+                <div style={{ fontSize: 14, color: '#9A9893', marginBottom: 12, fontWeight: 500 }}>邀请成员</div>
 
                 <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                   <select
@@ -845,9 +844,9 @@ function OrganizationPage({ onBack }: { onBack: () => void }) {
                     }}
                     data-testid="select-invite-role"
                   >
-                    <option value="member">Member</option>
-                    <option value="head">Head</option>
-                    <option value="admin">Admin</option>
+                    <option value="member">成员</option>
+                    <option value="head">主管</option>
+                    <option value="admin">管理员</option>
                   </select>
                   <button
                     onClick={handleCreateInvite}
@@ -872,7 +871,7 @@ function OrganizationPage({ onBack }: { onBack: () => void }) {
                     data-testid="button-create-invite"
                   >
                     {inviteCreating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                    Generate
+                    生成
                   </button>
                 </div>
 
@@ -897,11 +896,11 @@ function OrganizationPage({ onBack }: { onBack: () => void }) {
                             {inv.inviteCode}
                           </div>
                           <div style={{ fontSize: 12, color: '#7A7874', marginTop: 2 }}>
-                            {inv.role} · {inv.usedCount} used
+                            {inv.role === 'member' ? '成员' : inv.role === 'head' ? '主管' : inv.role === 'admin' ? '管理员' : inv.role} · 已使用 {inv.usedCount} 次
                           </div>
                         </div>
                         <button
-                          onClick={() => { navigator.clipboard.writeText(inv.inviteCode); toast({ title: 'Copied' }); }}
+                          onClick={() => { navigator.clipboard.writeText(inv.inviteCode); toast({ title: '已复制' }); }}
                           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6 }}
                           data-testid={`button-copy-invite-${inv.id}`}
                         >
@@ -923,7 +922,7 @@ function OrganizationPage({ onBack }: { onBack: () => void }) {
           </>
         ) : (
           <div style={{ padding: '40px 0', textAlign: 'center', color: '#7A7874' }}>
-            No organization found
+            未找到组织
           </div>
         )}
       </BounceScroll>
@@ -940,12 +939,12 @@ function CapabilitiesPage({ onBack }: { onBack: () => void }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <PageHeader title="Capabilities" onBack={onBack} />
+      <PageHeader title="功能设置" onBack={onBack} />
       <BounceScroll style={{ flex: 1, minHeight: 0, padding: '0 0 40px' }}>
         <SettingsGroup>
           <SettingsToggleItem
             icon={Bot}
-            label="AI Chat"
+            label="AI 对话"
             checked={aiChat}
             onChange={setAiChat}
             testId="toggle-ai-chat"
@@ -953,8 +952,8 @@ function CapabilitiesPage({ onBack }: { onBack: () => void }) {
           <Divider />
           <SettingsToggleItem
             icon={UserCog}
-            label="AI Task Assignment"
-            description="Allow Buddy AI to suggest task assignments based on team workload and skills"
+            label="AI 任务分配"
+            description="允许 AI 根据团队工作量和技能推荐任务分配"
             checked={aiAssignment}
             onChange={setAiAssignment}
             testId="toggle-ai-assignment"
@@ -962,8 +961,8 @@ function CapabilitiesPage({ onBack }: { onBack: () => void }) {
           <Divider />
           <SettingsToggleItem
             icon={Zap}
-            label="Smart Notifications"
-            description="Buddy will analyze task urgency and send priority alerts"
+            label="智能通知"
+            description="AI 分析任务紧急程度并发送优先提醒"
             checked={smartNotif}
             onChange={setSmartNotif}
             testId="toggle-smart-notif"
@@ -971,12 +970,12 @@ function CapabilitiesPage({ onBack }: { onBack: () => void }) {
         </SettingsGroup>
 
         <GroupSpacer />
-        <GroupLabel text="Data & Analysis" />
+        <GroupLabel text="数据与分析" />
 
         <SettingsGroup>
           <SettingsToggleItem
             icon={BarChart3}
-            label="Graph Visualization"
+            label="图谱可视化"
             checked={graphViz}
             onChange={setGraphViz}
             testId="toggle-graph-viz"
@@ -984,8 +983,8 @@ function CapabilitiesPage({ onBack }: { onBack: () => void }) {
           <Divider />
           <SettingsToggleItem
             icon={GitBranch}
-            label="Auto Dependency Detection"
-            description="Automatically detect and suggest task dependencies based on content analysis"
+            label="自动依赖检测"
+            description="根据任务内容自动检测并推荐任务依赖关系"
             checked={autoDeps}
             onChange={setAutoDeps}
             testId="toggle-auto-deps"
@@ -1041,7 +1040,7 @@ function ConnectorItem({
           fontSize: 13,
           color: '#3B82F6',
         }}>
-          Connected
+          已连接
         </div>
       ) : (
         <div
@@ -1056,7 +1055,7 @@ function ConnectorItem({
             padding: '4px 0',
           }}
         >
-          Connect
+          连接
           <ExternalLink size={13} color="#9A9893" />
         </div>
       )}
@@ -1068,47 +1067,47 @@ function ConnectorsPage({ onBack }: { onBack: () => void }) {
   const { toast } = useToast();
 
   const handleConnect = (name: string) => {
-    toast({ title: `${name} integration coming soon` });
+    toast({ title: `${name} 集成即将上线` });
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <PageHeader title="Connectors" onBack={onBack} />
+      <PageHeader title="集成连接" onBack={onBack} />
       <BounceScroll style={{ flex: 1, minHeight: 0, padding: '0 0 40px' }}>
 
         <div style={{ padding: '12px 20px 16px' }}>
           <div style={{ fontSize: 13, color: '#7A7874', lineHeight: '1.5' }}>
-            Connect third-party services to extend Buddy's capabilities. Integrations allow task syncing, notifications, and more.
+            连接第三方服务以扩展 Buddy 的功能，支持任务同步、消息通知等。
           </div>
         </div>
 
-        <GroupLabel text="Available" />
+        <GroupLabel text="可用服务" />
         <SettingsGroup>
           <ConnectorItem
             icon={MessageSquare}
-            label="WeChat Work"
-            onConnect={() => handleConnect('WeChat Work')}
+            label="企业微信"
+            onConnect={() => handleConnect('企业微信')}
             testId="connector-wechat"
           />
           <Divider />
           <ConnectorItem
             icon={Phone}
-            label="DingTalk"
-            onConnect={() => handleConnect('DingTalk')}
+            label="钉钉"
+            onConnect={() => handleConnect('钉钉')}
             testId="connector-dingtalk"
           />
           <Divider />
           <ConnectorItem
             icon={Send}
-            label="Feishu"
-            onConnect={() => handleConnect('Feishu')}
+            label="飞书"
+            onConnect={() => handleConnect('飞书')}
             testId="connector-feishu"
           />
           <Divider />
           <ConnectorItem
             icon={Mail}
-            label="Email"
-            onConnect={() => handleConnect('Email')}
+            label="邮件"
+            onConnect={() => handleConnect('邮件')}
             testId="connector-email"
           />
         </SettingsGroup>
@@ -1125,41 +1124,41 @@ function PermissionsPage({ onBack }: { onBack: () => void }) {
     switch (resource) {
       case 'tasks':
         return role === 'owner' || role === 'admin'
-          ? { label: 'Full access', color: '#3B82F6' }
-          : { label: 'Read & write', color: '#22C55E' };
+          ? { label: '完全访问', color: '#3B82F6' }
+          : { label: '读写', color: '#22C55E' };
       case 'team':
         return role === 'owner' || role === 'admin'
-          ? { label: 'Manage', color: '#3B82F6' }
+          ? { label: '管理', color: '#3B82F6' }
           : role === 'head'
-          ? { label: 'View team', color: '#22C55E' }
-          : { label: 'View', color: '#9A9893' };
+          ? { label: '查看团队', color: '#22C55E' }
+          : { label: '查看', color: '#9A9893' };
       case 'projects':
         return role === 'owner' || role === 'admin'
-          ? { label: 'Full access', color: '#3B82F6' }
+          ? { label: '完全访问', color: '#3B82F6' }
           : role === 'head'
-          ? { label: 'Read & write', color: '#22C55E' }
-          : { label: 'Read only', color: '#9A9893' };
+          ? { label: '读写', color: '#22C55E' }
+          : { label: '只读', color: '#9A9893' };
       case 'org':
         return role === 'owner'
-          ? { label: 'Full access', color: '#3B82F6' }
+          ? { label: '完全访问', color: '#3B82F6' }
           : role === 'admin'
-          ? { label: 'Manage', color: '#3B82F6' }
-          : { label: 'No access', color: '#7A7874' };
+          ? { label: '管理', color: '#3B82F6' }
+          : { label: '无权限', color: '#7A7874' };
       default:
-        return { label: 'None', color: '#7A7874' };
+        return { label: '无', color: '#7A7874' };
     }
   };
 
   const items: { icon: typeof CheckSquare; label: string; resource: string }[] = [
-    { icon: CheckSquare, label: 'Task Management', resource: 'tasks' },
-    { icon: Users, label: 'Team Members', resource: 'team' },
-    { icon: FolderKanban, label: 'Projects', resource: 'projects' },
-    { icon: Building2, label: 'Organization Settings', resource: 'org' },
+    { icon: CheckSquare, label: '任务管理', resource: 'tasks' },
+    { icon: Users, label: '团队成员', resource: 'team' },
+    { icon: FolderKanban, label: '项目', resource: 'projects' },
+    { icon: Building2, label: '组织设置', resource: 'org' },
   ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <PageHeader title="Permissions" onBack={onBack} />
+      <PageHeader title="权限管理" onBack={onBack} />
       <BounceScroll style={{ flex: 1, minHeight: 0, padding: '0 0 40px' }}>
 
         <div style={{ padding: '4px 20px 16px' }}>
@@ -1172,7 +1171,7 @@ function PermissionsPage({ onBack }: { onBack: () => void }) {
             color: '#3B82F6',
             fontWeight: 500,
           }}>
-            Role: {role.charAt(0).toUpperCase() + role.slice(1)}
+            角色：{role === 'owner' ? '所有者' : role === 'admin' ? '管理员' : role === 'head' ? '主管' : '成员'}
           </div>
         </div>
 
@@ -1209,7 +1208,7 @@ function PermissionsPage({ onBack }: { onBack: () => void }) {
           lineHeight: '1.5',
           textAlign: 'center',
         }}>
-          Contact your organization admin to change permissions
+          如需更改权限，请联系组织管理员
         </div>
       </BounceScroll>
     </div>
@@ -1234,8 +1233,8 @@ function ComingSoonPage({ title, onBack }: { title: string; onBack: () => void }
           }}>
             <FileText size={24} color="#7A7874" />
           </div>
-          <div style={{ fontSize: 16, color: '#9A9893', marginBottom: 4 }}>Coming soon</div>
-          <div style={{ fontSize: 13, color: '#7A7874' }}>This feature is under development</div>
+          <div style={{ fontSize: 16, color: '#9A9893', marginBottom: 4 }}>即将上线</div>
+          <div style={{ fontSize: 13, color: '#7A7874' }}>该功能正在开发中</div>
         </div>
       </BounceScroll>
     </div>
@@ -1245,7 +1244,7 @@ function ComingSoonPage({ title, onBack }: { title: string; onBack: () => void }
 function AboutPage({ onBack }: { onBack: () => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <PageHeader title="About" onBack={onBack} />
+      <PageHeader title="关于" onBack={onBack} />
       <BounceScroll style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
         <div style={{
           width: 72,
@@ -1264,9 +1263,9 @@ function AboutPage({ onBack }: { onBack: () => void }) {
           B
         </div>
         <div style={{ fontSize: 22, fontWeight: 600, color: '#ECECEC', marginTop: 4 }}>Buddy</div>
-        <div style={{ fontSize: 14, color: '#7A7874' }}>Version 0.1.0</div>
+        <div style={{ fontSize: 14, color: '#7A7874' }}>版本 0.1.0</div>
         <div style={{ fontSize: 13, color: '#7A7874', marginTop: 12, textAlign: 'center', lineHeight: '1.5', maxWidth: 260 }}>
-          AI-powered task management for teams
+          AI 驱动的团队任务管理平台
         </div>
 
         <div style={{ marginTop: 32 }}>
@@ -1287,7 +1286,7 @@ function AboutPage({ onBack }: { onBack: () => void }) {
             data-testid="button-contact-support"
           >
             <Mail size={16} color="#9A9893" />
-            <span style={{ fontSize: 14, color: '#9A9893' }}>Contact Support</span>
+            <span style={{ fontSize: 14, color: '#9A9893' }}>联系客服</span>
           </div>
         </div>
       </BounceScroll>
@@ -1356,13 +1355,13 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
       case 'permissions':
         return <div style={subStyle}><PermissionsPage onBack={goBack} /></div>;
       case 'notifications':
-        return <div style={subStyle}><ComingSoonPage title="Notifications" onBack={goBack} /></div>;
+        return <div style={subStyle}><ComingSoonPage title="通知" onBack={goBack} /></div>;
       case 'privacy':
-        return <div style={subStyle}><ComingSoonPage title="Privacy" onBack={goBack} /></div>;
+        return <div style={subStyle}><ComingSoonPage title="隐私" onBack={goBack} /></div>;
       case 'about':
         return <div style={subStyle}><AboutPage onBack={goBack} /></div>;
       case 'shared-links':
-        return <div style={subStyle}><ComingSoonPage title="Shared Links" onBack={goBack} /></div>;
+        return <div style={subStyle}><ComingSoonPage title="共享链接" onBack={goBack} /></div>;
       default:
         return null;
     }
@@ -1399,7 +1398,7 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
           height: '100%',
           minHeight: 0,
         }}>
-          <PageHeader title="Settings" onClose={onClose} />
+          <PageHeader title="设置" onClose={onClose} />
 
           <BounceScroll style={{ flex: 1, minHeight: 0 }}>
             <div style={{
@@ -1411,72 +1410,72 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
               <div style={{ fontSize: 14, color: '#9A9893' }}>{authUser?.email || ''}</div>
             </div>
 
-            <GroupLabel text="Account" />
+            <GroupLabel text="账号" />
             <SettingsGroup>
-              <SettingsItem icon={User} label="Profile" onClick={() => navigateTo('profile')} testId="settings-nav-profile" />
+              <SettingsItem icon={User} label="个人资料" onClick={() => navigateTo('profile')} testId="settings-nav-profile" />
               <Divider />
-              <SettingsItem icon={CreditCard} label="Subscription" value="Free" testId="settings-nav-billing" />
+              <SettingsItem icon={CreditCard} label="订阅" value="免费版" testId="settings-nav-billing" />
             </SettingsGroup>
 
             <GroupSpacer />
 
-            <GroupLabel text="Workspace" />
+            <GroupLabel text="工作空间" />
             <SettingsGroup>
-              <SettingsItem icon={Building2} label="Organization" value={authUser?.orgName || ''} onClick={() => navigateTo('organization')} testId="settings-nav-organization" />
+              <SettingsItem icon={Building2} label="组织管理" value={authUser?.orgName || ''} onClick={() => navigateTo('organization')} testId="settings-nav-organization" />
               <Divider />
               <SettingsItem
                 icon={Users}
-                label="Switch Organization"
+                label="切换组织"
                 onClick={() => { onClose(); onOpenOrgSwitcher(); }}
                 testId="settings-nav-switch-org"
               />
               <Divider />
-              <SettingsItem icon={Settings2} label="Capabilities" onClick={() => navigateTo('capabilities')} testId="settings-nav-capabilities" />
+              <SettingsItem icon={Settings2} label="功能设置" onClick={() => navigateTo('capabilities')} testId="settings-nav-capabilities" />
               <Divider />
-              <SettingsItem icon={Blocks} label="Connectors" onClick={() => navigateTo('connectors')} testId="settings-nav-connectors" />
+              <SettingsItem icon={Blocks} label="集成连接" onClick={() => navigateTo('connectors')} testId="settings-nav-connectors" />
               {(authUser?.role === 'owner' || authUser?.role === 'admin') && (
                 <>
                   <Divider />
-                  <SettingsItem icon={Shield} label="Permissions" onClick={() => navigateTo('permissions')} testId="settings-nav-permissions" />
+                  <SettingsItem icon={Shield} label="权限管理" onClick={() => navigateTo('permissions')} testId="settings-nav-permissions" />
                 </>
               )}
             </SettingsGroup>
 
             <GroupSpacer />
 
-            <GroupLabel text="Preferences" />
+            <GroupLabel text="偏好设置" />
             <SettingsGroup>
               <SettingsItem
                 icon={Moon}
-                label="Appearance"
+                label="外观"
                 rightElement={<ThemeToggle />}
                 testId="settings-nav-appearance"
               />
               <Divider />
-              <SettingsItem icon={Globe} label="Language" value="English" testId="settings-nav-language" />
+              <SettingsItem icon={Globe} label="语言" value="中文" testId="settings-nav-language" />
               <Divider />
-              <SettingsItem icon={Bell} label="Notifications" onClick={() => navigateTo('notifications')} testId="settings-nav-notifications" />
+              <SettingsItem icon={Bell} label="通知" onClick={() => navigateTo('notifications')} testId="settings-nav-notifications" />
             </SettingsGroup>
 
             <GroupSpacer />
 
-            <GroupLabel text="More" />
+            <GroupLabel text="更多" />
             <SettingsGroup>
-              <SettingsItem icon={Lock} label="Privacy" onClick={() => navigateTo('privacy')} testId="settings-nav-privacy" />
+              <SettingsItem icon={Lock} label="隐私" onClick={() => navigateTo('privacy')} testId="settings-nav-privacy" />
               <Divider />
-              <SettingsItem icon={HelpCircle} label="Help & Feedback" onClick={() => { window.location.href = 'mailto:support@buddy.app'; }} testId="settings-nav-help" />
+              <SettingsItem icon={HelpCircle} label="帮助与反馈" onClick={() => { window.location.href = 'mailto:support@buddy.app'; }} testId="settings-nav-help" />
               <Divider />
-              <SettingsItem icon={Info} label="About" value="v0.1.0" onClick={() => navigateTo('about')} testId="settings-nav-about" />
+              <SettingsItem icon={Info} label="关于" value="v0.1.0" onClick={() => navigateTo('about')} testId="settings-nav-about" />
             </SettingsGroup>
 
             <GroupSpacer />
 
             <SettingsGroup>
-              <SettingsItem icon={Link2} label="Shared Links" onClick={() => navigateTo('shared-links')} testId="settings-nav-shared-links" />
+              <SettingsItem icon={Link2} label="共享链接" onClick={() => navigateTo('shared-links')} testId="settings-nav-shared-links" />
               <Divider />
               <SettingsToggleItem
                 icon={Smartphone}
-                label="Haptic Feedback"
+                label="触觉反馈"
                 checked={hapticFeedback}
                 onChange={setHapticFeedback}
                 testId="toggle-haptic-feedback"
@@ -1488,7 +1487,7 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
             <SettingsGroup>
               <SettingsItem
                 icon={LogOut}
-                label="Log Out"
+                label="退出登录"
                 destructive
                 onClick={() => {
                   onClose();
