@@ -32,9 +32,9 @@ const scrollStyle: React.CSSProperties = {
   overscrollBehavior: 'contain',
 };
 
-function BounceScroll({ children, style, className }: { children: React.ReactNode; style?: React.CSSProperties; className?: string }) {
+function BounceScroll({ children, style, className, ...rest }: { children: React.ReactNode; style?: React.CSSProperties; className?: string; [key: string]: any }) {
   return (
-    <div style={{ ...scrollStyle, ...style }} className={className}>
+    <div style={{ ...scrollStyle, ...style }} className={className} {...rest}>
       {children}
     </div>
   );
@@ -1199,6 +1199,7 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
   const [subVisible, setSubVisible] = useState(false);
   const [subSlideIn, setSubSlideIn] = useState(false);
   const [hapticFeedback, setHapticFeedback] = useState(true);
+  const [animationDone, setAnimationDone] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1206,6 +1207,9 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
       setPage('main');
       setSubVisible(false);
       setSubSlideIn(false);
+      setAnimationDone(false);
+      const t = setTimeout(() => setAnimationDone(true), 320);
+      return () => clearTimeout(t);
     }
   }, [open]);
 
@@ -1235,7 +1239,7 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
     const subStyle: React.CSSProperties = {
       position: 'absolute',
       inset: 0,
-      background: '#1E1D1A',
+      background: '#2B2A27',
       zIndex: 2,
       transform: subSlideIn ? 'translateX(0)' : 'translateX(100%)',
       transition: 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)',
@@ -1266,39 +1270,121 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
   };
 
   return (
-    <div
-      ref={containerRef}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 60,
-        background: '#1E1D1A',
-        animation: 'settingsPageIn 300ms cubic-bezier(0.32, 0.72, 0, 1) forwards',
-        overflow: 'hidden',
-      }}
-      data-testid="settings-page"
-    >
-      <style>{`
-        @keyframes settingsPageIn {
-          from { opacity: 0; transform: scale(0.97) translateY(8px); }
-          to { opacity: 1; transform: scale(1) translateY(0); }
-        }
-      `}</style>
+    <>
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 59,
+          background: 'rgba(0,0,0,0.6)',
+          animation: animationDone ? 'none' : 'settingsBackdropIn 300ms ease forwards',
+        }}
+        onClick={onClose}
+        data-testid="settings-backdrop"
+      />
 
-      <div style={{
-        position: 'relative',
-        height: '100%',
-        paddingTop: 'env(safe-area-inset-top, 0px)',
-      }}>
-        <div style={{
+      <div
+        ref={containerRef}
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 'calc(100vh - 54px)',
+          background: '#2B2A27',
+          borderRadius: '12px 12px 0 0',
+          boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
+          zIndex: 60,
           display: 'flex',
           flexDirection: 'column',
+          overflow: 'hidden',
+          animation: animationDone ? 'none' : 'settingsSheetIn 300ms cubic-bezier(0.32, 0.72, 0, 1) both',
+        }}
+        data-testid="settings-page"
+      >
+        <style>{`
+          @keyframes settingsSheetIn {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+          }
+          @keyframes settingsBackdropIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+        `}</style>
+
+        <div style={{
+          position: 'relative',
           height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
           minHeight: 0,
         }}>
-          <PageHeader title="设置" onClose={onClose} />
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '14px 16px',
+            flexShrink: 0,
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
+            position: 'relative',
+          }}>
+            <button
+              onClick={onClose}
+              data-testid="settings-close-btn"
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.08)',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: '#ECECEC',
+                transition: 'background 150ms',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+            >
+              <X size={18} strokeWidth={2} />
+            </button>
 
-          <BounceScroll style={{ flex: 1, minHeight: 0 }}>
+            <span style={{
+              fontSize: 17,
+              fontWeight: 600,
+              color: '#ECECEC',
+              position: 'absolute',
+              left: '50%',
+              transform: 'translateX(-50%)',
+            }}>
+              设置
+            </span>
+
+            <button
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.08)',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: '#ECECEC',
+                transition: 'background 150ms',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+              data-testid="settings-info-btn"
+            >
+              <Info size={18} strokeWidth={2} />
+            </button>
+          </div>
+
+          <BounceScroll style={{ flex: 1, minHeight: 0 }} data-testid="settings-scroll-area">
             <div style={{
               margin: '4px 20px 16px',
               padding: '14px 16px',
@@ -1398,10 +1484,10 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
 
             <div style={{ height: 'calc(40px + env(safe-area-inset-bottom, 0px))' }} />
           </BounceScroll>
-        </div>
 
-        {page !== 'main' && renderSubPage()}
+          {page !== 'main' && renderSubPage()}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
