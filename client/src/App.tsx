@@ -1992,6 +1992,9 @@ function App() {
         if (sidebarEl && sidebarEl.contains(target)) {
           return;
         }
+        if (target.closest('[data-testid="settings-page"]')) {
+          return;
+        }
         e.preventDefault();
       }
     };
