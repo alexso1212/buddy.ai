@@ -1,68 +1,53 @@
 # Buddy (AI Chat Application)
 
 ## Overview
-Depai Task Center is a comprehensive team task management system for Deltapex Education, designed to streamline task organization, enhance collaboration, and integrate advanced AI capabilities for task assignment, review, and dynamic assistance. It features an 11-table data model with a full CRUD API and an 8-page frontend, supporting various user roles and hierarchical workflows for managing organizations, departments, users, projects, and tasks. The project aims to improve efficiency and communication within the organization.
+Buddy is an AI chat application integrated into a comprehensive team task management system for Deltapex Education. It streamlines task organization, enhances collaboration, and leverages advanced AI for task assignment, review, and dynamic assistance. The system supports various user roles and hierarchical workflows for managing organizations, departments, users, projects, and tasks, aiming to improve efficiency and communication within the organization.
 
 ## User Preferences
 I prefer iterative development with clear, concise explanations at each step. I want to be asked before major architectural changes or significant code refactoring. For UI/UX, I prioritize a clean, modern aesthetic with a consistent design system. I also value detailed progress updates and transparent communication regarding any challenges or decisions.
 
 ## System Architecture
-The application is built with an Express.js backend, a React (TypeScript) frontend utilizing Vite, and PostgreSQL with Drizzle ORM for data persistence. Tailwind CSS and shadcn/ui components are used for styling and UI elements, while `wouter` handles frontend routing.
+The application features an Express.js backend, a React (TypeScript) frontend with Vite, and PostgreSQL with Drizzle ORM. Styling is managed with Tailwind CSS and shadcn/ui components, and `wouter` is used for frontend routing. The architecture emphasizes role-based access control, multi-tenant isolation, and extensive AI integration.
 
 **Core Data Model:**
-An 18-table PostgreSQL database schema manages entities like `organizations`, `departments`, `users`, `projects`, `tasks`, `task_deliverables`, `task_submissions`, `activity_logs`, `notifications`, `conversations`, `chat_messages`, `token_usage`, `user_memories`, `org_memberships`, `invitations`, and `organization_join_requests`. All tables use serial integer IDs. The `organizations` table includes `maxMembers` and `isPublic` fields. The `users` table includes `onboardingCompleted`. The `invitations` table supports multiple types (`code`/`email`/`link`) with `status`, `acceptedAt`, `acceptedBy` tracking. The `task_deliverables` table stores deliverables (file/link/text/ai_generated) with version control and review fields. The `task_submissions` table records submission events with linked deliverable IDs and review status. Task status values: `todo | in_progress | submitted | reviewing | done | cancelled`.
+An 18-table PostgreSQL database schema manages entities like `organizations`, `departments`, `users`, `projects`, `tasks`, `task_deliverables`, `task_submissions`, `activity_logs`, `notifications`, `conversations`, `chat_messages`, `token_usage`, and `user_memories`. It includes features for invitation management, task deliverable versioning, and submission tracking.
 
 **Backend (API):**
-- **RESTful API:** Provides full CRUD operations with unified `{data}/{error}` response formats, Zod validation, and automatic activity logging.
-- **Role-Based Access Control:** Implements differentiated access for 'owner', 'admin', 'head', and 'member' roles.
-- **Organization Management API:** POST /api/organizations (create), GET /api/organizations/search (search by invite code), POST/GET/PUT /api/organizations/:id/join-requests (submit/list/approve), GET/POST /api/organizations/:id/invite-code (get/regenerate). Uses `generateInviteCode()` from `server/utils/inviteCode.ts` for human-readable codes (e.g., `DPE-X4NM`).
+- **RESTful API:** Provides CRUD operations with Zod validation and automatic activity logging.
+- **Role-Based Access Control:** Differentiates access for 'owner', 'admin', 'head', and 'member' roles.
+- **Organization Management API:** Handles organization creation, searching, join requests, and invite code management.
 - **AI Integration:** Dedicated API endpoints for AI chat, action confirmation, verdict judgment, and assignment auto-judgment.
-- **JWT Authentication:** Comprehensive user authentication with bcryptjs for password hashing and jsonwebtoken for JWT. Supports multi-provider authentication (email/password, Google/Apple/GitHub via Replit Auth OIDC, Telegram Login Widget).
-- **Multi-Tenant Isolation:** `orgIsolation` middleware manages `orgId` and `currentUserId` context, supporting both JWT and header-based identification.
-- **Token Usage Tracking:** Records prompt/completion tokens and cost for all AI calls in the `token_usage` table.
-- **Conversation Persistence:** AI chat history is persisted to `conversations` and `chat_messages` tables, supporting `conversationId` for continuous interactions.
+- **JWT Authentication:** Secure user authentication using bcryptjs and jsonwebtoken, supporting multi-provider options.
+- **Multi-Tenant Isolation:** `orgIsolation` middleware manages `orgId` and `currentUserId` context.
+- **Token Usage Tracking:** Records prompt/completion tokens and costs for all AI calls.
+- **Conversation Persistence:** AI chat history is persisted for continuous interactions.
+- **AI Subsystem:** Utilizes Anthropic direct API and OpenRouter for various AI models. It features contextual prompts, cross-conversation memory, Zod schema-defined AI actions, an AI-powered verdict service, and web search integration via Tavily API. A "Code Context Mode" allows AI to interact with project code for analysis and assistance using `read_file`, `list_directory`, and `search_code` tools with security restrictions.
 
 **Frontend (UI/UX):**
-- **Single Page Application:** React-based with `wouter` for routing.
-- **Layout & Design:** 8-page structure with persistent sidebar navigation. Features a "Claude-style" warm theme with a specific color palette, typography, rounded corners, and full dark mode support.
-- **Design Pattern (Overlay & Floating Input):** All pages with a top bar and/or bottom input area follow a consistent design featuring an absolute positioned gradient overlay for the top bar and a three-layer floating input area at the bottom. The input box appears to float over content, with faintly visible text scrolling behind it.
-- **Key Pages:** Includes Dashboard, Agent (full-page AI chat), Graph View (D3 force-directed graph with advanced visualization for tasks and dependencies), Project List/Detail, Task List/Detail, Team (with 5-tab layout: Members/Departments/Job Roles/Join Requests/Invite Code), and Settings.
-- **Team Page Tabs:** Uses shadcn Tabs. Members/Departments/Job Roles visible to all; Join Requests (with pending count badge, approve/reject with dialog, collapsible history) and Invite Code (display, copy, owner-only regenerate with confirm dialog) visible to owner/admin only.
-- **GraphChatFloat:** A floating AI chat panel within the graph view that enables screenshot capture of the SVG graph, sending it as an image attachment for AI visual analysis. Chat history is persisted. Full UX parity with agent.tsx: token usage badges, error classification with retry buttons, 45s timeout detection, 50ms token buffering, paste/drag-drop file support.
-- **Universal AI Chat Persistence:** All AI chat interactions across the application are persistently stored in the `conversations`/`chat_messages` tables.
-- **AI Chat Components:** Features a floating chat button, main chat panel, various message bubble types, action confirmation cards, and a robust input bar.
-- **AI Chat UX Enhancements:** Collapsible ThinkingBlock for Claude extended thinking display with Markdown rendering (react-markdown + remark-gfm), copy button, character count ("X 字"), and smooth CSS max-height/opacity transition animation; token usage badges on replies; 50ms token buffering for smoother streaming; 45s timeout detection; error classification with retry buttons; spinner animations on confirm cards; post-action context injection into conversation history; Ctrl+V paste and drag-drop file/image support in input bar; message timestamps (HH:MM); hover-to-reveal AI reply actions; code block syntax highlighting (highlight.js); smart suggestion cards from user task data; user message edit & resend (pencil icon on hover, truncates subsequent messages and re-invokes AI).
-- **Interactive Input Widget:** Claude-style interactive input component (`client/src/components/ai/InteractiveInputWidget.tsx`) supporting single_select, multi_select, and rank_priorities (drag-to-reorder via framer-motion Reorder). Renders above input bar when AI sends `ask_user_input` action via `<<<ACTIONS>>>` block with `type: "interactive_input"`. Server detects this action type in `routes.ts` and emits `interactive_input` SSE event. Widget features: slide-up/down animations (250ms/200ms), chip selection with micro-bounce, dark mode, keyboard nav (Tab/Enter/Space/Escape), confirm/dismiss buttons. User selections formatted as structured `interactive_response` and sent back to AI. Integrated in both agent.tsx and GraphChatFloat.tsx. Clears on conversation switch.
-- **ArtifactPanel:** Slide-out panel for long documents/code (>2000 chars or code blocks >30 lines). Supports fullscreen toggle, copy-all, download as .md, Markdown rendering. Triggered via "Open in panel" button on qualifying AI messages. Portal-rendered with backdrop and slide animation.
-- **Multi-Conversation Background Processing:** Global `chatStreamStore` (useSyncExternalStore) tracks per-conversation streaming state. Users can switch conversations while AI is generating; the stream continues in background and persists to DB. Sidebar shows animated pulse indicator for actively streaming conversations. `takeoverStream()` transfers active SSE reader to global store on component unmount (page navigation), continuing to consume events and saving the complete response to DB. Fallback path saves partial content if reader/decoder unavailable. `isBackgroundStreamActive()` prevents DB load race when returning to a conversation with an active background stream.
-- **Thinking/Search/Token Persistence:** AI thinking content (`thinking`, `thinkingDuration`), search results (`searchResults`), and token usage (`tokenUsage`) are now persisted in the `chat_messages.metadata` JSON field via `saveMessageToDB`. On conversation reload, these fields are reconstructed from metadata and displayed (ThinkingBlock shows collapsed by default for historical messages).
-- **Token Budget & Balance System:** `organizations.tokenBudgetUsd` (numeric) and `budgetResetDay` (integer) columns. `GET /api/token-usage/balance` returns billing-cycle-aware usage/remaining/percentUsed. `PATCH /api/organization/budget` (owner/admin RBAC). Settings page shows progress bar with color-coded thresholds (green/amber/red). Agent page shows low-balance toast warning when >80% used.
-- **GraphChatFloat Enhancements:** Scroll-to-bottom button; stop-generating button; all agent.tsx UX parity features.
-- **Verdict and Needs Review Features:** Integrated UI for displaying AI verdicts and flagging tasks requiring review.
-- **Onboarding Flow:** Multi-step onboarding page (`/onboarding`) for new users without an organization. Steps: welcome (create/join choice), create org (form + auto invite code), create-success (display invite code + copy), join (invite code search), join-preview (org details + apply), pending (poll for approval), complete (auto-redirect). AuthGuard redirects users with `!onboardingCompleted && !orgId` to onboarding. Matches login page dark theme (`var(--bg-sidebar)`, `#D4B896` accent, pill buttons). POST /api/organizations returns new JWT token for immediate auth refresh.
-- **Mobile Optimization:** Responsive layouts with adaptations for smaller screens, including swipeable task cards and compact statistics.
-- **GraphChatFloat Mobile Fixes:** Rendered via React Portal to `document.body` to escape graph container's `overflow: hidden` and avoid `position: fixed` clipping on mobile Safari. DOM isolation via Portal eliminates need for event propagation blocking (removed capture-phase stopPropagation that was preventing native scroll). `touch-action: auto` + `overscrollBehavior: contain` + `-webkit-overflow-scrolling: touch` enable iOS rubber-band scrolling. `visualViewport` resize listener tracks keyboard height; `fullViewportHeight` ref preserves pre-keyboard viewport for stable sizing. When keyboard opens, panel fills remaining visible space (`viewportHeight - 12`) instead of shrinking to 40% of reduced viewport. `minHeight: 0` on flex containers enables proper overflow scrolling. Header/close button/input borders enhanced for dark-background visibility.
-
-**AI Subsystem:**
-- **Dual Claude Direct API + OpenRouter:** Utilizes three OpenAI SDK clients for model routing: Anthropic direct API for complex (Claude Opus 4) and simple (Claude Sonnet 4, Claude Haiku 3.5) models, and OpenRouter for other models (GPT-4o, DeepSeek).
-- **Contextual Prompts:** Dynamically generated system prompts incorporate relevant team, project, and task context, with smart prioritization of context information.
-- **Cross-Conversation Memory:** The `user_memories` table stores user preferences and context, auto-loaded into system prompts and extracted after conversations for continuous learning.
-- **Action Schemas & Executor:** Zod schemas define available AI actions (e.g., `create_task`, `update_task`, `query_tasks`), which are processed and executed, with support for batch actions, transactional execution, optimistic locking, and duplicate detection.
-- **Verdict Service:** AI-powered service for judging task assignments, scope, and confidence.
-- **Structured Follow-up:** Provides structured, clickable options for users to complete missing task details.
-- **Web Search Integration:** Tavily API provides real-time web search capabilities, injecting results into the system prompt and displaying them in the UI.
-- **Code Context Mode (Interactive Tool Use):** Toggle in Agent chat (`codeContextEnabled`) that enables two layers of code awareness: (1) Static injection of project file tree and key files into the system prompt via `server/services/ai/codeContext.ts` (cached 5min). (2) Interactive tool-use loop via `codeToolChatStream` in `server/services/ai/index.ts` using Anthropic native SDK (`@anthropic-ai/sdk`). Three tools defined in `server/services/ai/codeTools.ts`: `read_file` (reads file content with line limits), `list_directory` (lists directory structure with depth control), `search_code` (grep-like search across safe directories). Tool loop runs up to 8 rounds, accumulating token usage across rounds. Tool results truncated at 15K chars. Security: SAFE_DIRS allowlist (client/, server/, shared/, docs/, script/, references/), BLOCKED_PATTERNS (.env, secrets, keys), extension whitelist. Frontend shows blue "代码" badge when enabled, "已加载 X 个代码文件" static info bar, and per-tool-call status indicators (gray lines with animated dot showing "正在读取...", "正在搜索...") via `tool_use` SSE events. Tool call history persisted in `chat_messages.metadata.toolCalls`. GraphChatFloat also supports tool_use events.
+- **Single Page Application:** React-based with `wouter` for routing, featuring an 8-page structure with persistent sidebar navigation.
+- **Design System:** "Claude-style" warm theme with a specific color palette, typography, rounded corners, full dark mode support, and a consistent overlay and floating input design pattern across pages.
+- **Key Pages:** Includes Dashboard, Agent (full-page AI chat), Graph View (D3 force-directed graph), Project/Task lists/details, Team management, and Settings.
+- **Team Page:** Features tabs for Members, Departments, Job Roles, Join Requests, and Invite Code management.
+- **GraphChatFloat:** A floating AI chat panel within the graph view supporting screenshot capture for AI visual analysis, with persistent chat history and full UX parity with the main agent chat.
+- **Universal AI Chat Persistence:** All AI chat interactions are persistently stored.
+- **AI Chat Components:** Features a floating chat button, main chat panel, various message bubble types, action confirmation cards, and a robust input bar. Enhancements include ThinkingBlock for AI processing display, token usage badges, error classification, token buffering, file/image support, code block syntax highlighting, smart suggestion cards, and user message edit/resend.
+- **Interactive Input Widget:** A Claude-style interactive component for single_select, multi_select, and rank_priorities, rendering above the input bar for AI-driven user input.
+- **ArtifactPanel:** A slide-out panel for displaying long documents or code blocks from AI messages.
+- **Multi-Conversation Background Processing:** Allows users to switch conversations while AI generates responses in the background, with progress indicators and persistence to the database.
+- **Token Budget & Balance System:** Displays an organization's token budget, usage, and remaining balance, with warnings for high usage.
+- **Onboarding Flow:** A multi-step onboarding process for new users to create or join an organization.
+- **Mobile Optimization:** Responsive layouts with adaptations for smaller screens, including specific fixes for GraphChatFloat on iOS.
 
 ## External Dependencies
 - **PostgreSQL:** Primary database.
-- **Anthropic Claude API:** Direct API access for Claude models (Opus, Sonnet, Haiku).
-- **OpenAI API (via OpenRouter):** For other AI models (e.g., GPT-4o, DeepSeek).
-- **Drizzle ORM:** TypeScript ORM for PostgreSQL.
-- **Express.js:** Backend web framework.
-- **React:** Frontend JavaScript library.
+- **Anthropic Claude API:** Direct API access for Claude models.
+- **OpenAI API (via OpenRouter):** For access to various AI models.
+- **Drizzle ORM:** TypeScript ORM.
+- **Express.js:** Backend framework.
+- **React:** Frontend library.
 - **Vite:** Frontend build tool.
 - **Tailwind CSS:** CSS framework.
 - **shadcn/ui:** UI component library.
 - **wouter:** React routing library.
-- **Zod:** Schema validation library.
+- **Zod:** Schema validation.
 - **Tavily API:** AI-native web search API.
