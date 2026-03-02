@@ -1521,7 +1521,6 @@ const PRIMARY_MODELS = [
 ];
 
 const MORE_MODELS = [
-  { id: 'claude-sonnet-4-20250514', label: 'Sonnet 4', desc: 'Previous generation' },
   { id: 'gpt-4o', label: 'GPT-4o', desc: 'OpenAI flagship model' },
   { id: 'deepseek-chat', label: 'DeepSeek V3', desc: 'Cost-effective alternative' },
 ];
