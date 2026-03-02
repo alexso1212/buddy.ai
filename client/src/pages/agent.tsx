@@ -73,9 +73,12 @@ interface Message {
   thinkingDuration?: number;
   tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
   retryPayload?: { text: string; attachments?: Attachment[] };
-  errorType?: 'network' | 'timeout' | 'rate_limit' | 'unknown';
+  errorType?: 'network' | 'timeout' | 'rate_limit' | 'context_too_long' | 'service_unavailable' | 'stream_interrupted' | 'unknown';
   timestamp?: number;
-  toolCalls?: { toolName: string; label: string }[];
+  toolCalls?: { toolName: string; label: string; status: 'running' | 'complete' | 'error'; detail?: string; type?: string; completedLabel?: string }[];
+  retryCount?: number;
+  cooldownUntil?: number;
+  partialContent?: string;
 }
 
 interface Conversation {
@@ -724,7 +727,7 @@ function ConversationListView({
   );
 }
 
-function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearchToggle, codeContextEnabled, onCodeContextToggle, researchEnabled, onResearchToggle, replyStyle, onReplyStyleChange }: { onSend: (msg: string, attachments?: Attachment[]) => void; loading: boolean; onStop?: () => void; webSearchEnabled?: boolean; onWebSearchToggle?: (enabled: boolean) => void; codeContextEnabled?: boolean; onCodeContextToggle?: (enabled: boolean) => void; researchEnabled?: boolean; onResearchToggle?: (enabled: boolean) => void; replyStyle?: string; onReplyStyleChange?: (style: string) => void }) {
+function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearchToggle, codeContextEnabled, onCodeContextToggle, researchEnabled, onResearchToggle, replyStyle, onReplyStyleChange, lastUserMessage, onEscape }: { onSend: (msg: string, attachments?: Attachment[]) => void; loading: boolean; onStop?: () => void; webSearchEnabled?: boolean; onWebSearchToggle?: (enabled: boolean) => void; codeContextEnabled?: boolean; onCodeContextToggle?: (enabled: boolean) => void; researchEnabled?: boolean; onResearchToggle?: (enabled: boolean) => void; replyStyle?: string; onReplyStyleChange?: (style: string) => void; lastUserMessage?: string; onEscape?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const bgRef = useRef<HTMLDivElement>(null);
@@ -842,6 +845,8 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
               onResearchToggle={onResearchToggle}
               replyStyle={replyStyle}
               onReplyStyleChange={onReplyStyleChange}
+              lastUserMessage={lastUserMessage}
+              onEscape={onEscape}
             />
           </div>
         </div>
@@ -933,6 +938,12 @@ export default function Agent() {
   }, [balance]);
 
   const [messages, setMessages] = useState<Message[]>([]);
+  const lastUserMessage = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') return messages[i].content;
+    }
+    return undefined;
+  }, [messages]);
   const [loading, setLoading] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
@@ -1041,7 +1052,11 @@ export default function Agent() {
             if (meta.thinkingDuration) base.thinkingDuration = meta.thinkingDuration;
             if (meta.searchResults) base.searchResults = meta.searchResults;
             if (meta.tokenUsage) base.tokenUsage = meta.tokenUsage;
-            if (meta.toolCalls) base.toolCalls = meta.toolCalls;
+            if (meta.toolCalls) base.toolCalls = meta.toolCalls.map((tc: any) => ({
+              ...tc,
+              status: tc.status || 'complete',
+              type: tc.type || 'code',
+            }));
           } catch {}
         }
         return base;
@@ -1213,6 +1228,9 @@ export default function Agent() {
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
 
+      let fullText = '';
+      let isTimeoutAbort = false;
+
       try {
         const selectedModel = (() => { try { return localStorage.getItem('buddy_model') || undefined; } catch { return undefined; } })();
         const extendedThinking = (() => { try { return localStorage.getItem('buddy_extended_thinking') === 'true'; } catch { return false; } })();
@@ -1253,7 +1271,6 @@ export default function Agent() {
         const decoder = new TextDecoder();
         streamDecoderRef.current = decoder;
         let buffer = '';
-        let fullText = '';
         let thinkingText = '';
         let pendingAction: any = null;
         let lastEventTime = Date.now();
@@ -1276,7 +1293,6 @@ export default function Agent() {
         };
 
         const STREAM_TIMEOUT_MS = 45000;
-        let isTimeoutAbort = false;
         const timeoutCheck = setInterval(() => {
           if (Date.now() - lastEventTime > STREAM_TIMEOUT_MS) {
             clearInterval(timeoutCheck);
@@ -1330,9 +1346,26 @@ export default function Agent() {
                   setMessages((prev) =>
                     prev.map((m) =>
                       m.id === assistantMsgId
-                        ? { ...m, toolCalls: [...(m.toolCalls || []), { toolName: event.toolName, label: event.label }] }
+                        ? { ...m, toolCalls: [...(m.toolCalls || []), { toolName: event.toolName, label: event.label, status: 'running' as const, type: event.toolType || 'code' }] }
                         : m
                     )
+                  );
+                }
+              } else if (event.type === 'tool_result' && event.toolName) {
+                if (isActiveStream()) {
+                  setMessages((prev) =>
+                    prev.map((m) => {
+                      if (m.id !== assistantMsgId) return m;
+                      const calls = [...(m.toolCalls || [])];
+                      let idx = -1;
+                      for (let j = calls.length - 1; j >= 0; j--) {
+                        if (calls[j].toolName === event.toolName && calls[j].status === 'running') { idx = j; break; }
+                      }
+                      if (idx !== -1) {
+                        calls[idx] = { ...calls[idx], status: 'complete' as const, detail: event.detail, completedLabel: event.completedLabel };
+                      }
+                      return { ...m, toolCalls: calls };
+                    })
                   );
                 }
               } else if (event.type === 'title' && event.title) {
@@ -1457,7 +1490,9 @@ export default function Agent() {
                   }
                 }
               } else if (event.type === 'error') {
-                throw new Error(event.content || 'Stream error');
+                const streamErr = new Error(event.content || 'Stream error');
+                (streamErr as any).errorCode = event.errorCode || 'unknown';
+                throw streamErr;
               }
             } catch (parseErr: any) {
               if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
@@ -1504,40 +1539,138 @@ export default function Agent() {
               );
             });
           } else if (err.name === 'AbortError' && isTimeoutAbort) {
+            const partialMsg = fullText || '';
             setMessages((prev) => {
               const filtered = prev.filter((m) => m.id !== assistantMsgId);
               return [...filtered, {
                 id: nextId(),
                 role: "system" as const,
-                content: '响应超时（45秒无数据），请重试',
+                content: 'Response timed out (45s with no data)',
                 errorType: 'timeout' as const,
                 retryPayload: { text, attachments },
+                partialContent: partialMsg || undefined,
               }];
             });
           } else {
             const errMsg = err.message || '';
+            const serverErrorCode = (err as any).errorCode;
             let errorType: Message['errorType'] = 'unknown';
-            let displayMsg = errMsg || '请求失败，请稍后重试';
-            if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError') || errMsg.includes('network')) {
+
+            if (serverErrorCode && serverErrorCode !== 'unknown') {
+              errorType = serverErrorCode as Message['errorType'];
+            } else if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError') || errMsg.includes('network') || errMsg.includes('ECONNREFUSED')) {
               errorType = 'network';
-              displayMsg = '网络连接失败，请检查网络后重试';
-            } else if (errMsg.includes('rate') || errMsg.includes('429') || errMsg.includes('quota')) {
+            } else if (errMsg.includes('rate') || errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('Too Many')) {
               errorType = 'rate_limit';
-              displayMsg = 'AI 服务繁忙，请稍等片刻后重试';
+            } else if (errMsg.includes('context') || errMsg.includes('too long') || errMsg.includes('max_tokens') || errMsg.includes('context_length')) {
+              errorType = 'context_too_long';
+            } else if (errMsg.includes('overloaded') || errMsg.includes('503') || errMsg.includes('unavailable') || errMsg.includes('capacity')) {
+              errorType = 'service_unavailable';
             } else if (errMsg.includes('timeout') || errMsg.includes('Timeout')) {
               errorType = 'timeout';
-              displayMsg = '响应超时，请重试';
             }
-            setMessages((prev) => {
-              const filtered = prev.filter((m) => m.id !== assistantMsgId);
-              return [...filtered, {
-                id: nextId(),
-                role: "system" as const,
-                content: displayMsg,
-                errorType,
-                retryPayload: { text, attachments },
-              }];
-            });
+
+            const partialMsg = fullText || '';
+
+            if (partialMsg && (errorType === 'network' || errorType === 'timeout' || errorType === 'unknown')) {
+              errorType = 'stream_interrupted';
+            }
+
+            const errorMsgId = nextId();
+
+            if (errorType === 'network') {
+              const doAutoRetry = async (attempt: number) => {
+                if (attempt > 3) {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === errorMsgId
+                        ? { ...m, content: 'Network connection failed after 3 attempts', retryCount: 3 }
+                        : m
+                    )
+                  );
+                  return;
+                }
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === errorMsgId
+                      ? { ...m, retryCount: attempt }
+                      : m
+                  )
+                );
+                const delays = [1000, 3000, 5000];
+                await new Promise(r => setTimeout(r, delays[attempt - 1] || 5000));
+
+                let shouldRetry = false;
+                setMessages((prev) => {
+                  const stillExists = prev.some(m => m.id === errorMsgId);
+                  if (stillExists) {
+                    shouldRetry = true;
+                    const filtered = prev.filter((m) => m.id !== errorMsgId);
+                    rebuildHistoryFromMessages(filtered.filter(m => m.id !== assistantMsgId));
+                    return filtered;
+                  }
+                  return prev;
+                });
+                if (!shouldRetry) return;
+                setTimeout(() => handleSend(text, attachments), 0);
+              };
+
+              setMessages((prev) => {
+                const filtered = prev.filter((m) => m.id !== assistantMsgId);
+                return [...filtered, {
+                  id: errorMsgId,
+                  role: "system" as const,
+                  content: 'Network connection interrupted',
+                  errorType: 'network' as const,
+                  retryPayload: { text, attachments },
+                  retryCount: 0,
+                }];
+              });
+
+              setTimeout(() => doAutoRetry(1), 100);
+            } else if (errorType === 'rate_limit') {
+              setMessages((prev) => {
+                const filtered = prev.filter((m) => m.id !== assistantMsgId);
+                return [...filtered, {
+                  id: errorMsgId,
+                  role: "system" as const,
+                  content: 'Rate limited - too many requests',
+                  errorType: 'rate_limit' as const,
+                  retryPayload: { text, attachments },
+                  cooldownUntil: Date.now() + 30000,
+                }];
+              });
+            } else if (errorType === 'stream_interrupted') {
+              if (partialMsg) {
+                conversationHistory.current.push({ role: "assistant", content: partialMsg });
+              }
+              setMessages((prev) => {
+                const updated = prev.map((m) =>
+                  m.id === assistantMsgId
+                    ? { ...m, content: partialMsg, isStreaming: false, isThinking: false }
+                    : m
+                );
+                return [...updated, {
+                  id: errorMsgId,
+                  role: "system" as const,
+                  content: 'Response was interrupted',
+                  errorType: 'stream_interrupted' as const,
+                  retryPayload: { text, attachments },
+                  partialContent: partialMsg,
+                }];
+              });
+            } else {
+              setMessages((prev) => {
+                const filtered = prev.filter((m) => m.id !== assistantMsgId);
+                return [...filtered, {
+                  id: errorMsgId,
+                  role: "system" as const,
+                  content: errMsg || 'Request failed',
+                  errorType,
+                  retryPayload: { text, attachments },
+                }];
+              });
+            }
           }
         }
       } finally {
@@ -1631,6 +1764,39 @@ export default function Agent() {
       const truncated = messages.filter(m => m.id !== messageId);
       setMessages(truncated);
       rebuildHistoryFromMessages(truncated);
+      setTimeout(() => handleSend(msg.retryPayload!.text, msg.retryPayload!.attachments), 0);
+    },
+    [messages, handleSend, rebuildHistoryFromMessages]
+  );
+
+  const handleContinueGeneration = useCallback(
+    (messageId: string) => {
+      const msg = messages.find(m => m.id === messageId);
+      if (!msg?.retryPayload) return;
+      const cleaned = messages.filter(m => m.id !== messageId);
+      setMessages(cleaned);
+      rebuildHistoryFromMessages(cleaned);
+      const continuePrompt = 'Please continue from where you left off.';
+      setTimeout(() => handleSend(continuePrompt, msg.retryPayload!.attachments), 0);
+    },
+    [messages, handleSend, rebuildHistoryFromMessages]
+  );
+
+  const handleNewConversation = useCallback(() => {
+    handleClearChat();
+  }, [handleClearChat]);
+
+  const handleTrimAndRetry = useCallback(
+    (messageId: string) => {
+      const msg = messages.find(m => m.id === messageId);
+      if (!msg?.retryPayload) return;
+      const maxKeep = 6;
+      const relevantMsgs = messages.filter(m => m.role === 'user' || m.role === 'assistant');
+      const trimmedMsgs = relevantMsgs.slice(-maxKeep);
+      const systemMsgs = messages.filter(m => m.role === 'system' && m.id !== messageId);
+      const allTrimmed = [...systemMsgs, ...trimmedMsgs];
+      setMessages(allTrimmed);
+      rebuildHistoryFromMessages(allTrimmed);
       setTimeout(() => handleSend(msg.retryPayload!.text, msg.retryPayload!.attachments), 0);
     },
     [messages, handleSend, rebuildHistoryFromMessages]
@@ -2012,6 +2178,9 @@ export default function Agent() {
                   onRegenerate={handleRegenerate}
                   onEditMessage={handleEditMessage}
                   onRetry={handleRetry}
+                  onContinueGeneration={handleContinueGeneration}
+                  onNewConversation={handleNewConversation}
+                  onTrimAndRetry={handleTrimAndRetry}
                   isLastAssistant={idx === lastAssistantIdx}
                 />
               ));
@@ -2090,6 +2259,8 @@ export default function Agent() {
         onResearchToggle={setResearchEnabled}
         replyStyle={replyStyle}
         onReplyStyleChange={setReplyStyle}
+        lastUserMessage={lastUserMessage}
+        onEscape={handleStop}
       />
     </div>
   );

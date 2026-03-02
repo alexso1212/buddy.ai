@@ -828,6 +828,16 @@ ${memoryLines}`;
     prompt += `\n\n## 额外指令\n${context.customSystemPrompt}`;
   }
 
+  const modelStyleHints: Record<string, string> = {
+    'claude-haiku-4-5-20251001': '回复尽量简短直接，不需要解释推理过程。',
+    'claude-sonnet-4-6': '回复清晰有条理，适当解释但避免冗长。使用自然段落。',
+    'claude-opus-4-6': '可以进行深入分析，提供多角度思考，但保持条理清晰。',
+  };
+  const styleHint = modelStyleHints[context.model || 'claude-sonnet-4-6'];
+  if (styleHint) {
+    prompt += `\n\n## 回复风格\n${styleHint}`;
+  }
+
   return { prompt, allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks };
 }
 
@@ -1428,7 +1438,7 @@ export async function* codeToolChatStream(
   conversationHistory: { role: string; content: string | any[] }[],
   systemPrompt: string,
   modelName?: string,
-): AsyncGenerator<{ type: string; content?: string; toolName?: string; toolInput?: any; tokenUsage?: ChatResponse['tokenUsage'] }> {
+): AsyncGenerator<{ type: string; content?: string; toolName?: string; toolInput?: any; tokenUsage?: ChatResponse['tokenUsage']; result?: string }> {
   const model = modelName || 'claude-sonnet-4-6';
   const MAX_TOOL_ROUNDS = 8;
 
@@ -1480,6 +1490,11 @@ export async function* codeToolChatStream(
               tool_use_id: block.id,
               content: result,
             });
+
+            const resultSummary = typeof result === 'string'
+              ? result.slice(0, 200)
+              : Array.isArray(result) ? JSON.stringify(result).slice(0, 200) : '';
+            yield { type: 'tool_result_event', toolName: block.name, result: resultSummary };
           }
         }
 

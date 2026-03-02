@@ -14,7 +14,26 @@ export default function ThinkingBlock({ content, isStreaming, duration }: Thinki
   const [expanded, setExpanded] = useState(false);
   const [wasStreaming, setWasStreaming] = useState(isStreaming);
   const [copied, setCopied] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const contentRef = useRef<HTMLDivElement>(null);
+  const timerStartRef = useRef<number>(Date.now());
+  const finalElapsedRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (isStreaming) {
+      timerStartRef.current = Date.now();
+      setElapsedSeconds(0);
+
+      const interval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - timerStartRef.current) / 1000);
+        setElapsedSeconds(elapsed);
+      }, 1000);
+
+      return () => clearInterval(interval);
+    } else {
+      finalElapsedRef.current = elapsedSeconds;
+    }
+  }, [isStreaming]);
 
   useEffect(() => {
     if (wasStreaming && !isStreaming) {
@@ -35,15 +54,17 @@ export default function ThinkingBlock({ content, isStreaming, duration }: Thinki
     }
   }, [content, expanded, isStreaming]);
 
-  const formatDuration = (ms: number) => {
-    if (ms < 1000) return `${ms}ms`;
-    return `${(ms / 1000).toFixed(1)}s`;
+  const getFinishedDurationSeconds = (): number => {
+    if (duration) {
+      return Math.round(duration / 1000);
+    }
+    return finalElapsedRef.current || elapsedSeconds;
   };
 
   const formatCharCount = (text: string) => {
     const len = text.length;
-    if (len >= 1000) return `${(len / 1000).toFixed(1)}k 字`;
-    return `${len} 字`;
+    if (len >= 1000) return `${(len / 1000).toFixed(1)}k chars`;
+    return `${len} chars`;
   };
 
   const handleCopy = () => {
@@ -53,7 +74,18 @@ export default function ThinkingBlock({ content, isStreaming, duration }: Thinki
     }).catch(() => {});
   };
 
-  const label = isStreaming ? "思考中..." : "思考过程";
+  const renderLabel = () => {
+    if (isStreaming) {
+      return elapsedSeconds > 0
+        ? `Thinking for ${elapsedSeconds}s...`
+        : "Thinking...";
+    }
+    const secs = getFinishedDurationSeconds();
+    if (secs > 0) {
+      return `Thought for ${secs} second${secs !== 1 ? 's' : ''}`;
+    }
+    return "Thought process";
+  };
 
   return (
     <div
@@ -82,12 +114,7 @@ export default function ThinkingBlock({ content, isStreaming, duration }: Thinki
               isStreaming ? "text-brand animate-pulse" : "text-[var(--text-secondary)]"
             )}
           />
-          <span style={{ fontWeight: 500 }}>{label}</span>
-          {duration && !isStreaming && (
-            <span style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>
-              {formatDuration(duration)}
-            </span>
-          )}
+          <span style={{ fontWeight: 500 }} data-testid="thinking-block-label">{renderLabel()}</span>
           {content && !isStreaming && (
             <span style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>
               {formatCharCount(content)}
@@ -103,7 +130,7 @@ export default function ThinkingBlock({ content, isStreaming, duration }: Thinki
           <button
             onClick={handleCopy}
             className="flex items-center justify-center w-6 h-6 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
-            title={copied ? "已复制" : "复制思考内容"}
+            title={copied ? "Copied" : "Copy thinking content"}
             data-testid="thinking-block-copy"
           >
             {copied ? <Check size={12} strokeWidth={1.5} /> : <Copy size={12} strokeWidth={1.5} />}

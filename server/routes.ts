@@ -2884,11 +2884,24 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
 
         if (chunk.type === 'tool_use' && (chunk as any).toolName) {
           const toolChunk = chunk as any;
-          const toolLabel = toolChunk.toolName === 'read_file' ? `正在读取 ${toolChunk.toolInput?.file_path}...`
-            : toolChunk.toolName === 'list_directory' ? `正在浏览 ${toolChunk.toolInput?.directory || '项目根目录'}...`
-            : toolChunk.toolName === 'search_code' ? `正在搜索 "${toolChunk.toolInput?.query}"...`
-            : `正在使用工具 ${toolChunk.toolName}...`;
-          res.write(`data: ${JSON.stringify({ type: 'tool_use', toolName: toolChunk.toolName, toolInput: toolChunk.toolInput, label: toolLabel })}\n\n`);
+          const toolLabel = toolChunk.toolName === 'read_file' ? `Reading ${toolChunk.toolInput?.file_path}...`
+            : toolChunk.toolName === 'list_directory' ? `Browsing ${toolChunk.toolInput?.directory || 'project root'}...`
+            : toolChunk.toolName === 'search_code' ? `Searching "${toolChunk.toolInput?.query}"...`
+            : toolChunk.toolName === 'web_search' ? `Searching the web...`
+            : `Using ${toolChunk.toolName}...`;
+          const toolType = toolChunk.toolName === 'web_search' ? 'search'
+            : (toolChunk.toolName === 'read_file' || toolChunk.toolName === 'list_directory') ? 'file'
+            : toolChunk.toolName === 'search_code' ? 'search'
+            : 'code';
+          res.write(`data: ${JSON.stringify({ type: 'tool_use', toolName: toolChunk.toolName, toolInput: toolChunk.toolInput, label: toolLabel, toolType })}\n\n`);
+        } else if ((chunk as any).type === 'tool_result_event') {
+          const trChunk = chunk as any;
+          const completedLabel = trChunk.toolName === 'read_file' ? `Read file: ${trChunk.result?.slice(0, 60) || 'done'}`
+            : trChunk.toolName === 'list_directory' ? `Listed directory`
+            : trChunk.toolName === 'search_code' ? `Search complete`
+            : trChunk.toolName === 'web_search' ? `Searched the web`
+            : `${trChunk.toolName} complete`;
+          res.write(`data: ${JSON.stringify({ type: 'tool_result', toolName: trChunk.toolName, completedLabel, detail: trChunk.result || '' })}\n\n`);
         } else if (chunk.type === 'thinking' && chunk.content) {
           res.write(`data: ${JSON.stringify({ type: 'thinking', content: chunk.content })}\n\n`);
         } else if (chunk.type === 'token' && chunk.content) {
@@ -2943,7 +2956,18 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
           }
           res.write(`data: ${JSON.stringify(donePayload)}\n\n`);
         } else if (chunk.type === 'error') {
-          res.write(`data: ${JSON.stringify({ type: 'error', content: chunk.content })}\n\n`);
+          const errContent = chunk.content || '';
+          let errorCode = 'unknown';
+          if (errContent.includes('rate') || errContent.includes('429') || errContent.includes('quota') || errContent.includes('Too Many')) {
+            errorCode = 'rate_limit';
+          } else if (errContent.includes('context') || errContent.includes('token') || errContent.includes('too long') || errContent.includes('max_tokens') || errContent.includes('context_length')) {
+            errorCode = 'context_too_long';
+          } else if (errContent.includes('overloaded') || errContent.includes('503') || errContent.includes('unavailable') || errContent.includes('capacity')) {
+            errorCode = 'service_unavailable';
+          } else if (errContent.includes('network') || errContent.includes('ECONNREFUSED') || errContent.includes('ETIMEDOUT') || errContent.includes('ENOTFOUND')) {
+            errorCode = 'network';
+          }
+          res.write(`data: ${JSON.stringify({ type: 'error', content: errContent, errorCode })}\n\n`);
         }
       }
 
@@ -2973,7 +2997,18 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
         return res.status(500).json({ error: e.message });
       }
       try {
-        res.write(`data: ${JSON.stringify({ type: 'error', content: e.message })}\n\n`);
+        const errContent = e.message || '';
+        let errorCode = 'unknown';
+        if (errContent.includes('rate') || errContent.includes('429') || errContent.includes('quota') || errContent.includes('Too Many')) {
+          errorCode = 'rate_limit';
+        } else if (errContent.includes('context') || errContent.includes('token') || errContent.includes('too long') || errContent.includes('max_tokens') || errContent.includes('context_length')) {
+          errorCode = 'context_too_long';
+        } else if (errContent.includes('overloaded') || errContent.includes('503') || errContent.includes('unavailable') || errContent.includes('capacity')) {
+          errorCode = 'service_unavailable';
+        } else if (errContent.includes('network') || errContent.includes('ECONNREFUSED') || errContent.includes('ETIMEDOUT') || errContent.includes('ENOTFOUND')) {
+          errorCode = 'network';
+        }
+        res.write(`data: ${JSON.stringify({ type: 'error', content: errContent, errorCode })}\n\n`);
         res.end();
       } catch {}
     }

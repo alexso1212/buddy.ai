@@ -22,6 +22,8 @@ interface AiInputBarProps {
   onResearchToggle?: (enabled: boolean) => void;
   replyStyle?: string;
   onReplyStyleChange?: (style: string) => void;
+  lastUserMessage?: string;
+  onEscape?: () => void;
 }
 
 const REPLY_STYLES = [
@@ -427,7 +429,7 @@ function AddToChatSheet({
   );
 }
 
-export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled = false, onWebSearchToggle, codeContextEnabled = false, onCodeContextToggle, researchEnabled = false, onResearchToggle, replyStyle = 'normal', onReplyStyleChange }: AiInputBarProps) {
+export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled = false, onWebSearchToggle, codeContextEnabled = false, onCodeContextToggle, researchEnabled = false, onResearchToggle, replyStyle = 'normal', onReplyStyleChange, lastUserMessage, onEscape }: AiInputBarProps) {
   const [value, setValue] = useState("");
   const [showSheet, setShowSheet] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -531,7 +533,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    const maxHeight = 120;
+    const maxHeight = 288;
     el.style.height = Math.min(el.scrollHeight, maxHeight) + "px";
   }, []);
 
@@ -606,9 +608,25 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         handleSend();
+      } else if (e.key === "ArrowUp" && !value.trim() && lastUserMessage) {
+        e.preventDefault();
+        setValue(lastUserMessage);
+        setTimeout(() => {
+          const el = textareaRef.current;
+          if (el) {
+            el.style.height = "auto";
+            el.style.height = Math.min(el.scrollHeight, 288) + "px";
+            el.setSelectionRange(lastUserMessage.length, lastUserMessage.length);
+          }
+        }, 0);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        if (loading && onEscape) {
+          onEscape();
+        }
       }
     },
-    [handleSend]
+    [handleSend, value, lastUserMessage, loading, onEscape]
   );
 
   const isEmpty = !value.trim() && attachments.length === 0;
@@ -685,7 +703,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
             style={{
               width: '100%',
               minHeight: 36,
-              maxHeight: 120,
+              maxHeight: 288,
               padding: '14px 16px 8px 16px',
               fontSize: 16,
               fontFamily: 'var(--font-sans)',

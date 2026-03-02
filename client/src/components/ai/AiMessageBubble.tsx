@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { Check, Copy, Share2, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink, FileText, RefreshCw, PanelRightOpen } from "lucide-react";
+import { Check, Copy, Share2, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink, FileText, RefreshCw, PanelRightOpen, Loader2, Search, Terminal, AlertTriangle, WifiOff, Clock, MessageSquarePlus, Scissors, ServerCrash, PlayCircle, AlertCircle } from "lucide-react";
 import AiConfirmCard from "./AiConfirmCard";
 import AiGuidedCreation from "./AiGuidedCreation";
 import AIMessageContent from "./AIMessageContent";
@@ -66,9 +66,12 @@ interface Message {
   thinkingDuration?: number;
   tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
   retryPayload?: { text: string; attachments?: any[] };
-  errorType?: 'network' | 'timeout' | 'rate_limit' | 'unknown';
+  errorType?: 'network' | 'timeout' | 'rate_limit' | 'context_too_long' | 'service_unavailable' | 'stream_interrupted' | 'unknown';
   timestamp?: number;
-  toolCalls?: { toolName: string; label: string }[];
+  toolCalls?: { toolName: string; label: string; status: 'running' | 'complete' | 'error'; detail?: string; type?: string; completedLabel?: string }[];
+  retryCount?: number;
+  cooldownUntil?: number;
+  partialContent?: string;
 }
 
 interface AiMessageBubbleProps {
@@ -82,6 +85,9 @@ interface AiMessageBubbleProps {
   onRegenerate?: (messageId: string) => void;
   onEditMessage?: (messageId: string, newContent: string) => void;
   onRetry?: (messageId: string) => void;
+  onContinueGeneration?: (messageId: string) => void;
+  onNewConversation?: () => void;
+  onTrimAndRetry?: (messageId: string) => void;
   isLastAssistant?: boolean;
 }
 
@@ -348,6 +354,312 @@ function MessageTimestamp({ timestamp }: { timestamp: number }) {
   );
 }
 
+function getToolIcon(type?: string) {
+  switch (type) {
+    case 'search': return Search;
+    case 'file': return FileText;
+    case 'code': return Terminal;
+    default: return Terminal;
+  }
+}
+
+function ToolCallCard({ toolCall, index }: { toolCall: { toolName: string; label: string; status: 'running' | 'complete' | 'error'; detail?: string; type?: string; completedLabel?: string }; index: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const Icon = getToolIcon(toolCall.type);
+  const isRunning = toolCall.status === 'running';
+  const isError = toolCall.status === 'error';
+  const displayLabel = toolCall.status === 'complete' && toolCall.completedLabel
+    ? toolCall.completedLabel
+    : toolCall.label;
+
+  return (
+    <div
+      className="rounded-lg overflow-hidden"
+      style={{
+        background: isError
+          ? 'rgba(239,68,68,0.08)'
+          : 'rgba(255,255,255,0.04)',
+        border: isError
+          ? '1px solid rgba(239,68,68,0.2)'
+          : '1px solid rgba(255,255,255,0.06)',
+      }}
+      data-testid={`tool-call-card-${index}`}
+    >
+      <button
+        onClick={() => !isRunning && toolCall.detail && setExpanded(!expanded)}
+        className="flex items-center gap-2.5 w-full px-3 py-2 text-left"
+        style={{
+          cursor: !isRunning && toolCall.detail ? 'pointer' : 'default',
+        }}
+        data-testid={`tool-call-toggle-${index}`}
+      >
+        {isRunning ? (
+          <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: 'var(--brand, #AE5630)' }} />
+        ) : isError ? (
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: '#F87171' }} />
+        ) : (
+          <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: '#4ADE80' }} />
+        )}
+        <span
+          className="text-xs flex-1 truncate"
+          style={{
+            color: isError
+              ? '#FCA5A5'
+              : isRunning
+                ? 'var(--text-primary)'
+                : 'var(--text-secondary)',
+            fontWeight: isRunning ? 500 : 400,
+          }}
+        >
+          {displayLabel}
+        </span>
+        {!isRunning && toolCall.detail && (
+          expanded
+            ? <ChevronUp className="w-3 h-3 shrink-0" style={{ color: 'var(--text-secondary)' }} />
+            : <ChevronDown className="w-3 h-3 shrink-0" style={{ color: 'var(--text-secondary)' }} />
+        )}
+      </button>
+      {expanded && toolCall.detail && (
+        <div
+          className="px-3 pb-2 text-xs"
+          style={{
+            color: 'var(--text-secondary)',
+            opacity: 0.8,
+            lineHeight: 1.5,
+            borderTop: '1px solid rgba(255,255,255,0.04)',
+            paddingTop: 8,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            maxHeight: 200,
+            overflowY: 'auto',
+          }}
+          data-testid={`tool-call-detail-${index}`}
+        >
+          {toolCall.detail}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CooldownTimer({ cooldownUntil }: { cooldownUntil: number }) {
+  const [remaining, setRemaining] = useState(Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000)));
+
+  useEffect(() => {
+    if (remaining <= 0) return;
+    const timer = setInterval(() => {
+      const r = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+      setRemaining(r);
+      if (r <= 0) clearInterval(timer);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldownUntil, remaining]);
+
+  if (remaining <= 0) return null;
+  return (
+    <span className="text-xs tabular-nums" style={{ color: 'var(--text-secondary)' }} data-testid="cooldown-timer">
+      {remaining}s
+    </span>
+  );
+}
+
+function ErrorBlock({
+  message,
+  onRetry,
+  onContinueGeneration,
+  onNewConversation,
+  onTrimAndRetry,
+}: {
+  message: Message;
+  onRetry?: (messageId: string) => void;
+  onContinueGeneration?: (messageId: string) => void;
+  onNewConversation?: () => void;
+  onTrimAndRetry?: (messageId: string) => void;
+}) {
+  const errorType = message.errorType || 'unknown';
+
+  const errorConfig: Record<string, { icon: typeof WifiOff; title: string; description: string; bgColor: string; borderColor: string; iconColor: string }> = {
+    network: {
+      icon: WifiOff,
+      title: 'Connection lost',
+      description: message.retryCount && message.retryCount > 0
+        ? `Auto-retrying... (attempt ${message.retryCount}/3)`
+        : 'Network connection interrupted. Retrying automatically...',
+      bgColor: 'rgba(239,68,68,0.08)',
+      borderColor: 'rgba(239,68,68,0.2)',
+      iconColor: '#ef4444',
+    },
+    rate_limit: {
+      icon: Clock,
+      title: 'Rate limited',
+      description: 'Too many requests. Please wait before trying again.',
+      bgColor: 'rgba(245,158,11,0.08)',
+      borderColor: 'rgba(245,158,11,0.2)',
+      iconColor: '#f59e0b',
+    },
+    context_too_long: {
+      icon: AlertCircle,
+      title: 'Context too long',
+      description: 'The conversation has exceeded the maximum context length.',
+      bgColor: 'rgba(139,92,246,0.08)',
+      borderColor: 'rgba(139,92,246,0.2)',
+      iconColor: '#8b5cf6',
+    },
+    service_unavailable: {
+      icon: ServerCrash,
+      title: 'Service unavailable',
+      description: 'The AI service is temporarily overloaded. Try a different model or wait a moment.',
+      bgColor: 'rgba(245,158,11,0.08)',
+      borderColor: 'rgba(245,158,11,0.2)',
+      iconColor: '#f59e0b',
+    },
+    stream_interrupted: {
+      icon: AlertTriangle,
+      title: 'Response interrupted',
+      description: 'The response was cut short. You can continue from where it stopped.',
+      bgColor: 'rgba(59,130,246,0.08)',
+      borderColor: 'rgba(59,130,246,0.2)',
+      iconColor: '#3b82f6',
+    },
+    timeout: {
+      icon: Clock,
+      title: 'Response timed out',
+      description: 'No data received for 45 seconds.',
+      bgColor: 'rgba(245,158,11,0.08)',
+      borderColor: 'rgba(245,158,11,0.2)',
+      iconColor: '#f59e0b',
+    },
+    unknown: {
+      icon: AlertTriangle,
+      title: 'Something went wrong',
+      description: message.content || 'An unexpected error occurred.',
+      bgColor: 'rgba(239,68,68,0.08)',
+      borderColor: 'rgba(239,68,68,0.2)',
+      iconColor: '#ef4444',
+    },
+  };
+
+  const config = errorConfig[errorType] || errorConfig.unknown;
+  const IconComponent = config.icon;
+  const isAutoRetrying = errorType === 'network' && message.retryCount !== undefined && message.retryCount > 0 && message.retryCount < 3;
+  const cooldownActive = errorType === 'rate_limit' && message.cooldownUntil && message.cooldownUntil > Date.now();
+
+  return (
+    <div
+      className="flex flex-col px-3 mb-6 gap-2"
+      style={{ animation: 'messageAppear 200ms ease-out' }}
+      data-testid={`ai-message-${message.id}`}
+    >
+      <div
+        className="rounded-lg px-4 py-3"
+        style={{
+          background: config.bgColor,
+          border: `1px solid ${config.borderColor}`,
+          maxWidth: '90%',
+        }}
+        data-testid={`error-block-${errorType}`}
+      >
+        <div className="flex items-start gap-3">
+          <div className="shrink-0 mt-0.5">
+            {isAutoRetrying ? (
+              <Loader2 className="w-4 h-4 animate-spin" style={{ color: config.iconColor }} />
+            ) : (
+              <IconComponent className="w-4 h-4" style={{ color: config.iconColor }} />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }} data-testid="error-title">
+              {config.title}
+            </div>
+            <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }} data-testid="error-description">
+              {config.description}
+            </div>
+          </div>
+          {cooldownActive && <CooldownTimer cooldownUntil={message.cooldownUntil!} />}
+        </div>
+
+        {message.partialContent && errorType === 'stream_interrupted' && (
+          <div className="mt-2 pt-2" style={{ borderTop: `1px solid ${config.borderColor}` }}>
+            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              Partial response received ({message.partialContent.length} chars)
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 mt-3 flex-wrap">
+          {errorType === 'stream_interrupted' && onContinueGeneration && (
+            <button
+              onClick={() => onContinueGeneration(message.id)}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors font-medium"
+              style={{
+                background: 'rgba(59,130,246,0.15)',
+                color: '#60a5fa',
+                border: '1px solid rgba(59,130,246,0.25)',
+              }}
+              data-testid="btn-continue-generation"
+            >
+              <PlayCircle size={12} />
+              Continue generating
+            </button>
+          )}
+
+          {errorType === 'context_too_long' && (
+            <>
+              {onNewConversation && (
+                <button
+                  onClick={onNewConversation}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors font-medium"
+                  style={{
+                    background: 'rgba(139,92,246,0.15)',
+                    color: '#a78bfa',
+                    border: '1px solid rgba(139,92,246,0.25)',
+                  }}
+                  data-testid="btn-new-conversation"
+                >
+                  <MessageSquarePlus size={12} />
+                  Start new conversation
+                </button>
+              )}
+              {onTrimAndRetry && (
+                <button
+                  onClick={() => onTrimAndRetry(message.id)}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors font-medium"
+                  style={{
+                    background: 'rgba(255,255,255,0.06)',
+                    color: 'var(--text-secondary)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                  }}
+                  data-testid="btn-trim-retry"
+                >
+                  <Scissors size={12} />
+                  Trim context & retry
+                </button>
+              )}
+            </>
+          )}
+
+          {!isAutoRetrying && errorType !== 'context_too_long' && onRetry && message.retryPayload && (
+            <button
+              onClick={() => onRetry(message.id)}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors font-medium"
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                color: 'var(--text-secondary)',
+                border: '1px solid rgba(255,255,255,0.08)',
+              }}
+              disabled={!!cooldownActive}
+              data-testid="btn-retry"
+            >
+              <RefreshCw size={12} />
+              Retry
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AiMessageBubble({
   message,
   onConfirm,
@@ -359,12 +671,27 @@ export default function AiMessageBubble({
   onRegenerate,
   onEditMessage,
   onRetry,
+  onContinueGeneration,
+  onNewConversation,
+  onTrimAndRetry,
   isLastAssistant,
 }: AiMessageBubbleProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.content);
   const [artifactOpen, setArtifactOpen] = useState(false);
   if (message.role === "system") {
+    if (message.errorType && message.errorType !== 'unknown') {
+      return (
+        <ErrorBlock
+          message={message}
+          onRetry={onRetry}
+          onContinueGeneration={onContinueGeneration}
+          onNewConversation={onNewConversation}
+          onTrimAndRetry={onTrimAndRetry}
+        />
+      );
+    }
+
     const isSuccess = message.content.includes("成功") || message.content.includes("已");
     const isError = !!message.retryPayload;
     return (
@@ -372,30 +699,22 @@ export default function AiMessageBubble({
         className="flex flex-col items-center px-3 mb-6 gap-2"
         data-testid={`ai-message-${message.id}`}
       >
-        <span
-          className={cn(
-            "text-xs px-3 py-1 rounded-full",
-            isSuccess
-              ? "bg-brand/10 text-brand dark:text-brand-light"
-              : "bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400"
-          )}
-        >
-          {message.content}
-        </span>
-        {isError && onRetry && (
-          <button
-            onClick={() => onRetry(message.id)}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors"
-            style={{
-              background: 'rgba(255,255,255,0.06)',
-              color: 'var(--text-secondary)',
-              border: '1px solid rgba(255,255,255,0.08)',
-            }}
-            data-testid="btn-retry"
+        {isError ? (
+          <ErrorBlock
+            message={message}
+            onRetry={onRetry}
+          />
+        ) : (
+          <span
+            className={cn(
+              "text-xs px-3 py-1 rounded-full",
+              isSuccess
+                ? "bg-brand/10 text-brand dark:text-brand-light"
+                : "bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400"
+            )}
           >
-            <RefreshCw size={12} />
-            重试
-          </button>
+            {message.content}
+          </span>
         )}
       </div>
     );
@@ -620,7 +939,7 @@ export default function AiMessageBubble({
       style={{ animation: 'messageAppear 200ms ease-out' }}
       data-testid={`ai-message-${message.id}`}
     >
-      <div className="max-w-full">
+      <div className="max-w-3xl">
         <div className="mb-2 flex items-center gap-2">
           <BrandLogo />
           {message.timestamp != null && (
@@ -651,16 +970,9 @@ export default function AiMessageBubble({
           </div>
         )}
         {message.toolCalls && message.toolCalls.length > 0 && (
-          <div className="flex flex-col gap-1 mb-2" data-testid="tool-calls-info">
+          <div className="flex flex-col gap-1.5 mb-3" data-testid="tool-calls-info">
             {message.toolCalls.map((tc, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs"
-                style={{ background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.45)' }}
-              >
-                <span className={`inline-block w-1.5 h-1.5 rounded-full ${message.isStreaming && i === message.toolCalls!.length - 1 ? 'animate-pulse bg-blue-400' : 'bg-green-400'}`} />
-                <span>{tc.label}</span>
-              </div>
+              <ToolCallCard key={i} toolCall={tc} index={i} />
             ))}
           </div>
         )}
@@ -683,7 +995,7 @@ export default function AiMessageBubble({
           </button>
         )}
         {!message.isStreaming && (
-          <div className="flex items-center opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150">
+          <div className="flex items-center">
             <AiReplyActions
               content={message.content}
               onRegenerate={onRegenerate ? () => onRegenerate(message.id) : undefined}
