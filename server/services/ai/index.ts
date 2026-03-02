@@ -33,11 +33,214 @@ function getClientForModel(model: string): OpenAI {
   return openrouterClient;
 }
 
+type TaskCategory = 'title_generation' | 'auto_judgment' | 'quick_reply' | 'general_chat' | 'code_generation' | 'complex_analysis' | 'document_processing';
+
+interface ModelConfig {
+  model: string;
+  max_tokens: number;
+  thinking: { type: 'enabled'; budget_tokens: number } | { type: 'disabled' };
+  temperature: number;
+}
+
+const TASK_MODEL_CONFIGS: Record<TaskCategory, ModelConfig> = {
+  title_generation: {
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 100,
+    thinking: { type: 'disabled' },
+    temperature: 0.7,
+  },
+  auto_judgment: {
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 500,
+    thinking: { type: 'disabled' },
+    temperature: 0.0,
+  },
+  quick_reply: {
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 2048,
+    thinking: { type: 'disabled' },
+    temperature: 0.5,
+  },
+  general_chat: {
+    model: 'claude-sonnet-4-6',
+    max_tokens: 8192,
+    thinking: { type: 'disabled' },
+    temperature: 0.7,
+  },
+  code_generation: {
+    model: 'claude-sonnet-4-6',
+    max_tokens: 16384,
+    thinking: { type: 'enabled', budget_tokens: 16000 },
+    temperature: 0.3,
+  },
+  complex_analysis: {
+    model: 'claude-sonnet-4-6',
+    max_tokens: 32000,
+    thinking: { type: 'enabled', budget_tokens: 32000 },
+    temperature: 0.5,
+  },
+  document_processing: {
+    model: 'claude-sonnet-4-6',
+    max_tokens: 16384,
+    thinking: { type: 'enabled', budget_tokens: 10000 },
+    temperature: 0.3,
+  },
+};
+
+const USER_MODEL_MAX_TOKENS: Record<string, number> = {
+  'claude-opus-4-6': 64000,
+  'claude-sonnet-4-6': 8192,
+  'claude-haiku-4-5-20251001': 2048,
+  'gpt-4o': 16384,
+  'deepseek-chat': 8192,
+};
+
 function getMaxTokensForModel(model: string): number {
-  if (model === 'claude-opus-4-6') return 128000;
-  if (model === 'claude-sonnet-4-6') return 64000;
-  if (model === 'claude-haiku-4-5-20251001') return 8192;
-  return 16384;
+  return USER_MODEL_MAX_TOKENS[model] || 16384;
+}
+
+function getConfigForTask(task: TaskCategory, userModel?: string, extendedThinking?: boolean): ModelConfig {
+  const baseConfig = { ...TASK_MODEL_CONFIGS[task] };
+
+  if (userModel) {
+    baseConfig.model = userModel;
+    if (userModel === 'claude-opus-4-6') {
+      baseConfig.max_tokens = 64000;
+      if (extendedThinking) {
+        baseConfig.thinking = { type: 'enabled', budget_tokens: 32000 };
+      }
+    } else {
+      const modelMaxTokens = USER_MODEL_MAX_TOKENS[userModel];
+      if (modelMaxTokens && baseConfig.max_tokens > modelMaxTokens) {
+        baseConfig.max_tokens = modelMaxTokens;
+      }
+    }
+  }
+
+  if (!extendedThinking) {
+    baseConfig.thinking = { type: 'disabled' };
+  } else if (baseConfig.model.startsWith('claude-haiku')) {
+    baseConfig.thinking = { type: 'disabled' };
+  } else if (!baseConfig.model.startsWith('claude-')) {
+    baseConfig.thinking = { type: 'disabled' };
+  }
+
+  return baseConfig;
+}
+
+async function classifyTask(userMessage: string, hasAttachments?: boolean): Promise<TaskCategory> {
+  if (hasAttachments) return 'document_processing';
+
+  const lowerMsg = userMessage.toLowerCase();
+
+  if (/^(hi|hello|hey|你好|嗨|谢谢|ok|好的|thanks|thank you|再见|bye|哈哈|嗯|对|是的|没错|ok了|收到|明白|知道了)$/i.test(userMessage.trim())) {
+    return 'quick_reply';
+  }
+
+  if (/代码|code|function|实现|写一个|debug|bug|error|fix|修复|编程|script|api|接口|import|export|class|component|变量|variable/.test(lowerMsg)) {
+    return 'code_generation';
+  }
+
+  if (/分析|analyze|analysis|对比|比较|evaluate|评估|report|报告|策略|strategy|规划|plan|深度|详细分析|root cause/.test(lowerMsg)) {
+    return 'complex_analysis';
+  }
+
+  if (/总结|summarize|summary|文档|document|摘要|extract|提取|归纳|概括/.test(lowerMsg)) {
+    return 'document_processing';
+  }
+
+  if (userMessage.length < 50) {
+    return 'quick_reply';
+  }
+
+  try {
+    const client = getClientForModel('claude-haiku-4-5-20251001');
+    const response = await client.chat.completions.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 30,
+      temperature: 0,
+      messages: [
+        {
+          role: 'system',
+          content: `Classify the user message into exactly one category. Reply with ONLY the category name, nothing else.
+Categories:
+- quick_reply: greetings, simple yes/no questions, short casual chat
+- general_chat: normal conversation, task descriptions, general discussion
+- code_generation: code writing, debugging, technical implementation
+- complex_analysis: deep reasoning, multi-step analysis, strategic planning
+- document_processing: long document reading, summarization, data extraction`
+        },
+        { role: 'user', content: userMessage.slice(0, 500) }
+      ],
+    });
+    const result = (response.choices[0]?.message?.content || '').trim().toLowerCase();
+    const validCategories: TaskCategory[] = ['quick_reply', 'general_chat', 'code_generation', 'complex_analysis', 'document_processing'];
+    if (validCategories.includes(result as TaskCategory)) return result as TaskCategory;
+    return 'general_chat';
+  } catch {
+    return 'general_chat';
+  }
+}
+
+const CONTEXT_LIMITS: Record<TaskCategory, number> = {
+  title_generation: 4,
+  auto_judgment: 4,
+  quick_reply: 4,
+  general_chat: 20,
+  code_generation: 10,
+  complex_analysis: 20,
+  document_processing: 6,
+};
+
+async function buildOptimizedContext(
+  conversationHistory: { role: string; content: string | any[] }[],
+  task: TaskCategory,
+): Promise<{ role: string; content: string | any[] }[]> {
+  const limit = CONTEXT_LIMITS[task];
+  const filtered = conversationHistory.filter(
+    msg => msg.content && (typeof msg.content === 'string' ? msg.content.trim() !== '' : true)
+  );
+
+  if (filtered.length <= limit) {
+    return filtered;
+  }
+
+  const recentMessages = filtered.slice(-limit);
+  const olderMessages = filtered.slice(0, -limit);
+
+  try {
+    const olderText = olderMessages
+      .map(m => `${m.role}: ${typeof m.content === 'string' ? m.content.slice(0, 200) : '[附件内容]'}`)
+      .join('\n');
+
+    const client = getClientForModel('claude-haiku-4-5-20251001');
+    const response = await client.chat.completions.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 500,
+      temperature: 0,
+      messages: [
+        {
+          role: 'system',
+          content: '将以下对话历史压缩为简洁摘要（200字以内），保留核心需求、已达成的结论和关键细节。直接输出摘要。'
+        },
+        { role: 'user', content: olderText.slice(0, 4000) }
+      ],
+    });
+
+    const summary = response.choices[0]?.message?.content || '';
+
+    const firstRecent = recentMessages[0];
+    if (firstRecent && firstRecent.role === 'user') {
+      const merged = { ...firstRecent, content: `[前期对话摘要]\n${summary}\n\n[最近对话开始]\n${typeof firstRecent.content === 'string' ? firstRecent.content : ''}` };
+      return [merged, ...recentMessages.slice(1)];
+    }
+    return [
+      { role: 'user', content: `[前期对话摘要] ${summary}` },
+      ...recentMessages,
+    ];
+  } catch {
+    return recentMessages;
+  }
 }
 
 interface ChatResponse {
@@ -757,15 +960,20 @@ export async function chat(
 ): Promise<ChatResponse> {
   const { prompt: systemPrompt, allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks } = await buildContextualSystemPrompt(context, 'json');
 
-  const modelName = context.model || 'claude-sonnet-4-6';
+  const taskCategory = await classifyTask(message);
+  const config = getConfigForTask(taskCategory, context.model, context.extendedThinking);
+  const modelName = config.model;
   const aiClient = getClientForModel(modelName);
+
+  const optimizedHistory = await buildOptimizedContext(conversationHistory, taskCategory);
 
   const requestParams: any = {
     model: modelName,
-    max_tokens: getMaxTokensForModel(modelName),
+    max_tokens: config.max_tokens,
+    temperature: config.temperature,
     messages: [
       { role: 'system', content: systemPrompt },
-      ...conversationHistory.filter(msg => msg.content && (typeof msg.content === 'string' ? msg.content.trim() !== '' : true)).map(msg => ({
+      ...optimizedHistory.map(msg => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
       })),
@@ -774,11 +982,11 @@ export async function chat(
   };
 
   const isClaudeModel = modelName.startsWith('claude-');
-  if (context.extendedThinking && isClaudeModel) {
+  if (config.thinking.type === 'enabled' && isClaudeModel) {
     requestParams.extra_body = {
       thinking: {
         type: 'enabled',
-        budget_tokens: modelName === 'claude-opus-4-6' ? 32000 : 16000,
+        budget_tokens: config.thinking.budget_tokens,
       }
     };
   }
@@ -943,14 +1151,19 @@ export async function* chatStream(
   context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean; orgId?: number },
   attachments?: { type: string; name: string; mimeType: string; base64: string }[]
 ): AsyncGenerator<{ type: 'token' | 'done' | 'error'; content?: string; tokenUsage?: ChatResponse['tokenUsage'] }> {
-  const modelName = context.model || 'claude-sonnet-4-6';
-  const { prompt: systemPrompt } = await buildContextualSystemPrompt(context, 'streaming');
+  const hasAttachments = !!(attachments && attachments.length > 0);
+  const taskCategory = await classifyTask(message, hasAttachments);
+  const config = getConfigForTask(taskCategory, context.model, context.extendedThinking);
+  const modelName = config.model;
+  const { prompt: systemPrompt } = await buildContextualSystemPrompt({ ...context, model: modelName }, 'streaming');
   const aiClient = getClientForModel(modelName);
 
+  const optimizedHistory = await buildOptimizedContext(conversationHistory, taskCategory);
+
   let userContent: any = message;
-  if (attachments && attachments.length > 0) {
+  if (hasAttachments) {
     const contentParts: any[] = [];
-    for (const att of attachments) {
+    for (const att of attachments!) {
       if (att.type === 'image') {
         contentParts.push({
           type: 'image_url',
@@ -986,11 +1199,12 @@ export async function* chatStream(
 
   const requestParams: any = {
     model: modelName,
-    max_tokens: getMaxTokensForModel(modelName),
+    max_tokens: config.max_tokens,
+    temperature: config.temperature,
     stream: true,
     messages: [
       { role: 'system', content: systemPrompt },
-      ...conversationHistory.filter(msg => msg.content && (typeof msg.content === 'string' ? msg.content.trim() !== '' : true)).map(msg => ({
+      ...optimizedHistory.map(msg => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
       })),
@@ -1004,11 +1218,11 @@ export async function* chatStream(
     requestParams.stream_options = { include_usage: true };
   }
 
-  if (context.extendedThinking && isClaudeModel) {
+  if (config.thinking.type === 'enabled' && isClaudeModel) {
     requestParams.extra_body = {
       thinking: {
         type: 'enabled',
-        budget_tokens: modelName === 'claude-opus-4-6' ? 32000 : 16000,
+        budget_tokens: config.thinking.budget_tokens,
       }
     };
   }
@@ -1206,6 +1420,7 @@ export async function generateConversationTitle(
 
 const anthropicClient = new Anthropic({
   apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
+  baseURL: 'https://vip.aipro.love',
 });
 
 export async function* codeToolChatStream(

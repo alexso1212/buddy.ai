@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { storage } from '../../storage';
 
 const claudeSimpleClient = new OpenAI({
-  baseURL: 'https://api.anthropic.com/v1/',
+  baseURL: 'https://vip.aipro.love/v1',
   apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
   timeout: 30000,
 });

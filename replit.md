@@ -40,8 +40,8 @@ An 18-table PostgreSQL database schema manages entities like `organizations`, `d
 
 ## External Dependencies
 - **PostgreSQL:** Primary database.
-- **Anthropic Claude API:** Direct API access for Claude models.
-- **OpenAI API (via OpenRouter):** For access to various AI models.
+- **Anthropic Claude API:** Via proxy (`vip.aipro.love`), OpenAI-compatible format. Smart model routing with task classifier.
+- **OpenAI API (via OpenRouter):** For GPT-4o and DeepSeek V3 fallback models.
 - **Drizzle ORM:** TypeScript ORM.
 - **Express.js:** Backend framework.
 - **React:** Frontend library.
@@ -51,3 +51,34 @@ An 18-table PostgreSQL database schema manages entities like `organizations`, `d
 - **wouter:** React routing library.
 - **Zod:** Schema validation.
 - **Tavily API:** AI-native web search API.
+
+## AI Smart Routing Architecture
+The AI subsystem uses intelligent task classification and dynamic parameter selection:
+
+**Task Classifier:** Before each chat request, a Haiku-based classifier categorizes the user message into: `quick_reply`, `general_chat`, `code_generation`, `complex_analysis`, or `document_processing`. This determines model selection, `max_tokens`, `temperature`, and whether Extended Thinking is enabled.
+
+**Per-Task Configuration:**
+| Task | Model | max_tokens | Thinking | Temp |
+|------|-------|-----------|----------|------|
+| Title generation | Haiku | 100 | off | 0.7 |
+| Auto judgment | Haiku | 500 | off | 0.0 |
+| Quick reply | Haiku | 2048 | off | 0.5 |
+| General chat | Sonnet | 8192 | off | 0.7 |
+| Code generation | Sonnet | 16384 | on (16k) | 0.3 |
+| Complex analysis | Sonnet | 32000 | on (32k) | 0.5 |
+| Document processing | Sonnet | 16384 | on (10k) | 0.3 |
+| Deep mode (Opus) | Opus | 64000 | on (32k) | 0.5 |
+
+**Extended Thinking Control:** The user's "Extended Thinking" toggle acts as a permission flag. Even when enabled, thinking only activates for code/complex/document tasks — never for quick replies or general chat.
+
+**Context Optimization:** Conversation history is trimmed per task category (4-20 recent messages). Older messages are summarized by Haiku and injected as context.
+
+**API Proxy:** All Claude models route through `vip.aipro.love/v1` (OpenAI-compatible format). GPT-4o and DeepSeek V3 route through OpenRouter.
+
+## iOS App (Capacitor)
+The project is configured for iOS App packaging via Capacitor:
+- **PWA Configuration:** `client/public/manifest.json` with app name, theme color, icons. iOS-specific meta tags in `client/index.html` (`apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style`, etc.).
+- **Capacitor Config:** `capacitor.config.ts` at project root. App ID: `com.deltapex.buddy`. `server.url` points to the deployed `.replit.app` domain — the App loads the live website, so code changes only require redeployment (not rebuilding the App).
+- **App Icons:** Placeholder icons in `client/public/icons/` (192, 512, apple-touch-icon). Should be replaced with high-res 1024x1024 artwork before App Store submission.
+- **Build Guide:** `docs/ios-build-guide.md` contains step-by-step instructions for packaging with Xcode and uploading to TestFlight.
+- **Theme:** Dark theme (#1A1918) with `black-translucent` status bar for seamless integration with the app's dark UI.
