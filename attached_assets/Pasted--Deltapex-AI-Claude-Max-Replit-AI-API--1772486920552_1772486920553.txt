@@ -1,0 +1,599 @@
+# Deltapex AI 配置优化方案 — 对齐 Claude Max 官方体验
+
+> 本文档用于指导 Replit 开发环境中 AI 模型调用配置的全面优化。
+> 目标：以 API 调用方式尽可能还原 Claude.ai Max 订阅计划的用户体验，同时控制 token 成本。
+
+-----
+
+## 一、核心设计原则
+
+Claude.ai Max 并不是”所有请求都用最强模型 + 最大参数”。官方的策略是**智能路由 + 动态参数**：
+
+1. 根据任务复杂度自动选择模型（大部分请求走 Sonnet，极少用 Opus）
+1. Extended Thinking 不是默认开启，而是按需触发
+1. `max_tokens` 根据预期输出长度动态设置，不会每次都拉满
+1. 对话历史有截断和摘要机制，不会无限堆积上下文
+
+**你的系统也应该实现这四点，而不是每次调用都用最大参数。**
+
+-----
+
+## 二、模型路由策略（Smart Model Router）
+
+### 2.1 任务分类与模型映射
+
+在应用层实现一个路由器，根据任务类型自动选择模型和参数：
+
+```typescript
+// 建议的路由逻辑伪代码
+type TaskCategory =
+  | 'title_generation'      // 对话标题生成
+  | 'auto_judgment'         // 自动分类/判断/意图识别
+  | 'quick_reply'           // 简单问答/闲聊
+  | 'general_chat'          // 普通对话/任务创建
+  | 'code_generation'       // 代码生成/修改
+  | 'complex_analysis'      // 深度分析/复杂推理
+  | 'document_processing'   // 长文档处理/总结
+
+function getModelConfig(task: TaskCategory): ModelConfig {
+  switch (task) {
+    case 'title_generation':
+      return {
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 100,
+        thinking: { type: 'disabled' },
+        temperature: 0.7,
+        system_prompt: TITLE_SYSTEM_PROMPT  // 极简 system prompt
+      }
+
+    case 'auto_judgment':
+      return {
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 500,
+        thinking: { type: 'disabled' },
+        temperature: 0.0,  // 判断类任务用 0 温度确保一致性
+        system_prompt: JUDGMENT_SYSTEM_PROMPT
+      }
+
+    case 'quick_reply':
+      return {
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 2048,
+        thinking: { type: 'disabled' },
+        temperature: 0.5,
+        system_prompt: CHAT_SYSTEM_PROMPT_LIGHT
+      }
+
+    case 'general_chat':
+      return {
+        model: 'claude-sonnet-4-6',
+        max_tokens: 8192,
+        thinking: { type: 'disabled' },  // 普通聊天默认不开 thinking
+        temperature: 0.7,
+        system_prompt: CHAT_SYSTEM_PROMPT
+      }
+
+    case 'code_generation':
+      return {
+        model: 'claude-sonnet-4-6',
+        max_tokens: 16384,
+        thinking: { type: 'enabled', budget_tokens: 16000 },
+        temperature: 0.3,
+        system_prompt: CODE_SYSTEM_PROMPT
+      }
+
+    case 'complex_analysis':
+      return {
+        model: 'claude-sonnet-4-6',  // 优先 Sonnet，用户手动切换才用 Opus
+        max_tokens: 32000,
+        thinking: { type: 'enabled', budget_tokens: 32000 },
+        temperature: 0.5,
+        system_prompt: ANALYSIS_SYSTEM_PROMPT
+      }
+
+    case 'document_processing':
+      return {
+        model: 'claude-sonnet-4-6',
+        max_tokens: 16384,
+        thinking: { type: 'enabled', budget_tokens: 10000 },
+        temperature: 0.3,
+        system_prompt: DOCUMENT_SYSTEM_PROMPT
+      }
+  }
+}
+```
+
+### 2.2 自动任务分类器
+
+在用户发送消息后、调用主模型之前，先用 Haiku 做一次快速分类：
+
+```typescript
+async function classifyTask(userMessage: string): Promise<TaskCategory> {
+  const response = await callModel({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 50,
+    temperature: 0.0,
+    thinking: { type: 'disabled' },
+    system: `你是一个任务分类器。根据用户消息，返回且仅返回以下分类之一：
+      - quick_reply：简单问候、闲聊、一句话能回答的问题
+      - general_chat：普通对话、任务描述、一般性讨论
+      - code_generation：涉及代码编写、修改、调试
+      - complex_analysis：需要深度推理、多步骤分析、复杂决策
+      - document_processing：涉及长文档的阅读、总结、提取
+      只返回分类名称，不要解释。`,
+    messages: [{ role: 'user', content: userMessage }]
+  })
+  return response.content[0].text.trim() as TaskCategory
+}
+```
+
+> **注意**：标题生成和自动判断由系统内部触发，不需要经过分类器。
+
+-----
+
+## 三、各模型详细配置修改
+
+### 3.1 Haiku 4.5（轻量任务专用）
+
+**当前问题**：开了 Extended Thinking（budget 16000），max_tokens 8192，对于标题生成和判断任务严重浪费。
+
+**修改后**：
+
+```yaml
+# 场景 A：对话标题生成
+model: claude-haiku-4-5-20251001
+max_tokens: 100          # 标题最多几十个字
+thinking: disabled        # 完全不需要
+temperature: 0.7         # 适当创意
+system_prompt: |
+  根据以下对话内容生成一个简短的标题（10字以内）。
+  只返回标题文本，不要加引号或其他格式。
+
+# 场景 B：意图判断 / 任务分类
+model: claude-haiku-4-5-20251001
+max_tokens: 500          # 判断结果 + 简短理由
+thinking: disabled
+temperature: 0.0         # 确定性输出
+system_prompt: |
+  你是 Deltapex 系统的意图识别模块。
+  分析用户输入，返回 JSON 格式的判断结果。
+
+# 场景 C：简单快速回答
+model: claude-haiku-4-5-20251001
+max_tokens: 2048
+thinking: disabled
+temperature: 0.5
+```
+
+**预计节省**：Haiku 关闭 thinking 后，每次调用节省约 16000 个 thinking tokens 的费用。按 Haiku 的价格（$1/$5 per MTok），每 1000 次调用约节省 $0.08-0.10 的无效 thinking 成本。虽然单次不多，但高频场景下积少成多。
+
+### 3.2 Sonnet 4.6（主力模型）
+
+**当前问题**：所有场景统一 max_tokens: 64000 + thinking budget: 16000，没有区分任务类型。
+
+**修改后**：
+
+```yaml
+# 场景 A：普通对话（占 70%+ 的请求量）
+model: claude-sonnet-4-6
+max_tokens: 8192          # Claude.ai 普通回复一般不超过这个长度
+thinking: disabled         # 普通聊天不需要深度思考
+temperature: 0.7
+stream: true
+
+# 场景 B：代码生成 / 技术任务
+model: claude-sonnet-4-6
+max_tokens: 16384         # 代码输出可能较长
+thinking:
+  type: enabled
+  budget_tokens: 16000    # 代码任务需要推理
+temperature: 0.3          # 代码需要确定性
+stream: true
+
+# 场景 C：复杂分析 / 深度推理
+model: claude-sonnet-4-6
+max_tokens: 32000
+thinking:
+  type: enabled
+  budget_tokens: 32000    # 复杂任务给足思考空间
+temperature: 0.5
+stream: true
+
+# 场景 D：文档处理 / 长文总结
+model: claude-sonnet-4-6
+max_tokens: 16384
+thinking:
+  type: enabled
+  budget_tokens: 10000
+temperature: 0.3
+stream: true
+```
+
+**关键改动**：
+
+- 普通对话关闭 thinking，这是最大的成本节省点
+- max_tokens 按场景设 8192/16384/32000，不再统一 64000
+- Claude.ai 上用户看到的”Extended Thinking”是可选功能，不是默认开启
+
+### 3.3 Opus 4.6（仅限用户手动选择）
+
+**当前问题**：max_tokens 128000 过于激进。
+
+**修改后**：
+
+```yaml
+# Opus 仅在用户主动选择"深度模式"时调用
+model: claude-opus-4-6
+max_tokens: 64000         # 从 128000 降到 64000，实际极少需要更长
+thinking:
+  type: enabled
+  budget_tokens: 32000    # 保持不变
+temperature: 0.5
+stream: true
+```
+
+**使用限制建议**：
+
+- 在 UI 上提供模型切换选项，默认使用 Sonnet
+- Opus 调用前可展示成本提示（如”此次对话将使用高级模型”）
+- 考虑对 Opus 设置每日/每周调用次数上限
+
+### 3.4 备选模型（GPT-4o / DeepSeek）
+
+保持现有配置即可，但可以优化用途：
+
+```yaml
+# GPT-4o：适合需要不同视角或 Claude 不擅长的任务
+model: gpt-4o
+max_tokens: 16384
+temperature: 0.7
+用途: 当 Claude API 不可用时的 fallback
+
+# DeepSeek V3：极低成本场景
+model: deepseek-chat
+max_tokens: 8192          # 从 16384 降到 8192，够用即可
+temperature: 0.7
+用途: 内部测试、低优先级任务、成本敏感场景
+```
+
+-----
+
+## 四、对话上下文管理（Context Window Optimization）
+
+Claude.ai 不会把所有历史消息都塞进上下文，你也不应该这样做。
+
+### 4.1 对话历史裁剪策略
+
+```typescript
+interface ContextConfig {
+  // 最近的消息完整保留
+  recentMessagesCount: number
+  // 更早的消息只保留摘要
+  summaryEnabled: boolean
+  // 上下文总 token 上限（不含 system prompt）
+  maxContextTokens: number
+  // system prompt 预留 token
+  systemPromptTokens: number
+}
+
+const contextConfig: Record<TaskCategory, ContextConfig> = {
+  quick_reply: {
+    recentMessagesCount: 4,      // 只需最近 2 轮对话
+    summaryEnabled: false,
+    maxContextTokens: 4000,
+    systemPromptTokens: 500
+  },
+  general_chat: {
+    recentMessagesCount: 20,     // 最近 10 轮对话
+    summaryEnabled: true,        // 更早的做摘要
+    maxContextTokens: 30000,
+    systemPromptTokens: 2000
+  },
+  code_generation: {
+    recentMessagesCount: 10,
+    summaryEnabled: true,
+    maxContextTokens: 50000,     // 代码上下文需要多一些
+    systemPromptTokens: 3000
+  },
+  complex_analysis: {
+    recentMessagesCount: 20,
+    summaryEnabled: true,
+    maxContextTokens: 80000,
+    systemPromptTokens: 3000
+  },
+  document_processing: {
+    recentMessagesCount: 6,
+    summaryEnabled: false,       // 文档内容本身已经很长
+    maxContextTokens: 120000,    // 给文档留空间
+    systemPromptTokens: 2000
+  }
+}
+```
+
+### 4.2 历史消息摘要生成
+
+当对话超过 `recentMessagesCount` 时，用 Haiku 生成摘要替代早期消息：
+
+```typescript
+async function summarizeHistory(messages: Message[]): Promise<string> {
+  const response = await callModel({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 1000,
+    thinking: { type: 'disabled' },
+    temperature: 0.0,
+    system: `将以下对话历史压缩为简洁摘要，保留：
+      1. 用户的核心需求和目标
+      2. 已达成的决定和结论
+      3. 关键的技术细节或数据
+      4. 当前待解决的问题
+      用中文输出，控制在 500 字以内。`,
+    messages: [{ role: 'user', content: formatMessages(messages) }]
+  })
+  return response.content[0].text
+}
+```
+
+### 4.3 构建最终请求的上下文
+
+```typescript
+async function buildContext(
+  allMessages: Message[],
+  task: TaskCategory
+): Promise<Message[]> {
+  const config = contextConfig[task]
+  const recentMessages = allMessages.slice(-config.recentMessagesCount)
+
+  // 如果历史消息超过保留数量，且启用了摘要
+  if (allMessages.length > config.recentMessagesCount && config.summaryEnabled) {
+    const olderMessages = allMessages.slice(0, -config.recentMessagesCount)
+    const summary = await summarizeHistory(olderMessages)
+
+    return [
+      // 将摘要作为第一条 system 消息注入
+      { role: 'user', content: `[对话历史摘要]\n${summary}` },
+      { role: 'assistant', content: '我已了解之前的对话背景，请继续。' },
+      ...recentMessages
+    ]
+  }
+
+  return recentMessages
+}
+```
+
+-----
+
+## 五、System Prompt 优化
+
+Claude.ai 的 system prompt 经过精心设计，你的也应该如此。
+
+### 5.1 主聊天 System Prompt
+
+```
+你是 Deltapex Task Center 的 AI 助手。你的核心职责是协助用户通过自然对话来管理任务、项目和团队协作。
+
+核心原则：
+- 你是翻译者而非执行者：将用户的自然语言转化为结构化的任务操作
+- 所有修改都需要用户确认后才能执行
+- 使用流式追问而非一次性完成，逐步收集信息
+
+回复风格：
+- 使用自然、简洁的中文
+- 不要过度使用 markdown 格式（如粗体、列表、标题）
+- 普通对话用自然段落，不要用项目符号
+- 只在涉及结构化数据（任务列表、参数等）时使用格式化输出
+- 回复长度适中，避免冗长
+
+当用户描述任务时：
+1. 先理解意图，必要时追问澄清
+2. 提取结构化信息（任务名称、优先级、截止日期、负责人等）
+3. 以 JSON schema 格式输出确认
+4. 等待用户确认后才标记为"待执行"
+```
+
+### 5.2 标题生成 System Prompt（极简）
+
+```
+根据对话内容生成简短中文标题（10字以内）。直接返回标题文本。
+```
+
+### 5.3 意图判断 System Prompt
+
+```
+你是 Deltapex 的意图分类器。分析用户输入，返回 JSON：
+{"category": "quick_reply|general_chat|code_generation|complex_analysis|document_processing", "confidence": 0.0-1.0}
+只返回 JSON，不要解释。
+```
+
+-----
+
+## 六、流式响应（Streaming）配置
+
+Claude.ai 的体验核心之一是流式输出，确保你的实现正确：
+
+```typescript
+// 流式调用配置
+const streamConfig = {
+  stream: true,
+
+  // 流式输出时的 UI 行为
+  ui: {
+    // 显示 thinking 过程（如果启用了 extended thinking）
+    showThinkingIndicator: true,    // 显示"思考中..."
+    showThinkingContent: false,     // 不展示 thinking 的具体内容（Claude.ai 默认隐藏）
+    // 用户可手动展开查看 thinking 内容
+
+    // 打字机效果
+    streamingDelay: 0,              // 不要人为添加延迟，直接透传流式数据
+
+    // 中断支持
+    allowStopGeneration: true,      // 允许用户中途停止生成
+  }
+}
+```
+
+### 6.1 Extended Thinking 的流式处理
+
+```typescript
+// 当开启 extended thinking 时，API 返回的流式数据包含两种 block：
+// 1. thinking block（思考过程）
+// 2. text block（最终回复）
+
+// 处理逻辑：
+stream.on('content_block_start', (block) => {
+  if (block.type === 'thinking') {
+    // 显示 "正在深度思考..." 指示器
+    showThinkingIndicator()
+  } else if (block.type === 'text') {
+    // 切换到正式回复的渲染
+    hideThinkingIndicator()
+    startTextRendering()
+  }
+})
+
+stream.on('content_block_delta', (delta) => {
+  if (delta.type === 'thinking_delta') {
+    // 缓存 thinking 内容，用户可展开查看
+    appendToThinkingBuffer(delta.thinking)
+  } else if (delta.type === 'text_delta') {
+    // 实时渲染到 UI
+    appendToResponse(delta.text)
+  }
+})
+```
+
+-----
+
+## 七、成本监控与限制
+
+### 7.1 Token 使用追踪
+
+```typescript
+interface TokenUsage {
+  model: string
+  input_tokens: number
+  output_tokens: number
+  thinking_tokens: number      // extended thinking 消耗的 token
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  estimated_cost_usd: number
+  timestamp: Date
+}
+
+// 每次 API 调用后记录
+function logTokenUsage(response: APIResponse, model: string) {
+  const usage = response.usage
+  const pricing = MODEL_PRICING[model]
+
+  const cost =
+    (usage.input_tokens / 1_000_000) * pricing.input +
+    (usage.output_tokens / 1_000_000) * pricing.output
+
+  // 写入数据库用于统计和告警
+  db.tokenUsage.insert({
+    model,
+    input_tokens: usage.input_tokens,
+    output_tokens: usage.output_tokens,
+    thinking_tokens: usage.thinking_tokens || 0,
+    estimated_cost_usd: cost,
+    timestamp: new Date()
+  })
+}
+
+// 各模型定价参考（USD per million tokens）
+const MODEL_PRICING = {
+  'claude-haiku-4-5-20251001': { input: 1, output: 5 },
+  'claude-sonnet-4-6':         { input: 3, output: 15 },
+  'claude-opus-4-6':           { input: 15, output: 75 },
+  'gpt-4o':                    { input: 2.5, output: 10 },
+  'deepseek-chat':             { input: 0.27, output: 1.10 },
+}
+```
+
+### 7.2 费用告警
+
+```typescript
+// 设置每日/每月预算上限
+const BUDGET_LIMITS = {
+  daily_usd: 10,     // 每日上限
+  monthly_usd: 200,  // 每月上限
+  per_user_daily: 2, // 每用户每日上限（多租户场景）
+}
+
+// 接近上限时降级策略
+function getCostAwareModel(task: TaskCategory, currentDailySpend: number): string {
+  if (currentDailySpend > BUDGET_LIMITS.daily_usd * 0.8) {
+    // 接近预算上限，自动降级
+    console.warn('接近每日预算上限，自动降级模型')
+    return task === 'complex_analysis' ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001'
+  }
+  return getModelConfig(task).model
+}
+```
+
+-----
+
+## 八、Prompt Caching（如果 API 支持）
+
+Anthropic 官方 API 支持 Prompt Caching，可以大幅降低重复 system prompt 的成本：
+
+```typescript
+// 在 system prompt 中使用 cache_control
+const request = {
+  model: 'claude-sonnet-4-6',
+  system: [
+    {
+      type: 'text',
+      text: MAIN_SYSTEM_PROMPT,     // 固定的 system prompt
+      cache_control: { type: 'ephemeral' }  // 标记为可缓存
+    }
+  ],
+  messages: conversationMessages
+}
+```
+
+> **注意**：你使用的是第三方代理端点 `vip.aipro.love`，需要确认该代理是否支持 `cache_control` 参数的透传。如果不支持，此功能无法使用。建议确认或测试。
+
+-----
+
+## 九、参数对照总表（修改前 vs 修改后）
+
+|场景      |修改前模型 |修改前参数                       |修改后模型 |修改后参数                      |
+|--------|------|----------------------------|------|---------------------------|
+|标题生成    |Haiku |max: 8192, thinking: 16000  |Haiku |max: 100, thinking: off    |
+|意图判断    |Haiku |max: 8192, thinking: 16000  |Haiku |max: 500, thinking: off    |
+|快速回答    |Haiku |max: 8192, thinking: 16000  |Haiku |max: 2048, thinking: off   |
+|普通对话    |Sonnet|max: 64000, thinking: 16000 |Sonnet|max: 8192, thinking: off   |
+|代码生成    |Sonnet|max: 64000, thinking: 16000 |Sonnet|max: 16384, thinking: 16000|
+|复杂分析    |Opus  |max: 128000, thinking: 32000|Sonnet|max: 32000, thinking: 32000|
+|深度模式（手动）|Opus  |max: 128000, thinking: 32000|Opus  |max: 64000, thinking: 32000|
+|文档处理    |Sonnet|max: 64000, thinking: 16000 |Sonnet|max: 16384, thinking: 10000|
+
+-----
+
+## 十、实施优先级
+
+按以下顺序实施，每步验证后再进行下一步：
+
+### P0 - 立即改（成本影响最大）
+
+1. ✅ Haiku 关闭 Extended Thinking
+1. ✅ Haiku 按场景设置不同的 max_tokens（100 / 500 / 2048）
+1. ✅ Sonnet 普通对话关闭 Extended Thinking，max_tokens 降到 8192
+
+### P1 - 本周内改（体验提升）
+
+1. ✅ 实现任务分类器（用 Haiku 做意图识别）
+1. ✅ 实现模型路由逻辑
+1. ✅ Opus 改为用户手动选择，默认不使用
+
+### P2 - 下周改（上下文优化）
+
+1. ✅ 实现对话历史裁剪
+1. ✅ 实现历史消息摘要机制
+1. ✅ 按场景配置不同的 context window 上限
+
+### P3 - 后续迭代（监控与运维）
+
+1. ✅ Token 使用追踪和费用统计
+1. ✅ 预算告警和自动降级
+1. ✅ 测试 Prompt Caching 是否可用
