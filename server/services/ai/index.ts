@@ -13,13 +13,13 @@ const openrouterClient = new OpenAI({
 });
 
 const claudeComplexClient = new OpenAI({
-  baseURL: 'https://vip.aipro.love',
+  baseURL: 'https://vip.aipro.love/v1',
   apiKey: process.env.CLAUDE_COMPLEX_API_KEY,
   timeout: 180000,
 });
 
 const claudeSimpleClient = new OpenAI({
-  baseURL: 'https://vip.aipro.love',
+  baseURL: 'https://vip.aipro.love/v1',
   apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
   timeout: 90000,
 });
