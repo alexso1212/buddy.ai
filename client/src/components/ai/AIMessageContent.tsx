@@ -154,6 +154,8 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
         padding: '14px 16px',
         margin: 0,
         overflowX: 'auto',
+        overflowY: 'auto',
+        maxHeight: 400,
         WebkitOverflowScrolling: 'touch',
         touchAction: 'pan-x pan-y',
       }}>
@@ -252,7 +254,7 @@ function TableBlock({ children }: { children: ReactNode }) {
         }}
         data-testid="table-scroll-container"
       >
-        <table style={{ width: '100%', minWidth: 'max-content', borderCollapse: 'collapse', fontSize: 14 }}>
+        <table className="ai-table-zebra" style={{ width: '100%', minWidth: 'max-content', borderCollapse: 'collapse', fontSize: 14 }}>
           {children}
         </table>
       </div>
@@ -315,7 +317,7 @@ export default function AIMessageContent({ content }: AIMessageContentProps) {
             <li style={{ marginBottom: 8, color: 'var(--text-primary)' }}>{children}</li>
           ),
           a: ({ children, href }) => (
-            <a href={href} style={{ color: 'var(--brand-icon)', textDecoration: 'underline' }}>{children}</a>
+            <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--brand-icon)', textDecoration: 'underline' }}>{children}</a>
           ),
           blockquote: ({ children }) => (
             <blockquote style={{

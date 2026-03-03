@@ -1935,8 +1935,13 @@ function App() {
 
   useEffect(() => {
     const handleOpenSidebar = () => setSidebarOpen(true);
+    const handleToggleSidebar = () => setSidebarOpen(prev => !prev);
     window.addEventListener('open-sidebar', handleOpenSidebar);
-    return () => window.removeEventListener('open-sidebar', handleOpenSidebar);
+    window.addEventListener('toggle-sidebar', handleToggleSidebar);
+    return () => {
+      window.removeEventListener('open-sidebar', handleOpenSidebar);
+      window.removeEventListener('toggle-sidebar', handleToggleSidebar);
+    };
   }, []);
 
   useEffect(() => {

@@ -95,9 +95,19 @@ function BrandLogo() {
   return <AgentLogo size={28} animate={false} glow={false} />;
 }
 
+const DISLIKE_REASONS = [
+  { value: 'inaccurate', label: '回答不准确' },
+  { value: 'misunderstood', label: '没有理解我的问题' },
+  { value: 'length', label: '回复太长/太短' },
+  { value: 'format', label: '格式有问题' },
+  { value: 'other', label: '其他' },
+];
+
 function AiReplyActions({ content, onRegenerate, isLastAssistant }: { content: string; onRegenerate?: () => void; isLastAssistant?: boolean }) {
   const [liked, setLiked] = useState<boolean | null>(null);
   const [copied, setCopied] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(content).then(() => {
@@ -114,62 +124,105 @@ function AiReplyActions({ content, onRegenerate, isLastAssistant }: { content: s
     }
   }, [content]);
 
+  const handleDislike = useCallback(() => {
+    if (liked === false) {
+      setLiked(null);
+      setShowFeedback(false);
+      setFeedbackSubmitted(false);
+    } else {
+      setLiked(false);
+      if (!feedbackSubmitted) setShowFeedback(true);
+    }
+  }, [liked, feedbackSubmitted]);
+
+  const handleFeedbackSelect = useCallback((_reason: string) => {
+    setFeedbackSubmitted(true);
+    setShowFeedback(false);
+  }, []);
+
   return (
-    <div className="flex items-center gap-1 mt-2 ml-0.5" data-testid="ai-reply-actions">
-      <button
-        onClick={handleCopy}
-        className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
-        title={copied ? "已复制" : "复制"}
-        data-testid="btn-copy-reply"
-      >
-        {copied ? <Check className="w-3.5 h-3.5" strokeWidth={1.5} /> : <Copy className="w-3.5 h-3.5" strokeWidth={1.5} />}
-      </button>
-      {isLastAssistant && onRegenerate && (
+    <div className="mt-2 ml-0.5" data-testid="ai-reply-actions">
+      <div className="flex items-center gap-1">
         <button
-          onClick={onRegenerate}
+          onClick={handleCopy}
           className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
-          title="重新生成"
-          data-testid="btn-regenerate"
+          title={copied ? "已复制" : "复制"}
+          data-testid="btn-copy-reply"
         >
-          <RotateCcw className="w-3.5 h-3.5" strokeWidth={1.5} />
+          {copied ? <Check className="w-3.5 h-3.5" strokeWidth={1.5} /> : <Copy className="w-3.5 h-3.5" strokeWidth={1.5} />}
         </button>
+        {isLastAssistant && onRegenerate && (
+          <button
+            onClick={onRegenerate}
+            className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+            title="重新生成"
+            data-testid="btn-regenerate"
+          >
+            <RotateCcw className="w-3.5 h-3.5" strokeWidth={1.5} />
+          </button>
+        )}
+        <button
+          onClick={handleShare}
+          className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+          title="分享"
+          data-testid="btn-share-reply"
+        >
+          <Share2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+        </button>
+        <button
+          onClick={() => setLiked(liked === true ? null : true)}
+          className={cn(
+            "flex items-center justify-center w-7 h-7 rounded-md transition-colors",
+            liked === true
+              ? "text-[var(--text-primary)]"
+              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5"
+          )}
+          style={liked === true ? { background: 'rgba(174,86,48,0.15)', color: 'var(--brand)' } : undefined}
+          title="有帮助"
+          data-testid="btn-like-reply"
+        >
+          <ThumbsUp className="w-3.5 h-3.5" strokeWidth={1.5} />
+        </button>
+        <button
+          onClick={handleDislike}
+          className={cn(
+            "flex items-center justify-center w-7 h-7 rounded-md transition-colors",
+            liked === false
+              ? "text-red-400"
+              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5"
+          )}
+          style={liked === false ? { background: 'rgba(248,113,113,0.1)' } : undefined}
+          title="不太好"
+          data-testid="btn-dislike-reply"
+        >
+          <ThumbsDown className="w-3.5 h-3.5" strokeWidth={1.5} />
+        </button>
+      </div>
+      {showFeedback && (
+        <div
+          className="flex flex-wrap gap-1.5 mt-2 ml-0.5"
+          style={{ animation: 'messageAppear 200ms ease-out' }}
+          data-testid="dislike-feedback-form"
+        >
+          {DISLIKE_REASONS.map((reason) => (
+            <button
+              key={reason.value}
+              onClick={() => handleFeedbackSelect(reason.value)}
+              className="text-xs px-2.5 py-1 rounded-full transition-colors"
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                color: 'var(--text-secondary)',
+                border: '1px solid rgba(255,255,255,0.1)',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+              data-testid={`feedback-${reason.value}`}
+            >
+              {reason.label}
+            </button>
+          ))}
+        </div>
       )}
-      <button
-        onClick={handleShare}
-        className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
-        title="分享"
-        data-testid="btn-share-reply"
-      >
-        <Share2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-      </button>
-      <button
-        onClick={() => setLiked(liked === true ? null : true)}
-        className={cn(
-          "flex items-center justify-center w-7 h-7 rounded-md transition-colors",
-          liked === true
-            ? "text-[var(--text-primary)]"
-            : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5"
-        )}
-        style={liked === true ? { background: 'rgba(174,86,48,0.15)', color: 'var(--brand)' } : undefined}
-        title="有帮助"
-        data-testid="btn-like-reply"
-      >
-        <ThumbsUp className="w-3.5 h-3.5" strokeWidth={1.5} />
-      </button>
-      <button
-        onClick={() => setLiked(liked === false ? null : false)}
-        className={cn(
-          "flex items-center justify-center w-7 h-7 rounded-md transition-colors",
-          liked === false
-            ? "text-red-400"
-            : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5"
-        )}
-        style={liked === false ? { background: 'rgba(248,113,113,0.1)' } : undefined}
-        title="不太好"
-        data-testid="btn-dislike-reply"
-      >
-        <ThumbsDown className="w-3.5 h-3.5" strokeWidth={1.5} />
-      </button>
     </div>
   );
 }

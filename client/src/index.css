@@ -601,6 +601,10 @@ html, body {
   50% { opacity: 0; }
 }
 
+.ai-table-zebra tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.03);
+}
+
 .streaming-cursor::after {
   content: '▌';
   animation: blink-cursor 0.8s ease-in-out infinite;

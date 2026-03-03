@@ -1786,6 +1786,23 @@ export default function Agent() {
     handleClearChat();
   }, [handleClearChat]);
 
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
+      if (mod && e.shiftKey && key === 'n') {
+        e.preventDefault();
+        handleNewConversation();
+      }
+      if (mod && e.shiftKey && key === 's') {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('toggle-sidebar'));
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [handleNewConversation]);
+
   const handleTrimAndRetry = useCallback(
     (messageId: string) => {
       const msg = messages.find(m => m.id === messageId);
