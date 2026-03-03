@@ -186,6 +186,7 @@ function TableBlock({ children }: { children: ReactNode }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [showFade, setShowFade] = useState(false);
+  const dragState = useRef<{ isDown: boolean; startX: number; scrollLeft: number }>({ isDown: false, startX: 0, scrollLeft: 0 });
 
   const checkScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -193,6 +194,32 @@ function TableBlock({ children }: { children: ReactNode }) {
     const canScroll = el.scrollWidth > el.clientWidth;
     const notAtEnd = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
     setShowFade(canScroll && notAtEnd);
+  }, []);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    const el = scrollRef.current;
+    if (!el || el.scrollWidth <= el.clientWidth) return;
+    dragState.current = { isDown: true, startX: e.clientX, scrollLeft: el.scrollLeft };
+    el.style.cursor = 'grabbing';
+    el.style.userSelect = 'none';
+    el.setPointerCapture(e.pointerId);
+  }, []);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!dragState.current.isDown) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const dx = e.clientX - dragState.current.startX;
+    el.scrollLeft = dragState.current.scrollLeft - dx;
+  }, []);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    dragState.current.isDown = false;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.style.cursor = 'grab';
+    el.style.userSelect = '';
+    el.releasePointerCapture(e.pointerId);
   }, []);
 
   const extractTableText = useCallback(() => {
@@ -242,9 +269,16 @@ function TableBlock({ children }: { children: ReactNode }) {
       <div
         ref={(el) => {
           (scrollRef as any).current = el;
-          if (el) requestAnimationFrame(checkScroll);
+          if (el) {
+            requestAnimationFrame(checkScroll);
+            if (el.scrollWidth > el.clientWidth) el.style.cursor = 'grab';
+          }
         }}
         onScroll={checkScroll}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
         style={{
           overflowX: 'auto',
           WebkitOverflowScrolling: 'touch',
