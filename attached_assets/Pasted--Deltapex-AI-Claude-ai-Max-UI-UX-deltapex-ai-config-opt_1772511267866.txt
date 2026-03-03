@@ -1,0 +1,743 @@
+# Deltapex AI 交互细节对齐方案 — Claude.ai Max UI/UX 还原
+
+> 本文档是 `deltapex-ai-config-optimization.md` 的补充，专注于 Claude.ai 的前端交互细节还原。
+> 覆盖：思考折叠、工具调用展示、消息渲染、输入交互、错误处理等。
+
+-----
+
+## 一、Extended Thinking 折叠交互
+
+Claude.ai 的 thinking 展示有一套完整的 UI 状态机：
+
+### 1.1 状态流转
+
+```
+用户发送消息
+  → [思考中] 显示脉动动画 + "Thinking..."（实时更新已思考秒数）
+  → [思考完成] 折叠为一行摘要，如 "Thought for 12 seconds"
+  → [回复开始] 流式输出正式回复内容
+```
+
+### 1.2 UI 组件设计
+
+```tsx
+interface ThinkingBlockProps {
+  status: 'thinking' | 'complete'
+  thinkingContent: string      // 思考的完整文本
+  durationSeconds: number      // 思考耗时
+  isExpanded: boolean          // 是否展开
+}
+
+// 折叠状态（默认）：
+// ┌──────────────────────────────────────┐
+// │ 💭 Thought for 12 seconds        ▶  │
+// └──────────────────────────────────────┘
+
+// 展开状态（用户点击后）：
+// ┌──────────────────────────────────────┐
+// │ 💭 Thought for 12 seconds        ▼  │
+// ├──────────────────────────────────────┤
+// │ 让我分析一下这个问题...              │
+// │ 首先考虑几个方面：                    │
+// │ 1. 数据结构的选择...                 │
+// │ ...                                  │
+// └──────────────────────────────────────┘
+```
+
+### 1.3 关键细节
+
+- **思考中阶段**：显示脉动/呼吸动画 + 实时计时（“Thinking…” → “Thinking for 3s” → “Thinking for 8s”）
+- **思考完成后**：自动折叠为一行，显示总耗时（“Thought for 12 seconds”）
+- **用户可点击展开/收起**思考过程的完整文本
+- **思考内容用浅色/灰色文字**渲染，与正式回复在视觉上明确区分
+- **如果 thinking 未启用**，则完全不显示这个区块
+
+### 1.4 流式处理时序
+
+```typescript
+// 流式事件处理
+function handleStreamEvent(event: StreamEvent) {
+  switch (event.type) {
+    case 'message_start':
+      // 初始化消息容器
+      showTypingIndicator()
+      break
+
+    case 'content_block_start':
+      if (event.content_block.type === 'thinking') {
+        // 进入思考阶段
+        startThinkingTimer()
+        showThinkingAnimation()  // 脉动动画
+      } else if (event.content_block.type === 'text') {
+        // 进入正式回复阶段
+        stopThinkingTimer()
+        collapseThinkingBlock()  // 自动折叠思考内容
+      }
+      break
+
+    case 'content_block_delta':
+      if (event.delta.type === 'thinking_delta') {
+        // 追加到思考缓冲区（用户展开时可见）
+        appendThinkingText(event.delta.thinking)
+      } else if (event.delta.type === 'text_delta') {
+        // 实时渲染到回复区域
+        appendResponseText(event.delta.text)
+      }
+      break
+
+    case 'content_block_stop':
+      // 当前 block 结束
+      break
+
+    case 'message_stop':
+      // 消息完成，显示操作按钮（复制、重试等）
+      showMessageActions()
+      break
+  }
+}
+```
+
+-----
+
+## 二、工具调用 / 动作的折叠展示
+
+Claude.ai 在执行搜索、代码运行、文件操作等”动作”时，会以折叠卡片的形式展示。
+
+### 2.1 动作类型与展示
+
+```
+┌─ 🔍 Searched the web                         ▶ ─┐
+└──────────────────────────────────────────────────┘
+
+┌─ 📄 Read file: schema.ts                     ▶ ─┐
+└──────────────────────────────────────────────────┘
+
+┌─ 💻 Executed code                             ▶ ─┐
+└──────────────────────────────────────────────────┘
+
+┌─ 🧮 Used calculator                          ▶ ─┐
+└──────────────────────────────────────────────────┘
+```
+
+### 2.2 折叠卡片组件
+
+```tsx
+interface ActionCardProps {
+  type: 'web_search' | 'code_execution' | 'file_read' | 'tool_use'
+  label: string              // 如 "Searched the web for: Claude API pricing"
+  status: 'running' | 'complete' | 'error'
+  detail: string             // 展开后显示的详细内容
+  isExpanded: boolean
+}
+
+// 运行中状态：
+// ┌──────────────────────────────────────┐
+// │ 🔍 Searching the web...          ⟳  │  ← 旋转加载动画
+// └──────────────────────────────────────┘
+
+// 完成状态（默认折叠）：
+// ┌──────────────────────────────────────┐
+// │ 🔍 Searched 3 sites              ▶  │
+// └──────────────────────────────────────┘
+
+// 展开状态：
+// ┌──────────────────────────────────────┐
+// │ 🔍 Searched 3 sites              ▼  │
+// ├──────────────────────────────────────┤
+// │ • anthropic.com/pricing             │
+// │ • docs.anthropic.com/api            │
+// │ • community.anthropic.com           │
+// └──────────────────────────────────────┘
+
+// 错误状态：
+// ┌──────────────────────────────────────┐
+// │ ⚠️ Search failed — Retry          ▶  │  ← 红/橙色调
+// └──────────────────────────────────────┘
+```
+
+### 2.3 动作卡片在消息流中的位置
+
+动作卡片出现在 AI 回复内容的**上方或中间**，按执行顺序排列：
+
+```
+┌─────────── AI 回复 ───────────┐
+│                                │
+│ 💭 Thought for 5 seconds   ▶  │  ← 思考折叠
+│                                │
+│ 🔍 Searched 2 sites        ▶  │  ← 动作折叠
+│ 📄 Read: pricing page      ▶  │  ← 动作折叠
+│                                │
+│ 根据最新的定价信息，           │  ← 正式回复内容
+│ Claude API 的价格是...         │
+│                                │
+│ [复制] [重试] [👍] [👎]       │  ← 操作按钮
+└────────────────────────────────┘
+```
+
+-----
+
+## 三、消息渲染细节
+
+### 3.1 Markdown 渲染规则
+
+```typescript
+const markdownRenderConfig = {
+  // 代码块：语法高亮 + 复制按钮
+  codeBlock: {
+    syntaxHighlight: true,       // 使用 highlight.js 或 Prism
+    showLanguageLabel: true,     // 右上角显示语言名称
+    showCopyButton: true,        // 右上角复制按钮
+    maxHeight: '400px',          // 超过高度可滚动
+    wrapLongLines: false,        // 代码不自动换行
+  },
+
+  // 行内代码
+  inlineCode: {
+    backgroundColor: '#f3f4f6', // 浅灰背景
+    borderRadius: '4px',
+    padding: '2px 6px',
+  },
+
+  // 表格渲染
+  table: {
+    responsive: true,            // 水平可滚动
+    striped: true,               // 斑马纹
+    bordered: true,
+  },
+
+  // 数学公式（如果需要）
+  math: {
+    enabled: true,               // 支持 LaTeX
+    renderer: 'katex',           // 用 KaTeX 渲染
+    // $..$ 行内公式，$$...$$ 块级公式
+  },
+
+  // 链接
+  links: {
+    openInNewTab: true,          // 新标签页打开
+    showFavicon: false,
+    noFollowExternal: true,
+  }
+}
+```
+
+### 3.2 代码块特殊交互
+
+Claude.ai 的代码块不仅仅是高亮，还有交互：
+
+```
+┌─ typescript ──────────────── [Copy] ─┐
+│ function hello() {                    │
+│   console.log("Hello, world!")        │
+│ }                                     │
+└───────────────────────────────────────┘
+```
+
+对于较长的代码块（如完整文件），Claude.ai 会渲染为”Artifact”卡片：
+
+```
+┌──────────────────────────────────────┐
+│ 📄 model-router.ts                   │
+│ TypeScript · 85 lines                │
+│                              [Open]  │
+└──────────────────────────────────────┘
+```
+
+### 3.3 长回复的渐进式渲染
+
+```typescript
+// 流式输出时的渲染策略
+const renderConfig = {
+  // 逐字符渲染（打字机效果）
+  // Claude.ai 实际上是逐 token 渲染，不是逐字符
+  renderMode: 'token',
+
+  // Markdown 实时解析
+  // 在流式过程中就开始解析 markdown，不等完成
+  incrementalMarkdown: true,
+
+  // 代码块在关闭 ``` 之前显示为纯文本
+  // 关闭后立刻应用语法高亮
+  deferCodeHighlight: true,
+
+  // 滚动行为：新内容出现时自动滚动到底部
+  // 但如果用户主动上滚阅读，则停止自动滚动
+  autoScroll: {
+    enabled: true,
+    pauseOnUserScroll: true,      // 用户上滚时暂停
+    resumeThreshold: 50,          // 距底部 50px 以内时恢复
+  }
+}
+```
+
+-----
+
+## 四、用户输入区域交互
+
+### 4.1 输入框功能
+
+```typescript
+const inputAreaConfig = {
+  // 输入框自动增高（多行输入）
+  autoResize: {
+    enabled: true,
+    minRows: 1,
+    maxRows: 12,                // 最大 12 行后出现滚动条
+  },
+
+  // 快捷键
+  shortcuts: {
+    send: 'Enter',              // Enter 发送
+    newline: 'Shift+Enter',     // Shift+Enter 换行
+    stopGeneration: 'Escape',   // Esc 停止生成
+  },
+
+  // 文件上传
+  fileUpload: {
+    enabled: true,
+    dragAndDrop: true,           // 支持拖拽
+    pasteImage: true,            // 支持粘贴图片
+    maxFileSize: '30MB',
+    allowedTypes: [
+      'image/*',
+      'application/pdf',
+      '.txt', '.md', '.csv', '.json',
+      '.py', '.js', '.ts', '.html', '.css',
+      // ...其他代码文件
+    ],
+    // 上传后显示预览缩略图
+    showPreview: true,
+  },
+
+  // 字符计数（Claude.ai 不显示，但内部有限制）
+  characterLimit: {
+    show: false,                 // 不显示字符计数
+    maxChars: 100000,            // 内部上限
+    warnAt: 80000,               // 接近上限时提示
+  }
+}
+```
+
+### 4.2 模型选择器
+
+Claude.ai Max 允许用户在输入框下方切换模型：
+
+```
+┌─────────────────────────────────────────────┐
+│  输入消息...                                 │
+│                                              │
+├──────────────────────────────────────────────┤
+│ 🧠 Sonnet 4.6 ▼  │ 💡Extended Thinking ○/●  │
+└──────────────────────────────────────────────┘
+
+下拉选项：
+┌──────────────────────┐
+│ ⚡ Haiku 4.5          │  ← 最快
+│ 🧠 Sonnet 4.6    ✓   │  ← 默认，推荐
+│ 🔬 Opus 4.6          │  ← 最强，较慢
+└──────────────────────┘
+```
+
+- **默认选中 Sonnet**（和 Claude.ai 一致）
+- Extended Thinking 作为独立开关，用户可手动启用/关闭
+- 切换模型不清除对话历史
+
+### 4.3 停止生成按钮
+
+```typescript
+// AI 正在回复时，发送按钮变为停止按钮
+const generationControls = {
+  // 生成中：显示停止按钮（方形图标）
+  showStopButton: true,          // ■ Stop
+  // 点击后立即中断流式连接
+  onStop: () => {
+    abortController.abort()
+    // 保留已生成的部分内容
+    finalizePartialResponse()
+    // 显示 "(已停止生成)" 标记
+    appendStopIndicator()
+  }
+}
+```
+
+-----
+
+## 五、消息操作按钮
+
+### 5.1 AI 消息底部操作
+
+每条 AI 回复底部有一排操作按钮（hover 时显示或始终显示）：
+
+```
+回复内容...
+
+[📋 Copy] [🔄 Retry] [👍] [👎]
+```
+
+```typescript
+const messageActions = {
+  // 复制：复制纯文本或 Markdown 到剪贴板
+  copy: {
+    format: 'markdown',          // 复制 markdown 源码，不是渲染后的 HTML
+    showToast: true,             // 显示 "已复制" 提示
+  },
+
+  // 重试：重新生成当前回复
+  retry: {
+    // 重新发送最后一条用户消息
+    // 新回复替换当前回复（可切换查看不同版本）
+    keepPreviousVersions: true,  // 保留历史版本，可左右翻页
+  },
+
+  // 反馈
+  thumbsUp: { /* 正反馈 */ },
+  thumbsDown: {
+    // 展开反馈表单
+    showFeedbackForm: true,
+    feedbackOptions: [
+      '回答不准确',
+      '没有理解我的问题',
+      '回复太长/太短',
+      '格式有问题',
+      '其他'
+    ]
+  },
+
+  // 编辑用户消息
+  editUserMessage: {
+    enabled: true,               // 用户可以编辑已发送的消息
+    // 编辑后从该消息重新生成后续所有回复
+    regenerateFromEdit: true,
+  }
+}
+```
+
+### 5.2 回复版本切换
+
+当用户点击”重试”或编辑消息后，支持在不同版本间切换：
+
+```
+          ◀  2 / 3  ▶              ← 版本切换器
+┌──────────────────────────────┐
+│ 这是第 2 次生成的回复...       │
+└──────────────────────────────┘
+```
+
+-----
+
+## 六、对话管理交互
+
+### 6.1 新对话 / 对话列表
+
+```typescript
+const conversationUI = {
+  // 侧边栏对话列表
+  sidebar: {
+    showRecentChats: true,
+    chatTitleTruncate: 30,       // 标题超过 30 字截断
+    groupByDate: true,           // 按日期分组（今天、昨天、本周...）
+    searchChats: true,           // 支持搜索历史对话
+  },
+
+  // 新对话按钮
+  newChat: {
+    position: 'sidebar-top',
+    shortcut: 'Ctrl/Cmd + Shift + N',
+    clearContext: true,          // 新对话清空上下文
+    preserveModelSelection: true, // 保留用户选择的模型
+  },
+
+  // 对话标题自动生成
+  titleGeneration: {
+    trigger: 'after_first_reply',  // 第一次 AI 回复后自动生成标题
+    model: 'claude-haiku-4-5-20251001',
+    editable: true,                // 用户可手动编辑标题
+  }
+}
+```
+
+### 6.2 对话内的滚动与导航
+
+```typescript
+const scrollBehavior = {
+  // 新消息自动滚动到底部
+  autoScrollToBottom: true,
+
+  // 用户上滚阅读时暂停自动滚动
+  pauseAutoScrollOnUserScroll: true,
+
+  // 出现 "↓ 回到底部" 按钮
+  showScrollToBottomButton: {
+    threshold: 200,              // 距底部超过 200px 时显示
+    showUnreadCount: false,
+  },
+
+  // 长对话中的跳转
+  // Claude.ai 暂无此功能，但对 Deltapex 可能有用
+  jumpToMessage: false,
+}
+```
+
+-----
+
+## 七、错误处理与状态展示
+
+### 7.1 错误类型与 UI 反馈
+
+```typescript
+const errorHandling = {
+  // 网络错误
+  networkError: {
+    display: 'inline',           // 在消息区域内显示
+    message: '网络连接中断，请检查网络后重试',
+    showRetryButton: true,
+    autoRetry: {
+      enabled: true,
+      maxAttempts: 3,
+      backoffMs: [1000, 3000, 5000],
+    }
+  },
+
+  // API 限流 (429)
+  rateLimitError: {
+    display: 'inline',
+    message: '请求过于频繁，请稍后再试',
+    showRetryButton: true,
+    showCooldownTimer: true,     // 显示倒计时
+    // Claude.ai 显示: "You've hit the usage limit. Try again in X minutes."
+  },
+
+  // 上下文过长 (413 / context_length_exceeded)
+  contextTooLong: {
+    display: 'modal',            // 弹窗提示
+    message: '对话过长，建议开始新对话或等待系统自动裁剪历史',
+    actions: ['开始新对话', '自动裁剪后重试'],
+    onAutoTrim: () => {
+      // 自动裁剪最早的消息，保留最近 10 轮
+      trimOldestMessages(10)
+      retryLastMessage()
+    }
+  },
+
+  // 模型服务不可用 (503)
+  serviceUnavailable: {
+    display: 'inline',
+    message: '服务暂时不可用，正在自动切换备用模型...',
+    // 自动 fallback 到备用模型
+    fallbackChain: ['claude-sonnet-4-6', 'gpt-4o', 'deepseek-chat'],
+    notifyUser: true,            // 告知用户已切换模型
+  },
+
+  // 内容审核拒绝
+  contentFiltered: {
+    display: 'inline',
+    message: '该请求无法处理，请调整内容后重试',
+    showRetryButton: false,
+  },
+
+  // 流式中断（生成到一半断了）
+  streamInterrupted: {
+    display: 'inline',
+    preservePartialContent: true,  // 保留已生成的部分
+    message: '回复生成中断',
+    showRetryButton: true,         // "继续生成" 按钮
+    onRetry: 'continue',           // 从断点续传而非重新生成
+  }
+}
+```
+
+### 7.2 加载状态展示
+
+```typescript
+const loadingStates = {
+  // AI 正在准备回复（尚未收到第一个 token）
+  preparing: {
+    // 显示三个跳动的点 ···
+    animation: 'bouncing-dots',
+    timeout: 30000,              // 30 秒无响应提示超时
+  },
+
+  // 文件上传中
+  uploading: {
+    showProgressBar: true,
+    showFilePreview: true,
+  },
+
+  // 工具执行中
+  toolExecution: {
+    showActionCard: true,        // 显示上面提到的动作折叠卡片
+    showSpinner: true,
+  }
+}
+```
+
+-----
+
+## 八、响应式设计与移动端适配
+
+### 8.1 布局断点
+
+```typescript
+const responsiveBreakpoints = {
+  mobile: {
+    maxWidth: 768,
+    sidebar: 'hidden',           // 侧边栏默认隐藏，汉堡菜单
+    inputArea: 'bottom-fixed',   // 输入框固定在底部
+    messageMaxWidth: '100%',
+    codeBlockScroll: 'horizontal',
+  },
+  tablet: {
+    maxWidth: 1024,
+    sidebar: 'collapsible',
+    messageMaxWidth: '90%',
+  },
+  desktop: {
+    minWidth: 1025,
+    sidebar: 'visible',
+    messageMaxWidth: '48rem',    // Claude.ai 的消息最大宽度约 768px
+  }
+}
+```
+
+### 8.2 消息气泡样式
+
+Claude.ai 不使用传统的左右气泡，而是居中的卡片式布局：
+
+```
+用户消息：右侧背景略深，靠右对齐
+AI 回复：  无背景/白色背景，靠左对齐，带头像
+
+┌─────────────────────────────────────┐
+│                    ┌──────────────┐ │
+│                    │ 用户的问题    │ │  ← 浅色背景，靠右
+│                    └──────────────┘ │
+│                                     │
+│ 🤖                                  │
+│ AI 的回复内容，左对齐，             │  ← 无背景，靠左
+│ 支持 markdown 渲染...              │
+│                                     │
+│ [Copy] [Retry] [👍] [👎]           │
+└─────────────────────────────────────┘
+```
+
+-----
+
+## 九、其他细节
+
+### 9.1 Sonnet 与 Opus 回复风格差异
+
+Claude.ai 上不同模型的回复风格略有不同，你的 system prompt 可以微调：
+
+```typescript
+const modelStyleHints = {
+  'claude-haiku-4-5-20251001': {
+    // 极简，直接给答案
+    style: '回复尽量简短直接，不需要解释推理过程。'
+  },
+  'claude-sonnet-4-6': {
+    // 平衡，有结构但不冗长
+    style: '回复清晰有条理，适当解释但避免冗长。使用自然段落。'
+  },
+  'claude-opus-4-6': {
+    // 深度，允许更长更详细的分析
+    style: '可以进行深入分析，提供多角度思考，但保持条理清晰。'
+  }
+}
+```
+
+### 9.2 Markdown 渲染的边界情况
+
+```typescript
+// Claude.ai 的一些渲染细节
+const renderEdgeCases = {
+  // 纯文本消息不加 markdown 容器
+  plainTextOptimization: true,
+
+  // 列表项之间不加额外间距
+  tightLists: true,
+
+  // 嵌套引用块支持
+  nestedBlockquotes: true,
+
+  // 表格对齐支持
+  tableAlignment: true,
+
+  // HTML 标签过滤（安全）
+  sanitizeHtml: true,
+  allowedHtmlTags: ['sup', 'sub', 'br', 'mark'],
+
+  // 脚注支持
+  footnotes: false,             // Claude.ai 不支持脚注渲染
+}
+```
+
+### 9.3 键盘快捷键汇总
+
+```typescript
+const keyboardShortcuts = {
+  'Enter':              '发送消息',
+  'Shift + Enter':      '消息内换行',
+  'Escape':             '停止生成 / 关闭弹窗',
+  'Ctrl/Cmd + Shift + N':  '新对话',
+  'Ctrl/Cmd + Shift + S':  '打开/关闭侧边栏',
+  'Ctrl/Cmd + /':          '显示快捷键帮助',
+  '↑':                     '编辑最后一条用户消息（输入框为空时）',
+}
+```
+
+### 9.4 暗色模式支持
+
+```typescript
+const themeConfig = {
+  defaultTheme: 'system',       // 跟随系统
+  themes: ['light', 'dark', 'system'],
+
+  // 关键色彩差异
+  dark: {
+    background: '#1a1a2e',
+    messageBg: '#16213e',
+    userMessageBg: '#0f3460',
+    codeBlockBg: '#0d1117',     // GitHub-style 暗色代码块
+    thinkingBlockBg: '#1e1e3f',
+    actionCardBg: '#1e293b',
+    textPrimary: '#e2e8f0',
+    textSecondary: '#94a3b8',
+  },
+  light: {
+    background: '#ffffff',
+    messageBg: '#ffffff',
+    userMessageBg: '#f3f4f6',
+    codeBlockBg: '#f8f9fa',
+    thinkingBlockBg: '#f9fafb',
+    actionCardBg: '#f1f5f9',
+    textPrimary: '#1a202c',
+    textSecondary: '#64748b',
+  }
+}
+```
+
+-----
+
+## 十、实施优先级（交互细节部分）
+
+### P0 - 核心体验（本周）
+
+1. ✅ Extended Thinking 折叠/展开交互
+1. ✅ 流式输出 + 自动滚动 + 停止生成
+1. ✅ 代码块语法高亮 + 复制按钮
+1. ✅ 消息底部操作按钮（复制、重试）
+
+### P1 - 交互完善（下周）
+
+1. ✅ 模型选择器 + Extended Thinking 开关
+1. ✅ 工具调用/动作折叠卡片
+1. ✅ 错误处理 UI（重试、降级提示）
+1. ✅ 对话标题自动生成
+
+### P2 - 体验打磨
+
+1. ✅ 消息版本切换（重试后的历史版本）
+1. ✅ 用户消息编辑并重新生成
+1. ✅ 暗色模式
+1. ✅ 移动端适配
+1. ✅ 键盘快捷键
