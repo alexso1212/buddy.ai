@@ -1,0 +1,101 @@
+# 指令：导出架构摘要给产品经理（Claude）
+
+> 把以下内容复制粘贴给 Replit Agent 执行。
+> 执行完后，把生成的 `ARCHITECTURE_EXPORT.md` 文件内容复制给我（Claude）。
+
+-----
+
+## 给 Replit Agent 的指令：
+
+请帮我生成一份架构摘要文件 `docs/ARCHITECTURE_EXPORT.md`，用于交给外部产品经理设计知识库功能。
+
+**不要修改任何现有代码**，只是读取并整理以下信息到一份 Markdown 文件中：
+
+### Part 1：数据库 Schema 关键表（从 shared/schema.ts 提取）
+
+只提取以下表的**完整 Drizzle 定义代码**（包括字段、类型、默认值、外键）：
+
+- `organizations`
+- `departments`
+- `users`
+- `job_roles`
+- `conversations`
+- `chat_messages`
+- `verdicts`
+- `token_usage`
+
+其他表只列出表名和主键即可，不需要完整字段。
+
+### Part 2：AI 核心接口（从 server/services/ai/index.ts 提取）
+
+提取以下内容：
+
+1. `classifyTask()` 函数的**完整代码**（包括分类类别定义和模型选择逻辑）
+1. `chatStream()` 函数的**签名和前 30 行**（看它怎么接收参数、怎么调用分类器）
+1. `buildOptimizedContext()` 函数的**签名和核心逻辑注释**
+1. `extractMemories()` 函数的**签名**
+1. 文件顶部的所有 `import` 语句
+1. 所有 `export` 的函数名列表
+
+### Part 3：System Prompt（从 server/services/ai/prompts.ts 提取）
+
+**完整复制**整个文件内容（只有 191 行，全部需要）。
+
+### Part 4：路由模式（从 server/routes.ts 提取）
+
+1. 提取文件顶部的 `import` 语句
+1. 提取 **AI 对话相关路由**的完整代码（即 `/api/ai/*` 和 `/api/conversations/*` 路由）
+1. 提取**任意一个 CRUD 模块**的完整代码作为模式参考（比如 `/api/departments` 的 GET/POST/PATCH/DELETE）
+1. 列出所有路由的 method + path（不需要实现代码），按现有分组方式
+
+### Part 5：AI 服务目录结构
+
+运行以下命令，把结果贴进文档：
+
+```bash
+# AI 服务文件结构
+find server/services/ai/ -type f -name "*.ts" | sort
+
+# 每个文件的行数
+wc -l server/services/ai/*.ts
+
+# 每个文件的 export 列表
+for f in server/services/ai/*.ts; do echo "=== $f ==="; grep -n "^export" "$f"; done
+```
+
+### Part 6：现有文件上传机制
+
+提取以下信息：
+
+1. `multer` 的配置代码（存储路径、文件大小限制、文件类型过滤）
+1. 现有的文件上传路由（比如交付物上传 `/api/tasks/:taskId/deliverables`）的完整代码
+1. 上传的文件实际存储在哪个目录
+
+### Part 7：环境与依赖
+
+运行以下命令，把结果贴进文档：
+
+```bash
+# 检查 pgvector 是否可用
+psql $DATABASE_URL -c "SELECT * FROM pg_available_extensions WHERE name = 'vector';" 2>&1
+
+# 当前安装的相关 npm 包
+npm list pdf-parse mammoth multer 2>&1
+
+# PostgreSQL 版本
+psql $DATABASE_URL -c "SELECT version();" 2>&1
+```
+
+-----
+
+### 输出格式
+
+把以上所有内容组织成一份 `docs/ARCHITECTURE_EXPORT.md`，用清晰的 Markdown 标题分隔每个 Part。文件开头写：
+
+```
+# BuddyAI 架构摘要（供知识库模块设计用）
+> 自动生成于 [当前日期]
+> 用途：提供给产品经理（Claude）设计知识库 Builder 功能
+```
+
+完成后告诉我文件已生成。
