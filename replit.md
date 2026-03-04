@@ -84,3 +84,6 @@ The project is configured for iOS App packaging via Capacitor:
 - **App Icons:** Placeholder icons in `client/public/icons/` (192, 512, apple-touch-icon). Should be replaced with high-res 1024x1024 artwork before App Store submission.
 - **Build Guide:** `docs/ios-build-guide.md` contains step-by-step instructions for packaging with Xcode and uploading to TestFlight.
 - **Theme:** Dark theme (#1A1918) with `black-translucent` status bar for seamless integration with the app's dark UI.
+
+## Documentation
+- **Technical Handover:** `docs/HANDOVER.md` — 完整的技术交接文档（1100+ 行），涵盖架构、数据库 Schema（21 表）、API 路由（90+ 端点）、AI 子系统、前端组件、认证体系、环境变量、开发约定、已完成功能清单、待办方向等。供新开发者接手参考。
