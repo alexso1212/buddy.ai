@@ -1,0 +1,981 @@
+# task-08: 企业智能初始化（后端）
+
+> **前置条件**：知识库 task-01~06 完成、hotfix-01 完成
+> **预计耗时**：2-3 天
+> **新增文件**：`server/services/setup/` 目录（3个文件）
+> **改动文件**：`server/routes.ts`（新增约 100 行路由）、`package.json`（新增 adm-zip）
+> **风险等级**：低（新增服务和路由，不改现有代码）
+
+-----
+
+## 目标
+
+用户上传一个 ZIP（或多个文件），AI 自动提取：公司名称、部门结构、岗位职责、文件分类。返回结构化 JSON 供前端展示确认，确认后批量写入数据库。
+
+-----
+
+## STEP 1：安装依赖
+
+```bash
+npm install adm-zip
+```
+
+-----
+
+## STEP 2：创建 `server/services/setup/` 目录
+
+```
+server/services/
+├── ai/          # 现有
+├── kb/          # task-02 创建
+└── setup/       # 新增
+    ├── zipProcessor.ts    # ZIP 解压 + 文件文本提取
+    ├── aiExtractor.ts     # 两阶段 AI 提取企业信息
+    └── setupService.ts    # 编排整个流程 + 批量写入
+```
+
+-----
+
+## STEP 3：创建 `server/services/setup/zipProcessor.ts`
+
+```typescript
+import AdmZip from 'adm-zip';
+import fs from 'fs';
+import path from 'path';
+import { extractText } from '../kb/extractText';
+
+export interface ExtractedFile {
+  fileName: string;       // 原始文件名（不含路径）
+  filePath: string;       // 临时文件路径（用于后续存入KB）
+  fileType: string;       // pdf / docx / txt / md
+  fileSize: number;       // 字节
+  content: string;        // 提取的文本内容（截断到前 10000 字符供 AI 分析）
+  fullContent: string;    // 完整文本（用于后续切片入知识库）
+}
+
+/**
+ * 处理 ZIP 文件：解压 → 提取每个文件的文本
+ */
+export async function processZipFile(zipPath: string): Promise<ExtractedFile[]> {
+  const zip = new AdmZip(zipPath);
+  const entries = zip.getEntries();
+  const files: ExtractedFile[] = [];
+  
+  // 创建临时解压目录
+  const tempDir = path.join('uploads', 'setup_temp_' + Date.now());
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
+
+  const supportedExts = ['pdf', 'docx', 'txt', 'md'];
+
+  for (const entry of entries) {
+    // 跳过目录、隐藏文件、Mac 的 __MACOSX
+    if (entry.isDirectory) continue;
+    const entryName = entry.entryName;
+    if (entryName.startsWith('__MACOSX') || entryName.startsWith('.')) continue;
+    if (entryName.includes('/.')) continue; // 隐藏文件在子目录中
+
+    const ext = entryName.split('.').pop()?.toLowerCase() || '';
+    if (!supportedExts.includes(ext)) continue;
+
+    // 提取文件名（去掉路径）
+    const fileName = entryName.split('/').pop() || entryName;
+    const tempPath = path.join(tempDir, Date.now() + '_' + fileName);
+
+    try {
+      // 解压单个文件到临时目录
+      const fileData = entry.getData();
+      fs.writeFileSync(tempPath, fileData);
+
+      // 提取文本
+      const fullContent = await extractText(tempPath, ext);
+      
+      if (fullContent && fullContent.trim().length > 20) {
+        files.push({
+          fileName,
+          filePath: tempPath,
+          fileType: ext,
+          fileSize: entry.header.size,
+          content: fullContent.slice(0, 10000), // AI 分析用的截断版
+          fullContent,                           // 完整版用于知识库
+        });
+      } else {
+        // 文本太少，清理临时文件
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      }
+    } catch (err: any) {
+      console.warn(`[Setup] Failed to process ${fileName}:`, err.message);
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    }
+  }
+
+  console.log(`[Setup] Extracted ${files.length} files from ZIP`);
+  return files;
+}
+
+/**
+ * 处理多个单独上传的文件（非ZIP）
+ */
+export async function processMultipleFiles(filePaths: { originalName: string; tempPath: string }[]): Promise<ExtractedFile[]> {
+  const files: ExtractedFile[] = [];
+  const supportedExts = ['pdf', 'docx', 'txt', 'md'];
+
+  for (const { originalName, tempPath } of filePaths) {
+    const ext = originalName.split('.').pop()?.toLowerCase() || '';
+    if (!supportedExts.includes(ext)) continue;
+
+    try {
+      const stats = fs.statSync(tempPath);
+      const fullContent = await extractText(tempPath, ext);
+
+      if (fullContent && fullContent.trim().length > 20) {
+        files.push({
+          fileName: originalName,
+          filePath: tempPath,
+          fileType: ext,
+          fileSize: stats.size,
+          content: fullContent.slice(0, 10000),
+          fullContent,
+        });
+      }
+    } catch (err: any) {
+      console.warn(`[Setup] Failed to process ${originalName}:`, err.message);
+    }
+  }
+
+  return files;
+}
+
+/**
+ * 清理临时文件
+ */
+export function cleanupTempFiles(files: ExtractedFile[]) {
+  for (const file of files) {
+    try {
+      if (fs.existsSync(file.filePath)) {
+        fs.unlinkSync(file.filePath);
+      }
+    } catch {}
+  }
+  // 清理临时目录
+  const tempDirs = fs.readdirSync('uploads').filter(d => d.startsWith('setup_temp_'));
+  for (const dir of tempDirs) {
+    try {
+      fs.rmSync(path.join('uploads', dir), { recursive: true, force: true });
+    } catch {}
+  }
+}
+```
+
+-----
+
+## STEP 4：创建 `server/services/setup/aiExtractor.ts`
+
+这是核心——两阶段AI提取企业信息。
+
+```typescript
+import OpenAI from 'openai';
+
+// 复用现有的 AI 客户端配置
+// 检查 server/services/ai/index.ts 中的客户端是怎么创建的，用同样的方式
+// 如果客户端没有 export，在这里重新创建一个
+const aiClient = new OpenAI({
+  baseURL: 'https://vip.aipro.love/v1',
+  apiKey: process.env.CLAUDE_SIMPLE_API_KEY || '',
+  timeout: 90000,
+});
+
+const complexClient = new OpenAI({
+  baseURL: 'https://vip.aipro.love/v1',
+  apiKey: process.env.CLAUDE_COMPLEX_API_KEY || '',
+  timeout: 180000,
+});
+
+// ========== 类型定义 ==========
+
+export interface FileAnalysis {
+  fileName: string;
+  category: 'policy' | 'contract' | 'jd' | 'manual' | 'general';
+  visibility: 'org' | 'admin' | 'department';
+  visibleDepartment?: string;
+  summary: string;
+  mentionedDepartments: string[];
+  mentionedRoles: string[];
+}
+
+export interface EnterpriseProfile {
+  companyName: string;
+  companyDescription: string;
+  departments: {
+    name: string;
+    description: string;
+    children?: { name: string; description: string }[];
+  }[];
+  jobRoles: {
+    title: string;
+    departmentName: string;
+    responsibilities: string;
+    boundaries: string;
+    requiredSkills: string;
+  }[];
+  fileClassifications: FileAnalysis[];
+}
+
+// ========== 阶段1：Haiku 逐文件分析（快+便宜） ==========
+
+async function analyzeFileWithHaiku(fileName: string, content: string): Promise<FileAnalysis> {
+  try {
+    const response = await aiClient.chat.completions.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1000,
+      temperature: 0.1,
+      messages: [
+        {
+          role: 'system',
+          content: `你是一个企业文档分析助手。分析以下企业文档，返回纯 JSON（不要 markdown 代码块）。
+
+返回格式：
+{
+  "category": "policy/contract/jd/manual/general 五选一",
+  "visibility": "org/admin/department 三选一",
+  "visibleDepartment": "如果visibility=department，填部门名（否则填空字符串）",
+  "summary": "一句话概括文档内容（30字以内）",
+  "mentionedDepartments": ["文档中提到的部门名称列表"],
+  "mentionedRoles": ["文档中提到的岗位/职位名称列表"]
+}
+
+分类标准：
+- policy：规章制度、考勤、休假、行为准则、报销流程
+- contract：劳动合同、保密协议、竞业限制
+- jd：岗位说明书、职位描述、KPI考核标准
+- manual：操作手册、培训资料、使用指南
+- general：其他
+
+可见性判断：
+- org：全员应知的（考勤、办公规范、报销流程）
+- admin：涉及薪资、合同条款、人事的敏感文件
+- department：只和特定部门相关的文件`
+        },
+        {
+          role: 'user',
+          content: `文件名：${fileName}\n\n文件内容：\n${content.slice(0, 6000)}`
+        }
+      ],
+    });
+
+    const text = response.choices[0]?.message?.content || '';
+    const cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+
+    return {
+      fileName,
+      category: parsed.category || 'general',
+      visibility: parsed.visibility || 'org',
+      visibleDepartment: parsed.visibleDepartment || '',
+      summary: parsed.summary || '',
+      mentionedDepartments: parsed.mentionedDepartments || [],
+      mentionedRoles: parsed.mentionedRoles || [],
+    };
+  } catch (err: any) {
+    console.error(`[Setup AI] Haiku analysis failed for ${fileName}:`, err.message);
+    return {
+      fileName,
+      category: 'general',
+      visibility: 'org',
+      summary: '无法自动分析',
+      mentionedDepartments: [],
+      mentionedRoles: [],
+    };
+  }
+}
+
+// ========== 阶段2：Sonnet 整合组织架构 ==========
+
+async function synthesizeWithSonnet(fileAnalyses: FileAnalysis[], fileContents: { fileName: string; content: string }[]): Promise<EnterpriseProfile> {
+  // 构建摘要输入
+  const summaryBlock = fileAnalyses.map(f =>
+    `【${f.fileName}】类型:${f.category} | 摘要:${f.summary} | 提到的部门:${f.mentionedDepartments.join(',')} | 提到的岗位:${f.mentionedRoles.join(',')}`
+  ).join('\n');
+
+  // 如果总内容不太长，也把关键文件的部分内容发过去（帮助AI更准确）
+  const keyContents = fileContents
+    .filter(f => {
+      const analysis = fileAnalyses.find(a => a.fileName === f.fileName);
+      return analysis && ['jd', 'policy'].includes(analysis.category);
+    })
+    .slice(0, 5) // 最多5个关键文件
+    .map(f => `### ${f.fileName}\n${f.content.slice(0, 3000)}`)
+    .join('\n\n');
+
+  try {
+    const response = await complexClient.chat.completions.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4000,
+      temperature: 0.2,
+      messages: [
+        {
+          role: 'system',
+          content: `你是一个企业组织架构分析专家。根据多份企业文件的分析摘要，整合出完整的企业组织信息。
+
+返回纯 JSON（不要 markdown 代码块）：
+{
+  "companyName": "从文件中识别的公司全称（找不到就填空字符串）",
+  "companyDescription": "公司简介1-2句话（找不到就填空）",
+  "departments": [
+    {
+      "name": "部门名称",
+      "description": "部门职责简述（1句话）",
+      "children": [
+        { "name": "子部门名", "description": "简述" }
+      ]
+    }
+  ],
+  "jobRoles": [
+    {
+      "title": "岗位名称",
+      "departmentName": "所属部门（和departments中的name对应）",
+      "responsibilities": "核心职责，用分号分隔",
+      "boundaries": "不负责的事项（没有就填空）",
+      "requiredSkills": "技能要求（没有就填空）"
+    }
+  ]
+}
+
+规则：
+- 只提取文件中明确提到的信息，不编造
+- 去重：多个文件提到同一个部门只列一次
+- 识别层级关系（如"大客户组"隶属于"销售部"放在children里）
+- 如果找不到某项信息，对应字段填空字符串或空数组
+- departments 和 jobRoles 数组如果完全没有信息就返回空数组`
+        },
+        {
+          role: 'user',
+          content: `以下是对一家企业${fileAnalyses.length}份文件的分析结果：
+
+## 文件摘要
+${summaryBlock}
+
+## 关键文件内容节选
+${keyContents || '（无关键文件内容）'}
+
+请从以上信息中整合出这家企业的组织架构。`
+        }
+      ],
+    });
+
+    const text = response.choices[0]?.message?.content || '';
+    const cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+
+    return {
+      companyName: parsed.companyName || '',
+      companyDescription: parsed.companyDescription || '',
+      departments: parsed.departments || [],
+      jobRoles: parsed.jobRoles || [],
+      fileClassifications: fileAnalyses,
+    };
+  } catch (err: any) {
+    console.error('[Setup AI] Sonnet synthesis failed:', err.message);
+    // 降级：只返回 Haiku 的结果
+    return {
+      companyName: '',
+      companyDescription: '',
+      departments: [],
+      jobRoles: [],
+      fileClassifications: fileAnalyses,
+    };
+  }
+}
+
+// ========== 主入口：两阶段提取 ==========
+
+export async function extractEnterpriseProfile(files: { fileName: string; content: string }[]): Promise<EnterpriseProfile> {
+  console.log(`[Setup AI] Starting extraction for ${files.length} files`);
+
+  // 阶段1：Haiku 逐文件分析（并行，提速）
+  console.log('[Setup AI] Phase 1: Haiku file analysis...');
+  const fileAnalyses = await Promise.all(
+    files.map(f => analyzeFileWithHaiku(f.fileName, f.content))
+  );
+  console.log(`[Setup AI] Phase 1 complete: ${fileAnalyses.length} files analyzed`);
+
+  // 阶段2：Sonnet 整合
+  console.log('[Setup AI] Phase 2: Sonnet synthesis...');
+  const profile = await synthesizeWithSonnet(fileAnalyses, files);
+  console.log(`[Setup AI] Phase 2 complete: ${profile.departments.length} depts, ${profile.jobRoles.length} roles`);
+
+  return profile;
+}
+```
+
+**关于 AI 客户端**：上面代码里重新创建了 OpenAI 客户端。更好的做法是从 `server/services/ai/index.ts` 导出现有客户端复用。检查 ai/index.ts 中的客户端是否有 export：
+
+- 如果有 → import 复用
+- 如果没有 → 用上面的方式重新创建（或者把 ai/index.ts 的客户端 export 出来）
+
+-----
+
+## STEP 5：创建 `server/services/setup/setupService.ts`
+
+```typescript
+import fs from 'fs';
+import path from 'path';
+import { storage } from '../../storage';
+import { processZipFile, processMultipleFiles, cleanupTempFiles, ExtractedFile } from './zipProcessor';
+import { extractEnterpriseProfile, EnterpriseProfile } from './aiExtractor';
+import { processDocument } from '../kb/processDocument';
+
+/**
+ * 第一步：上传分析
+ * 用户上传文件 → 解压 → AI提取 → 返回 EnterpriseProfile 供确认
+ */
+export async function analyzeUpload(params: {
+  zipPath?: string;
+  files?: { originalName: string; tempPath: string }[];
+}): Promise<{
+  profile: EnterpriseProfile;
+  extractedFiles: ExtractedFile[];
+}> {
+  let extractedFiles: ExtractedFile[];
+
+  if (params.zipPath) {
+    extractedFiles = await processZipFile(params.zipPath);
+  } else if (params.files) {
+    extractedFiles = await processMultipleFiles(params.files);
+  } else {
+    throw new Error('请上传ZIP文件或多个文件');
+  }
+
+  if (extractedFiles.length === 0) {
+    throw new Error('没有从上传的文件中提取到有效内容。请确保文件格式为 PDF/DOCX/TXT/MD。');
+  }
+
+  // AI 提取企业信息
+  const profile = await extractEnterpriseProfile(
+    extractedFiles.map(f => ({ fileName: f.fileName, content: f.content }))
+  );
+
+  return { profile, extractedFiles };
+}
+
+/**
+ * 第二步：确认写入
+ * 用户确认（或修改后确认）AI 提取的结果 → 批量写入数据库
+ */
+export async function confirmAndSetup(params: {
+  orgId: number;
+  userId: number;
+  profile: EnterpriseProfile;        // 用户确认后的（可能被修改过的）profile
+  extractedFiles: ExtractedFile[];    // 原始解压的文件列表
+}): Promise<{
+  updatedOrg: boolean;
+  departmentsCreated: number;
+  jobRolesCreated: number;
+  documentsCreated: number;
+}> {
+  const { orgId, userId, profile, extractedFiles } = params;
+  let departmentsCreated = 0;
+  let jobRolesCreated = 0;
+  let documentsCreated = 0;
+  let updatedOrg = false;
+
+  // 1. 更新组织名称（如果AI识别到了）
+  if (profile.companyName) {
+    try {
+      await storage.updateOrganization(orgId, {
+        name: profile.companyName,
+        description: profile.companyDescription || undefined,
+      });
+      updatedOrg = true;
+      console.log(`[Setup] Updated org name: ${profile.companyName}`);
+    } catch (err: any) {
+      console.warn(`[Setup] Failed to update org:`, err.message);
+    }
+  }
+
+  // 2. 创建部门（带层级）
+  const deptNameToId: Record<string, number> = {};
+
+  for (const dept of profile.departments) {
+    try {
+      const created = await storage.createDepartment({
+        orgId,
+        name: dept.name,
+        description: dept.description || null,
+      });
+      deptNameToId[dept.name] = created.id;
+      departmentsCreated++;
+
+      // 创建子部门
+      if (dept.children && dept.children.length > 0) {
+        for (const child of dept.children) {
+          try {
+            const childCreated = await storage.createDepartment({
+              orgId,
+              name: child.name,
+              description: child.description || null,
+              parentDeptId: created.id,
+            });
+            deptNameToId[child.name] = childCreated.id;
+            departmentsCreated++;
+          } catch (err: any) {
+            console.warn(`[Setup] Failed to create child dept ${child.name}:`, err.message);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[Setup] Failed to create dept ${dept.name}:`, err.message);
+    }
+  }
+
+  console.log(`[Setup] Created ${departmentsCreated} departments`);
+
+  // 3. 创建岗位角色
+  for (const role of profile.jobRoles) {
+    try {
+      const deptId = deptNameToId[role.departmentName] || null;
+      await storage.createJobRole({
+        orgId,
+        deptId,
+        title: role.title,
+        responsibilities: role.responsibilities || '',
+        boundaries: role.boundaries || null,
+        requiredSkills: role.requiredSkills || null,
+        description: null,
+      });
+      jobRolesCreated++;
+    } catch (err: any) {
+      console.warn(`[Setup] Failed to create role ${role.title}:`, err.message);
+    }
+  }
+
+  console.log(`[Setup] Created ${jobRolesCreated} job roles`);
+
+  // 4. 把所有文件存入知识库
+  for (const file of extractedFiles) {
+    try {
+      // 找到AI对这个文件的分类
+      const classification = profile.fileClassifications.find(
+        fc => fc.fileName === file.fileName
+      );
+
+      // 移动文件到 kb 目录
+      const kbDir = 'uploads/kb/';
+      if (!fs.existsSync(kbDir)) fs.mkdirSync(kbDir, { recursive: true });
+      
+      const newFileName = `${Date.now()}_${Math.round(Math.random() * 1e9)}_${file.fileName}`;
+      const kbPath = path.join(kbDir, newFileName);
+      
+      // 复制文件到 KB 目录（不是移动，因为临时文件后面统一清理）
+      fs.copyFileSync(file.filePath, kbPath);
+
+      // 处理 visibleDeptIds
+      let visibleDeptIds: string | null = null;
+      if (classification?.visibility === 'department' && classification?.visibleDepartment) {
+        const deptId = deptNameToId[classification.visibleDepartment];
+        if (deptId) {
+          visibleDeptIds = JSON.stringify([deptId]);
+        }
+      }
+
+      // 创建知识库文档记录
+      const doc = await storage.createKbDocument({
+        orgId,
+        uploadedBy: userId,
+        title: file.fileName.replace(/\.[^/.]+$/, ''), // 去掉扩展名
+        fileName: file.fileName,
+        fileType: file.fileType,
+        fileSize: file.fileSize,
+        fileUrl: `/uploads/kb/${newFileName}`,
+        category: classification?.category || 'general',
+        visibility: classification?.visibility || 'org',
+        visibleDeptIds,
+        status: 'pending',
+        chunkCount: 0,
+      });
+
+      documentsCreated++;
+
+      // 异步触发文档处理（切片 + embedding）
+      setImmediate(() => {
+        processDocument(doc.id).catch(err => {
+          console.error(`[Setup] KB processing failed for ${file.fileName}:`, err);
+        });
+      });
+
+    } catch (err: any) {
+      console.warn(`[Setup] Failed to create KB doc ${file.fileName}:`, err.message);
+    }
+  }
+
+  console.log(`[Setup] Created ${documentsCreated} KB documents`);
+
+  // 5. 清理临时文件
+  cleanupTempFiles(extractedFiles);
+
+  // 6. 记录操作日志
+  await storage.createActivityLog({
+    orgId,
+    userId,
+    entityType: 'organization',
+    entityId: orgId,
+    action: 'smart_setup',
+    changes: JSON.stringify({
+      departmentsCreated,
+      jobRolesCreated,
+      documentsCreated,
+      companyName: profile.companyName,
+    }),
+    source: 'ai',
+  });
+
+  return { updatedOrg, departmentsCreated, jobRolesCreated, documentsCreated };
+}
+```
+
+**注意**：`storage.createDepartment` 和 `storage.createJobRole` 需要检查实际参数名。查看 `server/storage.ts` 中这两个方法的签名，确保传参匹配。特别是：
+
+- createDepartment 的参数可能需要 `orgId` 字段名匹配（是 `orgId` 还是 `org_id`）
+- createJobRole 同理
+- 如果 storage 中没有 `createJobRole` 方法，需要新增
+
+-----
+
+## STEP 6：在 routes.ts 新增路由
+
+```typescript
+// 顶部新增 import
+// import { analyzeUpload, confirmAndSetup } from './services/setup/setupService';
+
+// setup 专用的 multer 配置（支持 ZIP 和多文件）
+const setupUploadStorage = multer.diskStorage({
+  destination: (_req: any, _file: any, cb: any) => {
+    const dir = 'uploads/setup_temp/';
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req: any, file: any, cb: any) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const ext = pathModule.extname(file.originalname);
+    cb(null, uniqueSuffix + ext);
+  },
+});
+const setupUpload = multer({
+  storage: setupUploadStorage,
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB（ZIP可能比单个文件大）
+  fileFilter: (_req: any, file: any, cb: any) => {
+    const allowedExts = ['.pdf', '.docx', '.txt', '.md', '.zip'];
+    const ext = pathModule.extname(file.originalname).toLowerCase();
+    if (allowedExts.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`不支持的文件类型: ${ext}`));
+    }
+  },
+});
+
+// ===================== Enterprise Smart Setup =====================
+
+/**
+ * 上传文件 + AI 分析
+ * 接受 ZIP 或多个文件
+ * 返回 AI 提取的企业信息供前端展示确认
+ */
+app.post("/api/setup/analyze", authMiddleware, setupUpload.array('files', 50), async (req: any, res) => {
+  try {
+    // 权限检查：只有 owner 能执行初始化
+    const userRole = req.userRole || 'member';
+    if (userRole !== 'owner') {
+      return res.status(403).json({ error: '仅组织所有者可执行初始化设置' });
+    }
+
+    const uploadedFiles = req.files as Express.Multer.File[];
+    if (!uploadedFiles || uploadedFiles.length === 0) {
+      return res.status(400).json({ error: '请上传文件' });
+    }
+
+    // 判断是 ZIP 还是多文件
+    const zipFile = uploadedFiles.find(f => f.originalname.toLowerCase().endsWith('.zip'));
+
+    let result;
+    if (zipFile) {
+      // ZIP 模式
+      result = await analyzeUpload({ zipPath: zipFile.path });
+      // 清理 ZIP 临时文件
+      if (fs.existsSync(zipFile.path)) fs.unlinkSync(zipFile.path);
+    } else {
+      // 多文件模式
+      result = await analyzeUpload({
+        files: uploadedFiles.map(f => ({
+          originalName: f.originalname,
+          tempPath: f.path,
+        })),
+      });
+    }
+
+    // 把 extractedFiles 的 filePath 信息缓存起来（用于确认后写入 KB）
+    // 存在内存中，用 sessionId 或 orgId 做 key
+    // 简单方案：存在临时 JSON 文件中
+    const cacheKey = `setup_cache_${req.orgId}_${Date.now()}`;
+    const cachePath = `uploads/${cacheKey}.json`;
+    fs.writeFileSync(cachePath, JSON.stringify({
+      extractedFiles: result.extractedFiles.map(f => ({
+        fileName: f.fileName,
+        filePath: f.filePath,
+        fileType: f.fileType,
+        fileSize: f.fileSize,
+      })),
+    }));
+
+    return res.json({
+      data: {
+        profile: result.profile,
+        cacheKey,  // 前端确认时需要传回来
+        fileCount: result.extractedFiles.length,
+      }
+    });
+  } catch (e: any) {
+    console.error('[Setup] Analyze error:', e);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * 确认 AI 分析结果，批量写入数据库
+ */
+app.post("/api/setup/confirm", authMiddleware, async (req: any, res) => {
+  try {
+    const userRole = req.userRole || 'member';
+    if (userRole !== 'owner') {
+      return res.status(403).json({ error: '仅组织所有者可执行此操作' });
+    }
+
+    const { profile, cacheKey } = req.body;
+    if (!profile || !cacheKey) {
+      return res.status(400).json({ error: '缺少 profile 或 cacheKey' });
+    }
+
+    // 读取缓存的文件信息
+    const cachePath = `uploads/${cacheKey}.json`;
+    if (!fs.existsSync(cachePath)) {
+      return res.status(400).json({ error: '分析结果已过期，请重新上传' });
+    }
+    const cached = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+
+    // 执行批量写入
+    const result = await confirmAndSetup({
+      orgId: req.orgId,
+      userId: req.currentUserId,
+      profile,
+      extractedFiles: cached.extractedFiles,
+    });
+
+    // 清理缓存
+    if (fs.existsSync(cachePath)) fs.unlinkSync(cachePath);
+
+    return res.json({ data: result });
+  } catch (e: any) {
+    console.error('[Setup] Confirm error:', e);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * 获取当前组织的初始化状态（已有多少部门、岗位、文档）
+ */
+app.get("/api/setup/status", authMiddleware, async (req: any, res) => {
+  try {
+    const departments = await storage.getDepartmentsByOrg(req.orgId);
+    const jobRoles = await storage.getJobRolesByOrg(req.orgId);
+    const kbDocs = await storage.getKbDocumentsByOrg(req.orgId);
+    const members = await storage.getOrgMembers(req.orgId);
+
+    return res.json({
+      data: {
+        departmentCount: departments?.length || 0,
+        jobRoleCount: jobRoles?.length || 0,
+        kbDocumentCount: kbDocs?.length || 0,
+        memberCount: members?.length || 0,
+        isSetupComplete: (departments?.length || 0) > 0 || (kbDocs?.length || 0) > 0,
+      }
+    });
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+```
+
+**注意关于缓存**：`/api/setup/analyze` 返回的文件路径需要在 `/api/setup/confirm` 中使用。这里用了临时 JSON 文件缓存。更好的方案是用 Redis 或数据库缓存，但对MVP来说文件缓存够用。
+
+**注意关于 storage 方法**：路由中用到了几个方法，需要确认 storage.ts 中是否有：
+
+- `storage.getDepartmentsByOrg(orgId)` — 可能叫 `getDepartments()` 并已按orgId过滤
+- `storage.getJobRolesByOrg(orgId)` — 可能叫 `getJobRoles()`
+- `storage.getOrgMembers(orgId)` — 可能叫 `getOrgMembers()` 或 `getMembersByOrg()`
+- `storage.createJobRole(data)` — 确认参数结构
+
+让 Replit Agent 检查 storage.ts，用实际存在的方法名替换。
+
+-----
+
+## STEP 7：确保 fs 和 pathModule 的 import
+
+在 routes.ts 中，确保有以下 import（可能已有，检查一下）：
+
+```typescript
+import fs from 'fs';
+import pathModule from 'path';  // 或者 import path from 'path'，看现有代码用的哪个
+```
+
+-----
+
+## 验证清单
+
+### 基础验证
+
+- [ ] `npm list adm-zip` 显示已安装
+- [ ] `server/services/setup/` 下有 3 个文件
+- [ ] `npm run dev` 启动正常
+- [ ] 现有功能不受影响
+
+### ZIP 上传测试
+
+```bash
+# 创建测试文件
+mkdir -p /tmp/test_company
+cat > /tmp/test_company/员工手册.txt << 'EOF'
+鑫达国际贸易有限公司员工手册
+
+第一章 公司简介
+鑫达国际贸易有限公司成立于2018年，主营进出口贸易业务。
+
+第二章 组织架构
+公司设有销售部、行政部、财务部三个核心部门。
+销售部下设大客户组和渠道组。
+
+第三章 考勤制度
+工作时间：周一至周五 9:00-18:00
+EOF
+
+cat > /tmp/test_company/岗位说明书.txt << 'EOF'
+销售经理岗位说明书
+部门：销售部
+汇报对象：总经理
+
+岗位职责：
+1. 制定季度销售目标和策略
+2. 管理销售团队，进行绩效考核
+3. 维护大客户关系
+4. 完成公司下达的销售指标
+
+任职要求：
+- 本科以上学历
+- 5年以上B2B销售经验
+- 良好的团队管理能力
+
+行政主管岗位说明书
+部门：行政部
+汇报对象：总经理
+
+岗位职责：
+1. 公司规章制度的制定和监督执行
+2. 办公环境管理和行政采购
+3. 考勤管理和人事档案维护
+4. 组织公司活动和会议安排
+EOF
+
+# 打包成 ZIP
+cd /tmp && zip -r test_company.zip test_company/
+
+# 上传测试
+TOKEN="你的owner token"
+ANALYZE_RESULT=$(curl -s -X POST "http://localhost:5000/api/setup/analyze" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "files=@/tmp/test_company.zip")
+echo "分析结果: $ANALYZE_RESULT"
+```
+
+预期返回：
+
+```json
+{
+  "data": {
+    "profile": {
+      "companyName": "鑫达国际贸易有限公司",
+      "departments": [
+        { "name": "销售部", "children": [{"name":"大客户组"}, {"name":"渠道组"}] },
+        { "name": "行政部" },
+        { "name": "财务部" }
+      ],
+      "jobRoles": [
+        { "title": "销售经理", "departmentName": "销售部", "responsibilities": "..." },
+        { "title": "行政主管", "departmentName": "行政部", "responsibilities": "..." }
+      ],
+      "fileClassifications": [...]
+    },
+    "cacheKey": "setup_cache_xxx",
+    "fileCount": 2
+  }
+}
+```
+
+### 确认写入测试
+
+```bash
+# 从上面的结果中提取 cacheKey 和 profile
+CACHE_KEY="上面返回的cacheKey"
+curl -s -X POST "http://localhost:5000/api/setup/confirm" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d "{
+    \"cacheKey\": \"$CACHE_KEY\",
+    \"profile\": 上面返回的profile对象
+  }"
+```
+
+预期：
+
+- departments 表新增了 3+个部门（含子部门）
+- job_roles 表新增了 2 个岗位
+- kb_documents 表新增了 2 个文档，status 在几秒后变为 ready
+
+### 权限验证
+
+```bash
+# member 不能执行初始化
+curl -s -X POST "http://localhost:5000/api/setup/analyze" \
+  -H "Authorization: Bearer $MEMBER_TOKEN" \
+  -F "files=@/tmp/test_company.zip"
+# 预期：403
+```
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读项目根目录的 `task-08-smart-setup-backend.md`，按步骤执行。
+> 
+> 重要规则：
+> 
+> 1. 新建 `server/services/setup/` 目录，不修改现有 ai/ 和 kb/ 服务
+> 1. AI 客户端优先复用 ai/index.ts 中已有的。如果没有 export，在 aiExtractor.ts 中重新创建
+> 1. storage 方法名要匹配实际代码（检查 createDepartment、createJobRole 等的参数结构）
+> 1. ZIP 解压使用 adm-zip 库
+> 1. 文件分析用 Haiku（快+便宜），组织架构整合用 Sonnet（聪明）
+> 1. 所有路由都要有 authMiddleware，analyze 和 confirm 只允许 owner 操作
+> 1. 确认后批量写入的知识库文档要触发 processDocument（复用 task-02 的切片管道）
+> 1. 完成后用 ZIP 测试文件验证完整流程
+
+-----
+
+## 完成后告诉 Claude
+
+回来告诉我：
+
+1. “task-08 完成” 或 “task-08 有问题：XXX”
+1. 测试 ZIP 上传后，AI 提取的结果是什么？（公司名、几个部门、几个岗位）
+1. 确认写入后，数据库中实际创建了多少部门和岗位？
+1. 知识库文档的处理状态（ready or error）
+
+然后我出 task-09（前端 Onboarding 改造 + 确认界面）。

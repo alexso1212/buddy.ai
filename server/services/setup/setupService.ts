@@ -1,0 +1,194 @@
+import fs from 'fs';
+import path from 'path';
+import { storage } from '../../storage';
+import { processZipFile, processMultipleFiles, cleanupTempFiles, ExtractedFile } from './zipProcessor';
+import { extractEnterpriseProfile, EnterpriseProfile } from './aiExtractor';
+import { processDocument } from '../kb/processDocument';
+
+export type { EnterpriseProfile } from './aiExtractor';
+export type { ExtractedFile } from './zipProcessor';
+
+export async function analyzeUpload(params: {
+  zipPath?: string;
+  files?: { originalName: string; tempPath: string }[];
+}): Promise<{
+  profile: EnterpriseProfile;
+  extractedFiles: ExtractedFile[];
+}> {
+  let extractedFiles: ExtractedFile[];
+
+  if (params.zipPath) {
+    extractedFiles = await processZipFile(params.zipPath);
+  } else if (params.files) {
+    extractedFiles = await processMultipleFiles(params.files);
+  } else {
+    throw new Error('请上传ZIP文件或多个文件');
+  }
+
+  if (extractedFiles.length === 0) {
+    throw new Error('没有从上传的文件中提取到有效内容。请确保文件格式为 PDF/DOCX/TXT/MD。');
+  }
+
+  const profile = await extractEnterpriseProfile(
+    extractedFiles.map(f => ({ fileName: f.fileName, content: f.content }))
+  );
+
+  return { profile, extractedFiles };
+}
+
+export async function confirmAndSetup(params: {
+  orgId: number;
+  userId: number;
+  profile: EnterpriseProfile;
+  extractedFiles: ExtractedFile[];
+}): Promise<{
+  updatedOrg: boolean;
+  departmentsCreated: number;
+  jobRolesCreated: number;
+  documentsCreated: number;
+}> {
+  const { orgId, userId, profile, extractedFiles } = params;
+  let departmentsCreated = 0;
+  let jobRolesCreated = 0;
+  let documentsCreated = 0;
+  let updatedOrg = false;
+
+  if (profile.companyName) {
+    try {
+      await storage.updateOrganization(orgId, {
+        name: profile.companyName,
+        description: profile.companyDescription || undefined,
+      });
+      updatedOrg = true;
+      console.log(`[Setup] Updated org name: ${profile.companyName}`);
+    } catch (err: any) {
+      console.warn(`[Setup] Failed to update org:`, err.message);
+    }
+  }
+
+  const deptNameToId: Record<string, number> = {};
+
+  for (const dept of profile.departments) {
+    try {
+      const created = await storage.createDepartment({
+        orgId,
+        name: dept.name,
+        description: dept.description || null,
+      });
+      deptNameToId[dept.name] = created.id;
+      departmentsCreated++;
+
+      if (dept.children && dept.children.length > 0) {
+        for (const child of dept.children) {
+          try {
+            const childCreated = await storage.createDepartment({
+              orgId,
+              name: child.name,
+              description: child.description || null,
+              parentDeptId: created.id,
+            });
+            deptNameToId[child.name] = childCreated.id;
+            departmentsCreated++;
+          } catch (err: any) {
+            console.warn(`[Setup] Failed to create child dept ${child.name}:`, err.message);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[Setup] Failed to create dept ${dept.name}:`, err.message);
+    }
+  }
+
+  console.log(`[Setup] Created ${departmentsCreated} departments`);
+
+  for (const role of profile.jobRoles) {
+    try {
+      const deptId = deptNameToId[role.departmentName] || null;
+      await storage.createJobRole({
+        orgId,
+        deptId,
+        title: role.title,
+        responsibilities: role.responsibilities || '',
+        boundaries: role.boundaries || null,
+        requiredSkills: role.requiredSkills || null,
+        description: null,
+      });
+      jobRolesCreated++;
+    } catch (err: any) {
+      console.warn(`[Setup] Failed to create role ${role.title}:`, err.message);
+    }
+  }
+
+  console.log(`[Setup] Created ${jobRolesCreated} job roles`);
+
+  for (const file of extractedFiles) {
+    try {
+      const classification = profile.fileClassifications.find(
+        fc => fc.fileName === file.fileName
+      );
+
+      const kbDir = 'uploads/kb/';
+      if (!fs.existsSync(kbDir)) fs.mkdirSync(kbDir, { recursive: true });
+
+      const newFileName = `${Date.now()}_${Math.round(Math.random() * 1e9)}_${file.fileName}`;
+      const kbPath = path.join(kbDir, newFileName);
+
+      fs.copyFileSync(file.filePath, kbPath);
+
+      let visibleDeptIds: string | null = null;
+      if (classification?.visibility === 'department' && classification?.visibleDepartment) {
+        const deptId = deptNameToId[classification.visibleDepartment];
+        if (deptId) {
+          visibleDeptIds = JSON.stringify([deptId]);
+        }
+      }
+
+      const doc = await storage.createKbDocument({
+        orgId,
+        uploadedBy: userId,
+        title: file.fileName.replace(/\.[^/.]+$/, ''),
+        fileName: file.fileName,
+        fileType: file.fileType,
+        fileSize: file.fileSize,
+        fileUrl: `/uploads/kb/${newFileName}`,
+        category: classification?.category || 'general',
+        visibility: classification?.visibility || 'org',
+        visibleDeptIds,
+        status: 'pending',
+        chunkCount: 0,
+      });
+
+      documentsCreated++;
+
+      setImmediate(() => {
+        processDocument(doc.id).catch(err => {
+          console.error(`[Setup] KB processing failed for ${file.fileName}:`, err);
+        });
+      });
+
+    } catch (err: any) {
+      console.warn(`[Setup] Failed to create KB doc ${file.fileName}:`, err.message);
+    }
+  }
+
+  console.log(`[Setup] Created ${documentsCreated} KB documents`);
+
+  cleanupTempFiles(extractedFiles);
+
+  await storage.createActivityLog({
+    orgId,
+    userId,
+    entityType: 'organization',
+    entityId: orgId,
+    action: 'smart_setup',
+    changes: JSON.stringify({
+      departmentsCreated,
+      jobRolesCreated,
+      documentsCreated,
+      companyName: profile.companyName,
+    }),
+    source: 'ai',
+  });
+
+  return { updatedOrg, departmentsCreated, jobRolesCreated, documentsCreated };
+}

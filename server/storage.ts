@@ -87,6 +87,10 @@ export class DatabaseStorage {
     return db.select().from(departments);
   }
 
+  async getDepartmentsByOrg(orgId: number): Promise<Department[]> {
+    return db.select().from(departments).where(eq(departments.orgId, orgId));
+  }
+
   async getDepartmentById(id: number): Promise<Department | undefined> {
     const [result] = await db.select().from(departments).where(eq(departments.id, id));
     return result;
@@ -373,6 +377,10 @@ export class DatabaseStorage {
 
   async getJobRoles(): Promise<JobRole[]> {
     return db.select().from(jobRoles);
+  }
+
+  async getJobRolesByOrg(orgId: number): Promise<JobRole[]> {
+    return db.select().from(jobRoles).where(eq(jobRoles.orgId, orgId));
   }
 
   async getJobRoleById(id: number): Promise<JobRole | undefined> {
