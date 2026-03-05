@@ -87,3 +87,4 @@ The project is configured for iOS App packaging via Capacitor:
 
 ## Documentation
 - **Technical Handover:** `docs/HANDOVER.md` — 完整的技术交接文档（1100+ 行），涵盖架构、数据库 Schema（21 表）、API 路由（90+ 端点）、AI 子系统、前端组件、认证体系、环境变量、开发约定、已完成功能清单、待办方向等。供新开发者接手参考。
+- **Architecture Export:** `docs/ARCHITECTURE_EXPORT.md` — 架构摘要导出（1371 行），供产品经理设计知识库功能。包含 7 个 Part：关键表 Schema 原始代码、AI 核心接口（classifyTask/chatStream/buildOptimizedContext）、System Prompt 完整代码、路由模式与完整路由清单、AI 服务目录结构与 export 索引、文件上传机制（multer 配置）、环境依赖（pgvector v0.8.0 可用未装、PostgreSQL 16.10）。
