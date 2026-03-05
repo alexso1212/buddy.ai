@@ -2502,7 +2502,8 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   // ===================== Stats Overview =====================
   app.get("/api/stats/overview", authMiddleware, async (req: any, res) => {
     try {
-      const tasks = await storage.getTasks({});
+      const allTasks = await storage.getTasks({});
+      const tasks = allTasks.filter((t: any) => t.orgId === req.orgId);
       const now = new Date();
 
       const totalTasks = tasks.length;
