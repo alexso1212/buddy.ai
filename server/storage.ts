@@ -66,6 +66,8 @@ import {
   type InsertTaskDeliverable,
   type TaskSubmission,
   type InsertTaskSubmission,
+  kbDocuments,
+  kbChunks,
 } from "@shared/schema";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -983,6 +985,44 @@ export class DatabaseStorage {
       task: { id: r.taskId, title: r.taskTitle },
       submitter: { id: r.submitterId, displayName: r.submitterName },
     }));
+  }
+
+  // ===================== Knowledge Base =====================
+
+  async getKbDocumentsByOrg(orgId: number) {
+    return await db.select().from(kbDocuments).where(eq(kbDocuments.orgId, orgId)).orderBy(desc(kbDocuments.createdAt));
+  }
+
+  async getKbDocumentById(id: number) {
+    const [doc] = await db.select().from(kbDocuments).where(eq(kbDocuments.id, id));
+    return doc || null;
+  }
+
+  async createKbDocument(data: typeof kbDocuments.$inferInsert) {
+    const [doc] = await db.insert(kbDocuments).values(data).returning();
+    return doc;
+  }
+
+  async updateKbDocument(id: number, data: Partial<typeof kbDocuments.$inferInsert>) {
+    const [doc] = await db.update(kbDocuments).set({ ...data, updatedAt: new Date() }).where(eq(kbDocuments.id, id)).returning();
+    return doc;
+  }
+
+  async deleteKbDocument(id: number) {
+    await db.delete(kbDocuments).where(eq(kbDocuments.id, id));
+  }
+
+  async createKbChunks(chunks: (typeof kbChunks.$inferInsert)[]) {
+    if (chunks.length === 0) return [];
+    return await db.insert(kbChunks).values(chunks).returning();
+  }
+
+  async getKbChunksByDocument(documentId: number) {
+    return await db.select().from(kbChunks).where(eq(kbChunks.documentId, documentId)).orderBy(kbChunks.chunkIndex);
+  }
+
+  async deleteKbChunksByDocument(documentId: number) {
+    await db.delete(kbChunks).where(eq(kbChunks.documentId, documentId));
   }
 }
 

@@ -10,7 +10,7 @@ I prefer iterative development with clear, concise explanations at each step. I 
 The application features an Express.js backend, a React (TypeScript) frontend with Vite, and PostgreSQL with Drizzle ORM. Styling is managed with Tailwind CSS and shadcn/ui components, and `wouter` is used for frontend routing. The architecture emphasizes role-based access control, multi-tenant isolation, and extensive AI integration.
 
 **Core Data Model:**
-An 18-table PostgreSQL database schema manages entities like `organizations`, `departments`, `users`, `projects`, `tasks`, `task_deliverables`, `task_submissions`, `activity_logs`, `notifications`, `conversations`, `chat_messages`, `token_usage`, and `user_memories`. It includes features for invitation management, task deliverable versioning, and submission tracking.
+A 23-table PostgreSQL database schema manages entities like `organizations`, `departments`, `users`, `projects`, `tasks`, `task_deliverables`, `task_submissions`, `activity_logs`, `notifications`, `conversations`, `chat_messages`, `token_usage`, `user_memories`, `kb_documents`, and `kb_chunks`. It includes features for invitation management, task deliverable versioning, submission tracking, and a knowledge base with pgvector (v0.8.0) for semantic search via 1536-dim embeddings.
 
 **Backend (API):**
 - **RESTful API:** Provides CRUD operations with Zod validation and automatic activity logging.

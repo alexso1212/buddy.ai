@@ -1,7 +1,19 @@
-import { pgTable, serial, varchar, text, integer, boolean, timestamp, numeric, jsonb, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, serial, varchar, text, integer, boolean, timestamp, numeric, jsonb, customType, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+const vector = customType<{ data: number[]; driverParam: string }>({
+  dataType() {
+    return 'vector(1536)';
+  },
+  toDriver(value: number[]): string {
+    return `[${value.join(',')}]`;
+  },
+  fromDriver(value: string): number[] {
+    return JSON.parse(value);
+  },
+});
 
 // ============================================================
 // 1. organizations（组织/公司）
@@ -845,5 +857,68 @@ export const insertTaskSubmissionSchema = createInsertSchema(taskSubmissions).om
 });
 export type InsertTaskSubmission = z.infer<typeof insertTaskSubmissionSchema>;
 export type TaskSubmission = typeof taskSubmissions.$inferSelect;
+
+// ============================================================
+// Knowledge Base — kb_documents（知识库文档）
+// ============================================================
+export const kbDocuments = pgTable('kb_documents', {
+  id: serial('id').primaryKey(),
+  orgId: integer('org_id').references(() => organizations.id).notNull(),
+  uploadedBy: integer('uploaded_by').references(() => users.id).notNull(),
+  title: varchar('title', { length: 500 }).notNull(),
+  fileName: varchar('file_name', { length: 500 }).notNull(),
+  fileType: varchar('file_type', { length: 20 }).notNull(),
+  fileSize: integer('file_size').notNull(),
+  fileUrl: text('file_url').notNull(),
+  category: varchar('category', { length: 50 }).notNull().default('general'),
+  visibility: varchar('visibility', { length: 50 }).notNull().default('org'),
+  visibleDeptIds: text('visible_dept_ids'),
+  status: varchar('status', { length: 50 }).notNull().default('pending'),
+  chunkCount: integer('chunk_count').notNull().default(0),
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ============================================================
+// Knowledge Base — kb_chunks（知识库切片）
+// ============================================================
+export const kbChunks = pgTable('kb_chunks', {
+  id: serial('id').primaryKey(),
+  documentId: integer('document_id').references(() => kbDocuments.id, { onDelete: 'cascade' }).notNull(),
+  orgId: integer('org_id').references(() => organizations.id).notNull(),
+  chunkIndex: integer('chunk_index').notNull(),
+  content: text('content').notNull(),
+  tokenCount: integer('token_count').notNull().default(0),
+  embedding: vector('embedding'),
+  metadata: text('metadata'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const kbDocumentsRelations = relations(kbDocuments, ({ one, many }) => ({
+  organization: one(organizations, { fields: [kbDocuments.orgId], references: [organizations.id] }),
+  uploader: one(users, { fields: [kbDocuments.uploadedBy], references: [users.id] }),
+  chunks: many(kbChunks),
+}));
+
+export const kbChunksRelations = relations(kbChunks, ({ one }) => ({
+  document: one(kbDocuments, { fields: [kbChunks.documentId], references: [kbDocuments.id] }),
+  organization: one(organizations, { fields: [kbChunks.orgId], references: [organizations.id] }),
+}));
+
+export const insertKbDocumentSchema = createInsertSchema(kbDocuments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertKbDocument = z.infer<typeof insertKbDocumentSchema>;
+export type KbDocument = typeof kbDocuments.$inferSelect;
+
+export const insertKbChunkSchema = createInsertSchema(kbChunks).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertKbChunk = z.infer<typeof insertKbChunkSchema>;
+export type KbChunk = typeof kbChunks.$inferSelect;
 
 export * from "./models/auth";
