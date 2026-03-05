@@ -1,0 +1,466 @@
+# task-04: 知识库接入 AI 对话（核心集成）
+
+> **前置条件**：task-01/02/03 完成（KB 表、文件管道、搜索接口均可用）
+> **预计耗时**：30 分钟
+> **改动文件**：
+> 
+> - `server/services/ai/index.ts`（改动约 30 行，新增约 20 行）
+> - `server/services/ai/prompts.ts`（新增约 30 行）
+> - `server/routes.ts`（改动约 5 行）
+>   **风险等级**：中（改动 AI 核心文件，但改动量小且精确定位）
+
+-----
+
+## ⚠️ 重要：先备份
+
+在做任何改动之前，复制以下文件作为备份：
+
+```bash
+cp server/services/ai/index.ts server/services/ai/index.ts.bak
+cp server/services/ai/prompts.ts server/services/ai/prompts.ts.bak
+cp server/routes.ts server/routes.ts.bak
+```
+
+如果改动后 App 崩溃，用备份恢复。
+
+-----
+
+## 目标
+
+当用户在聊天中开启”知识库”模式时，系统自动检索知识库相关文档，注入 AI 的 context，让 AI 基于企业文档回答问题。
+
+-----
+
+## 改动点总览
+
+```
+用户发送消息（知识库模式开启）
+    ↓
+chatStream() 接收 knowledgeBaseEnabled 参数     ← 改动 1: routes.ts 传参
+    ↓
+classifyTask() 新增 'knowledge_qa' 分类         ← 改动 2: index.ts 分类器
+    ↓
+在 buildContextualSystemPrompt 之后，            ← 改动 3: index.ts chatStream
+调用 searchKnowledge() 检索 KB
+    ↓
+将检索结果注入 system prompt                    ← 改动 4: prompts.ts 新模板
+    ↓
+AI 基于文档内容回答，末尾标注来源
+    ↓
+token_usage 记录 purpose='knowledge_qa'          ← 改动 5: routes.ts 记录
+```
+
+-----
+
+## STEP 1：修改 `server/services/ai/prompts.ts`
+
+在文件**末尾**（现有的 `SYSTEM_PROMPT` 之后），新增知识库增强 prompt：
+
+```typescript
+/**
+ * 知识库增强 prompt 模板
+ * 
+ * 当用户开启知识库模式时，将检索到的文档片段注入到 system prompt 中。
+ * 这个 prompt 会追加到 SYSTEM_PROMPT 的末尾。
+ */
+export function buildKnowledgePrompt(chunks: { content: string; documentTitle: string; category: string }[]): string {
+  if (!chunks || chunks.length === 0) return '';
+
+  const chunksText = chunks.map((chunk, i) => 
+    `### 文档片段 ${i + 1}（来源：${chunk.documentTitle}）\n${chunk.content}`
+  ).join('\n\n');
+
+  return `
+
+## 📚 知识库参考文档
+
+以下是从企业知识库中检索到的相关文档片段。请基于这些文档回答用户问题。
+
+${chunksText}
+
+## 知识库回答规则
+- 优先基于以上参考文档回答用户问题
+- 如果参考文档中包含相关信息，基于文档内容给出准确回答
+- 如果参考文档中没有相关信息，明确告知"知识库中暂无相关信息"，然后用你的通用知识尝试回答
+- 回答末尾用 📄 标注来源文档名，格式：📄 来源：文档名1、文档名2
+- 不要编造文档中没有的信息
+- 回答语气保持专业简洁`;
+}
+```
+
+**注意**：不要修改现有的 `SYSTEM_PROMPT` 常量，只新增 `buildKnowledgePrompt` 函数。
+
+-----
+
+## STEP 2：修改 `server/services/ai/index.ts` — 分类器
+
+### 2.1 新增 TaskCategory 类型
+
+**找到**（约第 221 行）：
+
+```typescript
+type TaskCategory = 'title_generation' | 'auto_judgment' | 'quick_reply' | 'general_chat' | 'code_generation' | 'complex_analysis' | 'document_processing';
+```
+
+**替换为**：
+
+```typescript
+type TaskCategory = 'title_generation' | 'auto_judgment' | 'quick_reply' | 'general_chat' | 'code_generation' | 'complex_analysis' | 'document_processing' | 'knowledge_qa';
+```
+
+### 2.2 新增 TASK_MODEL_CONFIGS 配置
+
+**找到** `TASK_MODEL_CONFIGS` 对象（约第 230 行），在 `document_processing` 配置之后，`}` 结束之前，新增：
+
+```typescript
+  knowledge_qa: {
+    model: 'claude-sonnet-4-6',
+    max_tokens: 8192,
+    thinking: { type: 'disabled' },
+    temperature: 0.3,
+  },
+```
+
+### 2.3 新增 CONTEXT_LIMITS 配置
+
+**找到** `CONTEXT_LIMITS` 对象（约第 409 行），在 `document_processing: 6,` 之后新增：
+
+```typescript
+  knowledge_qa: 10,
+```
+
+### 2.4 修改 classifyTask() — 不需要改
+
+**不需要修改 `classifyTask()` 函数本身**。知识库模式是用户手动开启的（前端传 `knowledgeBaseEnabled: true`），不需要 AI 自动分类。在 `chatStream()` 中会直接覆盖分类结果。
+
+-----
+
+## STEP 3：修改 `server/services/ai/index.ts` — chatStream()
+
+### 3.1 修改 chatStream 的 context 参数类型
+
+**找到** `chatStream()` 的签名（约第 345 行）：
+
+```typescript
+export async function* chatStream(
+  message: string,
+  conversationHistory: { role: string; content: string | any[] }[],
+  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean; orgId?: number },
+  attachments?: { type: string; name: string; mimeType: string; base64: string }[]
+)
+```
+
+**在 context 类型中新增两个字段**，改为：
+
+```typescript
+  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean; orgId?: number; knowledgeBaseEnabled?: boolean; userRole?: string; userDeptId?: number | null },
+```
+
+### 3.2 在 chatStream 函数体内，system prompt 构建之后插入 KB 检索
+
+**找到**函数体开头的这几行（约第 351-356 行）：
+
+```typescript
+  const hasAttachments = !!(attachments && attachments.length > 0);
+  const taskCategory = await classifyTask(message, hasAttachments);
+  const config = getConfigForTask(taskCategory, context.model, context.extendedThinking);
+  const modelName = config.model;
+  const { prompt: systemPrompt } = await buildContextualSystemPrompt({ ...context, model: modelName }, 'streaming');
+  const aiClient = getClientForModel(modelName);
+```
+
+**替换为**（改动标注了 `// ← KB 新增`）：
+
+```typescript
+  const hasAttachments = !!(attachments && attachments.length > 0);
+  let taskCategory = await classifyTask(message, hasAttachments);
+  
+  // ← KB 新增：如果开启了知识库模式，覆盖分类
+  if (context.knowledgeBaseEnabled) {
+    taskCategory = 'knowledge_qa';
+  }
+  
+  const config = getConfigForTask(taskCategory, context.model, context.extendedThinking);
+  const modelName = config.model;
+  let { prompt: systemPrompt } = await buildContextualSystemPrompt({ ...context, model: modelName }, 'streaming');
+  
+  // ← KB 新增：知识库检索并注入 prompt
+  let kbSources: string[] = [];
+  if (context.knowledgeBaseEnabled && context.orgId) {
+    try {
+      const { searchKnowledge } = await import('./../../services/kb/search');
+      const { buildKnowledgePrompt } = await import('./prompts');
+      
+      const kbResults = await searchKnowledge({
+        orgId: context.orgId,
+        query: message,
+        topK: 5,
+        userRole: context.userRole || 'member',
+        userDeptId: context.userDeptId || null,
+      });
+      
+      if (kbResults.length > 0) {
+        const kbPrompt = buildKnowledgePrompt(kbResults.map(r => ({
+          content: r.content,
+          documentTitle: r.documentTitle,
+          category: r.category,
+        })));
+        systemPrompt += kbPrompt;
+        kbSources = [...new Set(kbResults.map(r => r.documentTitle))];
+        console.log(`[KB] Injected ${kbResults.length} chunks from: ${kbSources.join(', ')}`);
+      } else {
+        console.log(`[KB] No results found for query: ${message.slice(0, 50)}...`);
+      }
+    } catch (err: any) {
+      console.error(`[KB] Search error (non-fatal):`, err.message);
+      // KB 检索失败不影响正常对话
+    }
+  }
+  
+  const aiClient = getClientForModel(modelName);
+```
+
+**关键点**：
+
+- `let` 替代 `const` 用于 `taskCategory` 和 `systemPrompt`（因为 KB 模式需要修改它们）
+- KB 检索用 dynamic import（`await import`），这样即使 KB 模块有问题也不影响 AI 核心加载
+- 整个 KB 逻辑包在 try-catch 中，失败不影响正常对话
+- `import` 路径是 `./../../services/kb/search`（从 `server/services/ai/index.ts` 到 `server/services/kb/search.ts`）
+
+### 3.3 确认 import 路径
+
+从 `server/services/ai/index.ts` 到 `server/services/kb/search.ts` 的相对路径：
+
+```
+server/services/ai/index.ts  →  ../kb/search
+```
+
+所以 import 应该是：
+
+```typescript
+const { searchKnowledge } = await import('../kb/search');
+```
+
+同理，prompts.ts 的 import：
+
+```typescript
+const { buildKnowledgePrompt } = await import('./prompts');
+```
+
+**让 Replit Agent 根据实际目录结构确定正确的 import 路径。**
+
+-----
+
+## STEP 4：修改 `server/routes.ts` — 传递 KB 参数
+
+**找到** `/api/ai/chat/stream` 路由（约第 891 行）。在这个路由中，找到从 `req.body` 提取参数的位置，以及调用 `aiChatStream()` 的位置。
+
+### 4.1 提取 knowledgeBaseEnabled 参数
+
+在路由处理函数中，找到解构 `req.body` 的位置（类似 `const { message, conversationHistory, ... } = req.body;`），追加：
+
+```typescript
+const knowledgeBaseEnabled = req.body.knowledgeBaseEnabled || false;
+```
+
+### 4.2 传递给 chatStream
+
+找到调用 `aiChatStream()` 或 `chatStream()` 的位置，在 context 对象中追加 KB 相关字段：
+
+原来可能是：
+
+```typescript
+const generator = aiChatStream(message, history, {
+  currentUserId,
+  currentUserName,
+  customSystemPrompt,
+  model,
+  extendedThinking,
+  orgId: req.orgId,
+}, attachments);
+```
+
+改为（追加三个字段）：
+
+```typescript
+const generator = aiChatStream(message, history, {
+  currentUserId,
+  currentUserName,
+  customSystemPrompt,
+  model,
+  extendedThinking,
+  orgId: req.orgId,
+  knowledgeBaseEnabled,                    // ← KB 新增
+  userRole: req.userRole || 'member',       // ← KB 新增
+  userDeptId: req.userDeptId || null,       // ← KB 新增
+}, attachments);
+```
+
+### 4.3 Token 用量记录标注知识库
+
+在同一个路由中，找到记录 token 用量的位置（调用 `recordTokenUsage` 或 `storage.createTokenUsage` 的地方），把 `purpose` 字段设为条件值：
+
+```typescript
+purpose: knowledgeBaseEnabled ? 'knowledge_qa' : 'chat',
+```
+
+如果现有代码中 `purpose` 是硬编码的 `'chat'`，改为上面的条件表达式。
+
+-----
+
+## STEP 5：处理 codeToolChatStream 路径
+
+在 `/api/ai/chat/stream` 路由中，可能有两个 generator 分支：
+
+- `codeToolChatStream`（Anthropic native SDK，代码上下文模式）
+- `aiChatStream`（OpenAI compatible，普通聊天模式）
+
+**知识库模式只需要注入到 `aiChatStream` 路径**。`codeToolChatStream` 是代码分析模式，不需要知识库。
+
+所以：如果用户同时开启了 codeContext 和 knowledgeBase（极端情况），`codeContext` 优先，忽略 `knowledgeBase`。在路由中的分支逻辑应该是：
+
+```typescript
+if (codeContextEnabled) {
+  // 走 codeToolChatStream，不注入 KB
+  generator = codeToolChatStream(...);
+} else {
+  // 走 aiChatStream，KB 注入已在 chatStream 函数内部处理
+  generator = aiChatStream(message, history, {
+    ...context,
+    knowledgeBaseEnabled,
+    userRole: req.userRole || 'member',
+    userDeptId: req.userDeptId || null,
+  }, attachments);
+}
+```
+
+-----
+
+## STEP 6：确认 userRole 和 userDeptId 在 req 上可用
+
+在 routes.ts 中的 `/api/ai/chat/stream` 路由里，需要获取当前用户的 role 和 deptId。
+
+检查 `authMiddleware` 是否在 `req` 上设置了这些字段：
+
+- `req.userRole` — 如果没有，从数据库查：`const user = await storage.getUserById(req.currentUserId); const userRole = user?.role || 'member';`
+- `req.userDeptId` — 如果没有，同理：`const userDeptId = user?.deptId || null;`
+
+**最安全的方式**：在路由处理函数的开头直接查用户信息：
+
+```typescript
+// 在路由处理函数内部
+const currentUser = await storage.getUserById(req.currentUserId);
+const userRole = currentUser?.role || 'member';
+const userDeptId = currentUser?.deptId || null;
+```
+
+-----
+
+## 不要改的文件
+
+以下文件 **完全不要动**：
+
+- `server/services/ai/actionExecutor.ts`
+- `server/services/ai/actionSchemas.ts`
+- `server/services/ai/codeTools.ts`
+- `server/services/ai/codeContext.ts`
+- `server/services/ai/verdictService.ts`
+- `server/services/ai/webSearch.ts`
+- `server/services/ai/tokenCost.ts`
+- `client/` 目录下的任何文件（前端改动在 task-05/06）
+
+-----
+
+## 验证清单
+
+### 基础验证
+
+- [ ] `npm run dev` 启动正常
+- [ ] 现有 AI 对话功能不受影响（不开 KB 模式时一切照旧）
+- [ ] 现有任务管理功能正常
+
+### 功能验证（用 curl 或在浏览器 console 中测试）
+
+**测试 1：知识库模式关闭（默认行为，不应有任何变化）**
+
+用 agent 页面正常发一条消息（比如 “你好”），确认回复正常。
+
+**测试 2：知识库模式开启（API 测试）**
+
+```bash
+# 先确保知识库中有文档（task-02 上传的）
+# 然后测试知识库对话
+curl -X POST "http://localhost:5000/api/ai/chat/stream" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -d '{
+    "message": "公司有什么制度？",
+    "conversationHistory": [],
+    "knowledgeBaseEnabled": true,
+    "currentUserId": 1
+  }'
+```
+
+预期：
+
+- SSE 流中的 AI 回答应该引用知识库中的文档内容
+- 回答末尾有 “📄 来源：文档名” 标注
+- 服务器日志中看到 `[KB] Injected X chunks from: 文档名`
+
+**测试 3：知识库无相关内容**
+
+```bash
+curl -X POST "http://localhost:5000/api/ai/chat/stream" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -d '{
+    "message": "量子力学的基本原理是什么？",
+    "conversationHistory": [],
+    "knowledgeBaseEnabled": true,
+    "currentUserId": 1
+  }'
+```
+
+预期：
+
+- 服务器日志中看到 `[KB] No results found for query: ...`
+- AI 应该说”知识库中暂无相关信息”，然后用通用知识回答
+
+**测试 4：Token 用量标记**
+
+检查 `token_usage` 表，确认知识库对话的 purpose 是 `knowledge_qa`：
+
+```sql
+SELECT id, purpose, model, total_tokens FROM token_usage ORDER BY created_at DESC LIMIT 5;
+```
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读项目根目录的 `task-04-kb-ai-integration.md`，按步骤执行。
+> 
+> **⚠️ 这是最关键的 task，改动的是 AI 核心文件。请严格按文档操作。**
+> 
+> 重要规则：
+> 
+> 1. **先备份** index.ts、prompts.ts、routes.ts（改坏了可以恢复）
+> 1. prompts.ts 只新增 `buildKnowledgePrompt` 函数，**不修改**现有的 `SYSTEM_PROMPT`
+> 1. index.ts 的改动集中在 `chatStream()` 函数，其他函数（chat、codeToolChatStream、extractMemories 等）**完全不动**
+> 1. KB 检索逻辑必须包在 try-catch 中，失败不能影响正常对话
+> 1. import 路径根据项目实际目录结构确定（从 `server/services/ai/` 到 `server/services/kb/`）
+> 1. 改完后先用 `npm run dev` 确认启动正常，再做功能测试
+> 1. 如果启动报错，用备份恢复，告诉我错误信息
+
+-----
+
+## 完成后告诉 Claude
+
+回来告诉我：
+
+1. “task-04 完成” 或 “task-04 有问题：XXX”
+1. 知识库对话测试结果：AI 的回答是否引用了文档内容？是否有来源标注？
+1. 服务器日志中是否看到了 `[KB] Injected X chunks` 或 `[KB] No results found`
+1. 不开 KB 模式时现有功能是否正常
+
+然后我出 task-05（管理 UI）和 task-06（聊天界面开关），这两个是前端改动，风险低。
