@@ -1,0 +1,675 @@
+# task-09: 企业智能初始化（前端 Onboarding 改造）
+
+> **前置条件**：task-08 完成（后端 /api/setup/analyze 和 /api/setup/confirm 可用）
+> **预计耗时**：2-3 天
+> **新增文件**：`client/src/pages/smart-setup.tsx`（或改造现有 OnboardingPage）
+> **改动文件**：`client/src/App.tsx`（路由调整）、可能改 `OnboardingPage.tsx`
+> **风险等级**：低（主要是新增页面，现有页面改动小）
+
+-----
+
+## 目标
+
+新用户注册后（或已有 owner 主动触发），看到一个”企业智能初始化”流程：上传文件包 → AI分析进度 → 确认/编辑结果 → 一键完成设置。
+
+-----
+
+## 设计原则
+
+1. **和现有 Onboarding 共存**——不删除现有的 OnboardingPage，而是在其中增加”智能初始化”入口，或者作为独立页面
+1. **可跳过**——用户可以选择跳过智能初始化，走手动设置
+1. **可重复触发**——已设置过的组织也可以从设置页面再次上传文件补充
+1. **遵循现有代码风格**——shadcn/ui、TanStack Query、wouter、Tailwind
+
+-----
+
+## 整体用户流程
+
+```
+注册成功 / 点击「智能初始化」
+         ↓
+    ┌─── Step 1：上传文件 ───┐
+    │  ZIP 拖拽 或 多文件选择  │
+    │  [上传并分析]  [跳过]   │
+    └──────────┬──────────────┘
+               ↓
+    ┌─── Step 2：AI 分析中 ───┐
+    │  解压文件... ✅           │
+    │  分析文档内容... ✅       │
+    │  识别组织架构... ⏳       │
+    │  生成岗位职责... ⏳       │
+    │                          │
+    │  预计需要 1-3 分钟        │
+    └──────────┬──────────────┘
+               ↓
+    ┌─── Step 3：确认结果 ────┐
+    │  公司名称  [可编辑]      │
+    │  部门结构  [可编辑/增删]  │
+    │  岗位职责  [可编辑/增删]  │
+    │  文档分类  [可改分类]     │
+    │                          │
+    │  [确认并完成设置]         │
+    └──────────┬──────────────┘
+               ↓
+    ┌─── Step 4：设置完成 ────┐
+    │  ✅ 已创建 5 个部门      │
+    │  ✅ 已创建 8 个岗位      │
+    │  ✅ 已导入 12 份文档     │
+    │                          │
+    │  [进入工作台]            │
+    └──────────────────────────┘
+```
+
+-----
+
+## STEP 1：创建 `client/src/pages/smart-setup.tsx`
+
+### 页面状态机
+
+```typescript
+type SetupStep = 'upload' | 'analyzing' | 'confirm' | 'complete';
+
+const [step, setStep] = useState<SetupStep>('upload');
+const [profile, setProfile] = useState<EnterpriseProfile | null>(null);
+const [cacheKey, setCacheKey] = useState<string>('');
+const [fileCount, setFileCount] = useState(0);
+const [setupResult, setSetupResult] = useState<any>(null);
+```
+
+### Step 1 组件：上传文件
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                                                          │
+│   🏢 搭建你的企业 AI 大脑                                │
+│                                                          │
+│   上传公司文件，AI 自动识别组织架构、岗位职责，            │
+│   并将所有文档导入知识库。                                │
+│                                                          │
+│   ┌──────────────────────────────────────────────────┐   │
+│   │                                                  │   │
+│   │      📁 拖拽文件到这里                            │   │
+│   │         或 点击选择文件                            │   │
+│   │                                                  │   │
+│   │      支持 ZIP 压缩包 或 多个文件                   │   │
+│   │      格式：PDF / Word / TXT / MD                  │   │
+│   │                                                  │   │
+│   └──────────────────────────────────────────────────┘   │
+│                                                          │
+│   💡 建议上传：                                          │
+│   员工手册、组织架构图、岗位说明书、                       │
+│   考核标准、规章制度、劳动合同模板                         │
+│                                                          │
+│   已选择：3 个文件（员工手册.pdf, 岗位说明.docx, ...）    │
+│                                                          │
+│   [开始分析]                              [跳过，手动设置] │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+**关键实现**：
+
+```typescript
+// 文件选择（支持 ZIP 和多文件）
+const fileInputRef = useRef<HTMLInputElement>(null);
+const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+
+// 拖拽区域
+function handleDrop(e: React.DragEvent) {
+  e.preventDefault();
+  const files = Array.from(e.dataTransfer.files);
+  setSelectedFiles(prev => [...prev, ...files]);
+}
+
+// 上传并触发分析
+const analyzeMutation = useMutation({
+  mutationFn: async (files: File[]) => {
+    const formData = new FormData();
+    files.forEach(file => formData.append('files', file));
+
+    const res = await fetch('/api/setup/analyze', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || '分析失败');
+    }
+    return res.json();
+  },
+  onSuccess: (data) => {
+    setProfile(data.data.profile);
+    setCacheKey(data.data.cacheKey);
+    setFileCount(data.data.fileCount);
+    setStep('confirm'); // 跳过 analyzing 中间态（如果请求够快）
+  },
+  onError: (err: Error) => {
+    toast({ title: '分析失败', description: err.message, variant: 'destructive' });
+    setStep('upload');
+  },
+});
+
+function handleStartAnalysis() {
+  if (selectedFiles.length === 0) return;
+  setStep('analyzing');
+  analyzeMutation.mutate(selectedFiles);
+}
+```
+
+**文件输入**：
+
+```typescript
+<input
+  type="file"
+  ref={fileInputRef}
+  className="hidden"
+  multiple
+  accept=".pdf,.docx,.txt,.md,.zip"
+  onChange={(e) => {
+    const files = Array.from(e.target.files || []);
+    setSelectedFiles(prev => [...prev, ...files]);
+  }}
+/>
+```
+
+### Step 2 组件：AI 分析中
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                                                          │
+│   🤖 AI 正在分析你的企业文件...                           │
+│                                                          │
+│   ┌──────────────────────────────────────────────────┐   │
+│   │  ✅ 已解压 3 个文件                               │   │
+│   │  ✅ 正在分析文档内容...                            │   │
+│   │  ⏳ 识别组织架构...                                │   │
+│   │  ○  生成岗位职责                                   │   │
+│   └──────────────────────────────────────────────────┘   │
+│                                                          │
+│   预计需要 1-3 分钟，请耐心等待                           │
+│                                                          │
+│   ┌──────────────────────────────────────┐               │
+│   │ ████████████░░░░░░░░░  60%           │               │
+│   └──────────────────────────────────────┘               │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+**实现**：这个步骤其实是 `analyzeMutation` 的 loading 状态。可以用一个模拟的进度条（因为我们不知道后端实际进度）：
+
+```typescript
+// 模拟进度（实际进度未知，用定时器模拟）
+const [progress, setProgress] = useState(0);
+const [progressText, setProgressText] = useState('解压文件中...');
+
+useEffect(() => {
+  if (step !== 'analyzing') return;
+  
+  const stages = [
+    { pct: 20, text: '✅ 文件解压完成', delay: 2000 },
+    { pct: 40, text: '✅ 正在分析文档内容...', delay: 5000 },
+    { pct: 60, text: '✅ 识别组织架构中...', delay: 10000 },
+    { pct: 80, text: '⏳ 生成岗位职责...', delay: 20000 },
+  ];
+
+  const timers: NodeJS.Timeout[] = [];
+  stages.forEach(stage => {
+    timers.push(setTimeout(() => {
+      setProgress(stage.pct);
+      setProgressText(stage.text);
+    }, stage.delay));
+  });
+
+  return () => timers.forEach(clearTimeout);
+}, [step]);
+
+// analyzeMutation 成功后自动跳到 confirm
+```
+
+### Step 3 组件：确认/编辑结果（核心UI）
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                                                          │
+│   🤖 AI 从你的文件中识别了以下信息                        │
+│   请检查并确认，有误可直接修改                             │
+│                                                          │
+│   ── 公司信息 ──────────────────────────────────────     │
+│                                                          │
+│   公司名称                                               │
+│   [鑫达国际贸易有限公司_________________________] [✏️]    │
+│                                                          │
+│   ── 部门结构 ──────────────────────────── [+ 添加] ──   │
+│                                                          │
+│   📁 销售部                                     [✏️][✕]  │
+│      销售策略制定与客户关系维护                            │
+│      ├── 📁 大客户组                            [✏️][✕]  │
+│      └── 📁 渠道组                              [✏️][✕]  │
+│   📁 行政部                                     [✏️][✕]  │
+│      规章制度管理与办公行政                                │
+│   📁 财务部                                     [✏️][✕]  │
+│      财务核算与资金管理                                    │
+│                                                          │
+│   ── 岗位角色 ──────────────────────────── [+ 添加] ──   │
+│                                                          │
+│   👤 销售经理 → 销售部                          [✏️][✕]  │
+│      职责：制定销售目标；管理销售团队；维护大客户关系        │
+│   👤 行政主管 → 行政部                          [✏️][✕]  │
+│      职责：制度管理；考勤管理；办公采购                     │
+│   👤 出纳 → 财务部                              [✏️][✕]  │
+│      职责：日常收支；报销审核                              │
+│                                                          │
+│   ── 文档分类 ──────────────────────────────────────     │
+│                                                          │
+│   📄 员工手册.pdf                                        │
+│      分类：[制度 ▼]  可见：[全员 ▼]                       │
+│      摘要：公司规章制度汇编，包含考勤、休假、报销等规定      │
+│   📄 岗位说明书.docx                                     │
+│      分类：[岗位说明 ▼]  可见：[全员 ▼]                   │
+│      摘要：销售经理和行政主管的岗位职责与任职要求            │
+│   📄 劳动合同模板.pdf                                    │
+│      分类：[合同 ▼]  可见：[仅管理层 ▼]                   │
+│      摘要：标准劳动合同模板                                │
+│                                                          │
+│   ─────────────────────────────────────────────────     │
+│                                                          │
+│   [确认并完成设置]                          [返回重新上传]  │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+**关键实现**：profile 状态是可编辑的。每个编辑操作都更新 `profile` state：
+
+```typescript
+// 编辑公司名称
+function updateCompanyName(name: string) {
+  setProfile(prev => prev ? { ...prev, companyName: name } : prev);
+}
+
+// 删除部门
+function removeDepartment(index: number) {
+  setProfile(prev => {
+    if (!prev) return prev;
+    const newDepts = [...prev.departments];
+    newDepts.splice(index, 1);
+    return { ...prev, departments: newDepts };
+  });
+}
+
+// 添加部门
+function addDepartment() {
+  setProfile(prev => {
+    if (!prev) return prev;
+    return {
+      ...prev,
+      departments: [...prev.departments, { name: '新部门', description: '', children: [] }]
+    };
+  });
+}
+
+// 编辑部门名称
+function updateDepartmentName(index: number, name: string) {
+  setProfile(prev => {
+    if (!prev) return prev;
+    const newDepts = [...prev.departments];
+    newDepts[index] = { ...newDepts[index], name };
+    return { ...prev, departments: newDepts };
+  });
+}
+
+// 类似地：编辑/删除/添加 jobRoles、修改 fileClassifications 的 category 和 visibility
+```
+
+**编辑模式**：点击 ✏️ 进入行内编辑（input 替换文字），失焦或回车保存。用 shadcn/ui 的 `Input` 组件。
+
+**分类和可见性下拉**：用 shadcn/ui 的 `Select` 组件。
+
+```typescript
+const CATEGORIES = [
+  { value: 'policy', label: '制度' },
+  { value: 'contract', label: '合同' },
+  { value: 'jd', label: '岗位说明' },
+  { value: 'manual', label: '操作手册' },
+  { value: 'general', label: '其他' },
+];
+
+const VISIBILITY = [
+  { value: 'org', label: '全员可见' },
+  { value: 'admin', label: '仅管理层' },
+  { value: 'department', label: '指定部门' },
+];
+```
+
+**确认提交**：
+
+```typescript
+const confirmMutation = useMutation({
+  mutationFn: async () => {
+    const res = await fetch('/api/setup/confirm', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ profile, cacheKey }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || '设置失败');
+    }
+    return res.json();
+  },
+  onSuccess: (data) => {
+    setSetupResult(data.data);
+    setStep('complete');
+  },
+  onError: (err: Error) => {
+    toast({ title: '设置失败', description: err.message, variant: 'destructive' });
+  },
+});
+```
+
+### Step 4 组件：设置完成
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                                                          │
+│                     🎉                                   │
+│                                                          │
+│           企业 AI 大脑搭建完成！                          │
+│                                                          │
+│   ✅ 已创建 5 个部门（含 2 个子部门）                     │
+│   ✅ 已创建 3 个岗位角色                                  │
+│   ✅ 已导入 6 份文档到知识库                              │
+│                                                          │
+│   你的团队现在可以：                                      │
+│   • 用 AI 查询公司制度和流程                              │
+│   • 智能分配任务（AI 会参考岗位职责）                      │
+│   • 团队协作管理                                         │
+│                                                          │
+│   接下来你可以：                                         │
+│   → 邀请团队成员加入                                     │
+│   → 试试和 AI 对话                                       │
+│                                                          │
+│   [进入工作台]                           [邀请团队成员]    │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+```typescript
+// 进入工作台
+function goToWorkspace() {
+  window.location.href = '/agent'; // 或用 wouter 的 navigate
+}
+
+// 邀请成员（跳转到团队管理页）
+function goToInvite() {
+  window.location.href = '/team';
+}
+```
+
+-----
+
+## STEP 2：路由和入口配置
+
+### 在 App.tsx 注册路由
+
+```typescript
+import SmartSetup from './pages/smart-setup';
+
+<Route path="/setup" component={SmartSetup} />
+```
+
+### 入口点（三个入口）
+
+**入口1：新用户 Onboarding**
+
+在现有的 `OnboardingPage.tsx` 中，创建组织完成后，添加一个选择：
+
+```
+组织创建成功！
+
+接下来你想：
+[📁 上传公司文件，AI 自动设置]  ← 跳转到 /setup
+[✍️ 手动设置部门和岗位]         ← 继续现有 Onboarding 流程
+```
+
+**实现**：在 OnboardingPage 的最后一步（组织创建成功后），添加两个按钮。点击”上传公司文件”跳转到 `/setup`。
+
+如果 OnboardingPage 的代码结构不方便修改，也可以在注册后的跳转逻辑中判断：
+
+```typescript
+// 注册/登录后，如果组织没有部门和知识库文档，自动跳转到 /setup
+const setupStatus = await fetch('/api/setup/status', { headers: { Authorization: `Bearer ${token}` } });
+const status = await setupStatus.json();
+if (!status.data.isSetupComplete) {
+  navigate('/setup');
+}
+```
+
+**入口2：侧边栏设置页**
+
+在设置页面（`/settings`）中，添加”重新初始化”或”补充企业文件”入口：
+
+```typescript
+// 在 settings 页面的某个合适位置
+<Button variant="outline" onClick={() => navigate('/setup')}>
+  <Upload className="w-4 h-4 mr-2" />
+  上传企业文件（AI 智能设置）
+</Button>
+```
+
+**入口3：知识库管理页**
+
+在知识库管理页面（task-05 创建的）的顶部，添加”批量上传”按钮：
+
+```typescript
+// knowledge-base.tsx 的顶部操作栏
+<Button variant="outline" onClick={() => navigate('/setup')}>
+  <FolderUp className="w-4 h-4 mr-2" />
+  批量上传 + AI 分类
+</Button>
+```
+
+-----
+
+## STEP 3：处理二次初始化
+
+如果用户已经设置过（已有部门和知识库），再次上传文件应该是**追加**而不是**覆盖**。
+
+在 Step 3 确认页面顶部显示提醒：
+
+```typescript
+// 获取当前设置状态
+const { data: setupStatus } = useQuery({
+  queryKey: ['/api/setup/status'],
+  queryFn: async () => {
+    const res = await fetch('/api/setup/status', {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    return (await res.json()).data;
+  },
+});
+
+// 如果已有数据，显示提醒
+{setupStatus?.isSetupComplete && (
+  <div className="rounded-lg border p-3 text-sm text-muted-foreground mb-4">
+    ℹ️ 你的组织已有 {setupStatus.departmentCount} 个部门和 {setupStatus.kbDocumentCount} 份知识库文档。
+    本次操作将<strong>新增</strong>以下内容，不会覆盖已有设置。
+  </div>
+)}
+```
+
+后端 `confirmAndSetup` 已经是追加模式（createDepartment / createJobRole 不会删除已有的），所以不需要额外处理。但如果AI识别出的部门名和已有部门重名，会创建重复部门。后端可以加去重逻辑，也可以在前端确认页面提示”销售部 已存在，将跳过”。
+
+**简单方案（第一版）**：不做去重，让用户在确认页面手动删除重复的。
+**增强方案（后续）**：后端检查同名部门/岗位，自动标记并让用户选择”跳过”还是”新建”。
+
+-----
+
+## STEP 4：已选文件列表组件
+
+在 Step 1 中，用户选了文件后显示文件列表，可以删除单个文件：
+
+```typescript
+function FileList({ files, onRemove }: { files: File[]; onRemove: (index: number) => void }) {
+  return (
+    <div className="space-y-2 mt-4">
+      {files.map((file, i) => (
+        <div key={i} className="flex items-center justify-between p-2 rounded border text-sm">
+          <div className="flex items-center gap-2">
+            <FileTypeIcon type={file.name.split('.').pop() || ''} />
+            <span>{file.name}</span>
+            <span className="text-muted-foreground">({formatFileSize(file.size)})</span>
+          </div>
+          <Button variant="ghost" size="icon" onClick={() => onRemove(i)}>
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+      ))}
+      <p className="text-sm text-muted-foreground">
+        共 {files.length} 个文件，{formatFileSize(files.reduce((s, f) => s + f.size, 0))}
+      </p>
+    </div>
+  );
+}
+```
+
+-----
+
+## STEP 5：错误处理和边界情况
+
+### 分析超时
+
+```typescript
+// analyzeMutation 可能因为文件多/AI慢而超时
+// 设置前端超时提示（3分钟）
+useEffect(() => {
+  if (step !== 'analyzing') return;
+  const timer = setTimeout(() => {
+    if (step === 'analyzing') {
+      toast({ title: '分析时间较长', description: '文件较多，请继续等待...' });
+    }
+  }, 180000); // 3分钟
+  return () => clearTimeout(timer);
+}, [step]);
+```
+
+### 空结果
+
+```typescript
+// AI 没有识别出任何部门和岗位
+if (profile && profile.departments.length === 0 && profile.jobRoles.length === 0) {
+  // 显示提示：AI 未能从文件中识别出组织架构信息
+  // 但文件仍然会导入知识库
+  // 提供手动添加的入口
+}
+```
+
+### 文件格式提示
+
+```typescript
+// 用户上传了不支持的格式
+const unsupported = selectedFiles.filter(f => {
+  const ext = f.name.split('.').pop()?.toLowerCase();
+  return !['pdf', 'docx', 'txt', 'md', 'zip'].includes(ext || '');
+});
+if (unsupported.length > 0) {
+  toast({
+    title: '部分文件不支持',
+    description: `${unsupported.map(f => f.name).join(', ')} 将被跳过。支持格式：PDF/Word/TXT/MD/ZIP`,
+  });
+}
+```
+
+-----
+
+## 验证清单
+
+### 基础验证
+
+- [ ] `/setup` 页面正常加载
+- [ ] 从 Onboarding 能跳转到 /setup
+- [ ] 从设置页/知识库页能跳转到 /setup
+
+### Step 1 验证
+
+- [ ] 拖拽文件到上传区域正常
+- [ ] 点击选择文件正常（多文件）
+- [ ] ZIP 文件可选择
+- [ ] 已选文件列表显示正确
+- [ ] 能删除单个已选文件
+- [ ] 点击”开始分析”触发上传
+
+### Step 2 验证
+
+- [ ] 显示分析进度动画
+- [ ] 进度文字逐步更新
+- [ ] 分析完成自动跳到 Step 3
+
+### Step 3 验证
+
+- [ ] 公司名称显示正确，可编辑
+- [ ] 部门列表显示正确（含层级）
+- [ ] 能编辑部门名称
+- [ ] 能删除部门
+- [ ] 能新增部门
+- [ ] 岗位列表显示正确
+- [ ] 能编辑岗位信息
+- [ ] 能删除岗位
+- [ ] 能新增岗位
+- [ ] 文档分类显示正确
+- [ ] 能修改文档分类下拉
+- [ ] 能修改文档可见性下拉
+- [ ] 点击”确认并完成设置”触发写入
+
+### Step 4 验证
+
+- [ ] 显示完成统计（X个部门、X个岗位、X份文档）
+- [ ] “进入工作台”跳转正常
+- [ ] “邀请团队成员”跳转正常
+
+### 权限验证
+
+- [ ] 只有 owner 能访问 /setup（admin 和 member 看到无权限提示或重定向）
+
+### 样式验证
+
+- [ ] 暗色主题正常
+- [ ] 移动端布局正常
+- [ ] 和其他页面风格一致
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读项目根目录的 `task-09-smart-setup-frontend.md`，创建企业智能初始化前端页面。
+> 
+> 重要规则：
+> 
+> 1. **先看现有的 OnboardingPage.tsx 代码**，理解当前的引导流程，在此基础上添加智能初始化入口
+> 1. 新建 `smart-setup.tsx` 页面，不要大幅改动现有 OnboardingPage
+> 1. 使用项目已有的 shadcn/ui 组件（Dialog/Select/Input/Button/Badge/Card）
+> 1. 数据获取用 TanStack React Query
+> 1. 上传用 FormData + fetch，不要用 axios
+> 1. Step 3 的编辑是行内编辑（点击文字变成 input），不是弹窗
+> 1. 确认提交后调用 `POST /api/setup/confirm`，body 是 `{ profile, cacheKey }`
+> 1. profile 是用户可能修改过的版本（前端 state），不是原始 AI 返回的
+> 1. 完成后用测试 ZIP 文件跑完整流程
+
+-----
+
+## 完成后告诉 Claude
+
+回来告诉我：
+
+1. “task-09 完成” 或 “task-09 有问题：XXX”
+1. 截图：Step 1 上传页面
+1. 截图：Step 3 确认/编辑页面（AI识别的结果）
+1. 截图：Step 4 完成页面
+1. 从设置页和知识库页能跳转到 /setup 吗？
+
+task-09 完成后，企业智能初始化功能就完整了：
+注册 → 上传文件包 → AI自动分析 → 确认 → 一键设置完成。
+这就是会销现场能演示的”3分钟把整个公司装进AI”的效果。
