@@ -774,8 +774,24 @@ function Sidebar({
                         <div style={{ padding: '20px 20px 8px 28px', fontSize: 14.5, fontWeight: 500, color: '#C4703F' }} data-testid="text-recents-label">
                           最近对话
                         </div>
-                        {filteredRecent.map(renderConvoItem)}
+                        {filteredRecent.slice(0, 10).map(renderConvoItem)}
                       </>
+                    )}
+                    {!q && (starredConvs.length + recentConvs.length) > 0 && (
+                      <div style={{ padding: '16px 28px 8px' }}>
+                        <Link
+                          href="/chats"
+                          onClick={() => {
+                            if (window.innerWidth < 768) {
+                              setSidebarOpen(false);
+                            }
+                          }}
+                          style={{ fontSize: 13, color: '#7A7874', cursor: 'pointer', textDecoration: 'none' }}
+                          data-testid="link-view-all-chats"
+                        >
+                          查看所有对话 →
+                        </Link>
+                      </div>
                     )}
                   </>
                 );
