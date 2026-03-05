@@ -14,6 +14,7 @@ A 24-table PostgreSQL database schema manages entities like `organizations`, `de
 
 **Backend (API):**
 - **RESTful API:** Provides CRUD operations with Zod validation and automatic activity logging.
+- **Cross-Module Stats APIs:** `GET /api/departments/stats` returns per-department task aggregates (total, active, done, overdue, dueSoon, blocked, urged) as `DeptStatsMap`. `GET /api/users/stats` returns per-user task aggregates as `UserStatsMap`. Both filter by orgId. Used by dashboard, team page, and organization page for data linkage.
 - **Role-Based Access Control:** Differentiates access for 'owner', 'admin', 'head', and 'member' roles.
 - **Organization Management API:** Handles organization creation, searching, join requests, and invite code management.
 - **AI Integration:** Dedicated API endpoints for AI chat, action confirmation, verdict judgment, and assignment auto-judgment.

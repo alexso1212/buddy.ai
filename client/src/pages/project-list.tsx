@@ -38,24 +38,32 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertProjectSchema, type Project, type User } from "@shared/schema";
+import { insertProjectSchema, type Project, type User, type Department } from "@shared/schema";
 import { z } from "zod";
 
-type ProjectWithOwner = Project & {
+type ProjectWithDetails = Project & {
   owner: User | null;
+  department: Department | null;
+  taskCount: number;
+  doneCount: number;
 };
 
 type ProjectsResponse = {
-  data: ProjectWithOwner[];
+  data: ProjectWithDetails[];
 };
 
 type UsersResponse = {
   data: User[];
 };
 
+type DepartmentsResponse = {
+  data: Department[];
+};
+
 const projectFormSchema = insertProjectSchema.extend({
   startDate: z.union([z.string(), z.date()]).optional(),
   targetDate: z.union([z.string(), z.date()]).optional(),
+  deptId: z.number().optional().nullable(),
 });
 
 type ProjectFormValues = z.infer<typeof projectFormSchema>;
@@ -85,10 +93,12 @@ function NewProjectModal({
   isOpen,
   onClose,
   users,
+  departments,
 }: {
   isOpen: boolean;
   onClose: () => void;
   users: User[];
+  departments: Department[];
 }) {
   const form = useForm<ProjectFormValues>({
     resolver: zodResolver(projectFormSchema),
@@ -98,6 +108,7 @@ function NewProjectModal({
       name: "",
       description: "",
       ownerId: undefined,
+      deptId: undefined,
       startDate: undefined,
       targetDate: undefined,
     },
@@ -146,7 +157,7 @@ function NewProjectModal({
                 <FormItem>
                   <FormLabel>项目名称 *</FormLabel>
                   <FormControl>
-                    <Input placeholder="输入项目名称" {...field} />
+                    <Input placeholder="输入项目名称" {...field} data-testid="input-project-name" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -160,8 +171,37 @@ function NewProjectModal({
                 <FormItem>
                   <FormLabel>项目描述</FormLabel>
                   <FormControl>
-                    <Textarea placeholder="输入项目描述" {...field} value={field.value ?? ""} />
+                    <Textarea placeholder="输入项目描述" {...field} value={field.value ?? ""} data-testid="input-project-description" />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="deptId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>所属部门</FormLabel>
+                  <Select
+                    onValueChange={(value) => field.onChange(value === "__none__" ? null : parseInt(value))}
+                    value={field.value ? String(field.value) : "__none__"}
+                  >
+                    <FormControl>
+                      <SelectTrigger data-testid="select-project-department">
+                        <SelectValue placeholder="选择所属部门" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="__none__">无</SelectItem>
+                      {departments.map((dept) => (
+                        <SelectItem key={dept.id} value={String(dept.id)} data-testid={`option-dept-${dept.id}`}>
+                          {dept.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}
@@ -178,7 +218,7 @@ function NewProjectModal({
                     value={field.value ? String(field.value) : ""}
                   >
                     <FormControl>
-                      <SelectTrigger>
+                      <SelectTrigger data-testid="select-project-owner">
                         <SelectValue placeholder="选择项目负责人" />
                       </SelectTrigger>
                     </FormControl>
@@ -202,7 +242,7 @@ function NewProjectModal({
                 <FormItem>
                   <FormLabel>开始日期</FormLabel>
                   <FormControl>
-                    <Input type="date" {...field} value={field.value instanceof Date ? field.value.toISOString().split('T')[0] : field.value ?? ""} />
+                    <Input type="date" {...field} value={field.value instanceof Date ? field.value.toISOString().split('T')[0] : field.value ?? ""} data-testid="input-project-start-date" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -216,7 +256,7 @@ function NewProjectModal({
                 <FormItem>
                   <FormLabel>目标日期</FormLabel>
                   <FormControl>
-                    <Input type="date" {...field} value={field.value instanceof Date ? field.value.toISOString().split('T')[0] : field.value ?? ""} />
+                    <Input type="date" {...field} value={field.value instanceof Date ? field.value.toISOString().split('T')[0] : field.value ?? ""} data-testid="input-project-target-date" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -234,7 +274,6 @@ function NewProjectModal({
               </Button>
               <Button
                 type="submit"
-                className="bg-blue-600 text-white hover:bg-blue-700"
                 disabled={mutation.isPending}
                 data-testid="btn-submit-project"
               >
@@ -260,8 +299,13 @@ export default function ProjectList() {
     queryKey: ["/api/users"],
   });
 
+  const departmentsQuery = useQuery<DepartmentsResponse>({
+    queryKey: ["/api/departments"],
+  });
+
   const projects = projectsQuery.data?.data ?? [];
   const users = usersQuery.data?.data ?? [];
+  const departments = departmentsQuery.data?.data ?? [];
 
   const deleteProjectMutation = useMutation({
     mutationFn: async (projectId: number) => {
@@ -287,7 +331,6 @@ export default function ProjectList() {
 
   return (
     <div className="p-4 md:p-6">
-      {/* Responsive Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 md:gap-0 mb-6">
         <h1
           className="text-xl md:text-3xl font-bold"
@@ -304,14 +347,15 @@ export default function ProjectList() {
         </Button>
       </div>
 
-      {/* Desktop Table */}
       <div className="hidden md:block bg-card rounded-lg shadow-sm overflow-hidden">
         <Table data-testid="project-table">
           <TableHeader className="bg-muted">
             <TableRow>
               <TableHead>名称</TableHead>
               <TableHead>状态</TableHead>
+              <TableHead>所属部门</TableHead>
               <TableHead>负责人</TableHead>
+              <TableHead>任务数</TableHead>
               <TableHead>开始日期</TableHead>
               <TableHead>目标日期</TableHead>
               <TableHead>操作</TableHead>
@@ -320,13 +364,13 @@ export default function ProjectList() {
           <TableBody>
             {projectsQuery.isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8">
+                <TableCell colSpan={8} className="text-center py-8">
                   加载中...
                 </TableCell>
               </TableRow>
             ) : projects.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8">
+                <TableCell colSpan={8} className="text-center py-8">
                   暂无项目
                 </TableCell>
               </TableRow>
@@ -346,8 +390,16 @@ export default function ProjectList() {
                       {project.status}
                     </Badge>
                   </TableCell>
+                  <TableCell data-testid={`project-dept-${project.id}`}>
+                    {project.department?.name || "-"}
+                  </TableCell>
                   <TableCell>
                     {project.owner?.displayName || "-"}
+                  </TableCell>
+                  <TableCell data-testid={`project-task-count-${project.id}`}>
+                    <span className="text-muted-foreground">
+                      {project.doneCount}/{project.taskCount}
+                    </span>
                   </TableCell>
                   <TableCell>{formatDate(project.startDate)}</TableCell>
                   <TableCell>{formatDate(project.targetDate)}</TableCell>
@@ -397,7 +449,6 @@ export default function ProjectList() {
         </Table>
       </div>
 
-      {/* Mobile Card List */}
       <div
         className="md:hidden space-y-2"
         data-testid="project-card-list"
@@ -418,7 +469,6 @@ export default function ProjectList() {
               onClick={() => handleRowClick(project.id)}
               data-testid={`project-card-${project.id}`}
             >
-              {/* Project Name */}
               <div className="flex items-start justify-between gap-2">
                 <div className="font-medium mb-2 truncate min-w-0">{project.name}</div>
                 <DropdownMenu>
@@ -456,19 +506,27 @@ export default function ProjectList() {
                 </DropdownMenu>
               </div>
 
-              {/* Status and Owner Row */}
-              <div className="flex items-center gap-2 mb-2 text-sm text-muted-foreground">
+              <div className="flex items-center flex-wrap gap-2 mb-2 text-sm text-muted-foreground">
                 <Badge className={getStatusColor(project.status)}>
                   {project.status}
                 </Badge>
+                {project.department && (
+                  <Badge variant="outline" data-testid={`project-dept-mobile-${project.id}`}>
+                    {project.department.name}
+                  </Badge>
+                )}
                 <span data-testid={`project-owner-${project.id}`}>
                   {project.owner?.displayName || "-"}
                 </span>
               </div>
 
-              {/* Dates Row */}
-              <div className="text-xs text-muted-foreground" data-testid={`project-dates-${project.id}`}>
-                {formatDate(project.startDate)} → {formatDate(project.targetDate)}
+              <div className="flex items-center flex-wrap gap-3 text-xs text-muted-foreground">
+                <span data-testid={`project-task-count-mobile-${project.id}`}>
+                  任务 {project.doneCount}/{project.taskCount}
+                </span>
+                <span data-testid={`project-dates-${project.id}`}>
+                  {formatDate(project.startDate)} → {formatDate(project.targetDate)}
+                </span>
               </div>
             </div>
           ))
@@ -479,6 +537,7 @@ export default function ProjectList() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         users={users}
+        departments={departments}
       />
     </div>
   );

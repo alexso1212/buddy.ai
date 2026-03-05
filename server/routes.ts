@@ -961,6 +961,82 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // ===================== Department Stats =====================
+  app.get("/api/departments/stats", authMiddleware, async (req: any, res) => {
+    try {
+      const allTasks = await storage.getTasks({});
+      const tasks = allTasks.filter((t: any) => t.orgId === req.orgId);
+      const allUsers = await storage.getUsers();
+      const orgUsers = allUsers.filter((u: any) => u.orgId === req.orgId);
+      const now = new Date();
+      const soon = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+
+      const deptStatsMap: Record<number, { total: number; active: number; done: number; overdue: number; dueSoon: number; blocked: number; urged: number }> = {};
+
+      const userDeptMap: Record<number, number> = {};
+      for (const u of orgUsers) {
+        if (u.deptId) userDeptMap[u.id] = u.deptId;
+      }
+
+      for (const task of tasks) {
+        const deptId = task.assigneeId ? userDeptMap[task.assigneeId] : undefined;
+        if (!deptId) continue;
+
+        if (!deptStatsMap[deptId]) {
+          deptStatsMap[deptId] = { total: 0, active: 0, done: 0, overdue: 0, dueSoon: 0, blocked: 0, urged: 0 };
+        }
+        const s = deptStatsMap[deptId];
+        s.total++;
+        if (task.status === "done") { s.done++; }
+        else if (task.status === "in_progress" || task.status === "todo") { s.active++; }
+        if (task.status === "blocked") { s.blocked++; }
+        if (task.status !== "done" && task.status !== "cancelled" && task.dueDate) {
+          const due = new Date(task.dueDate);
+          if (due < now) { s.overdue++; s.urged++; }
+          else if (due < soon) { s.dueSoon++; }
+        }
+      }
+
+      return res.json(deptStatsMap);
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== User Stats =====================
+  app.get("/api/users/stats", authMiddleware, async (req: any, res) => {
+    try {
+      const allTasks = await storage.getTasks({});
+      const tasks = allTasks.filter((t: any) => t.orgId === req.orgId);
+      const now = new Date();
+      const soon = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+
+      const userStatsMap: Record<number, { total: number; active: number; done: number; overdue: number; dueSoon: number; blocked: number; urged: number }> = {};
+
+      for (const task of tasks) {
+        if (!task.assigneeId) continue;
+        const uid = task.assigneeId;
+        if (!userStatsMap[uid]) {
+          userStatsMap[uid] = { total: 0, active: 0, done: 0, overdue: 0, dueSoon: 0, blocked: 0, urged: 0 };
+        }
+        const s = userStatsMap[uid];
+        s.total++;
+        if (task.status === "done") { s.done++; }
+        else if (task.status === "in_progress" || task.status === "todo") { s.active++; }
+        if (task.status === "blocked") { s.blocked++; }
+        if (task.status !== "done" && task.status !== "cancelled" && task.dueDate) {
+          const due = new Date(task.dueDate);
+          if (due < now) { s.overdue++; s.urged++; }
+          else if (due < soon) { s.dueSoon++; }
+        }
+      }
+
+      return res.json(userStatsMap);
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
   // ===================== Users =====================
   app.get("/api/users", authMiddleware, async (req: any, res) => {
     try {
@@ -1039,7 +1115,21 @@ export async function registerRoutes(server: Server, app: Express) {
     try {
       const projects = await storage.getProjects();
       const users = await storage.getUsers();
-      const data = projects.filter((p: any) => p.orgId === req.orgId).map(p => ({ ...p, owner: users.find(u => u.id === p.ownerId) || null }));
+      const departments = await storage.getDepartments();
+      const allTasks = await storage.getTasks({});
+      const orgProjects = projects.filter((p: any) => p.orgId === req.orgId);
+      const data = orgProjects.map(p => {
+        const projectTasks = allTasks.filter((t: any) => t.projectId === p.id);
+        const taskCount = projectTasks.length;
+        const doneCount = projectTasks.filter((t: any) => t.status === 'done' || t.status === 'completed').length;
+        return {
+          ...p,
+          owner: users.find(u => u.id === p.ownerId) || null,
+          department: departments.find(d => d.id === p.deptId) || null,
+          taskCount,
+          doneCount,
+        };
+      });
       return res.json({ data });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });

@@ -1,11 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { AlertTriangle, CheckCircle, Star, Sparkles, RefreshCw } from "lucide-react";
+import { AlertTriangle, CheckCircle, Star, Sparkles, RefreshCw, Building2, FolderKanban } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import SwipeableTaskCard from "@/components/SwipeableTaskCard";
 import { apiRequest } from "@/lib/queryClient";
-import type { Task, Project, User } from "@shared/schema";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import type { Task, Project, User, Department } from "@shared/schema";
+import type { DeptStatsMap, DeptStats } from "@/components/org/types";
 
 type TaskWithParticipants = Task & {
   participants?: Array<{
@@ -108,8 +111,18 @@ function Dashboard() {
     queryKey: ["/api/stats/overview"],
   });
 
+  const { data: deptStatsResponse } = useQuery<DeptStatsMap>({
+    queryKey: ["/api/departments/stats"],
+  });
+
+  const { data: departmentsResponse } = useQuery<{ data: Department[] }>({
+    queryKey: ["/api/departments"],
+  });
+
   const tasks = tasksResponse?.data ?? [];
   const projects = projectsResponse?.data ?? [];
+  const deptStats: DeptStatsMap = deptStatsResponse ?? {};
+  const departments: Department[] = departmentsResponse?.data ?? [];
   const stats = statsResponse?.data ?? {
     totalTasks: 0,
     inProgressCount: 0,
@@ -334,6 +347,103 @@ function Dashboard() {
           <div className="text-muted-foreground text-xs md:text-sm font-medium truncate">本月新增</div>
           <div className="text-lg md:text-3xl font-bold text-purple-600 mt-1 md:mt-2">{stats.monthNew}</div>
         </div>
+      </div>
+
+      {/* Department Workload & Project Progress */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
+        <Card data-testid="panel-department-workload">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-muted-foreground" />
+              部门工作量概览
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {departments.length === 0 ? (
+              <div className="text-sm text-muted-foreground text-center py-4" data-testid="dept-workload-empty">
+                暂无部门数据
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {departments.map((dept) => {
+                  const s: DeptStats = deptStats[dept.id] ?? { total: 0, active: 0, done: 0, overdue: 0, dueSoon: 0, blocked: 0, urged: 0 };
+                  const rate = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0;
+                  return (
+                    <div key={dept.id} data-testid={`dept-row-${dept.id}`}>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-sm font-medium text-foreground truncate">{dept.name}</span>
+                        <div className="flex items-center gap-2 flex-shrink-0 text-xs text-muted-foreground">
+                          <span>{s.done}/{s.total} 完成</span>
+                          <span className="font-medium text-foreground">{rate}%</span>
+                        </div>
+                      </div>
+                      <Progress value={rate} className="h-2" />
+                      {(s.overdue > 0 || s.dueSoon > 0) && (
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {s.overdue > 0 && (
+                            <span className="text-[11px] text-red-600 dark:text-red-400">{s.overdue} 逾期</span>
+                          )}
+                          {s.dueSoon > 0 && (
+                            <span className="text-[11px] text-orange-600 dark:text-orange-400">{s.dueSoon} 即将到期</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card data-testid="panel-project-progress">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <FolderKanban className="w-4 h-4 text-muted-foreground" />
+              项目进度一览
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {projects.length === 0 ? (
+              <div className="text-sm text-muted-foreground text-center py-4" data-testid="project-progress-empty">
+                暂无项目数据
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {projects.map((project) => {
+                  const projectTasks = tasks.filter((t) => t.projectId === project.id);
+                  const totalCount = projectTasks.length;
+                  const doneCount = projectTasks.filter((t) => t.status === "done").length;
+                  const inProgressCount = projectTasks.filter((t) => t.status === "in_progress").length;
+                  const completionRate = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+                  return (
+                    <div
+                      key={project.id}
+                      className="cursor-pointer hover-elevate rounded-md p-2 -mx-2"
+                      onClick={() => navigate(`/projects/${project.id}`)}
+                      data-testid={`project-row-${project.id}`}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-sm font-medium text-foreground truncate">{project.name}</span>
+                        <div className="flex items-center gap-2 flex-shrink-0 text-xs text-muted-foreground">
+                          <span>{doneCount}/{totalCount}</span>
+                          <span className="font-medium text-foreground">{completionRate}%</span>
+                        </div>
+                      </div>
+                      <Progress value={completionRate} className="h-2" />
+                      <div className="flex flex-wrap gap-2 mt-1 text-[11px] text-muted-foreground">
+                        {inProgressCount > 0 && <span>{inProgressCount} 进行中</span>}
+                        {totalCount - doneCount - inProgressCount > 0 && (
+                          <span>{totalCount - doneCount - inProgressCount} 待办</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Needs Attention Section */}

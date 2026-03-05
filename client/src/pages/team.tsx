@@ -36,8 +36,10 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
-import { Plus, Pencil, Trash2, X, Check, Copy, RefreshCw, Inbox, ChevronDown, Clock } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, Copy, RefreshCw, Inbox, ChevronDown, Clock, Users, ListChecks, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import type { DeptStatsMap, DeptStats, UserStatsMap } from "@/components/org/types";
+import { getCompletionRate } from "@/components/org/types";
 
 function formatRelativeTime(date: string | Date | null | undefined): string {
   if (!date) return "";
@@ -77,6 +79,16 @@ export default function Team() {
     queryKey: ["/api/job-roles"],
   });
 
+  const { data: userStatsData } = useQuery<UserStatsMap>({
+    queryKey: ["/api/users/stats"],
+  });
+
+  const { data: deptStatsData } = useQuery<DeptStatsMap>({
+    queryKey: ["/api/departments/stats"],
+  });
+
+  const deptStats: DeptStatsMap = deptStatsData ?? {};
+
   const { data: pendingRequestsData } = useQuery<{ data: Array<any> }>({
     queryKey: ["/api/organizations", orgId, "join-requests", "pending"],
     queryFn: () => apiRequest("GET", `/api/organizations/${orgId}/join-requests?status=pending`).then(r => r.json()),
@@ -91,6 +103,7 @@ export default function Team() {
 
   const deptMap = new Map(departments.map((d) => [d.id, d]));
   const jobRoleMap = new Map(jobRoles.map((r) => [r.id, r]));
+  const userStats: UserStatsMap = userStatsData ?? {};
 
   function buildTree(depts: Department[], parentId: number | null = null, level = 0): Array<Department & { level: number }> {
     const result: Array<Department & { level: number }> = [];
@@ -135,6 +148,7 @@ export default function Team() {
             departments={departments}
             deptMap={deptMap}
             jobRoleMap={jobRoleMap}
+            userStats={userStats}
             isLoading={usersLoading || deptsLoading || jobRolesLoading}
             showAddUser={showAddUser}
             setShowAddUser={setShowAddUser}
@@ -152,6 +166,8 @@ export default function Team() {
             editingDept={editingDept}
             setEditingDept={setEditingDept}
             toast={toast}
+            deptStats={deptStats}
+            users={users}
           />
         </TabsContent>
 
@@ -185,6 +201,7 @@ function MembersTab({
   departments,
   deptMap,
   jobRoleMap,
+  userStats,
   isLoading,
   showAddUser,
   setShowAddUser,
@@ -194,6 +211,7 @@ function MembersTab({
   departments: Department[];
   deptMap: Map<number, Department>;
   jobRoleMap: Map<number, JobRole>;
+  userStats: UserStatsMap;
   isLoading: boolean;
   showAddUser: boolean;
   setShowAddUser: (v: boolean) => void;
@@ -258,29 +276,48 @@ function MembersTab({
                     <TableHead>部门</TableHead>
                     <TableHead>岗位</TableHead>
                     <TableHead>角色</TableHead>
+                    <TableHead>任务数</TableHead>
+                    <TableHead>已完成</TableHead>
+                    <TableHead>逾期</TableHead>
                     <TableHead>状态</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((user) => (
-                    <TableRow key={user.id} data-testid={`user-row-${user.id}`}>
-                      <TableCell className="max-w-[150px]">
-                        <span className="block truncate">{user.displayName}</span>
-                      </TableCell>
-                      <TableCell>{user.email}</TableCell>
-                      <TableCell>
-                        {user.deptId ? deptMap.get(user.deptId)?.name ?? "-" : "-"}
-                      </TableCell>
-                      <TableCell data-testid={`user-jobrole-${user.id}`}>
-                        {user.jobRoleId ? jobRoleMap.get(user.jobRoleId)?.title ?? "-" : "-"}
-                      </TableCell>
-                      <TableCell>{user.role}</TableCell>
-                      <TableCell>{user.isActive ? "活跃" : "停用"}</TableCell>
-                    </TableRow>
-                  ))}
+                  {users.map((user) => {
+                    const stats = userStats[String(user.id)];
+                    return (
+                      <TableRow key={user.id} data-testid={`user-row-${user.id}`}>
+                        <TableCell className="max-w-[150px]">
+                          <span className="block truncate">{user.displayName}</span>
+                        </TableCell>
+                        <TableCell>{user.email}</TableCell>
+                        <TableCell>
+                          {user.deptId ? deptMap.get(user.deptId)?.name ?? "-" : "-"}
+                        </TableCell>
+                        <TableCell data-testid={`user-jobrole-${user.id}`}>
+                          {user.jobRoleId ? jobRoleMap.get(user.jobRoleId)?.title ?? "-" : "-"}
+                        </TableCell>
+                        <TableCell>{user.role}</TableCell>
+                        <TableCell data-testid={`user-tasks-${user.id}`}>
+                          {stats?.total ?? 0}
+                        </TableCell>
+                        <TableCell data-testid={`user-done-${user.id}`}>
+                          {stats?.done ?? 0}
+                        </TableCell>
+                        <TableCell data-testid={`user-overdue-${user.id}`}>
+                          {stats?.overdue ? (
+                            <span className="text-red-600 dark:text-red-400">{stats.overdue}</span>
+                          ) : (
+                            0
+                          )}
+                        </TableCell>
+                        <TableCell>{user.isActive ? "活跃" : "停用"}</TableCell>
+                      </TableRow>
+                    );
+                  })}
                   {users.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                      <TableCell colSpan={9} className="text-center text-muted-foreground">
                         暂无成员
                       </TableCell>
                     </TableRow>
@@ -295,39 +332,55 @@ function MembersTab({
                 <div className="p-4 text-center text-muted-foreground">暂无成员</div>
               ) : (
                 <div className="space-y-2 p-4" data-testid="user-card-list">
-                  {users.map((user) => (
-                    <div
-                      key={user.id}
-                      className="bg-card rounded-lg shadow-sm p-4"
-                      data-testid={`user-card-${user.id}`}
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="font-medium truncate min-w-0">{user.displayName}</span>
-                        <Badge variant="secondary" className="text-xs">
-                          {user.role}
-                        </Badge>
-                      </div>
-                      <div className="text-sm text-muted-foreground mb-1">
-                        {user.deptId ? deptMap.get(user.deptId)?.name ?? "-" : "-"}
-                      </div>
+                  {users.map((user) => {
+                    const stats = userStats[String(user.id)];
+                    return (
                       <div
-                        className="text-xs text-muted-foreground mb-3"
-                        data-testid={`user-jobrole-mobile-${user.id}`}
+                        key={user.id}
+                        className="bg-card rounded-lg shadow-sm p-4"
+                        data-testid={`user-card-${user.id}`}
                       >
-                        {user.jobRoleId ? jobRoleMap.get(user.jobRoleId)?.title ?? "-" : "-"}
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="font-medium truncate min-w-0">{user.displayName}</span>
+                          <Badge variant="secondary" className="text-xs">
+                            {user.role}
+                          </Badge>
+                        </div>
+                        <div className="text-sm text-muted-foreground mb-1">
+                          {user.deptId ? deptMap.get(user.deptId)?.name ?? "-" : "-"}
+                        </div>
+                        <div
+                          className="text-xs text-muted-foreground mb-3"
+                          data-testid={`user-jobrole-mobile-${user.id}`}
+                        >
+                          {user.jobRoleId ? jobRoleMap.get(user.jobRoleId)?.title ?? "-" : "-"}
+                        </div>
+                        <div className="flex items-center gap-3 mb-2 flex-wrap">
+                          <span className="text-xs text-muted-foreground" data-testid={`user-tasks-mobile-${user.id}`}>
+                            任务 {stats?.total ?? 0}
+                          </span>
+                          <span className="text-xs text-muted-foreground" data-testid={`user-done-mobile-${user.id}`}>
+                            已完成 {stats?.done ?? 0}
+                          </span>
+                          {(stats?.overdue ?? 0) > 0 && (
+                            <span className="text-xs text-red-600 dark:text-red-400" data-testid={`user-overdue-mobile-${user.id}`}>
+                              逾期 {stats.overdue}
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          className={`text-xs font-medium ${
+                            user.isActive
+                              ? "text-green-600 dark:text-green-400"
+                              : "text-red-600 dark:text-red-400"
+                          }`}
+                          data-testid={`user-status-${user.id}`}
+                        >
+                          {user.isActive ? "活跃" : "停用"}
+                        </div>
                       </div>
-                      <div
-                        className={`text-xs font-medium ${
-                          user.isActive
-                            ? "text-green-600 dark:text-green-400"
-                            : "text-red-600 dark:text-red-400"
-                        }`}
-                        data-testid={`user-status-${user.id}`}
-                      >
-                        {user.isActive ? "活跃" : "停用"}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -419,6 +472,8 @@ function DepartmentsTab({
   editingDept,
   setEditingDept,
   toast,
+  deptStats,
+  users,
 }: {
   departments: Department[];
   deptTree: Array<Department & { level: number }>;
@@ -428,7 +483,16 @@ function DepartmentsTab({
   editingDept: Department | null;
   setEditingDept: (v: Department | null) => void;
   toast: ReturnType<typeof useToast>["toast"];
+  deptStats: DeptStatsMap;
+  users: User[];
 }) {
+  const memberCountMap = new Map<number, number>();
+  for (const u of users) {
+    if (u.deptId) {
+      memberCountMap.set(u.deptId, (memberCountMap.get(u.deptId) ?? 0) + 1);
+    }
+  }
+
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [parentDeptId, setParentDeptId] = useState<string>("");
@@ -523,39 +587,86 @@ function DepartmentsTab({
             {deptTree.length === 0 && (
               <div className="p-4 text-center text-muted-foreground">暂无部门</div>
             )}
-            {deptTree.map((dept) => (
-              <div
-                key={dept.id}
-                className="flex items-center justify-between p-3"
-                style={{ paddingLeft: `${dept.level * 24 + 12}px` }}
-                data-testid={`dept-item-${dept.id}`}
-              >
-                <div>
-                  <div className="font-medium">{dept.name}</div>
-                  {dept.description && (
-                    <div className="text-sm text-muted-foreground">{dept.description}</div>
-                  )}
+            {deptTree.map((dept) => {
+              const memberCount = memberCountMap.get(dept.id) ?? 0;
+              const stats: DeptStats | undefined = deptStats[String(dept.id)];
+              const taskTotal = stats?.total ?? 0;
+              const taskDone = stats?.done ?? 0;
+              const taskOverdue = stats?.overdue ?? 0;
+              const completionRate = getCompletionRate(taskTotal, taskDone);
+
+              return (
+                <div
+                  key={dept.id}
+                  className="flex items-center justify-between p-3 gap-2"
+                  style={{ paddingLeft: `${dept.level * 24 + 12}px` }}
+                  data-testid={`dept-item-${dept.id}`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium">{dept.name}</span>
+                      <Badge variant="secondary" className="gap-1 text-xs" data-testid={`dept-members-${dept.id}`}>
+                        <Users className="w-3 h-3" />
+                        {memberCount}
+                      </Badge>
+                      {taskTotal > 0 && (
+                        <>
+                          <Badge variant="secondary" className="gap-1 text-xs" data-testid={`dept-tasks-${dept.id}`}>
+                            <ListChecks className="w-3 h-3" />
+                            {taskDone}/{taskTotal}
+                          </Badge>
+                          <Badge
+                            variant="secondary"
+                            className={`gap-1 text-xs ${
+                              completionRate >= 80
+                                ? "text-green-700 dark:text-green-400"
+                                : completionRate >= 50
+                                ? "text-yellow-700 dark:text-yellow-400"
+                                : "text-red-700 dark:text-red-400"
+                            }`}
+                            data-testid={`dept-rate-${dept.id}`}
+                          >
+                            <CheckCircle2 className="w-3 h-3" />
+                            {completionRate}%
+                          </Badge>
+                        </>
+                      )}
+                      {taskOverdue > 0 && (
+                        <Badge
+                          variant="destructive"
+                          className="gap-1 text-xs"
+                          data-testid={`dept-overdue-${dept.id}`}
+                        >
+                          <AlertTriangle className="w-3 h-3" />
+                          {taskOverdue}
+                        </Badge>
+                      )}
+                    </div>
+                    {dept.description && (
+                      <div className="text-sm text-muted-foreground mt-0.5">{dept.description}</div>
+                    )}
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => openEdit(dept)}
+                      data-testid={`btn-edit-dept-${dept.id}`}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => handleDelete(dept)}
+                      data-testid={`btn-delete-dept-${dept.id}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex gap-1">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => openEdit(dept)}
-                    data-testid={`btn-edit-dept-${dept.id}`}
-                  >
-                    <Pencil className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => handleDelete(dept)}
-                    data-testid={`btn-delete-dept-${dept.id}`}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
