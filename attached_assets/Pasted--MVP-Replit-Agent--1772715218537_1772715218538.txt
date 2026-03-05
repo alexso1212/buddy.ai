@@ -1,0 +1,433 @@
+# 知识库 MVP 验收测试
+
+> **给 Replit Agent 的指令**：请按顺序执行以下验收测试，每一项报告 ✅ 通过 或 ❌ 失败（附错误信息）。
+> 全部完成后汇总一份验收报告给我。
+
+-----
+
+## 第一部分：数据层验证
+
+### T1: pgvector 扩展
+
+```sql
+SELECT extname, extversion FROM pg_extension WHERE extname = 'vector';
+```
+
+预期：返回 vector | 0.8.0
+
+### T2: 表结构
+
+```sql
+-- kb_documents 表存在且字段完整
+SELECT column_name, data_type FROM information_schema.columns 
+WHERE table_name = 'kb_documents' ORDER BY ordinal_position;
+
+-- kb_chunks 表存在且有 embedding 字段
+SELECT column_name, data_type FROM information_schema.columns 
+WHERE table_name = 'kb_chunks' ORDER BY ordinal_position;
+```
+
+预期：
+
+- kb_documents 有 id, org_id, uploaded_by, title, file_name, file_type, file_size, file_url, category, visibility, status, chunk_count 等字段
+- kb_chunks 有 id, document_id, org_id, chunk_index, content, token_count, embedding, metadata 等字段
+- embedding 字段类型为 vector(1536)
+
+### T3: 索引
+
+```sql
+SELECT indexname, tablename FROM pg_indexes 
+WHERE tablename IN ('kb_documents', 'kb_chunks') ORDER BY tablename, indexname;
+```
+
+预期：至少有 org_id、document_id、embedding(hnsw) 的索引
+
+### T4: CASCADE 删除
+
+```sql
+-- 检查外键约束
+SELECT 
+  tc.constraint_name, tc.table_name, kcu.column_name,
+  ccu.table_name AS foreign_table, rc.delete_rule
+FROM information_schema.table_constraints tc
+JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name
+JOIN information_schema.referential_constraints rc ON tc.constraint_name = rc.constraint_name
+WHERE tc.table_name = 'kb_chunks' AND tc.constraint_type = 'FOREIGN KEY';
+```
+
+预期：kb_chunks.document_id → kb_documents.id 有 CASCADE 删除规则
+
+-----
+
+## 第二部分：文件处理管道验证
+
+### T5: 依赖检查
+
+```bash
+npm list pdf-parse mammoth multer 2>&1
+```
+
+预期：三个包都已安装
+
+### T6: 目录结构
+
+```bash
+ls -la server/services/kb/
+ls -la uploads/kb/ 2>/dev/null || echo "uploads/kb/ 不存在"
+```
+
+预期：
+
+- server/services/kb/ 下有 extractText.ts, chunkText.ts, processDocument.ts, embedding.ts, search.ts
+- uploads/kb/ 目录存在
+
+### T7: 上传 TXT 测试
+
+```bash
+# 创建测试文件
+cat > /tmp/kb_test.txt << 'EOF'
+第一章 公司概述
+
+德湃教育成立于2020年，是一家专注于金融教育的科技公司。公司总部位于深圳，目前拥有16名全职员工。
+
+第二章 考勤制度
+
+工作时间为周一至周五，上午9:00至下午6:00。迟到15分钟以内不扣薪，超过15分钟按半天事假处理。每月允许3次弹性打卡。
+
+第三章 年假制度
+
+入职满1年的员工享有5天年假，满3年为10天，满5年为15天。年假需提前3个工作日申请，经直属上级审批后方可休假。年假不可跨年累计。
+
+第四章 报销流程
+
+差旅费用需在出差结束后5个工作日内提交报销申请。单笔金额超过5000元需VP审批，超过20000元需CEO审批。所有报销需附原始发票。
+EOF
+
+# 用 owner 账号获取 token（如果已有 token 可直接用）
+TOKEN=$(curl -s -X POST "http://localhost:5000/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@buddy.dev","password":"test123456"}' | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+
+echo "Token: ${TOKEN:0:20}..."
+
+# 上传
+UPLOAD_RESULT=$(curl -s -X POST "http://localhost:5000/api/kb/documents/upload" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@/tmp/kb_test.txt" \
+  -F "title=员工手册测试" \
+  -F "category=policy" \
+  -F "visibility=org")
+
+echo "上传结果: $UPLOAD_RESULT"
+DOC_ID=$(echo $UPLOAD_RESULT | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+echo "文档ID: $DOC_ID"
+```
+
+预期：返回包含 id、status: “pending” 的 JSON
+
+### T8: 处理状态检查
+
+```bash
+# 等 5 秒让异步处理完成
+sleep 5
+
+STATUS_RESULT=$(curl -s "http://localhost:5000/api/kb/documents/$DOC_ID/status" \
+  -H "Authorization: Bearer $TOKEN")
+echo "状态: $STATUS_RESULT"
+```
+
+预期：status 为 “ready”，chunkCount >= 3
+
+### T9: 切片内容检查
+
+```bash
+CHUNKS_RESULT=$(curl -s "http://localhost:5000/api/kb/documents/$DOC_ID/chunks" \
+  -H "Authorization: Bearer $TOKEN")
+echo "切片数量: $(echo $CHUNKS_RESULT | grep -o '"chunkIndex"' | wc -l)"
+echo "第一个切片内容预览: $(echo $CHUNKS_RESULT | grep -o '"content":"[^"]*"' | head -1 | cut -c1-100)"
+```
+
+预期：有多个切片，内容包含文档中的文本
+
+-----
+
+## 第三部分：搜索验证
+
+### T10: 全文搜索
+
+```bash
+SEARCH_RESULT=$(curl -s "http://localhost:5000/api/kb/search?q=年假制度" \
+  -H "Authorization: Bearer $TOKEN")
+echo "搜索结果: $SEARCH_RESULT"
+echo "命中数: $(echo $SEARCH_RESULT | grep -o '"chunkId"' | wc -l)"
+```
+
+预期：返回至少 1 条结果，content 中包含”年假”相关内容
+
+### T11: 无关搜索
+
+```bash
+SEARCH_NONE=$(curl -s "http://localhost:5000/api/kb/search?q=量子力学" \
+  -H "Authorization: Bearer $TOKEN")
+echo "无关搜索结果: $SEARCH_NONE"
+```
+
+预期：返回空数组或无匹配结果
+
+### T12: Embedding 状态
+
+```bash
+psql $DATABASE_URL -c "SELECT id, chunk_index, 
+  CASE WHEN embedding IS NOT NULL THEN 'yes' ELSE 'no' END as has_embedding 
+  FROM kb_chunks WHERE document_id = $DOC_ID ORDER BY chunk_index;"
+```
+
+预期：如果 EMBEDDING_AVAILABLE=true，所有 chunk 应该有 embedding。如果 false，全部为 no（正常，走全文搜索）
+
+-----
+
+## 第四部分：AI 对话集成验证
+
+### T13: KB 关闭时正常对话
+
+```bash
+CHAT_NORMAL=$(curl -s -X POST "http://localhost:5000/api/ai/chat/stream" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "message": "你好，今天天气怎么样？",
+    "conversationHistory": [],
+    "knowledgeBaseEnabled": false,
+    "currentUserId": 1
+  }')
+echo "普通对话（前200字符）: ${CHAT_NORMAL:0:200}"
+```
+
+预期：正常的 SSE 流式回复，不包含知识库来源标注
+
+### T14: KB 开启时知识库问答
+
+```bash
+CHAT_KB=$(curl -s -X POST "http://localhost:5000/api/ai/chat/stream" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "message": "公司的年假制度是什么？",
+    "conversationHistory": [],
+    "knowledgeBaseEnabled": true,
+    "currentUserId": 1
+  }')
+echo "知识库对话（前500字符）: ${CHAT_KB:0:500}"
+```
+
+预期：
+
+- AI 回答包含年假相关信息（“入职满1年享有5天年假”等）
+- 回答包含来源标注（“📄 来源：员工手册测试”）
+- 服务器日志中有 `[KB] Injected X chunks`
+
+### T15: KB 开启但无相关内容
+
+```bash
+CHAT_KB_NONE=$(curl -s -X POST "http://localhost:5000/api/ai/chat/stream" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "message": "什么是区块链技术？",
+    "conversationHistory": [],
+    "knowledgeBaseEnabled": true,
+    "currentUserId": 1
+  }')
+echo "无关KB对话（前300字符）: ${CHAT_KB_NONE:0:300}"
+```
+
+预期：AI 提到”知识库中暂无相关信息”，可能用通用知识回答
+
+### T16: Token 用量标记
+
+```bash
+psql $DATABASE_URL -c "SELECT id, purpose, model, prompt_tokens, completion_tokens 
+  FROM token_usage ORDER BY created_at DESC LIMIT 5;"
+```
+
+预期：最近的知识库对话记录 purpose 为 ‘knowledge_qa’
+
+-----
+
+## 第五部分：管理 UI 验证
+
+### T17: 页面路由
+
+```bash
+# 检查 knowledge-base 页面能否访问（返回 HTML 而不是 404）
+curl -s -o /dev/null -w "%{http_code}" "http://localhost:5000/knowledge-base"
+```
+
+预期：200（Vite SPA 会返回 index.html）
+
+### T18: 侧边栏入口（手动检查）
+
+用浏览器执行以下验证：
+
+1. 用 `test@buddy.dev` (owner) 登录 → 侧边栏应该有「知识库」入口
+1. 点击进入知识库管理页 → 应该能看到之前上传的「员工手册测试」文档
+1. 文档状态应该显示 ✅ 已就绪
+1. 点击「查看片段」→ 能看到切片内容预览
+1. 如果有 member 账号，切换到 member 登录 → 侧边栏应该没有知识库入口
+
+-----
+
+## 第六部分：聊天界面开关验证
+
+### T19: KB 开关按钮（手动检查）
+
+用浏览器执行以下验证：
+
+1. 打开 Agent 聊天页面 → 输入栏应该有 📚 知识库开关按钮
+1. 点击按钮 → 按钮高亮（和 Web 搜索开关的高亮风格一致）
+1. 再次点击 → 按钮取消高亮
+1. 开启 KB → 发送「公司的报销流程是什么？」→ AI 应该基于文档回答，有来源标注
+1. 关闭 KB → 发送「公司的报销流程是什么？」→ AI 用通用知识回答，无来源标注
+1. Web 搜索开关仍然正常工作
+1. 代码上下文开关仍然正常工作
+
+-----
+
+## 第七部分：权限与安全验证
+
+### T20: member 不能上传
+
+```bash
+# 如果有 member 账号的 token，测试上传权限
+# MEMBER_TOKEN=xxx
+# curl -s -X POST "http://localhost:5000/api/kb/documents/upload" \
+#   -H "Authorization: Bearer $MEMBER_TOKEN" \
+#   -F "file=@/tmp/kb_test.txt" \
+#   -F "title=测试"
+```
+
+预期：返回 403
+
+### T21: 删除测试
+
+```bash
+# 创建一个临时文档用于测试删除
+echo "临时测试文档内容" > /tmp/kb_delete_test.txt
+DEL_RESULT=$(curl -s -X POST "http://localhost:5000/api/kb/documents/upload" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@/tmp/kb_delete_test.txt" \
+  -F "title=待删除文档")
+DEL_DOC_ID=$(echo $DEL_RESULT | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+sleep 3
+
+# 删除
+curl -s -X DELETE "http://localhost:5000/api/kb/documents/$DEL_DOC_ID" \
+  -H "Authorization: Bearer $TOKEN"
+
+# 验证已删除
+curl -s "http://localhost:5000/api/kb/documents/$DEL_DOC_ID" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+预期：删除返回 success:true，再次获取返回 404
+
+### T22: 重新处理
+
+```bash
+curl -s -X POST "http://localhost:5000/api/kb/documents/$DOC_ID/reprocess" \
+  -H "Authorization: Bearer $TOKEN"
+sleep 5
+curl -s "http://localhost:5000/api/kb/documents/$DOC_ID/status" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+预期：重新处理后 status 回到 ready
+
+-----
+
+## 第八部分：存储概览
+
+### T23: 当前数据量
+
+```sql
+-- 文档概览
+SELECT status, COUNT(*) as count, COALESCE(AVG(chunk_count), 0)::int as avg_chunks
+FROM kb_documents GROUP BY status;
+
+-- 总体存储
+SELECT 
+  COUNT(DISTINCT d.id) as total_docs,
+  COUNT(c.id) as total_chunks,
+  COALESCE(ROUND(SUM(d.file_size) / 1048576.0, 2), 0) as total_file_mb
+FROM kb_documents d
+LEFT JOIN kb_chunks c ON c.document_id = d.id;
+
+-- embedding 覆盖率
+SELECT
+  COUNT(*) as total_chunks,
+  COUNT(embedding) as with_embedding,
+  ROUND(100.0 * COUNT(embedding) / NULLIF(COUNT(*), 0), 1) as coverage_pct
+FROM kb_chunks;
+```
+
+-----
+
+## 验收报告模板
+
+请用以下格式汇总结果：
+
+```
+# 知识库 MVP 验收报告
+
+日期：2026-03-XX
+执行者：Replit Agent
+
+## 测试结果
+
+| 编号 | 测试项 | 结果 | 备注 |
+|------|--------|------|------|
+| T1 | pgvector 扩展 | ✅/❌ | |
+| T2 | 表结构 | ✅/❌ | |
+| T3 | 索引 | ✅/❌ | |
+| T4 | CASCADE 删除 | ✅/❌ | |
+| T5 | 依赖检查 | ✅/❌ | |
+| T6 | 目录结构 | ✅/❌ | |
+| T7 | 上传 TXT | ✅/❌ | |
+| T8 | 处理状态 | ✅/❌ | chunkCount = ? |
+| T9 | 切片内容 | ✅/❌ | |
+| T10 | 全文搜索 | ✅/❌ | 命中数 = ? |
+| T11 | 无关搜索 | ✅/❌ | |
+| T12 | Embedding 状态 | ✅/❌ | 可用/不可用 |
+| T13 | 普通对话 | ✅/❌ | |
+| T14 | 知识库问答 | ✅/❌ | 有来源标注？ |
+| T15 | 无关KB问答 | ✅/❌ | |
+| T16 | Token 用量标记 | ✅/❌ | |
+| T17 | 页面路由 | ✅/❌ | |
+| T18 | 侧边栏入口 | ⏳ 需手动 | |
+| T19 | KB 开关按钮 | ⏳ 需手动 | |
+| T20 | member 权限 | ✅/❌ | |
+| T21 | 删除测试 | ✅/❌ | |
+| T22 | 重新处理 | ✅/❌ | |
+| T23 | 存储概览 | ✅/❌ | 文档数/切片数/MB |
+
+## 关键数据
+
+- 测试文档切片数：X
+- 搜索命中数：X
+- Embedding 状态：可用/不可用
+- Token 用量标记：正确/不正确
+
+## 需要手动验证的项（T18, T19）
+
+请 Alexso 用浏览器验证：
+1. owner 侧边栏有知识库入口
+2. member 侧边栏无知识库入口
+3. Agent 页面有 KB 开关按钮
+4. 开启 KB 问知识问题有来源标注
+5. 关闭 KB 正常对话
+
+## 发现的问题（如有）
+
+无 / 列出问题
+```
