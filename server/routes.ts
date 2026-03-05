@@ -23,6 +23,7 @@ import {
   insertKbDocumentSchema,
 } from "@shared/schema";
 import { processDocument } from './services/kb/processDocument';
+import { searchKnowledge } from './services/kb/search';
 import { judgeTaskAssignment } from "./services/ai/verdictService";
 import { searchWeb } from "./services/ai/webSearch";
 import { generateInviteCode } from "./utils/inviteCode";
@@ -3505,6 +3506,27 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
       });
 
       return res.json({ data: { success: true, message: '已开始重新处理' } });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/kb/search", authMiddleware, async (req: any, res) => {
+    try {
+      const q = String(req.query.q || '').trim();
+      if (!q) return res.json({ data: [] });
+
+      const topK = Math.min(parseInt(req.query.topK as string) || 5, 10);
+
+      const results = await searchKnowledge({
+        orgId: req.orgId,
+        query: q,
+        topK,
+        userRole: req.userRole || 'member',
+        userDeptId: req.userDeptId || null,
+      });
+
+      return res.json({ data: results });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }

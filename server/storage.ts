@@ -1024,6 +1024,10 @@ export class DatabaseStorage {
   async deleteKbChunksByDocument(documentId: number) {
     await db.delete(kbChunks).where(eq(kbChunks.documentId, documentId));
   }
+
+  async executeRaw(query: any) {
+    return await db.execute(query);
+  }
 }
 
 export const storage = new DatabaseStorage();

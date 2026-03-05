@@ -70,6 +70,17 @@ export async function processDocument(documentId: number): Promise<void> {
 
     await storage.createKbChunks(chunkRecords);
 
+    try {
+      const { generateEmbeddingsForDocument } = await import('./embedding');
+      const savedChunks = await storage.getKbChunksByDocument(documentId);
+      const chunksForEmbedding = savedChunks.map((c: any) => ({ id: c.id, content: c.content }));
+
+      const embeddingResult = await generateEmbeddingsForDocument(documentId, chunksForEmbedding);
+      console.log(`[KB] Embeddings: ${embeddingResult.success} success, ${embeddingResult.failed} failed`);
+    } catch (err: any) {
+      console.warn(`[KB] Embedding generation failed (non-fatal):`, err.message);
+    }
+
     await storage.updateKbDocument(documentId, {
       status: 'ready',
       chunkCount: chunks.length,

@@ -21,7 +21,7 @@ A 23-table PostgreSQL database schema manages entities like `organizations`, `de
 - **Multi-Tenant Isolation:** `orgIsolation` middleware manages `orgId` and `currentUserId` context.
 - **Token Usage Tracking:** Records prompt/completion tokens and costs for all AI calls.
 - **Conversation Persistence:** AI chat history is persisted for continuous interactions.
-- **Knowledge Base Pipeline:** File upload → text extraction (PDF/DOCX/TXT/MD) → intelligent chunking → storage. Services in `server/services/kb/` (extractText, chunkText, processDocument). Async processing via `setImmediate`. Routes: `/api/kb/documents/*` (upload, list, detail, chunks, status, delete, reprocess). KB files stored in `uploads/kb/`.
+- **Knowledge Base Pipeline:** File upload → text extraction (PDF/DOCX/TXT/MD) → intelligent chunking → storage. Services in `server/services/kb/` (extractText, chunkText, processDocument, embedding, search). Async processing via `setImmediate`. Routes: `/api/kb/documents/*` (upload, list, detail, chunks, status, delete, reprocess) and `/api/kb/search?q=`. KB files stored in `uploads/kb/`. Embedding API currently unavailable (proxy doesn't support `text-embedding-3-small`); fulltext search via ILIKE keyword matching as fallback. Embedding infrastructure ready for future activation.
 - **AI Subsystem:** Utilizes Anthropic direct API and OpenRouter for various AI models. It features contextual prompts, cross-conversation memory, Zod schema-defined AI actions, an AI-powered verdict service, and web search integration via Tavily API. A "Code Context Mode" allows AI to interact with project code for analysis and assistance using `read_file`, `list_directory`, and `search_code` tools with security restrictions.
 
 **Frontend (UI/UX):**
