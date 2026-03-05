@@ -1,0 +1,313 @@
+# hotfix-01: 多租户隔离漏洞修复 + 组织修改API（紧急）
+
+> **优先级**：🔴 紧急（安全漏洞）
+> **预计耗时**：30 分钟
+> **改动文件**：`server/routes.ts`（约 20 行改动）
+> **风险等级**：低（只加中间件和过滤条件，不改业务逻辑）
+
+-----
+
+## 问题一览
+
+|编号 |问题                                                |严重程度|修复方式                         |
+|---|--------------------------------------------------|----|-----------------------------|
+|T26|tasks 和 projects 路由缺少 authMiddleware，任何用户能看到所有组织数据|🔴 严重|加 authMiddleware + orgId 过滤  |
+|T04|缺少 PATCH /api/organizations/:id，无法修改组织名称          |🟡 中等|新增路由                         |
+|T23|任务分配时不触发通知                                        |🟢 低 |在 PATCH /api/tasks/:id 中加通知逻辑|
+
+-----
+
+## 修复 1：Tasks 路由加 authMiddleware（最紧急）
+
+### 找到这一行
+
+```typescript
+app.get("/api/tasks", async (req, res) => {
+```
+
+### 改为
+
+```typescript
+app.get("/api/tasks", authMiddleware, async (req: any, res) => {
+```
+
+### 然后在函数体内，确保查询带 orgId 过滤
+
+找到查询任务列表的逻辑，确保 WHERE 条件包含 `orgId = req.orgId`。
+
+如果当前代码是：
+
+```typescript
+const data = await storage.getTasks(/* 某些过滤参数 */);
+```
+
+需要确保 `storage.getTasks()` 内部或调用处有 orgId 过滤。检查方式：
+
+```typescript
+// 如果 storage.getTasks 不接受 orgId 参数，改为：
+const data = await storage.getTasksByOrg(req.orgId);
+
+// 或者如果 getTasks 已有 orgId 参数：
+const data = await storage.getTasks({ orgId: req.orgId, ...其他过滤 });
+
+// 如果 storage 里没有按 orgId 过滤的方法，需要加一个
+// 或者在路由中手动过滤：
+const allTasks = await storage.getTasks(/* 原有参数 */);
+const data = allTasks.filter((t: any) => t.orgId === req.orgId);
+```
+
+**关键**：最终返回给前端的数据必须只包含 `req.orgId` 对应的任务。
+
+-----
+
+## 修复 2：Projects 路由加 authMiddleware
+
+### 找到这一行
+
+```typescript
+app.get("/api/projects", async (_req, res) => {
+```
+
+### 改为
+
+```typescript
+app.get("/api/projects", authMiddleware, async (req: any, res) => {
+```
+
+### 同样确保查询带 orgId 过滤
+
+```typescript
+// 改为按 orgId 过滤
+const data = await storage.getProjectsByOrg(req.orgId);
+
+// 或者如果没有这个方法：
+const allProjects = await storage.getProjects();
+const data = allProjects.filter((p: any) => p.orgId === req.orgId);
+```
+
+-----
+
+## 修复 3：全面排查所有缺少 authMiddleware 的路由
+
+这是最重要的一步——T26发现了两个路由有问题，但可能还有其他路由也缺少了。
+
+### 排查方法
+
+在 `server/routes.ts` 中搜索所有路由定义，检查哪些没有 `authMiddleware`：
+
+```bash
+# 在 Replit Shell 中执行
+grep -n 'app\.\(get\|post\|patch\|put\|delete\)(' server/routes.ts | grep -v 'authMiddleware'
+```
+
+### 不需要 authMiddleware 的路由（白名单）
+
+以下路由**不需要** authMiddleware，其他所有路由都应该有：
+
+|路由                                 |原因              |
+|-----------------------------------|----------------|
+|`POST /api/auth/register`          |注册，无token       |
+|`POST /api/auth/login`             |登录，无token       |
+|`GET /api/auth/oidc/complete`      |OIDC回调          |
+|`POST /api/auth/telegram`          |Telegram登录      |
+|`POST /api/payment/alipay/notify`  |支付宝回调（将来）       |
+|`GET /api/token-packages`          |公开的价格页（将来）      |
+|`GET /api/organizations/search`    |公开搜索（看情况）       |
+|`GET /api/invitations/verify/:code`|验证邀请码（可能不需要auth）|
+
+### 所有其他路由都必须有 authMiddleware
+
+逐个检查以下路由组，确保都有 authMiddleware：
+
+```
+/api/tasks*          ← T26发现缺少
+/api/projects*       ← T26发现缺少
+/api/departments*    ← 检查
+/api/users*          ← 检查
+/api/conversations*  ← 检查
+/api/ai/*            ← 检查
+/api/kb/*            ← 检查（task-02已加）
+/api/graph/*         ← 检查
+/api/job-roles*      ← 检查
+/api/verdicts/*      ← 检查
+/api/notifications*  ← 检查
+/api/org/*           ← 检查
+/api/activity-logs   ← 检查
+/api/token-usage/*   ← 检查
+/api/user-memories*  ← 检查
+```
+
+### 输出排查报告
+
+用以下格式报告排查结果：
+
+```
+路由排查结果：
+✅ /api/tasks — 已修复，添加了 authMiddleware
+✅ /api/projects — 已修复，添加了 authMiddleware
+✅ /api/departments — 已有 authMiddleware
+⚠️ /api/xxx — 缺少 authMiddleware，已添加
+...
+```
+
+-----
+
+## 修复 4：新增组织修改 API
+
+在 routes.ts 中找到 organizations 相关路由区域，新增：
+
+```typescript
+app.patch("/api/organizations/:id", authMiddleware, async (req: any, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    
+    // 权限检查：只有 owner 能修改组织信息
+    if (req.orgId !== id) {
+      return res.status(403).json({ error: '无权修改此组织' });
+    }
+    
+    const userRole = req.userRole || 'member';
+    if (userRole !== 'owner') {
+      return res.status(403).json({ error: '仅组织所有者可修改组织信息' });
+    }
+    
+    // 允许修改的字段
+    const allowedFields = ['name', 'description', 'type', 'tokenBudgetUsd', 'budgetResetDay', 'maxMembers', 'isPublic'];
+    const updateData: any = {};
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        updateData[field] = req.body[field];
+      }
+    }
+    
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: '没有要更新的字段' });
+    }
+    
+    const updated = await storage.updateOrganization(id, updateData);
+    if (!updated) {
+      return res.status(404).json({ error: '组织不存在' });
+    }
+    
+    await storage.createActivityLog({
+      orgId: id,
+      userId: req.currentUserId,
+      entityType: 'organization',
+      entityId: id,
+      action: 'update',
+      changes: JSON.stringify(updateData),
+      source: 'manual',
+    });
+    
+    return res.json({ data: updated });
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+```
+
+### 检查 storage.ts 是否有 updateOrganization 方法
+
+如果没有，在 storage.ts 中添加：
+
+```typescript
+async updateOrganization(id: number, data: Partial<typeof organizations.$inferInsert>) {
+  const [org] = await db.update(organizations)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(organizations.id, id))
+    .returning();
+  return org || null;
+}
+```
+
+-----
+
+## 修复 5：任务分配通知（低优先级）
+
+在 `PATCH /api/tasks/:id` 路由中，当 `assigneeId` 发生变化时，创建通知：
+
+找到任务更新路由中的更新逻辑之后，添加：
+
+```typescript
+// 在任务更新成功后，检查是否有 assignee 变更
+if (req.body.assigneeId && req.body.assigneeId !== existingTask.assigneeId) {
+  // 给新负责人发通知
+  try {
+    await storage.createNotification({
+      orgId: req.orgId,
+      userId: req.body.assigneeId,
+      type: 'task_assigned',
+      title: '新任务分配',
+      content: `你被分配了任务「${existingTask.title}」`,
+      relatedEntityType: 'task',
+      relatedEntityId: existingTask.id,
+    });
+  } catch (notifErr) {
+    // 通知失败不影响主流程
+    console.error('[Notification] Failed to create assignment notification:', notifErr);
+  }
+}
+```
+
+**注意**：检查 `storage.createNotification` 是否存在，以及 notification 表的字段名是否匹配。参照现有的通知创建代码。
+
+-----
+
+## 验证
+
+### 修复后的隔离验证（最关键）
+
+```bash
+# 用之前测试的 OTHER_TOKEN（竞争对手的token）
+# 或者用测试脚本中的方式重新注册一个外部用户
+
+# 检查外部用户是否还能看到鑫达的任务
+OTHER_TASKS=$(curl -s "http://localhost:5000/api/tasks" \
+  -H "Authorization: Bearer $OTHER_TOKEN")
+echo "外部用户看到的任务数: $(echo $OTHER_TASKS | grep -o '"id"' | wc -l)"
+# 预期：0 或只有自己组织的任务
+
+# 检查外部用户是否还能看到鑫达的项目
+OTHER_PROJECTS=$(curl -s "http://localhost:5000/api/projects" \
+  -H "Authorization: Bearer $OTHER_TOKEN")
+echo "外部用户看到的项目数: $(echo $OTHER_PROJECTS | grep -o '"id"' | wc -l)"
+# 预期：0 或只有自己组织的项目
+```
+
+### 组织修改验证
+
+```bash
+curl -s -X PATCH "http://localhost:5000/api/organizations/$BOSS_ORG_ID" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $BOSS_TOKEN" \
+  -d '{"name": "鑫达国际贸易有限公司"}'
+# 预期：成功更新
+```
+
+### 路由排查验证
+
+```bash
+# 无token访问tasks应该被拒绝
+curl -s "http://localhost:5000/api/tasks"
+# 预期：401 或 403
+
+# 无token访问projects应该被拒绝
+curl -s "http://localhost:5000/api/projects"
+# 预期：401 或 403
+```
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读项目根目录的 `hotfix-01-security.md`，这是一个**紧急安全修复**。
+> 
+> 按以下顺序执行：
+> 
+> 1. **先修复 T26**：给 /api/tasks 和 /api/projects 加 authMiddleware + orgId 过滤
+> 1. **排查所有路由**：用 grep 找出所有缺少 authMiddleware 的路由，逐个修复
+> 1. **新增组织修改API**：PATCH /api/organizations/:id
+> 1. **任务分配通知**：PATCH /api/tasks/:id 中 assigneeId 变更时发通知
+> 1. **验证**：运行验证脚本确认隔离生效
+> 
+> 最重要的规则：**修复后，任何用户通过API只能看到自己组织的数据**。这是安全底线。

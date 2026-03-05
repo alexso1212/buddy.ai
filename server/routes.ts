@@ -694,24 +694,26 @@ export async function registerRoutes(server: Server, app: Express) {
       });
 
       if (status === 'approved') {
+        let assignedRole = 'member';
+        if (joinRequest.inviteCode) {
+          const invitation = await storage.getInvitationByCode(joinRequest.inviteCode);
+          if (invitation) {
+            assignedRole = invitation.role || 'member';
+            await storage.incrementInvitationUsedCount(invitation.id);
+          }
+        }
+
         await storage.updateUser(joinRequest.userId, {
           orgId,
-          role: 'member',
+          role: assignedRole,
           onboardingCompleted: true,
         } as any);
 
         await storage.createOrgMembership({
           userId: joinRequest.userId,
           orgId,
-          role: 'member',
+          role: assignedRole,
         });
-
-        if (joinRequest.inviteCode) {
-          const invitation = await storage.getInvitationByCode(joinRequest.inviteCode);
-          if (invitation) {
-            await storage.incrementInvitationUsedCount(invitation.id);
-          }
-        }
 
         await storage.cancelOtherPendingJoinRequests(joinRequest.userId, orgId, requestId);
       }
@@ -834,16 +836,17 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // ===================== Organizations =====================
-  app.get("/api/organizations", async (_req, res) => {
+  app.get("/api/organizations", authMiddleware, async (req: any, res) => {
     try {
-      const data = await storage.getOrganizations();
+      const all = await storage.getOrganizations();
+      const data = all.filter((o: any) => o.id === req.orgId);
       return res.json({ data });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }
   });
 
-  app.post("/api/organizations", async (req, res) => {
+  app.post("/api/organizations", authMiddleware, async (req: any, res) => {
     try {
       const parsed = insertOrganizationSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
@@ -863,17 +866,40 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  // ===================== Departments =====================
-  app.get("/api/departments", async (_req, res) => {
+  app.patch("/api/organizations/:id", authMiddleware, async (req: any, res) => {
     try {
-      const data = await storage.getDepartments();
+      const id = parseInt(req.params.id);
+      if (id !== req.orgId) return res.status(403).json({ error: "Cannot modify another organization" });
+      const existing = await storage.getOrganizationById(id);
+      if (!existing) return res.status(404).json({ error: "Organization not found" });
+      const updated = await storage.updateOrganization(id, req.body);
+      await storage.createActivityLog({
+        orgId: id,
+        userId: req.currentUserId,
+        entityType: "organization",
+        entityId: id,
+        action: "update",
+        changes: JSON.stringify(req.body),
+        source: "manual",
+      });
+      return res.json({ data: updated });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== Departments =====================
+  app.get("/api/departments", authMiddleware, async (req: any, res) => {
+    try {
+      const all = await storage.getDepartments();
+      const data = all.filter((d: any) => d.orgId === req.orgId);
       return res.json({ data });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }
   });
 
-  app.post("/api/departments", async (req, res) => {
+  app.post("/api/departments", authMiddleware, async (req: any, res) => {
     try {
       const parsed = insertDepartmentSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
@@ -893,7 +919,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.patch("/api/departments/:id", async (req, res) => {
+  app.patch("/api/departments/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getDepartmentById(id);
@@ -914,7 +940,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.delete("/api/departments/:id", async (req, res) => {
+  app.delete("/api/departments/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getDepartmentById(id);
@@ -936,16 +962,17 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // ===================== Users =====================
-  app.get("/api/users", async (_req, res) => {
+  app.get("/api/users", authMiddleware, async (req: any, res) => {
     try {
-      const data = await storage.getUsers();
+      const all = await storage.getUsers();
+      const data = all.filter((u: any) => u.orgId === req.orgId);
       return res.json({ data });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }
   });
 
-  app.post("/api/users", async (req, res) => {
+  app.post("/api/users", authMiddleware, async (req: any, res) => {
     try {
       const parsed = insertUserSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
@@ -965,7 +992,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.patch("/api/users/:id", async (req, res) => {
+  app.patch("/api/users/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getUserById(id);
@@ -986,7 +1013,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.delete("/api/users/:id", async (req, res) => {
+  app.delete("/api/users/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getUserById(id);
@@ -1008,18 +1035,18 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // ===================== Projects =====================
-  app.get("/api/projects", async (_req, res) => {
+  app.get("/api/projects", authMiddleware, async (req: any, res) => {
     try {
       const projects = await storage.getProjects();
       const users = await storage.getUsers();
-      const data = projects.map(p => ({ ...p, owner: users.find(u => u.id === p.ownerId) || null }));
+      const data = projects.filter((p: any) => p.orgId === req.orgId).map(p => ({ ...p, owner: users.find(u => u.id === p.ownerId) || null }));
       return res.json({ data });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }
   });
 
-  app.get("/api/projects/:id", async (req, res) => {
+  app.get("/api/projects/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const project = await storage.getProjectById(id);
@@ -1031,7 +1058,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.post("/api/projects", async (req, res) => {
+  app.post("/api/projects", authMiddleware, async (req: any, res) => {
     try {
       const parsed = insertProjectSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
@@ -1051,7 +1078,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.patch("/api/projects/:id", async (req, res) => {
+  app.patch("/api/projects/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getProjectById(id);
@@ -1086,7 +1113,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.delete("/api/projects/:id", async (req, res) => {
+  app.delete("/api/projects/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getProjectById(id);
@@ -1141,7 +1168,7 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // ===================== Tasks =====================
-  app.get("/api/tasks", async (req, res) => {
+  app.get("/api/tasks", authMiddleware, async (req: any, res) => {
     try {
       const filters: { projectId?: number; assigneeId?: number; status?: string[]; parentTaskId?: number | null } = {};
 
@@ -1153,7 +1180,8 @@ export async function registerRoutes(server: Server, app: Express) {
         filters.parentTaskId = val === "null" ? null : parseInt(val);
       }
 
-      const tasksData = await storage.getTasks(Object.keys(filters).length > 0 ? filters : undefined);
+      const allTasks = await storage.getTasks(Object.keys(filters).length > 0 ? filters : undefined);
+      const tasksData = allTasks.filter((t: any) => t.orgId === req.orgId);
       const taskIds = tasksData.map(t => t.id);
       const allParticipants = await storage.getTaskParticipantsByTaskIds(taskIds);
       const allUsers = await storage.getUsers();
@@ -1169,7 +1197,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.get("/api/tasks/:id", async (req, res) => {
+  app.get("/api/tasks/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const task = await storage.getTaskById(id);
@@ -1191,7 +1219,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.post("/api/tasks", async (req, res) => {
+  app.post("/api/tasks", authMiddleware, async (req: any, res) => {
     try {
       const parsed = insertTaskSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
@@ -1211,7 +1239,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.patch("/api/tasks/:id", async (req, res) => {
+  app.patch("/api/tasks/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getTaskById(id);
@@ -1246,7 +1274,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.delete("/api/tasks/:id", async (req, res) => {
+  app.delete("/api/tasks/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getTaskById(id);
@@ -1301,7 +1329,7 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // ===================== Task Dependencies =====================
-  app.get("/api/tasks/:id/dependencies", async (req, res) => {
+  app.get("/api/tasks/:id/dependencies", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const data = await storage.getTaskDependencies(id);
@@ -1311,7 +1339,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.post("/api/task-dependencies", async (req, res) => {
+  app.post("/api/task-dependencies", authMiddleware, async (req: any, res) => {
     try {
       const parsed = insertTaskDependencySchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
@@ -1332,7 +1360,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.delete("/api/task-dependencies/:id", async (req, res) => {
+  app.delete("/api/task-dependencies/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const task = await storage.getTaskById(id);
@@ -1353,7 +1381,7 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // ===================== Task Comments =====================
-  app.get("/api/tasks/:id/comments", async (req, res) => {
+  app.get("/api/tasks/:id/comments", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const data = await storage.getTaskComments(id);
@@ -1363,7 +1391,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.post("/api/tasks/:id/comments", async (req, res) => {
+  app.post("/api/tasks/:id/comments", authMiddleware, async (req: any, res) => {
     try {
       const taskId = parseInt(req.params.id);
       const body = { ...req.body, taskId };
@@ -1387,7 +1415,7 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // ===================== Task Participants =====================
-  app.get("/api/tasks/:id/participants", async (req, res) => {
+  app.get("/api/tasks/:id/participants", authMiddleware, async (req: any, res) => {
     try {
       const taskId = parseInt(req.params.id);
       const participants = await storage.getTaskParticipants(taskId);
@@ -1402,7 +1430,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.post("/api/tasks/:id/participants", async (req, res) => {
+  app.post("/api/tasks/:id/participants", authMiddleware, async (req: any, res) => {
     try {
       const taskId = parseInt(req.params.id);
       const task = await storage.getTaskById(taskId);
@@ -1427,7 +1455,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.delete("/api/tasks/:taskId/participants/:userId", async (req, res) => {
+  app.delete("/api/tasks/:taskId/participants/:userId", authMiddleware, async (req: any, res) => {
     try {
       const taskId = parseInt(req.params.taskId);
       const userId = parseInt(req.params.userId);
@@ -1527,7 +1555,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.get("/api/tasks/:taskId/deliverables", async (req, res) => {
+  app.get("/api/tasks/:taskId/deliverables", authMiddleware, async (req: any, res) => {
     try {
       const taskId = parseInt(req.params.taskId);
       const task = await storage.getTaskById(taskId);
@@ -1541,7 +1569,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.delete("/api/tasks/:taskId/deliverables/:id", async (req, res) => {
+  app.delete("/api/tasks/:taskId/deliverables/:id", authMiddleware, async (req: any, res) => {
     try {
       const taskId = parseInt(req.params.taskId);
       const id = parseInt(req.params.id);
@@ -1584,7 +1612,7 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // ===================== Task Submissions =====================
-  app.post("/api/tasks/:taskId/submissions", async (req, res) => {
+  app.post("/api/tasks/:taskId/submissions", authMiddleware, async (req: any, res) => {
     try {
       const taskId = parseInt(req.params.taskId);
       const task = await storage.getTaskById(taskId);
@@ -1640,7 +1668,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.get("/api/tasks/:taskId/submissions", async (req, res) => {
+  app.get("/api/tasks/:taskId/submissions", authMiddleware, async (req: any, res) => {
     try {
       const taskId = parseInt(req.params.taskId);
       const task = await storage.getTaskById(taskId);
@@ -1653,7 +1681,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.get("/api/organizations/:orgId/pending-reviews", async (req, res) => {
+  app.get("/api/organizations/:orgId/pending-reviews", authMiddleware, async (req: any, res) => {
     try {
       const orgId = parseInt(req.params.orgId);
       const userId = req.currentUserId;
@@ -1669,7 +1697,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.put("/api/tasks/:taskId/submissions/:submissionId/review", async (req, res) => {
+  app.put("/api/tasks/:taskId/submissions/:submissionId/review", authMiddleware, async (req: any, res) => {
     try {
       const taskId = parseInt(req.params.taskId);
       const submissionId = parseInt(req.params.submissionId);
@@ -1723,7 +1751,7 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // ===================== Activity Logs =====================
-  app.get("/api/activity-logs", async (req, res) => {
+  app.get("/api/activity-logs", authMiddleware, async (req: any, res) => {
     try {
       const filters: { entityType?: string; entityId?: number } = {};
       if (req.query.entityType) filters.entityType = req.query.entityType as string;
@@ -1736,7 +1764,7 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // ===================== Graph Visualization =====================
-  app.get("/api/graph/data", async (req, res) => {
+  app.get("/api/graph/data", authMiddleware, async (req: any, res) => {
     try {
       const { projectId, deptId, status } = req.query;
 
@@ -1754,14 +1782,17 @@ export async function registerRoutes(server: Server, app: Express) {
         // status is comma-separated
       }
 
-      const allTasks = await storage.getTasks(taskFilters);
+      const rawTasks = await storage.getTasks(taskFilters);
+      const allTasks = rawTasks.filter((t: any) => t.orgId === req.orgId);
       
       // Get all projects for color mapping
-      const allProjects = await storage.getProjects();
+      const rawProjects = await storage.getProjects();
+      const allProjects = rawProjects.filter((p: any) => p.orgId === req.orgId);
       const projectMap = new Map(allProjects.map(p => [p.id, p]));
 
       // Get all departments for color mapping
-      const allDepartments = await storage.getDepartments();
+      const rawDepartments = await storage.getDepartments();
+      const allDepartments = rawDepartments.filter((d: any) => d.orgId === req.orgId);
       const deptMap = new Map(allDepartments.map(d => [d.id, d]));
 
       // Get all users for assignee names
@@ -1857,7 +1888,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.get("/api/graph/subtasks/:taskId", async (req, res) => {
+  app.get("/api/graph/subtasks/:taskId", authMiddleware, async (req: any, res) => {
     try {
       const taskId = parseInt(req.params.taskId);
       const allTasks = await storage.getTasks({ parentTaskId: taskId });
@@ -1924,7 +1955,7 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // ===================== Cross-Department Collaboration Health =====================
-  app.get("/api/graph/collaboration-health", async (_req, res) => {
+  app.get("/api/graph/collaboration-health", authMiddleware, async (req: any, res) => {
     try {
       const allTasks = await storage.getTasks({});
       const allProjects = await storage.getProjects();
@@ -2026,7 +2057,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.post("/api/graph/ai-analysis", async (req, res) => {
+  app.post("/api/graph/ai-analysis", authMiddleware, async (req: any, res) => {
     try {
       const allTasks = await storage.getTasks({});
       const allDeps = await storage.getAllTaskDependencies();
@@ -2102,7 +2133,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   });
 
   // ===================== Job Roles =====================
-  app.get("/api/job-roles", async (_req, res) => {
+  app.get("/api/job-roles", authMiddleware, async (req: any, res) => {
     try {
       const data = await storage.getJobRoles();
       return res.json({ data });
@@ -2111,7 +2142,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.post("/api/job-roles", async (req, res) => {
+  app.post("/api/job-roles", authMiddleware, async (req: any, res) => {
     try {
       const parsed = insertJobRoleSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
@@ -2131,7 +2162,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.patch("/api/job-roles/:id", async (req, res) => {
+  app.patch("/api/job-roles/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getJobRoleById(id);
@@ -2152,7 +2183,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.delete("/api/job-roles/:id", async (req, res) => {
+  app.delete("/api/job-roles/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getJobRoleById(id);
@@ -2173,7 +2204,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.patch("/api/users/:id/job-role", async (req, res) => {
+  app.patch("/api/users/:id/job-role", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getUserById(id);
@@ -2196,7 +2227,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   });
 
   // ===================== Verdicts =====================
-  app.post("/api/verdicts/judge", async (req, res) => {
+  app.post("/api/verdicts/judge", authMiddleware, async (req: any, res) => {
     try {
       const { taskId, userId, requestedBy } = req.body;
       if (!taskId || !userId) return res.status(400).json({ error: "taskId and userId are required" });
@@ -2274,7 +2305,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.post("/api/verdicts/judge-assignment", async (req, res) => {
+  app.post("/api/verdicts/judge-assignment", authMiddleware, async (req: any, res) => {
     try {
       const { taskId, userId, requestedBy } = req.body;
       if (!taskId || !userId) return res.status(400).json({ error: "taskId and userId are required" });
@@ -2323,7 +2354,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.get("/api/verdicts/task/:taskId", async (req, res) => {
+  app.get("/api/verdicts/task/:taskId", authMiddleware, async (req: any, res) => {
     try {
       const taskId = parseInt(req.params.taskId);
       const data = await storage.getVerdictsByTaskId(taskId);
@@ -2333,7 +2364,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.get("/api/verdicts/user/:userId", async (req, res) => {
+  app.get("/api/verdicts/user/:userId", authMiddleware, async (req: any, res) => {
     try {
       const userId = parseInt(req.params.userId);
       const data = await storage.getVerdictsByUserId(userId);
@@ -2343,7 +2374,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.patch("/api/verdicts/:id/accept", async (req, res) => {
+  app.patch("/api/verdicts/:id/accept", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getVerdictById(id);
@@ -2364,7 +2395,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.patch("/api/verdicts/:id/override", async (req, res) => {
+  app.patch("/api/verdicts/:id/override", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getVerdictById(id);
@@ -2387,7 +2418,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.get("/api/verdicts/stats", async (req, res) => {
+  app.get("/api/verdicts/stats", authMiddleware, async (req: any, res) => {
     try {
       const allVerdicts = await storage.getAllVerdicts();
       const allUsers = await storage.getUsers();
@@ -2422,7 +2453,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   });
 
   // ===================== Notifications =====================
-  app.get("/api/notifications", async (req, res) => {
+  app.get("/api/notifications", authMiddleware, async (req: any, res) => {
     try {
       const userId = parseInt(req.query.userId as string) || req.currentUserId;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
@@ -2438,7 +2469,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.get("/api/notifications/unread-count", async (req, res) => {
+  app.get("/api/notifications/unread-count", authMiddleware, async (req: any, res) => {
     try {
       const userId = parseInt(req.query.userId as string) || req.currentUserId;
       const count = await storage.getUnreadNotificationCount(userId);
@@ -2448,7 +2479,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.patch("/api/notifications/:id/read", async (req, res) => {
+  app.patch("/api/notifications/:id/read", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const notification = await storage.markNotificationRead(id);
@@ -2458,7 +2489,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.post("/api/notifications/mark-all-read", async (req, res) => {
+  app.post("/api/notifications/mark-all-read", authMiddleware, async (req: any, res) => {
     try {
       const userId = req.body.userId || req.currentUserId;
       await storage.markAllNotificationsRead(userId);
@@ -2469,7 +2500,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   });
 
   // ===================== Stats Overview =====================
-  app.get("/api/stats/overview", async (req, res) => {
+  app.get("/api/stats/overview", authMiddleware, async (req: any, res) => {
     try {
       const tasks = await storage.getTasks({});
       const now = new Date();
@@ -2516,7 +2547,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   });
 
   // ===================== Conversations =====================
-  app.get("/api/conversations", async (req, res) => {
+  app.get("/api/conversations", authMiddleware, async (req: any, res) => {
     try {
       const data = await storage.getConversationsByOrg(req.orgId);
       return res.json({ data });
@@ -2525,7 +2556,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.get("/api/conversations/search", async (req, res) => {
+  app.get("/api/conversations/search", authMiddleware, async (req: any, res) => {
     try {
       const q = String(req.query.q || '').trim();
       if (!q) return res.json({ data: [] });
@@ -2536,7 +2567,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.get("/api/conversations/:id", async (req, res) => {
+  app.get("/api/conversations/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const data = await storage.getConversationById(id);
@@ -2547,7 +2578,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.post("/api/conversations", async (req, res) => {
+  app.post("/api/conversations", authMiddleware, async (req: any, res) => {
     try {
       const parsed = insertConversationSchema.parse(req.body);
       const data = await storage.createConversation(parsed);
@@ -2557,7 +2588,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.patch("/api/conversations/:id", async (req, res) => {
+  app.patch("/api/conversations/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const data = await storage.updateConversation(id, req.body);
@@ -2568,7 +2599,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.delete("/api/conversations/:id", async (req, res) => {
+  app.delete("/api/conversations/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       await storage.deleteConversation(id);
@@ -2579,7 +2610,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   });
 
   // ===================== Chat Messages =====================
-  app.get("/api/conversations/:id/messages", async (req, res) => {
+  app.get("/api/conversations/:id/messages", authMiddleware, async (req: any, res) => {
     try {
       const conversationId = parseInt(req.params.id);
       const data = await storage.getChatMessages(conversationId);
@@ -2589,7 +2620,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.post("/api/conversations/:id/messages", async (req, res) => {
+  app.post("/api/conversations/:id/messages", authMiddleware, async (req: any, res) => {
     try {
       const conversationId = parseInt(req.params.id);
       const messageData = { ...req.body, conversationId };
@@ -2630,7 +2661,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   });
 
   // ===================== AI Guided Options =====================
-  app.get("/api/ai/guided-options", async (req, res) => {
+  app.get("/api/ai/guided-options", authMiddleware, async (req: any, res) => {
     try {
       const { type, projectId } = req.query;
 
@@ -2687,7 +2718,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   });
 
   // ===================== AI Decompose Project =====================
-  app.post("/api/ai/decompose-project", async (req, res) => {
+  app.post("/api/ai/decompose-project", authMiddleware, async (req: any, res) => {
     try {
       const { projectName, projectDescription } = req.body;
       if (!projectName) {
@@ -2770,7 +2801,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   });
 
   // ===================== AI Chat Stream =====================
-  app.post("/api/ai/chat/stream", async (req, res) => {
+  app.post("/api/ai/chat/stream", authMiddleware, async (req: any, res) => {
     try {
       const { message, conversationHistory, conversationId, currentUserId, systemPrompt, model, extendedThinking, replyStyle, webSearchEnabled, codeContextEnabled, knowledgeBaseEnabled, attachments } = req.body;
       if ((!message || typeof message !== 'string') && (!attachments || attachments.length === 0)) {
@@ -3018,7 +3049,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   });
 
   // ===================== AI Chat =====================
-  app.post("/api/ai/chat", async (req, res) => {
+  app.post("/api/ai/chat", authMiddleware, async (req: any, res) => {
     try {
       const { message, conversationHistory, conversationId, currentUserId, systemPrompt, model, extendedThinking } = req.body;
       if (!message || typeof message !== 'string') {
@@ -3101,7 +3132,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.post("/api/ai/confirm", async (req, res) => {
+  app.post("/api/ai/confirm", authMiddleware, async (req: any, res) => {
     try {
       const { actionType, data, currentUserId, conversationId } = req.body;
       if (!actionType || !data) {
@@ -3166,7 +3197,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
-  app.post("/api/ai/confirm-batch", async (req, res) => {
+  app.post("/api/ai/confirm-batch", authMiddleware, async (req: any, res) => {
     try {
       const { actions, currentUserId, conversationId } = req.body;
       if (!Array.isArray(actions) || actions.length === 0) {
@@ -3279,7 +3310,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   });
 
   // ===================== Token Usage Stats =====================
-  app.get("/api/token-usage/stats", async (req, res) => {
+  app.get("/api/token-usage/stats", authMiddleware, async (req: any, res) => {
     try {
       const orgId = req.orgId;
       const period = (req.query.period as string) || '30d';
