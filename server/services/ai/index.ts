@@ -33,7 +33,7 @@ function getClientForModel(model: string): OpenAI {
   return openrouterClient;
 }
 
-type TaskCategory = 'title_generation' | 'auto_judgment' | 'quick_reply' | 'general_chat' | 'code_generation' | 'complex_analysis' | 'document_processing';
+type TaskCategory = 'title_generation' | 'auto_judgment' | 'quick_reply' | 'general_chat' | 'code_generation' | 'complex_analysis' | 'document_processing' | 'knowledge_qa';
 
 interface ModelConfig {
   model: string;
@@ -83,6 +83,12 @@ const TASK_MODEL_CONFIGS: Record<TaskCategory, ModelConfig> = {
     model: 'claude-sonnet-4-6',
     max_tokens: 16384,
     thinking: { type: 'enabled', budget_tokens: 10000 },
+    temperature: 0.3,
+  },
+  knowledge_qa: {
+    model: 'claude-sonnet-4-6',
+    max_tokens: 8192,
+    thinking: { type: 'disabled' },
     temperature: 0.3,
   },
 };
@@ -190,6 +196,7 @@ const CONTEXT_LIMITS: Record<TaskCategory, number> = {
   code_generation: 10,
   complex_analysis: 20,
   document_processing: 6,
+  knowledge_qa: 10,
 };
 
 async function buildOptimizedContext(
@@ -1158,14 +1165,50 @@ export async function chat(
 export async function* chatStream(
   message: string,
   conversationHistory: { role: string; content: string | any[] }[],
-  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean; orgId?: number },
+  context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean; orgId?: number; knowledgeBaseEnabled?: boolean; userRole?: string; userDeptId?: number | null },
   attachments?: { type: string; name: string; mimeType: string; base64: string }[]
 ): AsyncGenerator<{ type: 'token' | 'done' | 'error'; content?: string; tokenUsage?: ChatResponse['tokenUsage'] }> {
   const hasAttachments = !!(attachments && attachments.length > 0);
-  const taskCategory = await classifyTask(message, hasAttachments);
+  let taskCategory = await classifyTask(message, hasAttachments);
+
+  if (context.knowledgeBaseEnabled) {
+    taskCategory = 'knowledge_qa';
+  }
+
   const config = getConfigForTask(taskCategory, context.model, context.extendedThinking);
   const modelName = config.model;
-  const { prompt: systemPrompt } = await buildContextualSystemPrompt({ ...context, model: modelName }, 'streaming');
+  let { prompt: systemPrompt } = await buildContextualSystemPrompt({ ...context, model: modelName }, 'streaming');
+
+  if (context.knowledgeBaseEnabled && context.orgId) {
+    try {
+      const { searchKnowledge } = await import('../kb/search');
+      const { buildKnowledgePrompt } = await import('./prompts');
+
+      const kbResults = await searchKnowledge({
+        orgId: context.orgId,
+        query: message,
+        topK: 5,
+        userRole: context.userRole || 'member',
+        userDeptId: context.userDeptId || null,
+      });
+
+      if (kbResults.length > 0) {
+        const kbPrompt = buildKnowledgePrompt(kbResults.map(r => ({
+          content: r.content,
+          documentTitle: r.documentTitle,
+          category: r.category,
+        })));
+        systemPrompt += kbPrompt;
+        const kbSources = [...new Set(kbResults.map(r => r.documentTitle))];
+        console.log(`[KB] Injected ${kbResults.length} chunks from: ${kbSources.join(', ')}`);
+      } else {
+        console.log(`[KB] No results found for query: ${message.slice(0, 50)}...`);
+      }
+    } catch (err: any) {
+      console.error(`[KB] Search error (non-fatal):`, err.message);
+    }
+  }
+
   const aiClient = getClientForModel(modelName);
 
   const optimizedHistory = await buildOptimizedContext(conversationHistory, taskCategory);

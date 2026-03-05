@@ -2772,7 +2772,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   // ===================== AI Chat Stream =====================
   app.post("/api/ai/chat/stream", async (req, res) => {
     try {
-      const { message, conversationHistory, conversationId, currentUserId, systemPrompt, model, extendedThinking, replyStyle, webSearchEnabled, codeContextEnabled, attachments } = req.body;
+      const { message, conversationHistory, conversationId, currentUserId, systemPrompt, model, extendedThinking, replyStyle, webSearchEnabled, codeContextEnabled, knowledgeBaseEnabled, attachments } = req.body;
       if ((!message || typeof message !== 'string') && (!attachments || attachments.length === 0)) {
         return res.status(400).json({ error: 'message is required' });
       }
@@ -2878,7 +2878,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
         : aiChatStream(
             msgText,
             history,
-            { currentUserId: userId, currentUserName: userName, customSystemPrompt: effectiveSystemPrompt || undefined, model: model || undefined, extendedThinking: extendedThinking || false, orgId },
+            { currentUserId: userId, currentUserName: userName, customSystemPrompt: effectiveSystemPrompt || undefined, model: model || undefined, extendedThinking: extendedThinking || false, orgId, knowledgeBaseEnabled: knowledgeBaseEnabled || false, userRole: user?.role || 'member', userDeptId: user?.deptId || null },
             attachments
           );
 
@@ -2928,7 +2928,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
                 completionTokens: chunk.tokenUsage.completionTokens,
                 totalTokens: chunk.tokenUsage.totalTokens,
                 costUsd: cost,
-                purpose: 'chat',
+                purpose: knowledgeBaseEnabled ? 'knowledge_qa' : 'chat',
               });
             } catch (tokenErr) {
               console.error('Failed to record token usage:', tokenErr);
