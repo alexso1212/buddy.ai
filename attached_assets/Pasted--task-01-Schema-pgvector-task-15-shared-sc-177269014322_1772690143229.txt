@@ -1,0 +1,279 @@
+# task-01: 知识库数据层（Schema + pgvector）
+
+> **前置条件**：无，这是第一个 task
+> **预计耗时**：15 分钟
+> **改动文件**：`shared/schema.ts`（新增约 60 行）
+> **风险等级**：低（只新增表，不改现有代码）
+
+-----
+
+## 目标
+
+在数据库中创建知识库所需的两张表 `kb_documents` 和 `kb_chunks`，并启用 pgvector 扩展。
+
+-----
+
+## STEP 1：启用 pgvector 扩展
+
+在数据库中执行以下 SQL（可以通过 `drizzle-kit` 的自定义迁移或直接 psql 执行）：
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+验证：
+
+```sql
+SELECT extname, extversion FROM pg_extension WHERE extname = 'vector';
+-- 应返回 vector | 0.8.0
+```
+
+-----
+
+## STEP 2：在 shared/schema.ts 新增表定义
+
+在文件**末尾**（现有的最后一个表定义之后）追加以下代码。
+
+**注意**：
+
+- 使用 `serial('id').primaryKey()` 主键风格（和现有所有表一致）
+- 使用 `integer('org_id').references(() => organizations.id)` 外键风格（和现有表一致）
+- **不要**用 UUID 主键
+- **不要**改动现有任何表定义
+
+```typescript
+// ===================== Knowledge Base =====================
+
+export const kbDocuments = pgTable('kb_documents', {
+  id: serial('id').primaryKey(),
+  orgId: integer('org_id').references(() => organizations.id).notNull(),
+  uploadedBy: integer('uploaded_by').references(() => users.id).notNull(),
+  title: varchar('title', { length: 500 }).notNull(),
+  fileName: varchar('file_name', { length: 500 }).notNull(),
+  fileType: varchar('file_type', { length: 20 }).notNull(), // 'pdf', 'docx', 'txt', 'md'
+  fileSize: integer('file_size').notNull(), // bytes
+  fileUrl: text('file_url').notNull(), // 存储路径，如 /uploads/kb/xxx.pdf
+  category: varchar('category', { length: 50 }).notNull().default('general'),
+  // 分类：'policy'制度, 'contract'合同, 'jd'岗位说明, 'manual'操作手册, 'general'其他
+  visibility: varchar('visibility', { length: 50 }).notNull().default('org'),
+  // 'org'全组织, 'department'指定部门, 'admin'仅管理层
+  visibleDeptIds: text('visible_dept_ids'), // JSON array string, 当 visibility='department' 时使用
+  status: varchar('status', { length: 50 }).notNull().default('pending'),
+  // 'pending'待处理, 'processing'处理中, 'ready'已就绪, 'error'出错
+  chunkCount: integer('chunk_count').notNull().default(0),
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const kbChunks = pgTable('kb_chunks', {
+  id: serial('id').primaryKey(),
+  documentId: integer('document_id').references(() => kbDocuments.id, { onDelete: 'cascade' }).notNull(),
+  orgId: integer('org_id').references(() => organizations.id).notNull(),
+  chunkIndex: integer('chunk_index').notNull(), // 在原文档中的顺序，从 0 开始
+  content: text('content').notNull(), // 切片的文本内容
+  tokenCount: integer('token_count').notNull().default(0), // 估算的 token 数
+  // embedding 字段：pgvector 向量（1536 维，匹配 OpenAI text-embedding-3-small）
+  // 注意：Drizzle ORM 可能不原生支持 vector 类型，见下方处理方案
+  metadata: text('metadata'), // JSON string，额外信息（页码、章节标题等）
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Zod insert schemas（和现有的 insertXxxSchema 模式一致）
+export const insertKbDocumentSchema = createInsertSchema(kbDocuments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertKbChunkSchema = createInsertSchema(kbChunks).omit({
+  id: true,
+  createdAt: true,
+});
+```
+
+-----
+
+## STEP 3：处理 pgvector 的 embedding 字段
+
+Drizzle ORM 可能不原生支持 `vector(1536)` 类型。有两种处理方式，**选一种即可**：
+
+### 方式 A：Drizzle 支持 customType（推荐）
+
+如果 Drizzle 版本支持 `customType`，在 `shared/schema.ts` 的 import 区域添加：
+
+```typescript
+import { customType } from 'drizzle-orm/pg-core';
+
+const vector = customType<{ data: number[]; driverParam: string }>({
+  dataType() {
+    return 'vector(1536)';
+  },
+  toDriver(value: number[]): string {
+    return `[${value.join(',')}]`;
+  },
+  fromDriver(value: string): number[] {
+    // value 格式为 "[0.1,0.2,...]"
+    return JSON.parse(value);
+  },
+});
+```
+
+然后在 `kbChunks` 表中添加：
+
+```typescript
+  embedding: vector('embedding'), // 1536 维向量
+```
+
+### 方式 B：embedding 字段在迁移后手动添加
+
+如果 customType 不工作，先不在 Drizzle schema 中定义 embedding 字段。在 `db:push` 成功后，手动执行 SQL 添加：
+
+```sql
+ALTER TABLE kb_chunks ADD COLUMN embedding vector(1536);
+```
+
+查询 embedding 时用原始 SQL（Drizzle 的 `sql` 模板标签）。
+
+**选择哪种方式取决于 Drizzle 的 customType 是否能正常工作。先试方式 A，报错就用方式 B。**
+
+-----
+
+## STEP 4：创建索引
+
+在 `db:push` 成功后，执行以下 SQL 创建索引：
+
+```sql
+-- 按组织查文档
+CREATE INDEX IF NOT EXISTS idx_kb_documents_org ON kb_documents(org_id);
+
+-- 按文档查切片
+CREATE INDEX IF NOT EXISTS idx_kb_chunks_document ON kb_chunks(document_id);
+
+-- 按组织查切片（RAG 检索时用）
+CREATE INDEX IF NOT EXISTS idx_kb_chunks_org ON kb_chunks(org_id);
+
+-- 向量相似度索引（HNSW 比 IVFFlat 更适合小数据量场景）
+CREATE INDEX IF NOT EXISTS idx_kb_chunks_embedding ON kb_chunks 
+  USING hnsw (embedding vector_cosine_ops);
+```
+
+注意：如果 embedding 字段还没有数据，HNSW 索引可能需要在有一定数据后再创建。如果报错，可以先跳过向量索引，后续数据入库后再创建。
+
+-----
+
+## STEP 5：在 storage.ts 添加 CRUD 方法
+
+在 `server/storage.ts` 中（现有代码约 989 行），参照现有的 CRUD 方法模式（如 `getDepartments`、`createDepartment` 等），新增以下方法：
+
+```typescript
+// ===================== Knowledge Base =====================
+
+// 文档 CRUD
+async getKbDocumentsByOrg(orgId: number) {
+  return await db.select().from(kbDocuments).where(eq(kbDocuments.orgId, orgId)).orderBy(desc(kbDocuments.createdAt));
+}
+
+async getKbDocumentById(id: number) {
+  const [doc] = await db.select().from(kbDocuments).where(eq(kbDocuments.id, id));
+  return doc || null;
+}
+
+async createKbDocument(data: typeof kbDocuments.$inferInsert) {
+  const [doc] = await db.insert(kbDocuments).values(data).returning();
+  return doc;
+}
+
+async updateKbDocument(id: number, data: Partial<typeof kbDocuments.$inferInsert>) {
+  const [doc] = await db.update(kbDocuments).set({ ...data, updatedAt: new Date() }).where(eq(kbDocuments.id, id)).returning();
+  return doc;
+}
+
+async deleteKbDocument(id: number) {
+  // ON DELETE CASCADE 会自动删除关联的 kb_chunks
+  await db.delete(kbDocuments).where(eq(kbDocuments.id, id));
+}
+
+// 切片 CRUD
+async createKbChunks(chunks: (typeof kbChunks.$inferInsert)[]) {
+  if (chunks.length === 0) return [];
+  return await db.insert(kbChunks).values(chunks).returning();
+}
+
+async getKbChunksByDocument(documentId: number) {
+  return await db.select().from(kbChunks).where(eq(kbChunks.documentId, documentId)).orderBy(kbChunks.chunkIndex);
+}
+
+async deleteKbChunksByDocument(documentId: number) {
+  await db.delete(kbChunks).where(eq(kbChunks.documentId, documentId));
+}
+```
+
+**注意**：这里的 `db`、`eq`、`desc` 等来自 Drizzle ORM，参照文件顶部现有的 import 使用方式。需要把 `kbDocuments` 和 `kbChunks` 加入 import。
+
+-----
+
+## STEP 6：推送 Schema 到数据库
+
+```bash
+npm run db:push
+```
+
+如果报错，检查：
+
+1. pgvector 扩展是否已启用
+1. customType 定义是否有语法问题（如果有，改用方式 B）
+1. import 路径是否正确
+
+-----
+
+## 验证清单
+
+完成后逐项检查：
+
+- [ ] `psql` 中能看到 `kb_documents` 表
+- [ ] `psql` 中能看到 `kb_chunks` 表
+- [ ] `kb_chunks` 表有 `embedding vector(1536)` 字段（如果走方式 A）
+- [ ] `SELECT extname FROM pg_extension WHERE extname = 'vector';` 返回结果
+- [ ] `npm run dev` 启动正常，App 能正常使用
+- [ ] 现有功能（AI 对话、任务管理等）不受影响
+- [ ] 在 psql 中手动插入一条 kb_documents 测试记录能成功
+
+**验证 SQL**：
+
+```sql
+-- 测试插入
+INSERT INTO kb_documents (org_id, uploaded_by, title, file_name, file_type, file_size, file_url)
+VALUES (1, 1, '测试文档', 'test.pdf', 'pdf', 1024, '/uploads/kb/test.pdf')
+RETURNING *;
+
+-- 检查表结构
+\d kb_documents
+\d kb_chunks
+```
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读项目根目录的 `task-01-kb-schema.md`，按步骤执行。
+> 
+> 重要规则：
+> 
+> 1. **只新增代码，不修改现有任何表定义**
+> 1. schema 中的主键用 `serial`，外键用 `integer`（和现有表一致）
+> 1. 先启用 pgvector 扩展，再 push schema
+> 1. 如果 Drizzle 的 customType 不支持 vector，用方式 B（ALTER TABLE 手动加字段）
+> 1. 完成后运行 `npm run dev` 确认 App 正常，然后告诉我验证清单的每一项是否通过
+
+-----
+
+## 完成后告诉 Claude
+
+回来告诉我：
+
+1. “task-01 完成” 或 “task-01 有问题：XXX”
+1. pgvector embedding 字段用的是方式 A 还是方式 B
+1. `\d kb_chunks` 的输出（让我确认表结构正确）
+
+然后我出 task-02（文件上传 + 文本提取 + 切片管道）。
