@@ -1141,6 +1141,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const id = parseInt(req.params.id);
       const project = await storage.getProjectById(id);
       if (!project) return res.status(404).json({ error: "Project not found" });
+      if (project.orgId !== req.orgId) return res.status(403).json({ error: "Access denied" });
       const tasks = await storage.getTasks({ projectId: id });
       return res.json({ data: { ...project, tasks } });
     } catch (e: any) {
@@ -1292,6 +1293,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const id = parseInt(req.params.id);
       const task = await storage.getTaskById(id);
       if (!task) return res.status(404).json({ error: "Task not found" });
+      if (task.orgId !== req.orgId) return res.status(403).json({ error: "Access denied" });
       const [subtasks, dependencies, comments, participantsRaw] = await Promise.all([
         storage.getTasks({ parentTaskId: id }),
         storage.getTaskDependencies(id),
@@ -1846,7 +1848,8 @@ export async function registerRoutes(server: Server, app: Express) {
       const filters: { entityType?: string; entityId?: number } = {};
       if (req.query.entityType) filters.entityType = req.query.entityType as string;
       if (req.query.entityId) filters.entityId = parseInt(req.query.entityId as string);
-      const data = await storage.getActivityLogs(Object.keys(filters).length > 0 ? filters : undefined);
+      const allLogs = await storage.getActivityLogs(Object.keys(filters).length > 0 ? filters : undefined);
+      const data = allLogs.filter((l: any) => l.orgId === req.orgId);
       return res.json({ data });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
@@ -2225,7 +2228,8 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   // ===================== Job Roles =====================
   app.get("/api/job-roles", authMiddleware, async (req: any, res) => {
     try {
-      const data = await storage.getJobRoles();
+      const allRoles = await storage.getJobRoles();
+      const data = allRoles.filter((r: any) => r.orgId === req.orgId);
       return res.json({ data });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
@@ -2322,9 +2326,13 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
       const { taskId, userId, requestedBy } = req.body;
       if (!taskId || !userId) return res.status(400).json({ error: "taskId and userId are required" });
 
+      const task = await storage.getTaskById(taskId);
+      if (!task) return res.status(404).json({ error: "Task not found" });
+      if (task.orgId !== req.orgId) return res.status(403).json({ error: "Access denied" });
+
       const orgId = req.orgId;
       const reqUserId = requestedBy || req.currentUserId;
-      const verdictResult = await judgeTaskAssignment(taskId, userId);
+      const verdictResult = await judgeTaskAssignment(taskId, userId, req.orgId);
 
       const verdict = await storage.createVerdict({
         orgId,
@@ -2400,9 +2408,13 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
       const { taskId, userId, requestedBy } = req.body;
       if (!taskId || !userId) return res.status(400).json({ error: "taskId and userId are required" });
 
+      const task = await storage.getTaskById(taskId);
+      if (!task) return res.status(404).json({ error: "Task not found" });
+      if (task.orgId !== req.orgId) return res.status(403).json({ error: "Access denied" });
+
       const orgId = req.orgId;
       const reqUserId = requestedBy || req.currentUserId;
-      const verdictResult = await judgeTaskAssignment(taskId, userId);
+      const verdictResult = await judgeTaskAssignment(taskId, userId, req.orgId);
 
       const verdict = await storage.createVerdict({
         orgId,
@@ -2512,11 +2524,13 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     try {
       const allVerdicts = await storage.getAllVerdicts();
       const allUsers = await storage.getUsers();
+      const orgUserIds = new Set(allUsers.filter((u: any) => u.orgId === req.orgId).map(u => u.id));
+      const orgVerdicts = allVerdicts.filter(v => orgUserIds.has(v.userId));
       const userMap = new Map(allUsers.map(u => [u.id, u]));
 
       const statsByUser: Record<number, { displayName: string; in_scope: number; stretch: number; out_of_scope: number; shared: number; total: number }> = {};
 
-      for (const v of allVerdicts) {
+      for (const v of orgVerdicts) {
         if (!statsByUser[v.userId]) {
           const user = userMap.get(v.userId);
           statsByUser[v.userId] = {
@@ -2663,6 +2677,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
       const id = parseInt(req.params.id);
       const data = await storage.getConversationById(id);
       if (!data) return res.status(404).json({ error: "Conversation not found" });
+      if (data.orgId !== req.orgId) return res.status(403).json({ error: "Access denied" });
       return res.json({ data });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });

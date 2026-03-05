@@ -167,9 +167,11 @@ async function buildUserWithRole(userId: number): Promise<UserWithRole | null> {
   };
 }
 
-async function buildAllUsersWithRoles(): Promise<UserWithRole[]> {
-  const allUsers = await storage.getUsers();
-  const departments = await storage.getDepartments();
+async function buildAllUsersWithRoles(orgId?: number): Promise<UserWithRole[]> {
+  const allUsersRaw = await storage.getUsers();
+  const allUsers = orgId ? allUsersRaw.filter((u: any) => u.orgId === orgId) : allUsersRaw;
+  const departmentsRaw = await storage.getDepartments();
+  const departments = orgId ? departmentsRaw.filter((d: any) => d.orgId === orgId) : departmentsRaw;
   const jobRolesData = await storage.getJobRoles();
   const deptMap = new Map(departments.map(d => [d.id, d]));
   const roleMap = new Map(jobRolesData.map(r => [r.id, r]));
@@ -256,7 +258,8 @@ export interface VerdictResultWithUsage extends VerdictResult {
 
 export async function judgeTaskAssignment(
   taskId: number,
-  userId: number
+  userId: number,
+  orgId?: number
 ): Promise<VerdictResultWithUsage> {
   const task = await buildTaskWithDetails(taskId);
   if (!task) throw new Error('Task not found');
@@ -264,7 +267,7 @@ export async function judgeTaskAssignment(
   const targetUser = await buildUserWithRole(userId);
   if (!targetUser) throw new Error('User not found');
   
-  const allUsers = await buildAllUsersWithRoles();
+  const allUsers = await buildAllUsersWithRoles(orgId);
   
   const prompt = buildVerdictPrompt(task, targetUser, allUsers);
   

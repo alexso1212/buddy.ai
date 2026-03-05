@@ -1,0 +1,298 @@
+# hotfix-02: 多租户数据隔离全面审计
+
+> **优先级**：🔴 紧急（数据泄露漏洞）
+> **预计耗时**：15-20 分钟
+> **目标**：找出并修复所有跨组织数据泄露点，一次性扫干净
+
+-----
+
+## 问题根因
+
+hotfix-01 修复了**路由层**的 authMiddleware 和 orgId 过滤（70个路由），但遗漏了**业务逻辑层**——AI 上下文加载、system prompt 构建、图谱数据等内部函数中，仍然有不按 orgId 过滤的查询。
+
+这类 bug 的特征：**API 路由有 authMiddleware + orgId 过滤，但路由调用的内部函数在查询数据库时没带 orgId 条件。**
+
+-----
+
+## 审计方法
+
+### 第一步：用 grep 找出所有直接查询全表的调用
+
+```bash
+# 在 server/ 目录下搜索所有不带 orgId/org_id 过滤的数据库查询
+# 重点关注 storage 方法调用和直接的 db.select
+
+# 1. 找到所有 storage 方法的调用点
+grep -rn 'storage\.' server/services/ server/routes.ts | grep -v 'node_modules' | grep -v '.bak' > /tmp/storage_calls.txt
+echo "=== storage 调用点 ===" && wc -l /tmp/storage_calls.txt
+
+# 2. 找到所有 storage 方法的定义（看哪些没有 orgId 参数）
+grep -n 'async \(get\|create\|update\|delete\|find\|search\)' server/storage.ts > /tmp/storage_methods.txt
+echo "=== storage 方法定义 ===" && cat /tmp/storage_methods.txt
+
+# 3. 重点检查：哪些 get* 方法没有 orgId 参数但返回了可能跨组织的数据
+grep -n 'async get' server/storage.ts | grep -v 'ById\|ByOrg\|ByUser'
+```
+
+### 第二步：逐层审查（按优先级）
+
+-----
+
+## 审查清单
+
+### 🔴 第一层：AI 上下文（最高优先级）
+
+这些函数决定了 AI “看到”什么数据。如果它们加载了全库数据，AI 就会泄露其他组织的信息。
+
+#### 1.1 buildContextualSystemPrompt()
+
+位置：`server/services/ai/index.ts` 约第 700 行
+
+```bash
+grep -n 'buildContextualSystemPrompt\|loadBusinessContext\|SYSTEM_PROMPT' server/services/ai/index.ts | head -20
+```
+
+检查：
+
+- [ ] 函数是否接收 orgId 参数？
+- [ ] 内部加载任务列表时是否按 orgId 过滤？
+- [ ] 内部加载项目列表时是否按 orgId 过滤？
+- [ ] 内部加载团队成员时是否按 orgId 过滤？
+- [ ] system prompt 中的组织名是否动态获取（而不是硬编码 “Deltapex Education”）？
+
+**修复**：
+
+```typescript
+// 所有数据查询都必须带 orgId
+const tasks = await storage.getTasksByOrg(orgId);        // 不是 storage.getTasks()
+const projects = await storage.getProjectsByOrg(orgId);  // 不是 storage.getProjects()
+const members = await storage.getOrgMembers(orgId);      // 不是 storage.getUsers()
+const org = await storage.getOrganizationById(orgId);    // 获取真实组织名
+```
+
+#### 1.2 prompts.ts 中的硬编码
+
+位置：`server/services/ai/prompts.ts`
+
+```bash
+grep -n 'Deltapex\|组织.*Education\|orgId' server/services/ai/prompts.ts
+```
+
+检查：
+
+- [ ] 是否有硬编码的组织名（“Deltapex Education”）？
+- [ ] 模板变量 `{{teamMembers}}`、`{{projectList}}`、`{{taskList}}` 的数据来源是否按 orgId 过滤？
+
+**修复**：把硬编码的组织名替换为动态变量。
+
+#### 1.3 AI 简报数据聚合
+
+位置：`server/services/briefing/dataAggregator.ts`
+
+```bash
+grep -n 'storage\.\|getTask\|getProject\|getMember' server/services/briefing/dataAggregator.ts
+```
+
+检查：
+
+- [ ] aggregateBriefingData() 中的所有查询是否按 orgId 过滤？
+
+#### 1.4 Verdict 服务
+
+位置：`server/services/ai/verdictService.ts`
+
+```bash
+grep -n 'storage\.\|getTask\|getUser\|getJob' server/services/ai/verdictService.ts
+```
+
+检查：
+
+- [ ] judgeTaskAssignment() 加载用户和岗位信息时是否按 orgId 过滤？
+
+-----
+
+### 🟡 第二层：数据查询函数（中优先级）
+
+检查 storage.ts 中所有 get* 方法，哪些没有按 orgId 过滤但应该过滤。
+
+```bash
+# 列出所有 get 方法
+grep -n 'async get' server/storage.ts
+```
+
+逐个检查以下方法：
+
+|方法                     |需要 orgId 过滤？  |当前状态|
+|-----------------------|--------------|----|
+|`getTasks()`           |✅ 是           |检查  |
+|`getProjects()`        |✅ 是           |检查  |
+|`getUsers()`           |✅ 是           |检查  |
+|`getDepartments()`     |✅ 是           |检查  |
+|`getJobRoles()`        |✅ 是           |检查  |
+|`getConversations()`   |✅ 是           |检查  |
+|`getTaskById()`        |⚠️ 返回后需检查 orgId|检查  |
+|`getUserById()`        |⚠️ 可能不需要       |检查  |
+|`getOrgMembers()`      |✅ 是           |检查  |
+|`getNotifications()`   |✅ 是           |检查  |
+|`getActivityLogs()`    |✅ 是           |检查  |
+|`getVerdicts()`        |✅ 是           |检查  |
+|`getTokenUsage()`      |✅ 是           |检查  |
+|`getKbDocumentsByOrg()`|✅ 应该已有        |确认  |
+
+**规则**：任何返回列表的方法，如果数据表有 `org_id` 字段，该方法就必须按 orgId 过滤。
+
+**如果发现方法没有 orgId 过滤**：
+
+1. 如果方法签名有 orgId 参数但内部没用 → 修复内部查询
+1. 如果方法签名没有 orgId 参数 → 新增 orgId 参数，或创建新方法 `getXxxByOrg(orgId)`
+1. 找到所有调用点，确保传入了正确的 orgId
+
+-----
+
+### 🟡 第三层：图谱和统计（中优先级）
+
+#### 3.1 图谱数据
+
+位置：`server/routes.ts` 中 `/api/graph/data`
+
+```bash
+grep -A 20 'graph/data' server/routes.ts | head -30
+```
+
+检查：
+
+- [ ] 图谱节点查询是否按 orgId 过滤？
+- [ ] 协作健康度计算是否按 orgId 过滤？
+
+#### 3.2 统计概览
+
+位置：`server/routes.ts` 中 `/api/stats/overview`
+
+```bash
+grep -A 20 'stats/overview' server/routes.ts | head -30
+```
+
+检查：
+
+- [ ] 统计数据是否按 orgId 过滤？
+
+-----
+
+### 🟢 第四层：搜索和对话（低优先级，可能已修复）
+
+#### 4.1 对话搜索
+
+```bash
+grep -A 10 'conversations/search' server/routes.ts | head -15
+```
+
+检查：
+
+- [ ] 搜索结果是否按 orgId 过滤？
+
+#### 4.2 知识库搜索
+
+```bash
+grep -n 'orgId\|org_id' server/services/kb/search.ts
+```
+
+检查：
+
+- [ ] searchKnowledge() 是否按 orgId 过滤？（应该已有，task-03 做的）
+
+-----
+
+## 修复优先级
+
+1. **🔴 立刻修**：buildContextualSystemPrompt / loadBusinessContext — AI 能看到所有组织的任务和项目
+1. **🔴 立刻修**：prompts.ts 硬编码 “Deltapex Education” — 所有组织的 AI 都自称 Deltapex
+1. **🟡 检查修**：storage.ts 中所有 get* 列表方法的 orgId 过滤
+1. **🟡 检查修**：图谱和统计数据的 orgId 过滤
+1. **🟢 确认**：知识库搜索和对话搜索（大概率已有过滤）
+
+-----
+
+## 验证方法
+
+修复完成后，用两个不同组织的账号验证：
+
+```bash
+# 用组织1（Deltapex）的 token
+TASKS1=$(curl -s "http://localhost:5000/api/tasks" -H "Authorization: Bearer $ORG1_TOKEN")
+echo "Org1 任务数: $(echo $TASKS1 | grep -o '"id"' | wc -l)"
+
+# 用组织2（鑫达/测试组织）的 token
+TASKS2=$(curl -s "http://localhost:5000/api/tasks" -H "Authorization: Bearer $ORG2_TOKEN")
+echo "Org2 任务数: $(echo $TASKS2 | grep -o '"id"' | wc -l)"
+
+# Org2 不应该看到 Org1 的 41 个任务
+```
+
+**AI 上下文验证**（最关键）：
+
+```bash
+# 用组织2的 token 发 AI 对话
+curl -s -X POST "http://localhost:5000/api/ai/chat/stream" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ORG2_TOKEN" \
+  -d '{
+    "message": "目前有多少个任务？",
+    "conversationHistory": [],
+    "currentUserId": 用组织2的userId
+  }' --max-time 30
+
+# AI 应该回答"0个任务"或"还没有任务"
+# 而不是回答"有41个任务"（那是 Deltapex 的数据）
+```
+
+**System prompt 验证**：
+
+```bash
+# 用组织2的 token 发 AI 对话
+curl -s -X POST "http://localhost:5000/api/ai/chat/stream" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ORG2_TOKEN" \
+  -d '{
+    "message": "你是哪个公司的AI助手？",
+    "conversationHistory": [],
+    "currentUserId": 用组织2的userId
+  }' --max-time 30
+
+# AI 应该回答组织2的名称
+# 而不是回答"Deltapex Education"
+```
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读项目根目录的 `hotfix-02-isolation-audit.md`，执行全面的多租户数据隔离审计。
+> 
+> 执行步骤：
+> 
+> 1. **先用 grep 扫描**：找出所有可能的泄露点（按审查清单逐层执行）
+> 1. **修复 buildContextualSystemPrompt / loadBusinessContext**：所有数据查询带 orgId
+> 1. **修复 prompts.ts 硬编码**：组织名从数据库动态获取
+> 1. **审查所有 storage.ts 的 get* 方法**：确保有 orgId 字段的表都按 orgId 过滤
+> 1. **运行验证脚本**：用两个不同组织的 token 验证隔离
+> 
+> 输出格式：
+> 
+> ```
+> === 多租户隔离审计报告 ===
+> 
+> 已检查：XX 个函数/方法
+> 发现问题：XX 个
+> 已修复：XX 个
+> 
+> 详细列表：
+> ✅ storage.getTasksByOrg() — 已有 orgId 过滤
+> ❌ → ✅ loadBusinessContext() — 无 orgId 过滤 → 已修复
+> ❌ → ✅ SYSTEM_PROMPT 硬编码 — Deltapex Education → 改为动态
+> ...
+> 
+> 验证结果：
+> Org1 AI对话 — 只看到 Org1 数据 ✅
+> Org2 AI对话 — 只看到 Org2 数据 ✅
+> Org2 问组织名 — 回答 Org2 名称（不是 Deltapex）✅
+> ```

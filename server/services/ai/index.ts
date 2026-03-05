@@ -862,14 +862,15 @@ ${memoryLines}`;
   return { prompt, allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks };
 }
 
-async function executeQuery(actionType: string, data: Record<string, any>): Promise<string> {
+async function executeQuery(actionType: string, data: Record<string, any>, orgId?: number): Promise<string> {
   switch (actionType) {
     case 'query_tasks': {
       const filters: Record<string, any> = {};
       if (data.projectId) filters.projectId = data.projectId;
       if (data.assigneeId) filters.assigneeId = data.assigneeId;
       if (data.status) filters.status = data.status;
-      const tasks = await storage.getTasks(filters);
+      const allTasks = await storage.getTasks(filters);
+      const tasks = orgId ? allTasks.filter((t: any) => t.orgId === orgId) : allTasks;
       if (tasks.length === 0) return '当前没有符合条件的任务。';
       const lines = tasks.map((t, i) =>
         `${i + 1}. ${t.title}（${t.status}，优先级: ${t.priority}${t.dueDate ? '，截止: ' + new Date(t.dueDate).toLocaleDateString('zh-CN') : ''}）`
@@ -877,7 +878,8 @@ async function executeQuery(actionType: string, data: Record<string, any>): Prom
       return `共找到 ${tasks.length} 个任务：\n${lines.join('\n')}`;
     }
     case 'query_projects': {
-      const projects = await storage.getProjects();
+      const allProjects = await storage.getProjects();
+      const projects = orgId ? allProjects.filter((p: any) => p.orgId === orgId) : allProjects;
       if (projects.length === 0) return '当前没有项目。';
       const lines = projects.map((p, i) =>
         `${i + 1}. ${p.name}（${p.status}${p.targetDate ? '，目标: ' + new Date(p.targetDate).toLocaleDateString('zh-CN') : ''}）`
@@ -914,7 +916,8 @@ async function executeQuery(actionType: string, data: Record<string, any>): Prom
       return `共${verdicts.length}条判定记录：\n${lines.join('\n')}`;
     }
     case 'query_overview': {
-      const allTasks = await storage.getTasks({});
+      const allTasksRaw = await storage.getTasks({});
+      const allTasks = orgId ? allTasksRaw.filter((t: any) => t.orgId === orgId) : allTasksRaw;
       const total = allTasks.length;
       const byStatus: Record<string, number> = {};
       let overdue = 0;
@@ -1060,7 +1063,7 @@ export async function chat(
 
     if (parsed.type === 'confirm' && parsed.action) {
       if (parsed.action.actionType && parsed.action.actionType.startsWith('query_')) {
-        const result = await executeQuery(parsed.action.actionType, parsed.action.data || {});
+        const result = await executeQuery(parsed.action.actionType, parsed.action.data || {}, context.orgId);
         return { type: 'text', message: result, tokenUsage: tokenInfo };
       }
 
@@ -1131,7 +1134,7 @@ export async function chat(
 
       if (queryActions.length > 0) {
         const queryResults = await Promise.all(
-          queryActions.map((a: any) => executeQuery(a.actionType, a.data || {}))
+          queryActions.map((a: any) => executeQuery(a.actionType, a.data || {}, context.orgId))
         );
         const queryText = queryResults.join('\n\n');
 
