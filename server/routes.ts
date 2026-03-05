@@ -3562,4 +3562,29 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
       return res.status(500).json({ error: e.message });
     }
   });
+
+  // ===================== Daily Briefing =====================
+
+  app.get("/api/briefing/today", authMiddleware, async (req: any, res) => {
+    try {
+      const { getTodayBriefing } = await import('./services/briefing/briefingGenerator');
+      const result = await getTodayBriefing(req.orgId, req.currentUserId);
+      return res.json({ data: result });
+    } catch (e: any) {
+      console.error('[Briefing] Error:', e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/briefing/refresh", authMiddleware, async (req: any, res) => {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      await storage.deleteBriefing(req.orgId, req.currentUserId, today);
+      const { getTodayBriefing } = await import('./services/briefing/briefingGenerator');
+      const result = await getTodayBriefing(req.orgId, req.currentUserId);
+      return res.json({ data: result });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
 }

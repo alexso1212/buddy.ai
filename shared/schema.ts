@@ -921,4 +921,31 @@ export const insertKbChunkSchema = createInsertSchema(kbChunks).omit({
 export type InsertKbChunk = z.infer<typeof insertKbChunkSchema>;
 export type KbChunk = typeof kbChunks.$inferSelect;
 
+// ============================================================
+// Briefings — briefings（每日简报）
+// ============================================================
+export const briefings = pgTable('briefings', {
+  id: serial('id').primaryKey(),
+  orgId: integer('org_id').references(() => organizations.id).notNull(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  date: varchar('date', { length: 10 }).notNull(),
+  content: text('content').notNull(),
+  dataSnapshot: text('data_snapshot'),
+  model: varchar('model', { length: 50 }).notNull().default('claude-haiku-4-5-20251001'),
+  tokenCount: integer('token_count').default(0),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const briefingsRelations = relations(briefings, ({ one }) => ({
+  organization: one(organizations, { fields: [briefings.orgId], references: [organizations.id] }),
+  user: one(users, { fields: [briefings.userId], references: [users.id] }),
+}));
+
+export const insertBriefingSchema = createInsertSchema(briefings).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertBriefing = z.infer<typeof insertBriefingSchema>;
+export type Briefing = typeof briefings.$inferSelect;
+
 export * from "./models/auth";

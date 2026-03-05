@@ -1,0 +1,604 @@
+# task-10: AI 每日简报
+
+> **前置条件**：知识库 + 智能初始化已完成
+> **预计耗时**：10-15 分钟
+> **新增文件**：`server/services/briefing/` 目录（2个文件）、`client/src/components/briefing/` 或页面内组件
+> **改动文件**：`server/routes.ts`（新增约 60 行）、Dashboard 页面（嵌入简报卡片）
+> **风险等级**：低（新增服务，不改现有代码）
+
+-----
+
+## 目标
+
+用户打开 App 看到今日简报：待办提醒、逾期预警、团队动态、知识库更新、AI 建议。用 Haiku 生成，缓存当天不重复生成。
+
+-----
+
+## 整体架构
+
+```
+用户打开 Dashboard / Agent 页面
+    ↓
+GET /api/briefing/today
+    ↓
+检查缓存：今天已经生成过？
+    ├── 是 → 直接返回缓存
+    └── 否 → 聚合数据 → 发给 Haiku 生成 → 缓存 → 返回
+```
+
+-----
+
+## STEP 1：新增 briefings 表
+
+在 `shared/schema.ts` 末尾追加：
+
+```typescript
+export const briefings = pgTable('briefings', {
+  id: serial('id').primaryKey(),
+  orgId: integer('org_id').references(() => organizations.id).notNull(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  date: varchar('date', { length: 10 }).notNull(), // '2026-03-06' 格式
+  content: text('content').notNull(),               // AI 生成的简报 Markdown
+  dataSnapshot: text('data_snapshot'),               // 生成时用的原始数据 JSON（调试用）
+  model: varchar('model', { length: 50 }).notNull().default('claude-haiku-4-5-20251001'),
+  tokenCount: integer('token_count').default(0),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+```
+
+在 `storage.ts` 中新增方法：
+
+```typescript
+async getBriefing(orgId: number, userId: number, date: string) {
+  const [b] = await db.select().from(briefings)
+    .where(and(eq(briefings.orgId, orgId), eq(briefings.userId, userId), eq(briefings.date, date)));
+  return b || null;
+}
+
+async createBriefing(data: typeof briefings.$inferInsert) {
+  const [b] = await db.insert(briefings).values(data).returning();
+  return b;
+}
+```
+
+推送 schema：`npm run db:push`
+
+-----
+
+## STEP 2：创建 `server/services/briefing/dataAggregator.ts`
+
+从各个表聚合今日简报所需的数据。
+
+```typescript
+import { storage } from '../../storage';
+
+export interface BriefingData {
+  // 用户信息
+  userName: string;
+  orgName: string;
+  
+  // 任务概况
+  totalActiveTasks: number;
+  tasksDueToday: { id: number; title: string; assigneeName: string }[];
+  tasksOverdue: { id: number; title: string; assigneeName: string; daysOverdue: number }[];
+  tasksCompletedYesterday: { id: number; title: string; completedBy: string }[];
+  tasksCreatedYesterday: number;
+  
+  // 团队概况
+  memberCount: number;
+  busiestMember: { name: string; activeTaskCount: number } | null;
+  
+  // 知识库概况
+  kbDocCount: number;
+  kbRecentUploads: { title: string; uploadedAt: string }[];
+  
+  // Token 消耗
+  tokenUsedThisMonth: number;
+  
+  // 最近权责裁定
+  recentVerdicts: { taskTitle: string; verdict: string; userName: string }[];
+}
+
+export async function aggregateBriefingData(orgId: number, userId: number): Promise<BriefingData> {
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().slice(0, 10);
+
+  // 获取当前用户和组织信息
+  const user = await storage.getUserById(userId);
+  const orgs = await storage.getOrganizations(); // 或按 orgId 获取
+  const org = orgs?.find((o: any) => o.id === orgId);
+
+  // 获取所有任务（已按 orgId 过滤）
+  const allTasks = await storage.getTasksByOrg(orgId);
+  // 如果 storage 没有 getTasksByOrg，用 getTasks 然后手动过滤
+  
+  const activeTasks = (allTasks || []).filter((t: any) => 
+    t.status && !['done', 'cancelled'].includes(t.status)
+  );
+
+  // 今日到期
+  const tasksDueToday = activeTasks
+    .filter((t: any) => t.dueDate && t.dueDate.toISOString().slice(0, 10) === todayStr)
+    .slice(0, 5)
+    .map((t: any) => ({ id: t.id, title: t.title, assigneeName: t.assigneeName || '未分配' }));
+
+  // 逾期任务
+  const tasksOverdue = activeTasks
+    .filter((t: any) => t.dueDate && new Date(t.dueDate) < today && t.status !== 'done')
+    .map((t: any) => ({
+      id: t.id,
+      title: t.title,
+      assigneeName: t.assigneeName || '未分配',
+      daysOverdue: Math.floor((today.getTime() - new Date(t.dueDate).getTime()) / 86400000),
+    }))
+    .sort((a: any, b: any) => b.daysOverdue - a.daysOverdue)
+    .slice(0, 5);
+
+  // 昨日完成
+  const tasksCompletedYesterday = (allTasks || [])
+    .filter((t: any) => {
+      if (t.status !== 'done' || !t.updatedAt) return false;
+      const updated = t.updatedAt.toISOString().slice(0, 10);
+      return updated === yesterdayStr || updated === todayStr; // 宽松匹配
+    })
+    .slice(0, 5)
+    .map((t: any) => ({ id: t.id, title: t.title, completedBy: t.assigneeName || '未知' }));
+
+  // 昨日新建
+  const tasksCreatedYesterday = (allTasks || [])
+    .filter((t: any) => t.createdAt && t.createdAt.toISOString().slice(0, 10) === yesterdayStr)
+    .length;
+
+  // 团队成员
+  let members: any[] = [];
+  try {
+    members = await storage.getOrgMembers(orgId) || [];
+  } catch { 
+    // 方法名可能不同，让 Replit 适配
+  }
+
+  // 最忙的人
+  let busiestMember = null;
+  if (members.length > 0) {
+    const memberTaskCounts = members.map((m: any) => ({
+      name: m.displayName || m.name || 'unknown',
+      activeTaskCount: activeTasks.filter((t: any) => t.assigneeId === m.id).length,
+    })).sort((a, b) => b.activeTaskCount - a.activeTaskCount);
+    if (memberTaskCounts[0]?.activeTaskCount > 0) {
+      busiestMember = memberTaskCounts[0];
+    }
+  }
+
+  // 知识库
+  let kbDocs: any[] = [];
+  try {
+    kbDocs = await storage.getKbDocumentsByOrg(orgId) || [];
+  } catch {}
+  
+  const kbRecentUploads = kbDocs
+    .filter((d: any) => d.status === 'ready')
+    .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 3)
+    .map((d: any) => ({ title: d.title, uploadedAt: d.createdAt }));
+
+  // Token 消耗（本月）
+  let tokenUsedThisMonth = 0;
+  try {
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    // 如果有按时间查询 token 的方法就用，没有就跳过
+    tokenUsedThisMonth = 0; // Replit 按实际 storage 方法适配
+  } catch {}
+
+  // 最近权责裁定
+  let recentVerdicts: any[] = [];
+  try {
+    // 获取最近的 verdicts，具体方法名让 Replit 适配
+    recentVerdicts = []; 
+  } catch {}
+
+  return {
+    userName: user?.displayName || user?.name || '用户',
+    orgName: org?.name || '组织',
+    totalActiveTasks: activeTasks.length,
+    tasksDueToday,
+    tasksOverdue,
+    tasksCompletedYesterday,
+    tasksCreatedYesterday,
+    memberCount: members.length,
+    busiestMember,
+    kbDocCount: kbDocs.filter((d: any) => d.status === 'ready').length,
+    kbRecentUploads,
+    tokenUsedThisMonth,
+    recentVerdicts,
+  };
+}
+```
+
+**注意**：storage 的方法名可能和上面写的不完全一致。让 Replit Agent 检查 `storage.ts` 中实际可用的方法，适配调用。关键是拿到：组织的任务列表、成员列表、知识库文档列表。
+
+-----
+
+## STEP 3：创建 `server/services/briefing/briefingGenerator.ts`
+
+```typescript
+import OpenAI from 'openai';
+import { storage } from '../../storage';
+import { aggregateBriefingData, BriefingData } from './dataAggregator';
+
+// 复用现有 AI 客户端（优先从 ai/index.ts 导入，没有就重建）
+const aiClient = new OpenAI({
+  baseURL: 'https://vip.aipro.love/v1',
+  apiKey: process.env.CLAUDE_SIMPLE_API_KEY || '',
+  timeout: 30000,
+});
+
+/**
+ * 生成今日简报
+ * 先检查缓存，没有才生成
+ */
+export async function getTodayBriefing(orgId: number, userId: number): Promise<{
+  content: string;
+  isNew: boolean;
+  date: string;
+}> {
+  const today = new Date().toISOString().slice(0, 10);
+
+  // 检查缓存
+  const cached = await storage.getBriefing(orgId, userId, today);
+  if (cached) {
+    return { content: cached.content, isNew: false, date: today };
+  }
+
+  // 聚合数据
+  const data = await aggregateBriefingData(orgId, userId);
+
+  // 生成简报
+  const content = await generateBriefingWithAI(data, today);
+
+  // 缓存
+  try {
+    await storage.createBriefing({
+      orgId,
+      userId,
+      date: today,
+      content,
+      dataSnapshot: JSON.stringify(data),
+      model: 'claude-haiku-4-5-20251001',
+      tokenCount: 0, // 可以从 AI 响应中获取
+    });
+  } catch (err: any) {
+    console.warn('[Briefing] Failed to cache:', err.message);
+  }
+
+  return { content, isNew: true, date: today };
+}
+
+async function generateBriefingWithAI(data: BriefingData, dateStr: string): Promise<string> {
+  const weekday = ['日', '一', '二', '三', '四', '五', '六'][new Date(dateStr).getDay()];
+
+  // 构建数据摘要给 AI
+  const dataBlock = `
+当前日期：${dateStr}（周${weekday}）
+用户：${data.userName}
+组织：${data.orgName}
+团队人数：${data.memberCount}
+
+活跃任务总数：${data.totalActiveTasks}
+
+今日到期任务（${data.tasksDueToday.length}个）：
+${data.tasksDueToday.length > 0 ? data.tasksDueToday.map(t => `- 「${t.title}」负责人：${t.assigneeName}`).join('\n') : '无'}
+
+逾期任务（${data.tasksOverdue.length}个）：
+${data.tasksOverdue.length > 0 ? data.tasksOverdue.map(t => `- 「${t.title}」已逾期${t.daysOverdue}天，负责人：${t.assigneeName}`).join('\n') : '无'}
+
+昨日完成任务（${data.tasksCompletedYesterday.length}个）：
+${data.tasksCompletedYesterday.length > 0 ? data.tasksCompletedYesterday.map(t => `- 「${t.title}」完成者：${t.completedBy}`).join('\n') : '无'}
+
+昨日新建任务数：${data.tasksCreatedYesterday}
+
+团队负载最高：${data.busiestMember ? `${data.busiestMember.name}（${data.busiestMember.activeTaskCount}个进行中任务）` : '无数据'}
+
+知识库文档数：${data.kbDocCount}
+最近上传：${data.kbRecentUploads.length > 0 ? data.kbRecentUploads.map(d => d.title).join('、') : '无'}
+`.trim();
+
+  try {
+    const response = await aiClient.chat.completions.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1000,
+      temperature: 0.6,
+      messages: [
+        {
+          role: 'system',
+          content: `你是一个企业管理AI助手，每天早上给老板生成一份简洁的工作简报。
+
+要求：
+- 用 Markdown 格式
+- 语气亲切专业，像一个靠谱的助理在汇报
+- 以"早安"开头，包含日期和星期
+- 分为以下几个板块（如果某个板块没有数据就跳过，不要写"无"）：
+  📋 今日重点（今日到期的任务，最多5个）
+  ⚠️ 需要关注（逾期任务，语气要有紧迫感但不吓人）
+  ✅ 昨日成果（完成的任务，表扬一下）
+  💡 AI建议（根据数据给1-2条具体建议，比如"建议协调XX的任务负载"或"XX任务已逾期3天建议重新评估"）
+- 整体控制在 200-400 字
+- 不要编造数据中没有的信息
+- 如果今天没什么特别的，就说"今天没有紧急事项，适合推进重点项目"`
+        },
+        {
+          role: 'user',
+          content: `请根据以下数据生成今日简报：\n\n${dataBlock}`
+        }
+      ],
+    });
+
+    return response.choices[0]?.message?.content || generateFallbackBriefing(data, dateStr, weekday);
+  } catch (err: any) {
+    console.error('[Briefing] AI generation failed:', err.message);
+    return generateFallbackBriefing(data, dateStr, weekday);
+  }
+}
+
+/**
+ * AI 调用失败时的兜底简报（纯模板，不依赖AI）
+ */
+function generateFallbackBriefing(data: BriefingData, dateStr: string, weekday: string): string {
+  const lines: string[] = [];
+  lines.push(`## 🌅 早安，${data.userName}！`);
+  lines.push(`今天是 ${dateStr} 周${weekday}\n`);
+
+  if (data.tasksDueToday.length > 0) {
+    lines.push(`### 📋 今日到期`);
+    data.tasksDueToday.forEach(t => lines.push(`- ${t.title}（${t.assigneeName}）`));
+    lines.push('');
+  }
+
+  if (data.tasksOverdue.length > 0) {
+    lines.push(`### ⚠️ 逾期提醒`);
+    data.tasksOverdue.forEach(t => lines.push(`- ${t.title} — 已逾期${t.daysOverdue}天`));
+    lines.push('');
+  }
+
+  if (data.tasksCompletedYesterday.length > 0) {
+    lines.push(`### ✅ 昨日完成`);
+    data.tasksCompletedYesterday.forEach(t => lines.push(`- ${t.title}（${t.completedBy}）`));
+    lines.push('');
+  }
+
+  if (data.totalActiveTasks === 0 && data.tasksOverdue.length === 0) {
+    lines.push('今天没有紧急事项，适合推进重点项目。');
+  }
+
+  lines.push(`\n---\n*活跃任务 ${data.totalActiveTasks} 个 · 团队 ${data.memberCount} 人 · 知识库 ${data.kbDocCount} 份文档*`);
+  return lines.join('\n');
+}
+```
+
+-----
+
+## STEP 4：在 routes.ts 新增路由
+
+```typescript
+// 顶部 import
+// import { getTodayBriefing } from './services/briefing/briefingGenerator';
+
+// ===================== Daily Briefing =====================
+
+// 获取今日简报
+app.get("/api/briefing/today", authMiddleware, async (req: any, res) => {
+  try {
+    const result = await getTodayBriefing(req.orgId, req.currentUserId);
+    return res.json({ data: result });
+  } catch (e: any) {
+    console.error('[Briefing] Error:', e);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+// 强制重新生成今日简报（数据变化后手动刷新）
+app.post("/api/briefing/refresh", authMiddleware, async (req: any, res) => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    
+    // 删除今日缓存
+    // 需要在 storage 中添加 deleteBriefing 方法
+    // 或者直接用 raw SQL:
+    // await db.delete(briefings).where(and(eq(briefings.orgId, req.orgId), eq(briefings.userId, req.currentUserId), eq(briefings.date, today)));
+    
+    try {
+      await storage.deleteBriefing(req.orgId, req.currentUserId, today);
+    } catch {
+      // 方法可能不存在，Replit 适配
+    }
+    
+    const result = await getTodayBriefing(req.orgId, req.currentUserId);
+    return res.json({ data: result });
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+```
+
+在 storage.ts 中补充删除方法：
+
+```typescript
+async deleteBriefing(orgId: number, userId: number, date: string) {
+  await db.delete(briefings).where(
+    and(eq(briefings.orgId, orgId), eq(briefings.userId, userId), eq(briefings.date, date))
+  );
+}
+```
+
+-----
+
+## STEP 5：前端显示
+
+在 Dashboard 页面（或 Agent 页面）顶部嵌入简报卡片。
+
+### 找到 Dashboard 页面
+
+检查项目中的主页/Dashboard：可能是 `client/src/pages/dashboard.tsx`、`client/src/pages/home.tsx`、或 Agent 页面本身。
+
+### 简报卡片组件
+
+```typescript
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Sparkles, RefreshCw } from 'lucide-react';
+
+function DailyBriefing() {
+  const queryClient = useQueryClient();
+  
+  const { data, isLoading } = useQuery({
+    queryKey: ['/api/briefing/today'],
+    queryFn: async () => {
+      const res = await fetch('/api/briefing/today', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json.data;
+    },
+    staleTime: 5 * 60 * 1000, // 5分钟内不重新请求
+  });
+
+  const refreshMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/briefing/refresh', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/briefing/today'] });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Sparkles className="w-4 h-4 animate-pulse" />
+            正在生成今日简报...
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!data?.content) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Sparkles className="w-4 h-4" />
+            今日简报
+          </CardTitle>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => refreshMutation.mutate()}
+            disabled={refreshMutation.isPending}
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {/* 渲染 Markdown 内容 */}
+        {/* 如果项目有 Markdown 渲染组件就复用，没有就用 dangerouslySetInnerHTML + 简单的 markdown 解析 */}
+        {/* 最简单方案：直接用 whitespace-pre-wrap 显示 */}
+        <div className="prose prose-sm dark:prose-invert max-w-none">
+          {renderMarkdown(data.content)}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+```
+
+**Markdown 渲染**：检查项目中是否已有 Markdown 渲染组件（Agent 页面的 AI 消息应该已有 Markdown 渲染）。复用同样的组件。如果没有，用 `react-markdown` 或简单的正则替换：
+
+```typescript
+// 最简方案：用现有的 AI 消息渲染方式
+// 检查 AiMessageBubble 或 MessageContent 组件是怎么渲染 Markdown 的
+```
+
+### 嵌入位置
+
+在 Dashboard 页面的最顶部（统计卡片之上）插入 `<DailyBriefing />`：
+
+```typescript
+// dashboard.tsx 或 home.tsx
+return (
+  <div className="space-y-6 p-6">
+    <DailyBriefing />          {/* ← 新增，最顶部 */}
+    {/* 现有的 Dashboard 内容 */}
+    <StatsCards />
+    <TaskList />
+    ...
+  </div>
+);
+```
+
+如果没有独立的 Dashboard 页面，也可以放在 Agent 页面的对话区域顶部（作为一个”置顶消息”风格的卡片）。
+
+-----
+
+## 验证清单
+
+- [ ] `npm run dev` 启动正常
+- [ ] briefings 表已创建
+- [ ] `GET /api/briefing/today` 返回简报内容
+- [ ] 简报内容包含今日到期、逾期、昨日完成等信息
+- [ ] 再次请求同一天的简报返回缓存（isNew: false）
+- [ ] `POST /api/briefing/refresh` 强制重新生成
+- [ ] Dashboard 页面顶部显示简报卡片
+- [ ] 简报 Markdown 正确渲染（标题、列表、emoji）
+- [ ] 刷新按钮工作正常
+- [ ] 没有任务数据时简报不报错（显示”没有紧急事项”）
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读项目根目录的 `task-10-daily-briefing.md`，按步骤执行。
+> 
+> 重要规则：
+> 
+> 1. AI 客户端优先复用现有的（从 ai/index.ts 导入或用同样的配置）
+> 1. storage 方法名要匹配实际代码——特别是获取任务列表、成员列表的方法
+> 1. 简报用 Haiku 模型生成（最便宜最快）
+> 1. 当天只生成一次，后续请求返回缓存
+> 1. Markdown 渲染复用项目中已有的 Markdown 组件（AI 消息用的那个）
+> 1. 简报卡片放在 Dashboard/主页最顶部
+> 1. 如果没有独立的 Dashboard 页面，放在最合适的位置（首页或 Agent 页面顶部）
+
+-----
+
+## 完成后告诉 Claude
+
+1. “task-10 完成” 或 “task-10 有问题：XXX”
+1. 截图：简报卡片在页面上的样子
+1. AI 生成的简报内容长什么样？
+
+-----
+
+## 可调参数（更新 BUDDY_KB_TUNABLE_PARAMS.md）
+
+|参数            |位置                  |当前值          |说明                     |
+|--------------|--------------------|-------------|-----------------------|
+|简报模型          |briefingGenerator.ts|Haiku        |可升级 Sonnet 提升质量，但成本高10倍|
+|简报 temperature|briefingGenerator.ts|0.6          |越低越模板化，越高越有创意          |
+|简报最大长度        |prompt 中            |200-400字     |在 system prompt 中指定    |
+|缓存策略          |briefingGenerator.ts|每天每用户1次      |可改为每次打开都生成（去掉缓存）       |
+|前端缓存          |DailyBriefing 组件    |5分钟 staleTime|5分钟内不重新请求后端            |
+|简报板块          |system prompt       |4个板块         |在 prompt 中增减板块         |

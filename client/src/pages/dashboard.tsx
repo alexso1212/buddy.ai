@@ -1,7 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { AlertTriangle, CheckCircle, Star } from "lucide-react";
+import { AlertTriangle, CheckCircle, Star, Sparkles, RefreshCw } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import SwipeableTaskCard from "@/components/SwipeableTaskCard";
+import { apiRequest } from "@/lib/queryClient";
 import type { Task, Project, User } from "@shared/schema";
 
 type TaskWithParticipants = Task & {
@@ -30,6 +33,64 @@ type AttentionReason = "overdue" | "due-soon" | "needs-review";
 interface AttentionTask {
   task: TaskWithParticipants;
   reasons: AttentionReason[];
+}
+
+function DailyBriefing() {
+  const queryClient = useQueryClient();
+
+  const { data: briefingResponse, isLoading } = useQuery<{ data: { content: string; isNew: boolean; date: string } }>({
+    queryKey: ['/api/briefing/today'],
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const refreshMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest('POST', '/api/briefing/refresh');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/briefing/today'] });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="bg-card rounded-lg shadow-sm p-4 md:p-6 mb-6" data-testid="briefing-loading">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Sparkles className="w-4 h-4 animate-pulse" />
+          <span className="text-sm">正在生成今日简报...</span>
+        </div>
+      </div>
+    );
+  }
+
+  const briefing = briefingResponse?.data;
+  if (!briefing?.content) return null;
+
+  return (
+    <div className="bg-card rounded-lg shadow-sm p-4 md:p-6 mb-6" data-testid="briefing-card">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-amber-500" />
+          <span className="font-semibold text-foreground text-sm md:text-base" data-testid="briefing-title">今日简报</span>
+          {briefing.isNew && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 font-medium">NEW</span>
+          )}
+        </div>
+        <button
+          onClick={() => refreshMutation.mutate()}
+          disabled={refreshMutation.isPending}
+          className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          data-testid="button-refresh-briefing"
+        >
+          <RefreshCw className={`w-4 h-4 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+      <div className="prose prose-sm dark:prose-invert max-w-none text-foreground [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-0 [&_h2]:mb-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_p]:text-sm [&_p]:my-1 [&_li]:text-sm [&_li]:my-0.5 [&_hr]:my-2 [&_em]:text-xs [&_em]:text-muted-foreground" data-testid="briefing-content">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{briefing.content}</ReactMarkdown>
+      </div>
+    </div>
+  );
 }
 
 function Dashboard() {
@@ -228,6 +289,8 @@ function Dashboard() {
   return (
     <div className="p-6 bg-background min-h-screen">
       <h1 className="text-xl md:text-2xl font-bold text-foreground mb-6 md:mb-8">仪表盘</h1>
+
+      <DailyBriefing />
 
       {/* Stats Cards Row */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-8">

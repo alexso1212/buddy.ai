@@ -68,6 +68,7 @@ import {
   type InsertTaskSubmission,
   kbDocuments,
   kbChunks,
+  briefings,
 } from "@shared/schema";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -1035,6 +1036,25 @@ export class DatabaseStorage {
 
   async executeRaw(query: any) {
     return await db.execute(query);
+  }
+
+  // ===================== Briefings =====================
+
+  async getBriefing(orgId: number, userId: number, date: string) {
+    const [b] = await db.select().from(briefings)
+      .where(and(eq(briefings.orgId, orgId), eq(briefings.userId, userId), eq(briefings.date, date)));
+    return b || null;
+  }
+
+  async createBriefing(data: typeof briefings.$inferInsert) {
+    const [b] = await db.insert(briefings).values(data).returning();
+    return b;
+  }
+
+  async deleteBriefing(orgId: number, userId: number, date: string) {
+    await db.delete(briefings).where(
+      and(eq(briefings.orgId, orgId), eq(briefings.userId, userId), eq(briefings.date, date))
+    );
   }
 }
 
