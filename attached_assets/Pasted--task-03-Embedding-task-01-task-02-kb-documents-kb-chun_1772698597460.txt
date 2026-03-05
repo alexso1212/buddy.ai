@@ -1,0 +1,632 @@
+# task-03: Embedding 生成 + 向量检索 + 混合搜索
+
+> **前置条件**：task-01 + task-02 完成（kb_documents/kb_chunks 表有数据，pgvector 已启用）
+> **预计耗时**：25 分钟
+> **新增文件**：`server/services/kb/embedding.ts`、`server/services/kb/search.ts`
+> **改动文件**：`server/services/kb/processDocument.ts`（追加 embedding 步骤）、`server/routes.ts`（新增 1 个搜索路由）
+> **风险等级**：低（新增文件为主，对 processDocument 的改动是追加逻辑）
+
+-----
+
+## 目标
+
+1. 为 kb_chunks 生成 embedding 向量
+1. 实现向量相似度检索 + 全文搜索的混合检索
+1. 暴露 `/api/kb/search` 接口供 task-04（AI 对话集成）使用
+
+-----
+
+## STEP 0：检测 Embedding API 可用性（先执行这一步再继续）
+
+在继续之前，需要确认你的 Claude API 代理是否支持 Embedding 接口。
+
+**测试方法**：在 Replit Shell 中执行：
+
+```bash
+curl -s -X POST "https://vip.aipro.love/v1/embeddings" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $CLAUDE_SIMPLE_API_KEY" \
+  -d '{"model":"text-embedding-3-small","input":"测试文本"}' | head -200
+```
+
+**三种可能结果**：
+
+|结果                               |含义              |后续操作                |
+|---------------------------------|----------------|--------------------|
+|返回 JSON 包含 `data[0].embedding` 数组|✅ 代理支持 Embedding|走方案 A（向量检索为主）       |
+|返回错误 / 404 / 不支持                 |❌ 代理不支持         |走方案 B（全文搜索为主）       |
+|返回需要不同的 model 名称                 |⚠️ 支持但模型名不同      |记下正确的 model 名称，走方案 A|
+
+**也试一下 CLAUDE_COMPLEX_API_KEY**，看哪个 key 能用。
+
+**把测试结果告诉我之前，先继续往下执行**——下面的代码两种方案都包含了，根据测试结果选择即可。
+
+-----
+
+## STEP 1：创建 `server/services/kb/embedding.ts`
+
+```typescript
+import { sql } from 'drizzle-orm';
+import { db } from '../../db'; // 根据项目实际的 db 导入路径调整
+
+/**
+ * Embedding 服务
+ * 
+ * 方案 A：通过 AI 代理调用 Embedding API
+ * 方案 B：如果代理不支持，降级为空操作（依赖全文搜索）
+ */
+
+// ========== 配置 ==========
+// 根据 STEP 0 的测试结果，设置以下变量：
+// 如果代理支持 embedding，设 EMBEDDING_AVAILABLE = true 并填写正确的 URL/KEY/MODEL
+// 如果不支持，设 EMBEDDING_AVAILABLE = false
+
+const EMBEDDING_AVAILABLE = true; // ← 根据 STEP 0 结果修改
+const EMBEDDING_BASE_URL = process.env.AI_BASE_URL || 'https://vip.aipro.love/v1';
+const EMBEDDING_API_KEY = process.env.CLAUDE_SIMPLE_API_KEY || '';
+const EMBEDDING_MODEL = 'text-embedding-3-small'; // ← 根据 STEP 0 结果修改
+const EMBEDDING_DIMENSIONS = 1536;
+
+// 速率限制：每批次最多处理的 chunk 数
+const BATCH_SIZE = 20;
+// 每批次之间的延迟（毫秒）
+const BATCH_DELAY = 1000;
+
+/**
+ * 为单条文本生成 embedding 向量
+ */
+export async function generateEmbedding(text: string): Promise<number[] | null> {
+  if (!EMBEDDING_AVAILABLE) return null;
+
+  try {
+    const response = await fetch(`${EMBEDDING_BASE_URL}/embeddings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${EMBEDDING_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: EMBEDDING_MODEL,
+        input: text.slice(0, 8000), // 截断防止超长
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[KB Embedding] API error ${response.status}: ${errText}`);
+      return null;
+    }
+
+    const data = await response.json();
+    return data?.data?.[0]?.embedding || null;
+  } catch (err: any) {
+    console.error(`[KB Embedding] Failed:`, err.message);
+    return null;
+  }
+}
+
+/**
+ * 为多个 chunk 批量生成 embedding 并写入数据库
+ * 包含速率限制和错误处理
+ */
+export async function generateEmbeddingsForDocument(documentId: number, chunks: { id: number; content: string }[]): Promise<{ success: number; failed: number }> {
+  if (!EMBEDDING_AVAILABLE) {
+    console.log(`[KB Embedding] Embedding not available, skipping for document ${documentId}`);
+    return { success: 0, failed: 0 };
+  }
+
+  let success = 0;
+  let failed = 0;
+
+  // 分批处理
+  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+    const batch = chunks.slice(i, i + BATCH_SIZE);
+
+    for (const chunk of batch) {
+      try {
+        const embedding = await generateEmbedding(chunk.content);
+        if (embedding && embedding.length === EMBEDDING_DIMENSIONS) {
+          // 用原始 SQL 更新 embedding（因为 Drizzle 可能不原生支持 vector 参数绑定）
+          const vectorStr = `[${embedding.join(',')}]`;
+          await db.execute(
+            sql`UPDATE kb_chunks SET embedding = ${vectorStr}::vector WHERE id = ${chunk.id}`
+          );
+          success++;
+        } else {
+          failed++;
+          console.warn(`[KB Embedding] Invalid embedding for chunk ${chunk.id}`);
+        }
+      } catch (err: any) {
+        failed++;
+        console.error(`[KB Embedding] Error for chunk ${chunk.id}:`, err.message);
+      }
+    }
+
+    // 批次间延迟（避免触发速率限制）
+    if (i + BATCH_SIZE < chunks.length) {
+      await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
+    }
+  }
+
+  console.log(`[KB Embedding] Document ${documentId}: ${success} success, ${failed} failed`);
+  return { success, failed };
+}
+
+/**
+ * 向量相似度检索
+ * 返回与查询最相似的 Top-K 个 chunk
+ */
+export async function vectorSearch(
+  orgId: number,
+  queryText: string,
+  topK: number = 5
+): Promise<{ id: number; documentId: number; content: string; similarity: number; metadata: string | null }[]> {
+  if (!EMBEDDING_AVAILABLE) return [];
+
+  const queryEmbedding = await generateEmbedding(queryText);
+  if (!queryEmbedding) return [];
+
+  const vectorStr = `[${queryEmbedding.join(',')}]`;
+
+  try {
+    const results = await db.execute(
+      sql`SELECT 
+            c.id, 
+            c.document_id as "documentId", 
+            c.content, 
+            c.metadata,
+            1 - (c.embedding <=> ${vectorStr}::vector) as similarity
+          FROM kb_chunks c
+          JOIN kb_documents d ON c.document_id = d.id
+          WHERE c.org_id = ${orgId}
+            AND d.status = 'ready'
+            AND c.embedding IS NOT NULL
+          ORDER BY c.embedding <=> ${vectorStr}::vector
+          LIMIT ${topK}`
+    );
+    return (results.rows || results) as any[];
+  } catch (err: any) {
+    console.error(`[KB Vector Search] Error:`, err.message);
+    return [];
+  }
+}
+```
+
+**注意关于 db 的导入**：
+
+项目中数据库连接可能不是从 `../../db` 导出的。检查 `server/storage.ts` 中的 `db` 是怎么获取的：
+
+- 如果 `db` 是在 `storage.ts` 中创建的局部变量，需要把它 export 出来
+- 或者在 `embedding.ts` 中重新创建一个 db 连接
+- 或者在 `storage.ts` 中添加一个 `executeRawSql` 方法
+
+**最简单的方式**：在 `storage.ts` 中新增以下方法，然后在 `embedding.ts` 中通过 `storage` 调用：
+
+```typescript
+// 在 storage.ts 的 DatabaseStorage class 中添加：
+async executeRaw(query: any) {
+  return await db.execute(query);
+}
+```
+
+然后 `embedding.ts` 中改为：
+
+```typescript
+import { storage } from '../../storage';
+// ...
+await storage.executeRaw(sql`UPDATE kb_chunks SET embedding = ...`);
+```
+
+-----
+
+## STEP 2：创建 `server/services/kb/search.ts`
+
+这是统一的知识库检索接口，混合了向量检索和全文搜索。
+
+```typescript
+import { sql } from 'drizzle-orm';
+import { storage } from '../../storage';
+import { vectorSearch } from './embedding';
+
+export interface KBSearchResult {
+  chunkId: number;
+  documentId: number;
+  documentTitle: string;
+  category: string;
+  content: string;
+  similarity: number; // 0-1，越高越相关
+  source: 'vector' | 'fulltext'; // 来源标记
+}
+
+/**
+ * 知识库混合检索
+ * 
+ * 策略：
+ * 1. 如果 embedding 可用 → 向量检索 Top-5 + 全文搜索 Top-5 → 合并去重 → 返回 Top-5
+ * 2. 如果 embedding 不可用 → 仅全文搜索 Top-5
+ * 
+ * 权限过滤：
+ * - visibility='org' → 所有人可见
+ * - visibility='department' → 检查 visibleDeptIds 是否包含用户部门
+ * - visibility='admin' → 仅 owner/admin 可见
+ */
+export async function searchKnowledge(options: {
+  orgId: number;
+  query: string;
+  topK?: number;
+  userRole?: string;
+  userDeptId?: number | null;
+}): Promise<KBSearchResult[]> {
+  const { orgId, query, topK = 5, userRole = 'member', userDeptId = null } = options;
+
+  if (!query || query.trim().length < 2) return [];
+
+  // 并行执行向量检索和全文搜索
+  const [vectorResults, fulltextResults] = await Promise.all([
+    vectorSearch(orgId, query, topK),
+    fulltextSearch(orgId, query, topK),
+  ]);
+
+  // 合并结果
+  const resultMap = new Map<number, KBSearchResult>();
+
+  // 向量结果优先
+  for (const r of vectorResults) {
+    resultMap.set(r.id, {
+      chunkId: r.id,
+      documentId: r.documentId,
+      documentTitle: '', // 后面补充
+      category: '',
+      content: r.content,
+      similarity: r.similarity,
+      source: 'vector',
+    });
+  }
+
+  // 全文搜索补充（不覆盖已有的向量结果）
+  for (const r of fulltextResults) {
+    if (!resultMap.has(r.chunkId)) {
+      resultMap.set(r.chunkId, r);
+    }
+  }
+
+  // 转为数组，按 similarity 排序
+  let results = Array.from(resultMap.values())
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, topK);
+
+  // 补充文档标题和分类信息
+  const docIds = [...new Set(results.map(r => r.documentId))];
+  const docInfoMap = new Map<number, { title: string; category: string; visibility: string; visibleDeptIds: string | null }>();
+
+  for (const docId of docIds) {
+    const doc = await storage.getKbDocumentById(docId);
+    if (doc) {
+      docInfoMap.set(docId, {
+        title: doc.title,
+        category: doc.category,
+        visibility: doc.visibility,
+        visibleDeptIds: doc.visibleDeptIds,
+      });
+    }
+  }
+
+  // 填充文档信息 + 权限过滤
+  results = results
+    .map(r => {
+      const docInfo = docInfoMap.get(r.documentId);
+      if (!docInfo) return null;
+
+      // 权限过滤
+      if (docInfo.visibility === 'admin' && !['owner', 'admin'].includes(userRole)) return null;
+      if (docInfo.visibility === 'department' && userDeptId) {
+        const visibleDepts = docInfo.visibleDeptIds ? JSON.parse(docInfo.visibleDeptIds) : [];
+        if (!visibleDepts.includes(userDeptId)) return null;
+      }
+
+      return { ...r, documentTitle: docInfo.title, category: docInfo.category };
+    })
+    .filter(Boolean) as KBSearchResult[];
+
+  return results;
+}
+
+/**
+ * 全文搜索（PostgreSQL ILIKE 关键词匹配）
+ * 
+ * 对中文来说，PostgreSQL 的 tsvector 效果有限（因为缺少分词器）。
+ * 所以用 ILIKE 关键词匹配作为主要的全文搜索方式。
+ * 简单但有效——用户问"年假政策"，就搜包含"年假"或"政策"的 chunk。
+ */
+async function fulltextSearch(
+  orgId: number,
+  query: string,
+  topK: number = 5
+): Promise<KBSearchResult[]> {
+  // 提取关键词（至少 2 个字符的词）
+  const keywords = extractKeywords(query);
+  if (keywords.length === 0) return [];
+
+  try {
+    // 构建 ILIKE 条件：任意一个关键词匹配就算命中
+    // 同时计算匹配的关键词数量作为相关度分数
+    const conditions = keywords.map(kw => `c.content ILIKE '%${escapeSql(kw)}%'`);
+    const matchCount = keywords.map(kw => `CASE WHEN c.content ILIKE '%${escapeSql(kw)}%' THEN 1 ELSE 0 END`);
+
+    const queryStr = `
+      SELECT 
+        c.id as "chunkId",
+        c.document_id as "documentId",
+        c.content,
+        d.title as "documentTitle",
+        d.category,
+        (${matchCount.join(' + ')})::float / ${keywords.length} as similarity
+      FROM kb_chunks c
+      JOIN kb_documents d ON c.document_id = d.id
+      WHERE c.org_id = ${orgId}
+        AND d.status = 'ready'
+        AND (${conditions.join(' OR ')})
+      ORDER BY (${matchCount.join(' + ')}) DESC, c.chunk_index ASC
+      LIMIT ${topK}
+    `;
+
+    const results = await storage.executeRaw(sql.raw(queryStr));
+    const rows = (results.rows || results) as any[];
+
+    return rows.map((r: any) => ({
+      chunkId: r.chunkId,
+      documentId: r.documentId,
+      documentTitle: r.documentTitle || '',
+      category: r.category || '',
+      content: r.content,
+      similarity: Math.min(r.similarity || 0, 1), // 归一化到 0-1
+      source: 'fulltext' as const,
+    }));
+  } catch (err: any) {
+    console.error(`[KB Fulltext] Error:`, err.message);
+    return [];
+  }
+}
+
+/**
+ * 从查询文本中提取关键词
+ * 中文按 2-4 字的词组提取，英文按空格分割
+ */
+function extractKeywords(query: string): string[] {
+  const keywords: string[] = [];
+
+  // 英文单词（3 个字母以上）
+  const englishWords = query.match(/[a-zA-Z]{3,}/g) || [];
+  keywords.push(...englishWords);
+
+  // 中文：先按标点和空格分割成短语，再提取 2-4 字的片段
+  const chinesePhrases = query.match(/[\u4e00-\u9fff]{2,}/g) || [];
+  for (const phrase of chinesePhrases) {
+    if (phrase.length <= 4) {
+      keywords.push(phrase);
+    } else {
+      // 对长短语，用滑动窗口提取 2 字和 3 字的子串
+      for (let i = 0; i < phrase.length - 1; i++) {
+        keywords.push(phrase.slice(i, i + 2)); // 二字词
+      }
+      for (let i = 0; i < phrase.length - 2; i++) {
+        keywords.push(phrase.slice(i, i + 3)); // 三字词
+      }
+    }
+  }
+
+  // 去重，最多保留 10 个关键词
+  return [...new Set(keywords)].slice(0, 10);
+}
+
+/**
+ * 转义 SQL 中的特殊字符（防注入）
+ */
+function escapeSql(str: string): string {
+  return str.replace(/'/g, "''").replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+```
+
+-----
+
+## STEP 3：更新 `processDocument.ts`，在切片后触发 embedding
+
+在 `server/services/kb/processDocument.ts` 中，在现有的 “更新文档状态为 ready” 之前，追加 embedding 生成步骤。
+
+**找到**现有代码中类似这段的位置：
+
+```typescript
+// 8. 更新文档状态
+await storage.updateKbDocument(documentId, {
+  status: 'ready',
+  chunkCount: chunks.length,
+});
+```
+
+**在它之前插入**：
+
+```typescript
+    // 7.5 生成 embedding（异步，不影响文档状态）
+    try {
+      const { generateEmbeddingsForDocument } = await import('./embedding');
+      const savedChunks = await storage.getKbChunksByDocument(documentId);
+      const chunksForEmbedding = savedChunks.map((c: any) => ({ id: c.id, content: c.content }));
+      
+      const embeddingResult = await generateEmbeddingsForDocument(documentId, chunksForEmbedding);
+      console.log(`[KB] Embeddings: ${embeddingResult.success} success, ${embeddingResult.failed} failed`);
+    } catch (err: any) {
+      // Embedding 失败不影响文档状态——文档仍然标记为 ready
+      // 全文搜索作为 fallback 仍然可用
+      console.warn(`[KB] Embedding generation failed (non-fatal):`, err.message);
+    }
+```
+
+**关键**：embedding 失败不应该把文档标记为 error。文档只要切片成功就是 ready——即使没有 embedding，全文搜索照样能用。
+
+-----
+
+## STEP 4：在 storage.ts 添加 executeRaw 方法
+
+如果 task-01 中还没有添加，在 `server/storage.ts` 的 `DatabaseStorage` class 中添加：
+
+```typescript
+async executeRaw(query: any) {
+  return await db.execute(query);
+}
+```
+
+这个方法让 KB 服务可以执行原始 SQL（主要用于 pgvector 的向量查询和更新）。
+
+-----
+
+## STEP 5：在 routes.ts 新增搜索路由
+
+在 routes.ts 中，在 task-02 添加的知识库路由区域末尾，追加：
+
+```typescript
+// 需要在文件顶部添加 import
+// import { searchKnowledge } from './services/kb/search';
+
+// --- 知识库搜索 ---
+app.get("/api/kb/search", authMiddleware, async (req: any, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (!q) return res.json({ data: [] });
+
+    const topK = Math.min(parseInt(req.query.topK as string) || 5, 10);
+
+    const results = await searchKnowledge({
+      orgId: req.orgId,
+      query: q,
+      topK,
+      userRole: req.userRole || 'member',
+      userDeptId: req.userDeptId || null,
+    });
+
+    return res.json({ data: results });
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+```
+
+添加 import：
+
+```typescript
+import { searchKnowledge } from './services/kb/search';
+```
+
+-----
+
+## STEP 6：处理 db 导入路径
+
+`embedding.ts` 和 `search.ts` 都需要访问数据库。检查项目中 Drizzle 的 `db` 实例是在哪里创建的：
+
+**最可能的位置**：`server/storage.ts` 或 `server/db.ts`
+
+1. 如果 `db` 在 `storage.ts` 中创建：
+- 在 `storage.ts` 中 `export { db }` 或添加 `executeRaw` 方法
+- `embedding.ts` 和 `search.ts` 通过 `storage.executeRaw()` 执行原始 SQL
+1. 如果有单独的 `server/db.ts`：
+- 直接 `import { db } from '../../db'`
+1. 如果都不是：
+- 让 Replit Agent 自行判断正确的导入路径
+
+**推荐方案**：统一用 `storage.executeRaw(sql)` 方式，这样不需要暴露 db 实例。在 `embedding.ts` 中把所有 `db.execute(...)` 替换为 `storage.executeRaw(...)`。
+
+-----
+
+## 验证清单
+
+### 基础验证
+
+- [ ] `npm run dev` 启动正常
+- [ ] 现有功能不受影响
+- [ ] `server/services/kb/` 目录下有 4 个文件（extractText, chunkText, processDocument, embedding, search）
+
+### Embedding 验证（如果方案 A 可用）
+
+先确认 STEP 0 的测试结果。如果 embedding API 可用：
+
+```bash
+# 上传一份新文档（或重新处理已有文档）
+curl -X POST "http://localhost:5000/api/kb/documents/1/reprocess" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# 等 10-30 秒后，检查 chunks 是否有 embedding
+psql $DATABASE_URL -c "SELECT id, document_id, chunk_index, 
+  CASE WHEN embedding IS NOT NULL THEN 'yes' ELSE 'no' END as has_embedding 
+  FROM kb_chunks WHERE document_id = 1;"
+```
+
+预期：所有 chunk 的 `has_embedding` 都是 `yes`。
+
+### 搜索验证
+
+```bash
+# 测试搜索（替换 TOKEN）
+curl "http://localhost:5000/api/kb/search?q=公司制度" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+预期返回：
+
+```json
+{
+  "data": [
+    {
+      "chunkId": 3,
+      "documentId": 1,
+      "documentTitle": "员工手册",
+      "category": "policy",
+      "content": "第一章 总则...",
+      "similarity": 0.85,
+      "source": "vector"
+    },
+    ...
+  ]
+}
+```
+
+### 全文搜索 Fallback 验证
+
+即使 embedding 不可用，搜索也应该有结果（走 ILIKE 匹配）：
+
+```bash
+# 搜索一个确定在文档中存在的关键词
+curl "http://localhost:5000/api/kb/search?q=员工" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+预期：返回包含”员工”的 chunk，`source` 为 `fulltext`。
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读项目根目录的 `task-03-kb-search.md`，按步骤执行。
+> 
+> **先执行 STEP 0**（测试 embedding API 是否可用），把结果告诉我。然后继续执行后续步骤。
+> 
+> 重要规则：
+> 
+> 1. 新增 `embedding.ts` 和 `search.ts` 两个文件到 `server/services/kb/`
+> 1. 修改 `processDocument.ts` 时只追加 embedding 步骤，不改已有的切片逻辑
+> 1. Embedding 失败不应该把文档标记为 error——文档只要切片成功就是 ready
+> 1. 数据库原始 SQL 通过 `storage.executeRaw()` 执行，确保导入路径正确
+> 1. `search.ts` 中的全文搜索用 ILIKE 关键词匹配（不用 tsvector，中文效果不好）
+> 1. 如果 STEP 0 确认 embedding API 不可用，设 `EMBEDDING_AVAILABLE = false`，全文搜索仍然完整可用
+> 1. 完成后运行 `npm run dev`，上传文档测试搜索功能
+
+-----
+
+## 完成后告诉 Claude
+
+回来告诉我：
+
+1. “task-03 完成” 或 “task-03 有问题：XXX”
+1. **STEP 0 的测试结果**：embedding API 可用吗？用的哪个 key？model 名是什么？
+1. 搜索测试结果：搜索一个关键词，返回了多少条结果？source 是 vector 还是 fulltext？
+1. 如果 embedding 不可用也没关系——全文搜索就够 MVP 用了，后续可以接入其他 embedding 服务
+
+然后我出 task-04（接入 AI 对话——最关键的一步）。
