@@ -1,0 +1,597 @@
+# task-05: 知识库管理 UI
+
+> **前置条件**：task-01/02/03 完成（KB API 全部可用）
+> **预计耗时**：45 分钟
+> **新增文件**：`client/src/pages/knowledge-base.tsx`（新页面）
+> **改动文件**：`client/src/App.tsx`（新增路由 + 侧边栏入口，约 10 行）
+> **风险等级**：低（纯前端新增，不改后端）
+
+-----
+
+## 目标
+
+创建知识库管理页面：文档上传、文档列表、状态监控、切片预览、删除。仅 owner/admin 可见。
+
+-----
+
+## STEP 1：新增页面文件
+
+创建 `client/src/pages/knowledge-base.tsx`。
+
+### 技术要求（必须遵循现有项目模式）
+
+- **路由**：使用 `wouter`，不要用 react-router
+- **数据获取**：使用 `TanStack React Query`（useQuery / useMutation），不要手动 fetch
+- **UI 组件**：使用项目已有的 `shadcn/ui` 组件（从 `@/components/ui/` 导入）
+- **图标**：使用 `Lucide React`
+- **样式**：使用 Tailwind CSS，遵循现有的暗色主题 CSS 变量
+- **表单**：使用 `react-hook-form`（如果需要表单）
+
+### 页面结构
+
+```typescript
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/hooks/use-auth'; // 或项目实际的 auth hook 路径
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useToast } from '@/hooks/use-toast';
+import { 
+  Upload, FileText, Trash2, RefreshCw, Eye, Search,
+  BookOpen, AlertCircle, CheckCircle, Loader2, File
+} from 'lucide-react';
+```
+
+### 页面组成（3 个区域）
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  📚 知识库管理                     [+ 上传文档]  按钮      │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐       │
+│  │ 总文档  │ │ 已就绪  │ │ 处理中  │ │ 出错    │       │  ← 统计卡片
+│  │   12    │ │   10    │ │    1    │ │    1    │       │
+│  └─────────┘ └─────────┘ └─────────┘ └─────────┘       │
+│                                                          │
+│  筛选：[全部分类 ▼]  [全部状态 ▼]                         │  ← 筛选栏
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ 📄 员工手册.pdf                         ✅ 已就绪  │  │  ← 文档列表
+│  │    制度 · 全组织 · 28 个片段 · Alex · 2026-03-05   │  │
+│  │                      [查看片段] [重新处理] [删除]   │  │
+│  ├────────────────────────────────────────────────────┤  │
+│  │ 📄 销售KPI标准.docx                     ⏳ 处理中  │  │
+│  │    制度 · 销售部 · 0 个片段 · Tina · 2026-03-05    │  │
+│  ├────────────────────────────────────────────────────┤  │
+│  │ 📄 合同模板.pdf                         ❌ 出错    │  │
+│  │    合同 · 仅管理层 · 无法提取文本                   │  │
+│  │                               [重新处理] [删除]    │  │
+│  └────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────┘
+```
+
+-----
+
+## STEP 2：实现页面组件
+
+以下是页面的核心逻辑，让 Replit Agent 参照实现。**不需要逐字复制**，按照项目现有代码风格来写。
+
+### 2.1 数据获取
+
+```typescript
+// 获取文档列表
+const { data: documents, isLoading } = useQuery({
+  queryKey: ['/api/kb/documents'],
+  queryFn: async () => {
+    const res = await fetch('/api/kb/documents', {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('获取失败');
+    const json = await res.json();
+    return json.data;
+  },
+  refetchInterval: 5000, // 每 5 秒刷新一次（捕获 processing → ready 的状态变化）
+});
+```
+
+**注意**：查看项目现有页面（如 `task-list.tsx` 或 `project-list.tsx`）是怎么做数据获取的，用同样的模式。可能有封装好的 API 工具函数，优先复用。
+
+### 2.2 文件上传
+
+```typescript
+// 上传 mutation
+const uploadMutation = useMutation({
+  mutationFn: async (formData: FormData) => {
+    const res = await fetch('/api/kb/documents/upload', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData, // multipart/form-data，不要设 Content-Type
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || '上传失败');
+    }
+    return res.json();
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/kb/documents'] });
+    toast({ title: '上传成功', description: '文档正在处理中...' });
+    setUploadOpen(false);
+  },
+  onError: (err: Error) => {
+    toast({ title: '上传失败', description: err.message, variant: 'destructive' });
+  },
+});
+
+// 上传处理函数
+function handleUpload() {
+  if (!selectedFile) return;
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+  formData.append('title', uploadTitle || selectedFile.name.replace(/\.[^/.]+$/, ''));
+  formData.append('category', uploadCategory);
+  formData.append('visibility', uploadVisibility);
+  uploadMutation.mutate(formData);
+}
+```
+
+### 2.3 删除文档
+
+```typescript
+const deleteMutation = useMutation({
+  mutationFn: async (docId: number) => {
+    const res = await fetch(`/api/kb/documents/${docId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('删除失败');
+    return res.json();
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/kb/documents'] });
+    toast({ title: '已删除' });
+  },
+});
+```
+
+### 2.4 重新处理
+
+```typescript
+const reprocessMutation = useMutation({
+  mutationFn: async (docId: number) => {
+    const res = await fetch(`/api/kb/documents/${docId}/reprocess`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('重新处理失败');
+    return res.json();
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/kb/documents'] });
+    toast({ title: '已开始重新处理' });
+  },
+});
+```
+
+### 2.5 查看切片（展开/折叠）
+
+```typescript
+// 点击「查看片段」时获取该文档的切片列表
+const [expandedDocId, setExpandedDocId] = useState<number | null>(null);
+
+const { data: chunks } = useQuery({
+  queryKey: ['/api/kb/documents', expandedDocId, 'chunks'],
+  queryFn: async () => {
+    const res = await fetch(`/api/kb/documents/${expandedDocId}/chunks`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('获取失败');
+    const json = await res.json();
+    return json.data;
+  },
+  enabled: !!expandedDocId, // 只在展开时才请求
+});
+```
+
+-----
+
+## STEP 3：上传弹窗 UI
+
+使用 shadcn/ui 的 `Dialog` 组件：
+
+```
+┌──────────────────────────────────────────┐
+│  上传知识库文档                      [✕]  │
+├──────────────────────────────────────────┤
+│                                          │
+│  ┌──────────────────────────────────┐    │
+│  │                                  │    │
+│  │    点击选择文件或拖拽到此处       │    │
+│  │                                  │    │
+│  │    支持 PDF / Word / TXT / MD    │    │
+│  │    最大 50MB                     │    │
+│  │                                  │    │
+│  └──────────────────────────────────┘    │
+│                                          │
+│  已选：员工手册.pdf (2.3MB)              │  ← 选择文件后显示
+│                                          │
+│  文档标题                                │
+│  [员工手册________________________]      │  ← Input，默认用文件名
+│                                          │
+│  分类                                    │
+│  [制度          ▼]                       │  ← Select
+│    制度 / 合同 / 岗位说明 / 操作手册 / 其他│
+│                                          │
+│  可见范围                                │
+│  [全组织        ▼]                       │  ← Select
+│    全组织 / 指定部门 / 仅管理层           │
+│                                          │
+│  [取消]                    [确认上传 ↑]   │
+└──────────────────────────────────────────┘
+```
+
+**分类选项**：
+
+```typescript
+const CATEGORIES = [
+  { value: 'policy', label: '制度' },
+  { value: 'contract', label: '合同' },
+  { value: 'jd', label: '岗位说明' },
+  { value: 'manual', label: '操作手册' },
+  { value: 'general', label: '其他' },
+];
+```
+
+**可见范围选项**：
+
+```typescript
+const VISIBILITY = [
+  { value: 'org', label: '全组织' },
+  { value: 'department', label: '指定部门' },
+  { value: 'admin', label: '仅管理层' },
+];
+```
+
+**文件选择**：用隐藏的 `<input type="file">` + 按钮触发。accept 属性限制格式：
+
+```typescript
+<input 
+  type="file" 
+  ref={fileInputRef}
+  className="hidden"
+  accept=".pdf,.docx,.txt,.md"
+  onChange={(e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      setUploadTitle(file.name.replace(/\.[^/.]+$/, ''));
+    }
+  }}
+/>
+```
+
+-----
+
+## STEP 4：文档列表项 UI
+
+每个文档显示为一个卡片/行：
+
+```typescript
+function DocumentItem({ doc }: { doc: any }) {
+  const isExpanded = expandedDocId === doc.id;
+  
+  return (
+    <div className="border rounded-lg p-4 space-y-3">
+      {/* 第一行：文件图标 + 标题 + 状态 badge */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <FileTypeIcon type={doc.fileType} />
+          <div>
+            <h3 className="font-medium">{doc.title}</h3>
+            <p className="text-sm text-muted-foreground">
+              {doc.fileName} · {formatFileSize(doc.fileSize)}
+            </p>
+          </div>
+        </div>
+        <StatusBadge status={doc.status} />
+      </div>
+      
+      {/* 第二行：元信息 */}
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <span>{getCategoryLabel(doc.category)}</span>
+        <span>·</span>
+        <span>{getVisibilityLabel(doc.visibility)}</span>
+        <span>·</span>
+        <span>{doc.chunkCount} 个片段</span>
+        <span>·</span>
+        <span>{formatDate(doc.createdAt)}</span>
+      </div>
+      
+      {/* 第三行：操作按钮 */}
+      <div className="flex items-center gap-2">
+        {doc.status === 'ready' && (
+          <Button variant="ghost" size="sm" onClick={() => setExpandedDocId(isExpanded ? null : doc.id)}>
+            <Eye className="w-4 h-4 mr-1" />
+            {isExpanded ? '收起' : '查看片段'}
+          </Button>
+        )}
+        {(doc.status === 'error' || doc.status === 'ready') && (
+          <Button variant="ghost" size="sm" onClick={() => reprocessMutation.mutate(doc.id)}>
+            <RefreshCw className="w-4 h-4 mr-1" />
+            重新处理
+          </Button>
+        )}
+        <Button variant="ghost" size="sm" className="text-destructive" onClick={() => {
+          if (confirm('确定删除这份文档？关联的所有知识片段也会被删除。')) {
+            deleteMutation.mutate(doc.id);
+          }
+        }}>
+          <Trash2 className="w-4 h-4 mr-1" />
+          删除
+        </Button>
+      </div>
+      
+      {/* 展开区域：切片预览 */}
+      {isExpanded && <ChunkPreview documentId={doc.id} />}
+      
+      {/* 错误信息 */}
+      {doc.status === 'error' && doc.errorMessage && (
+        <div className="text-sm text-destructive flex items-center gap-2">
+          <AlertCircle className="w-4 h-4" />
+          {doc.errorMessage}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+### 状态 Badge
+
+```typescript
+function StatusBadge({ status }: { status: string }) {
+  switch (status) {
+    case 'ready':
+      return <Badge variant="default" className="bg-green-600"><CheckCircle className="w-3 h-3 mr-1" />已就绪</Badge>;
+    case 'processing':
+      return <Badge variant="secondary"><Loader2 className="w-3 h-3 mr-1 animate-spin" />处理中</Badge>;
+    case 'pending':
+      return <Badge variant="secondary">待处理</Badge>;
+    case 'error':
+      return <Badge variant="destructive"><AlertCircle className="w-3 h-3 mr-1" />出错</Badge>;
+    default:
+      return <Badge variant="outline">{status}</Badge>;
+  }
+}
+```
+
+### 文件类型图标
+
+```typescript
+function FileTypeIcon({ type }: { type: string }) {
+  const colorClass = type === 'pdf' ? 'text-red-500' : type === 'docx' ? 'text-blue-500' : 'text-gray-400';
+  return <FileText className={`w-8 h-8 ${colorClass}`} />;
+}
+```
+
+### 切片预览
+
+```typescript
+function ChunkPreview({ documentId }: { documentId: number }) {
+  const { data: chunks, isLoading } = useQuery({
+    queryKey: ['/api/kb/documents', documentId, 'chunks'],
+    queryFn: async () => {
+      const res = await fetch(`/api/kb/documents/${documentId}/chunks`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const json = await res.json();
+      return json.data;
+    },
+  });
+
+  if (isLoading) return <div className="text-sm text-muted-foreground">加载中...</div>;
+
+  return (
+    <div className="space-y-2 mt-2 max-h-96 overflow-y-auto">
+      {chunks?.map((chunk: any) => (
+        <div key={chunk.id} className="text-sm p-3 rounded bg-muted/50 border">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-muted-foreground font-mono">片段 #{chunk.chunkIndex + 1}</span>
+            <span className="text-xs text-muted-foreground">{chunk.tokenCount} tokens</span>
+          </div>
+          <p className="whitespace-pre-wrap line-clamp-4">{chunk.content}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+-----
+
+## STEP 5：工具函数
+
+```typescript
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString('zh-CN');
+}
+
+function getCategoryLabel(category: string): string {
+  const map: Record<string, string> = { policy: '制度', contract: '合同', jd: '岗位说明', manual: '操作手册', general: '其他' };
+  return map[category] || category;
+}
+
+function getVisibilityLabel(visibility: string): string {
+  const map: Record<string, string> = { org: '全组织', department: '指定部门', admin: '仅管理层' };
+  return map[visibility] || visibility;
+}
+```
+
+-----
+
+## STEP 6：在 App.tsx 中注册路由和侧边栏
+
+### 6.1 添加路由
+
+在 `client/src/App.tsx` 中，找到现有的路由注册区域（使用 wouter 的 `<Route>` 组件），新增：
+
+```typescript
+import KnowledgeBase from './pages/knowledge-base';
+
+// 在路由列表中添加
+<Route path="/knowledge-base" component={KnowledgeBase} />
+```
+
+### 6.2 添加侧边栏入口
+
+在侧边栏的导航菜单中，找到合适的位置（建议放在「团队管理」之后、「设置」之前），新增知识库入口。
+
+**关键**：这个入口只对 owner 和 admin 可见。
+
+参照现有侧边栏菜单项的代码模式，新增类似：
+
+```typescript
+// 只在 role 为 owner 或 admin 时显示
+{['owner', 'admin'].includes(userRole) && (
+  <SidebarItem 
+    icon={BookOpen}  // 或 Library / Database / FolderSearch
+    label="知识库" 
+    path="/knowledge-base"
+    active={location === '/knowledge-base'}
+  />
+)}
+```
+
+**注意**：
+
+- 看现有的侧边栏是怎么获取 `userRole` 的（可能从 auth context、JWT payload、或 API 返回的用户信息中）
+- 看现有菜单项的组件名是什么（可能是 `SidebarItem`、`NavItem`、`MenuItem` 或直接是 JSX）
+- 保持一致的代码风格
+
+### 6.3 侧边栏图标
+
+使用 `BookOpen`（Lucide React）作为知识库的图标。和其他菜单项的图标风格保持一致。
+
+-----
+
+## STEP 7：处理 Token 获取
+
+页面中需要 JWT token 来调用 API。查看项目现有页面是怎么获取 token 的：
+
+**可能的方式**：
+
+1. `const { token } = useAuth();` — 从 auth hook 获取
+1. `localStorage.getItem('buddy_token')` — 直接从 localStorage 读
+1. TanStack React Query 的 `queryFn` 中自动添加 — 可能有全局的 query client 配置
+
+**查看 `client/src/lib/queryClient.ts` 和 `client/src/lib/auth.tsx`** 确认正确的方式。如果项目有全局的请求拦截器自动添加 Authorization header，那么 fetch 调用中不需要手动添加 header。
+
+-----
+
+## STEP 8：样式适配
+
+### 暗色主题
+
+项目使用 CSS 变量定义颜色。在 knowledge-base.tsx 中：
+
+- **不要硬编码颜色**（如 `#2B2A27`）
+- **使用 Tailwind 的主题类**（如 `text-foreground`、`bg-background`、`bg-muted`、`text-muted-foreground`、`border`）
+- **使用 shadcn/ui 的 variant**（如 `<Badge variant="destructive">`）
+
+这样页面会自动适配暗色/亮色主题。
+
+### 响应式
+
+- 统计卡片在移动端从横排变为 2×2 网格
+- 文档列表在移动端操作按钮换行显示
+- 上传弹窗在移动端全屏
+
+-----
+
+## 验证清单
+
+### 基础验证
+
+- [ ] `npm run dev` 启动正常
+- [ ] 访问 `/knowledge-base` 页面正常显示
+- [ ] 侧边栏出现「知识库」入口
+- [ ] 现有功能不受影响
+
+### 权限验证
+
+- [ ] owner 登录：能看到侧边栏入口，能访问页面，能上传/删除
+- [ ] admin 登录：能看到侧边栏入口，能访问页面，能上传/删除
+- [ ] member 登录：侧边栏没有知识库入口（或入口不可见）
+- [ ] member 直接访问 `/knowledge-base`：应显示无权限提示或重定向
+
+### 功能验证
+
+- [ ] 上传 PDF：弹窗打开 → 选文件 → 填标题/分类 → 上传成功 → 列表刷新
+- [ ] 上传 DOCX：同上
+- [ ] 上传不支持的格式（如 .xlsx）：前端拒绝或后端返回错误
+- [ ] 状态变化：上传后显示 pending/processing → 几秒后自动变为 ready（5秒轮询）
+- [ ] 查看片段：点击展开 → 显示切片列表 → 每个切片有序号和内容预览
+- [ ] 重新处理：点击后状态变为 processing → 重新切片 → 变为 ready
+- [ ] 删除文档：确认弹窗 → 删除成功 → 列表刷新
+- [ ] 统计卡片：数字和文档列表一致
+- [ ] 筛选功能：能按分类和状态过滤
+
+### 样式验证
+
+- [ ] 页面风格和其他页面一致（暗色主题、字体、间距）
+- [ ] 移动端显示正常
+- [ ] 状态 Badge 颜色正确（ready=绿, processing=灰+动画, error=红）
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读项目根目录的 `task-05-kb-ui.md`，创建知识库管理页面。
+> 
+> 重要规则：
+> 
+> 1. **查看现有页面（如 project-list.tsx、task-list.tsx）的代码风格**，用同样的模式写
+> 1. 使用项目已有的 shadcn/ui 组件，不要引入新的 UI 库
+> 1. 数据获取用 TanStack React Query，不要手动 fetch + useState
+> 1. Token 获取方式和其他页面保持一致
+> 1. 侧边栏入口只对 owner/admin 显示
+> 1. 文档列表每 5 秒自动刷新（捕获 processing → ready 的状态变化）
+> 1. 完成后用 owner 账号和 member 账号分别测试
+
+-----
+
+## 完成后告诉 Claude
+
+回来告诉我：
+
+1. “task-05 完成” 或 “task-05 有问题：XXX”
+1. 截图：知识库页面的整体样子
+1. 截图：上传弹窗的样子
+1. 用 member 登录后侧边栏是否正确隐藏了知识库入口
+
+然后我出 task-06（聊天界面的知识库开关按钮）。
+
+-----
+
+## 可调参数（更新 BUDDY_KB_TUNABLE_PARAMS.md）
+
+> 以下参数新增到参数手册第四章「权限与可见性」：
+
+|参数      |位置                                |当前值             |说明                           |
+|--------|----------------------------------|----------------|-----------------------------|
+|列表轮询间隔  |knowledge-base.tsx refetchInterval|5000ms          |文档列表自动刷新间隔。太短→服务器压力大。太长→状态更新慢|
+|切片预览最大高度|knowledge-base.tsx ChunkPreview   |max-h-96 (384px)|预览区域高度。文档切片多时需要滚动            |
+|切片文本截断行数|knowledge-base.tsx line-clamp     |4行              |每个切片显示的最大行数。展开后可考虑显示全文       |
+|删除确认方式  |knowledge-base.tsx                |window.confirm  |可升级为 shadcn AlertDialog 组件   |

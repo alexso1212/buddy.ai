@@ -23,6 +23,7 @@ import GraphView from "@/pages/graph-view";
 import Artifacts from "@/pages/artifacts";
 import ChatsPage from "@/pages/chats";
 import OnboardingPage from "@/pages/OnboardingPage";
+import KnowledgeBase from "@/pages/knowledge-base";
 import SettingsPage from "@/components/SettingsPage";
 import { useStreamingConvIds } from "@/stores/chatStreamStore";
 import {
@@ -55,6 +56,7 @@ import {
   Check,
   X,
   MessageSquarePlus,
+  BookOpen,
 } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 import { tapMotionProps, elasticDeformSmallProps, elasticDeformProps } from '@/hooks/use-tap-motion';
@@ -691,6 +693,28 @@ function Sidebar({
                   <div key={item.label} onClick={() => toast({ title: '即将推出' })}>{inner}</div>
                 );
               })}
+              {['owner', 'admin'].includes(authUser?.role || '') && (
+                <Link href="/knowledge-base" onClick={onClose} style={{ textDecoration: 'none' }}>
+                  <div
+                    className={`sidebar-item sidebar-item-grid ${isActive('/knowledge-base') ? 'sidebar-item-active' : ''}`}
+                    style={{
+                      height: 36,
+                      padding: '0 12px',
+                      borderRadius: 10,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      background: isActive('/knowledge-base') ? '#000' : 'transparent',
+                      border: '1px solid transparent',
+                      cursor: 'pointer',
+                    }}
+                    data-testid="nav-knowledge-base"
+                  >
+                    <BookOpen size={16} color="#ECECEC" strokeWidth={1.5} />
+                    <span style={{ fontSize: 14, fontWeight: 400, color: '#ECECEC' }}>知识库</span>
+                  </div>
+                </Link>
+              )}
             </div>
           </CollapsibleContent>
 
@@ -1519,6 +1543,7 @@ function Router() {
             <Route path="/tasks" component={TaskList} />
             <Route path="/tasks/:id" component={TaskDetail} />
             <Route path="/team" component={Team} />
+            <Route path="/knowledge-base" component={KnowledgeBase} />
             <Route path="/settings" component={Settings} />
             <Route path="/notifications" component={Notifications} />
             <Route path="/artifacts" component={Artifacts} />
