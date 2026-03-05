@@ -1,0 +1,576 @@
+# Buddy AI — 用户旅程自动化测试（API层）
+
+> **给 Replit Agent 的指令**：请按顺序执行以下测试脚本，每一项报告 ✅ 通过 或 ❌ 失败（附返回结果）。
+> 测试模拟三个用户（老板/主管/员工）的完整注册→使用→协作流程。
+> **不要修改任何代码**，只执行测试。
+
+-----
+
+## 准备工作
+
+```bash
+# 确保服务运行中
+curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/
+# 预期：200
+```
+
+-----
+
+## 第一幕：老板张总注册
+
+### T01: 注册新用户（老板）
+
+```bash
+BOSS_RESULT=$(curl -s -X POST "http://localhost:5000/api/auth/register" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "zhangzong@xinda.test",
+    "password": "Test123456",
+    "name": "张总"
+  }')
+echo "T01 注册结果: $BOSS_RESULT"
+BOSS_TOKEN=$(echo $BOSS_RESULT | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+echo "T01 Token: ${BOSS_TOKEN:0:20}..."
+```
+
+预期：返回 token 和 user 信息，role 应为 owner
+
+### T02: 获取当前用户信息
+
+```bash
+BOSS_ME=$(curl -s "http://localhost:5000/api/auth/me" \
+  -H "Authorization: Bearer $BOSS_TOKEN")
+echo "T02 用户信息: $BOSS_ME"
+```
+
+预期：返回 user 对象，包含 id、name、role(owner)、orgId
+
+### T03: 检查自动创建的组织
+
+```bash
+BOSS_ORGS=$(curl -s "http://localhost:5000/api/user/orgs" \
+  -H "Authorization: Bearer $BOSS_TOKEN")
+echo "T03 组织列表: $BOSS_ORGS"
+```
+
+预期：至少有一个组织
+
+### T04: 修改组织名称
+
+```bash
+# 先获取 orgId
+BOSS_ORG_ID=$(echo $BOSS_ME | grep -o '"orgId":[0-9]*' | cut -d: -f2)
+echo "T04 OrgId: $BOSS_ORG_ID"
+
+# 尝试更新组织名（检查是否有这个API）
+UPDATE_ORG=$(curl -s -X PATCH "http://localhost:5000/api/organizations/$BOSS_ORG_ID" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $BOSS_TOKEN" \
+  -d '{"name": "鑫达国际贸易"}')
+echo "T04 更新组织: $UPDATE_ORG"
+```
+
+预期：组织名更新成功（如果API支持）
+
+### T05: 创建部门
+
+```bash
+DEPT1=$(curl -s -X POST "http://localhost:5000/api/departments" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $BOSS_TOKEN" \
+  -d "{\"orgId\": $BOSS_ORG_ID, \"name\": \"销售部\", \"color\": \"#3B82F6\"}")
+echo "T05 销售部: $DEPT1"
+SALES_DEPT_ID=$(echo $DEPT1 | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+
+DEPT2=$(curl -s -X POST "http://localhost:5000/api/departments" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $BOSS_TOKEN" \
+  -d "{\"orgId\": $BOSS_ORG_ID, \"name\": \"行政部\", \"color\": \"#10B981\"}")
+echo "T05 行政部: $DEPT2"
+ADMIN_DEPT_ID=$(echo $DEPT2 | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+```
+
+预期：两个部门创建成功
+
+### T06: 创建岗位角色
+
+```bash
+ROLE1=$(curl -s -X POST "http://localhost:5000/api/job-roles" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $BOSS_TOKEN" \
+  -d "{\"orgId\": $BOSS_ORG_ID, \"deptId\": $SALES_DEPT_ID, \"title\": \"销售专员\", \"responsibilities\": \"客户开发、订单跟进、销售报表\", \"boundaries\": \"不负责财务和技术工作\"}")
+echo "T06 销售专员角色: $ROLE1"
+
+ROLE2=$(curl -s -X POST "http://localhost:5000/api/job-roles" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $BOSS_TOKEN" \
+  -d "{\"orgId\": $BOSS_ORG_ID, \"deptId\": $ADMIN_DEPT_ID, \"title\": \"行政主管\", \"responsibilities\": \"公司制度管理、人事档案、办公用品采购、考勤管理\", \"boundaries\": \"不负责销售和技术开发\"}")
+echo "T06 行政主管角色: $ROLE2"
+```
+
+预期：岗位角色创建成功
+
+### T07: 创建邀请码
+
+```bash
+INVITE=$(curl -s -X POST "http://localhost:5000/api/invitations" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $BOSS_TOKEN" \
+  -d "{\"orgId\": $BOSS_ORG_ID, \"role\": \"admin\"}")
+echo "T07 邀请码(admin): $INVITE"
+ADMIN_INVITE_CODE=$(echo $INVITE | grep -o '"inviteCode":"[^"]*"' | cut -d'"' -f4)
+echo "T07 邀请码: $ADMIN_INVITE_CODE"
+
+INVITE2=$(curl -s -X POST "http://localhost:5000/api/invitations" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $BOSS_TOKEN" \
+  -d "{\"orgId\": $BOSS_ORG_ID, \"role\": \"member\"}")
+echo "T07 邀请码(member): $INVITE2"
+MEMBER_INVITE_CODE=$(echo $INVITE2 | grep -o '"inviteCode":"[^"]*"' | cut -d'"' -f4)
+echo "T07 邀请码: $MEMBER_INVITE_CODE"
+```
+
+预期：两个邀请码创建成功（一个admin一个member）
+
+### T08: 老板的第一次AI对话
+
+```bash
+AI_CHAT=$(curl -s -X POST "http://localhost:5000/api/ai/chat/stream" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $BOSS_TOKEN" \
+  -d '{
+    "message": "你好，我是张总，刚注册了Buddy AI，能做什么？",
+    "conversationHistory": [],
+    "currentUserId": 1
+  }' --max-time 30)
+echo "T08 AI对话（前300字符）: ${AI_CHAT:0:300}"
+```
+
+预期：SSE流式回复，AI介绍自己的功能
+
+### T09: 老板创建项目
+
+```bash
+PROJECT=$(curl -s -X POST "http://localhost:5000/api/projects" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $BOSS_TOKEN" \
+  -d "{\"orgId\": $BOSS_ORG_ID, \"name\": \"Q2销售目标冲刺\", \"status\": \"active\"}")
+echo "T09 项目: $PROJECT"
+PROJECT_ID=$(echo $PROJECT | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+```
+
+预期：项目创建成功
+
+### T10: 老板创建任务
+
+```bash
+TASK=$(curl -s -X POST "http://localhost:5000/api/tasks" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $BOSS_TOKEN" \
+  -d "{\"orgId\": $BOSS_ORG_ID, \"projectId\": $PROJECT_ID, \"title\": \"整理本月销售报表\", \"priority\": \"high\", \"status\": \"todo\"}")
+echo "T10 任务: $TASK"
+TASK_ID=$(echo $TASK | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+```
+
+预期：任务创建成功
+
+-----
+
+## 第二幕：行政主管Lisa加入
+
+### T11: Lisa注册
+
+```bash
+LISA_RESULT=$(curl -s -X POST "http://localhost:5000/api/auth/register" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "lisa@xinda.test",
+    "password": "Test123456",
+    "name": "Lisa"
+  }')
+echo "T11 Lisa注册: $LISA_RESULT"
+LISA_TOKEN=$(echo $LISA_RESULT | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+```
+
+预期：注册成功
+
+### T12: Lisa通过邀请码加入组织
+
+```bash
+# 先验证邀请码
+VERIFY=$(curl -s "http://localhost:5000/api/invitations/verify/$ADMIN_INVITE_CODE" \
+  -H "Authorization: Bearer $LISA_TOKEN")
+echo "T12 验证邀请码: $VERIFY"
+
+# 接受邀请
+ACCEPT=$(curl -s -X POST "http://localhost:5000/api/invitations/accept/$ADMIN_INVITE_CODE" \
+  -H "Authorization: Bearer $LISA_TOKEN")
+echo "T12 接受邀请: $ACCEPT"
+```
+
+预期：Lisa成功加入组织，角色为admin
+
+### T13: Lisa刷新Token（切换到新组织）
+
+```bash
+# Lisa可能需要切换到新组织
+LISA_ORGS=$(curl -s "http://localhost:5000/api/user/orgs" \
+  -H "Authorization: Bearer $LISA_TOKEN")
+echo "T13 Lisa的组织: $LISA_ORGS"
+
+# 如果需要切换组织
+SWITCH=$(curl -s -X POST "http://localhost:5000/api/user/switch-org" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $LISA_TOKEN" \
+  -d "{\"orgId\": $BOSS_ORG_ID}")
+echo "T13 切换组织: $SWITCH"
+# 更新token
+LISA_TOKEN=$(echo $SWITCH | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+echo "T13 新Token: ${LISA_TOKEN:0:20}..."
+```
+
+预期：Lisa切换到鑫达国际组织
+
+### T14: Lisa能看到老板创建的内容
+
+```bash
+# Lisa能看到项目
+LISA_PROJECTS=$(curl -s "http://localhost:5000/api/projects" \
+  -H "Authorization: Bearer $LISA_TOKEN")
+echo "T14 Lisa看到的项目: $LISA_PROJECTS"
+
+# Lisa能看到任务
+LISA_TASKS=$(curl -s "http://localhost:5000/api/tasks" \
+  -H "Authorization: Bearer $LISA_TOKEN")
+echo "T14 Lisa看到的任务: $LISA_TASKS"
+
+# Lisa能看到团队成员
+LISA_MEMBERS=$(curl -s "http://localhost:5000/api/org/members" \
+  -H "Authorization: Bearer $LISA_TOKEN")
+echo "T14 团队成员: $LISA_MEMBERS"
+```
+
+预期：Lisa能看到Q2销售目标冲刺项目和销售报表任务
+
+### T15: Lisa上传知识库文档
+
+```bash
+# 创建测试文件
+cat > /tmp/xinda_policy.txt << 'EOF'
+鑫达国际贸易公司员工手册
+
+第一章 考勤制度
+工作时间为周一至周五，上午9:00至下午6:00。
+迟到15分钟以内不扣薪，超过15分钟按半天事假处理。
+
+第二章 请假制度
+事假需提前1天申请，病假需提供医院证明。
+年假：入职满1年享有5天，满3年享有10天。
+
+第三章 报销制度
+差旅费用需在出差结束后5个工作日内提交。
+单笔超过3000元需总经理审批。
+EOF
+
+UPLOAD=$(curl -s -X POST "http://localhost:5000/api/kb/documents/upload" \
+  -H "Authorization: Bearer $LISA_TOKEN" \
+  -F "file=@/tmp/xinda_policy.txt" \
+  -F "title=员工手册" \
+  -F "category=policy" \
+  -F "visibility=org")
+echo "T15 上传结果: $UPLOAD"
+KB_DOC_ID=$(echo $UPLOAD | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+
+# 等待处理
+sleep 5
+
+STATUS=$(curl -s "http://localhost:5000/api/kb/documents/$KB_DOC_ID/status" \
+  -H "Authorization: Bearer $LISA_TOKEN")
+echo "T15 处理状态: $STATUS"
+```
+
+预期：文档上传成功，status变为ready
+
+### T16: Lisa测试知识库问答
+
+```bash
+KB_CHAT=$(curl -s -X POST "http://localhost:5000/api/ai/chat/stream" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $LISA_TOKEN" \
+  -d '{
+    "message": "公司的请假制度是什么？",
+    "conversationHistory": [],
+    "knowledgeBaseEnabled": true,
+    "currentUserId": 2
+  }' --max-time 30)
+echo "T16 知识库问答（前500字符）: ${KB_CHAT:0:500}"
+```
+
+预期：AI基于文档回答请假制度，有来源标注
+
+-----
+
+## 第三幕：普通员工小王加入
+
+### T17: 小王注册并加入
+
+```bash
+WANG_RESULT=$(curl -s -X POST "http://localhost:5000/api/auth/register" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "xiaowang@xinda.test",
+    "password": "Test123456",
+    "name": "小王"
+  }')
+echo "T17 小王注册: $WANG_RESULT"
+WANG_TOKEN=$(echo $WANG_RESULT | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+
+# 接受member邀请
+WANG_ACCEPT=$(curl -s -X POST "http://localhost:5000/api/invitations/accept/$MEMBER_INVITE_CODE" \
+  -H "Authorization: Bearer $WANG_TOKEN")
+echo "T17 小王加入: $WANG_ACCEPT"
+
+# 切换组织
+WANG_SWITCH=$(curl -s -X POST "http://localhost:5000/api/user/switch-org" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $WANG_TOKEN" \
+  -d "{\"orgId\": $BOSS_ORG_ID}")
+WANG_TOKEN=$(echo $WANG_SWITCH | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+echo "T17 小王新Token: ${WANG_TOKEN:0:20}..."
+```
+
+预期：小王成功加入，角色为member
+
+### T18: 小王的权限检查
+
+```bash
+# 小王能看到任务
+WANG_TASKS=$(curl -s "http://localhost:5000/api/tasks" \
+  -H "Authorization: Bearer $WANG_TOKEN")
+echo "T18 小王看到的任务: $WANG_TASKS"
+
+# 小王不能上传知识库（应该403）
+WANG_KB=$(curl -s -X POST "http://localhost:5000/api/kb/documents/upload" \
+  -H "Authorization: Bearer $WANG_TOKEN" \
+  -F "file=@/tmp/xinda_policy.txt" \
+  -F "title=test")
+echo "T18 小王上传知识库（应该403）: $WANG_KB"
+
+# 小王能搜索知识库
+WANG_SEARCH=$(curl -s "http://localhost:5000/api/kb/search?q=请假" \
+  -H "Authorization: Bearer $WANG_TOKEN")
+echo "T18 小王搜索知识库: $WANG_SEARCH"
+
+# 小王能获取文档列表（但只能看到visibility=org的）
+WANG_DOCS=$(curl -s "http://localhost:5000/api/kb/documents" \
+  -H "Authorization: Bearer $WANG_TOKEN")
+echo "T18 小王看到的文档: $WANG_DOCS"
+```
+
+预期：
+
+- 小王能看到任务 ✅
+- 小王不能上传知识库 ❌(403)
+- 小王能搜索知识库 ✅
+- 小王能看到org级别的文档 ✅
+
+### T19: 小王使用知识库问答
+
+```bash
+WANG_KB_CHAT=$(curl -s -X POST "http://localhost:5000/api/ai/chat/stream" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $WANG_TOKEN" \
+  -d '{
+    "message": "公司报销流程是什么？超过多少钱需要审批？",
+    "conversationHistory": [],
+    "knowledgeBaseEnabled": true,
+    "currentUserId": 3
+  }' --max-time 30)
+echo "T19 小王知识库问答（前500字符）: ${WANG_KB_CHAT:0:500}"
+```
+
+预期：AI基于文档回答报销制度
+
+### T20: 把任务分配给小王
+
+```bash
+# 获取小王的userId
+WANG_ME=$(curl -s "http://localhost:5000/api/auth/me" \
+  -H "Authorization: Bearer $WANG_TOKEN")
+WANG_USER_ID=$(echo $WANG_ME | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+echo "T20 小王userId: $WANG_USER_ID"
+
+# 老板把任务分配给小王
+ASSIGN=$(curl -s -X PATCH "http://localhost:5000/api/tasks/$TASK_ID" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $BOSS_TOKEN" \
+  -d "{\"assigneeId\": $WANG_USER_ID}")
+echo "T20 分配任务: $ASSIGN"
+```
+
+预期：任务成功分配给小王
+
+### T21: 小王更新任务状态
+
+```bash
+# 小王开始任务
+UPDATE_STATUS=$(curl -s -X PATCH "http://localhost:5000/api/tasks/$TASK_ID" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $WANG_TOKEN" \
+  -d '{"status": "in_progress"}')
+echo "T21 开始任务: $UPDATE_STATUS"
+
+# 小王添加评论
+COMMENT=$(curl -s -X POST "http://localhost:5000/api/tasks/$TASK_ID/comments" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $WANG_TOKEN" \
+  -d "{\"content\": \"已开始整理，预计今天下午完成\", \"userId\": $WANG_USER_ID}")
+echo "T21 添加评论: $COMMENT"
+```
+
+预期：任务状态更新成功，评论添加成功
+
+-----
+
+## 第四幕：跨角色数据一致性
+
+### T22: 老板能看到小王的操作
+
+```bash
+# 老板看任务详情（应该看到状态变更和评论）
+BOSS_TASK=$(curl -s "http://localhost:5000/api/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $BOSS_TOKEN")
+echo "T22 老板看任务: $BOSS_TASK"
+
+# 应该能看到 status=in_progress 和小王的评论
+```
+
+预期：任务状态是in_progress，有小王的评论
+
+### T23: 通知检查
+
+```bash
+# 老板有没有收到通知
+BOSS_NOTIF=$(curl -s "http://localhost:5000/api/notifications" \
+  -H "Authorization: Bearer $BOSS_TOKEN")
+echo "T23 老板通知: $BOSS_NOTIF"
+
+# 小王有没有收到通知（被分配任务时）
+WANG_NOTIF=$(curl -s "http://localhost:5000/api/notifications" \
+  -H "Authorization: Bearer $WANG_TOKEN")
+echo "T23 小王通知: $WANG_NOTIF"
+```
+
+预期：看看通知系统是否正常工作
+
+### T24: 图谱数据
+
+```bash
+GRAPH=$(curl -s "http://localhost:5000/api/graph/data" \
+  -H "Authorization: Bearer $BOSS_TOKEN")
+echo "T24 图谱节点数: $(echo $GRAPH | grep -o '"id"' | wc -l)"
+```
+
+预期：图谱数据中包含任务节点
+
+### T25: Token用量统计
+
+```bash
+TOKEN_STATS=$(curl -s "http://localhost:5000/api/token-usage/stats" \
+  -H "Authorization: Bearer $BOSS_TOKEN")
+echo "T25 Token用量: $TOKEN_STATS"
+```
+
+预期：有之前AI对话产生的token记录
+
+-----
+
+## 第五幕：多租户隔离验证
+
+### T26: 注册一个完全独立的用户
+
+```bash
+OTHER_RESULT=$(curl -s -X POST "http://localhost:5000/api/auth/register" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "other@competitor.test",
+    "password": "Test123456",
+    "name": "竞争对手"
+  }')
+OTHER_TOKEN=$(echo $OTHER_RESULT | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+
+# 这个人不应该看到鑫达的任何数据
+OTHER_TASKS=$(curl -s "http://localhost:5000/api/tasks" \
+  -H "Authorization: Bearer $OTHER_TOKEN")
+echo "T26 外部用户看到的任务: $OTHER_TASKS"
+
+OTHER_PROJECTS=$(curl -s "http://localhost:5000/api/projects" \
+  -H "Authorization: Bearer $OTHER_TOKEN")
+echo "T26 外部用户看到的项目: $OTHER_PROJECTS"
+
+OTHER_KB=$(curl -s "http://localhost:5000/api/kb/search?q=请假" \
+  -H "Authorization: Bearer $OTHER_TOKEN")
+echo "T26 外部用户搜索知识库: $OTHER_KB"
+
+OTHER_MEMBERS=$(curl -s "http://localhost:5000/api/org/members" \
+  -H "Authorization: Bearer $OTHER_TOKEN")
+echo "T26 外部用户看到的成员: $OTHER_MEMBERS"
+```
+
+预期：外部用户看不到鑫达国际的任何数据（任务为空、项目为空、知识库搜索无结果、看不到鑫达成员）
+
+-----
+
+## 清理（可选）
+
+如果需要清理测试数据：
+
+```sql
+-- 删除测试用户和关联数据（谨慎执行）
+-- DELETE FROM users WHERE email LIKE '%@xinda.test' OR email = 'other@competitor.test';
+```
+
+-----
+
+## 验收报告模板
+
+```
+# 用户旅程API层自动化测试报告
+
+日期：2026-03-XX
+执行者：Replit Agent
+
+| 编号 | 测试项 | 结果 | 备注 |
+|------|--------|------|------|
+| T01 | 老板注册 | ✅/❌ | |
+| T02 | 获取用户信息 | ✅/❌ | role=? |
+| T03 | 自动创建组织 | ✅/❌ | |
+| T04 | 修改组织名 | ✅/❌ | |
+| T05 | 创建部门 | ✅/❌ | |
+| T06 | 创建岗位 | ✅/❌ | |
+| T07 | 创建邀请码 | ✅/❌ | |
+| T08 | AI对话 | ✅/❌ | |
+| T09 | 创建项目 | ✅/❌ | |
+| T10 | 创建任务 | ✅/❌ | |
+| T11 | Lisa注册 | ✅/❌ | |
+| T12 | Lisa通过邀请加入 | ✅/❌ | role=? |
+| T13 | Lisa切换组织 | ✅/❌ | |
+| T14 | Lisa看到老板数据 | ✅/❌ | |
+| T15 | Lisa上传知识库 | ✅/❌ | chunkCount=? |
+| T16 | Lisa知识库问答 | ✅/❌ | 有来源标注？ |
+| T17 | 小王注册加入 | ✅/❌ | role=? |
+| T18 | 小王权限隔离 | ✅/❌ | KB上传被拒？ |
+| T19 | 小王知识库问答 | ✅/❌ | |
+| T20 | 任务分配 | ✅/❌ | |
+| T21 | 小王更新任务 | ✅/❌ | |
+| T22 | 跨角色数据一致 | ✅/❌ | |
+| T23 | 通知系统 | ✅/❌ | |
+| T24 | 图谱数据 | ✅/❌ | |
+| T25 | Token用量 | ✅/❌ | |
+| T26 | 多租户隔离 | ✅/❌ | 外部用户看到了什么？ |
+
+## 发现的问题
+
+1. ...
+2. ...
+```
