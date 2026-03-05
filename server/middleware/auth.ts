@@ -17,6 +17,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     const decoded = jwt.verify(token, JWT_SECRET) as { userId: number; orgId: number; role: string; exp?: number; iat?: number };
     req.currentUserId = decoded.userId;
     req.orgId = decoded.orgId;
+    (req as any).userRole = decoded.role;
     next();
   } catch {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -34,6 +35,7 @@ export function optionalAuthMiddleware(req: Request, _res: Response, next: NextF
     const decoded = jwt.verify(token, JWT_SECRET) as { userId: number; orgId: number; role: string };
     req.currentUserId = decoded.userId;
     req.orgId = decoded.orgId;
+    (req as any).userRole = decoded.role;
   } catch {
   }
   next();

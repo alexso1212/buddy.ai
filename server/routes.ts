@@ -20,7 +20,9 @@ import {
   insertConversationSchema,
   insertChatMessageSchema,
   insertUserMemorySchema,
+  insertKbDocumentSchema,
 } from "@shared/schema";
+import { processDocument } from './services/kb/processDocument';
 import { judgeTaskAssignment } from "./services/ai/verdictService";
 import { searchWeb } from "./services/ai/webSearch";
 import { generateInviteCode } from "./utils/inviteCode";
@@ -3289,6 +3291,220 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
 
       const stats = await storage.getTokenUsageStats(orgId, since);
       return res.json({ data: stats });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== Knowledge Base =====================
+
+  const fsKb = await import('fs');
+  if (!fsKb.existsSync('uploads/kb')) {
+    fsKb.mkdirSync('uploads/kb', { recursive: true });
+  }
+
+  const kbUploadStorage = multer.diskStorage({
+    destination: (_req: any, _file: any, cb: any) => cb(null, 'uploads/kb/'),
+    filename: (_req: any, file: any, cb: any) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+      const ext = pathModule.extname(file.originalname);
+      cb(null, uniqueSuffix + ext);
+    },
+  });
+  const kbUpload = multer({
+    storage: kbUploadStorage,
+    limits: { fileSize: 50 * 1024 * 1024 },
+    fileFilter: (_req: any, file: any, cb: any) => {
+      const allowedTypes = ['.pdf', '.docx', '.txt', '.md'];
+      const ext = pathModule.extname(file.originalname).toLowerCase();
+      if (allowedTypes.includes(ext)) {
+        cb(null, true);
+      } else {
+        cb(new Error(`不支持的文件类型: ${ext}。支持格式: PDF, DOCX, TXT, MD`));
+      }
+    },
+  });
+
+  app.post("/api/kb/documents/upload", authMiddleware, kbUpload.single('file'), async (req: any, res) => {
+    try {
+      const userRole = req.userRole || 'member';
+      if (!['owner', 'admin'].includes(userRole)) {
+        return res.status(403).json({ error: '仅管理员可上传知识库文档' });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: '请选择要上传的文件' });
+      }
+
+      const orgId = req.orgId;
+      const userId = req.currentUserId;
+      const file = req.file;
+      const ext = pathModule.extname(file.originalname).toLowerCase().replace('.', '');
+
+      const docData = {
+        orgId,
+        uploadedBy: userId,
+        title: req.body.title || file.originalname.replace(/\.[^/.]+$/, ''),
+        fileName: file.originalname,
+        fileType: ext,
+        fileSize: file.size,
+        fileUrl: `/uploads/kb/${file.filename}`,
+        category: req.body.category || 'general',
+        visibility: req.body.visibility || 'org',
+        visibleDeptIds: req.body.visibleDeptIds || null,
+        status: 'pending',
+        chunkCount: 0,
+      };
+
+      const doc = await storage.createKbDocument(docData);
+
+      await storage.createActivityLog({
+        orgId,
+        userId,
+        entityType: 'kb_document',
+        entityId: doc.id,
+        action: 'upload',
+        changes: JSON.stringify({ title: doc.title, fileName: doc.fileName, fileType: doc.fileType }),
+        source: 'manual',
+      });
+
+      setImmediate(() => {
+        processDocument(doc.id).catch(err => {
+          console.error(`[KB] Async processing failed for document ${doc.id}:`, err);
+        });
+      });
+
+      return res.status(201).json({ data: doc });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/kb/documents", authMiddleware, async (req: any, res) => {
+    try {
+      const orgId = req.orgId;
+      const docs = await storage.getKbDocumentsByOrg(orgId);
+
+      const userRole = req.userRole || 'member';
+      const filteredDocs = ['owner', 'admin'].includes(userRole)
+        ? docs
+        : docs.filter((d: any) => d.visibility === 'org');
+
+      return res.json({ data: filteredDocs });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/kb/documents/:id", authMiddleware, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const doc = await storage.getKbDocumentById(id);
+      if (!doc) return res.status(404).json({ error: '文档不存在' });
+      if (doc.orgId !== req.orgId) return res.status(403).json({ error: '无权访问' });
+      const userRole = req.userRole || 'member';
+      if (!['owner', 'admin'].includes(userRole) && doc.visibility !== 'org') {
+        return res.status(403).json({ error: '无权访问' });
+      }
+      return res.json({ data: doc });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/kb/documents/:id/chunks", authMiddleware, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const doc = await storage.getKbDocumentById(id);
+      if (!doc) return res.status(404).json({ error: '文档不存在' });
+      if (doc.orgId !== req.orgId) return res.status(403).json({ error: '无权访问' });
+      const userRole = req.userRole || 'member';
+      if (!['owner', 'admin'].includes(userRole) && doc.visibility !== 'org') {
+        return res.status(403).json({ error: '无权访问' });
+      }
+
+      const chunks = await storage.getKbChunksByDocument(id);
+      return res.json({ data: chunks });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/kb/documents/:id/status", authMiddleware, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const doc = await storage.getKbDocumentById(id);
+      if (!doc) return res.status(404).json({ error: '文档不存在' });
+
+      return res.json({
+        data: {
+          status: doc.status,
+          chunkCount: doc.chunkCount,
+          errorMessage: doc.errorMessage,
+        }
+      });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/kb/documents/:id", authMiddleware, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userRole = req.userRole || 'member';
+      if (!['owner', 'admin'].includes(userRole)) {
+        return res.status(403).json({ error: '仅管理员可删除知识库文档' });
+      }
+
+      const doc = await storage.getKbDocumentById(id);
+      if (!doc) return res.status(404).json({ error: '文档不存在' });
+      if (doc.orgId !== req.orgId) return res.status(403).json({ error: '无权访问' });
+
+      const fs = await import('fs');
+      const filePath = doc.fileUrl.startsWith('/') ? doc.fileUrl.slice(1) : doc.fileUrl;
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+
+      await storage.deleteKbDocument(id);
+
+      await storage.createActivityLog({
+        orgId: req.orgId,
+        userId: req.currentUserId,
+        entityType: 'kb_document',
+        entityId: id,
+        action: 'delete',
+        changes: JSON.stringify({ title: doc.title, fileName: doc.fileName }),
+        source: 'manual',
+      });
+
+      return res.json({ data: { success: true } });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/kb/documents/:id/reprocess", authMiddleware, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userRole = req.userRole || 'member';
+      if (!['owner', 'admin'].includes(userRole)) {
+        return res.status(403).json({ error: '仅管理员可操作' });
+      }
+
+      const doc = await storage.getKbDocumentById(id);
+      if (!doc) return res.status(404).json({ error: '文档不存在' });
+      if (doc.orgId !== req.orgId) return res.status(403).json({ error: '无权访问' });
+
+      await storage.updateKbDocument(id, { status: 'pending', errorMessage: null, chunkCount: 0 });
+
+      setImmediate(() => {
+        processDocument(id).catch(err => {
+          console.error(`[KB] Reprocess failed for document ${id}:`, err);
+        });
+      });
+
+      return res.json({ data: { success: true, message: '已开始重新处理' } });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }
