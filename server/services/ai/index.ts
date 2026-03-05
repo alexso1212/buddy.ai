@@ -648,12 +648,18 @@ function formatProjectList(projects: { id: number; name: string; status: string;
   return projects.map(p => `- ID:${p.id} ${p.name}（${p.status}）${p.description || ''}`).join('\n');
 }
 
-async function loadBusinessContext() {
-  const allUsers = await storage.getUsers();
-  const allProjects = await storage.getProjects();
-  const allTasks = await storage.getTasks({});
-  const allDepartments = await storage.getDepartments();
+async function loadBusinessContext(orgId?: number) {
+  const allUsersRaw = await storage.getUsers();
+  const allProjectsRaw = await storage.getProjects();
+  const allTasksRaw = await storage.getTasks({});
+  const allDepartmentsRaw = await storage.getDepartments();
   const allJobRoles = await storage.getJobRoles();
+
+  const allUsers = orgId ? allUsersRaw.filter((u: any) => u.orgId === orgId) : allUsersRaw;
+  const allProjects = orgId ? allProjectsRaw.filter((p: any) => p.orgId === orgId) : allProjectsRaw;
+  const allTasks = orgId ? allTasksRaw.filter((t: any) => t.orgId === orgId) : allTasksRaw;
+  const allDepartments = orgId ? allDepartmentsRaw.filter((d: any) => d.orgId === orgId) : allDepartmentsRaw;
+
   const jobRoleMap = new Map(allJobRoles.map(r => [r.id, r]));
   const activeTasks = allTasks.filter(t => t.status !== 'done' && t.status !== 'cancelled');
   const doneTasks = allTasks.filter(t => t.status === 'done');
@@ -664,7 +670,7 @@ async function loadBusinessContext() {
 }
 
 function buildContextBlock(
-  ctx: { currentUserId: number; currentUserName: string; model?: string },
+  ctx: { currentUserId: number; currentUserName: string; model?: string; orgName?: string },
   allUsers: any[],
   allProjects: any[],
   activeTasks: any[],
@@ -681,9 +687,10 @@ function buildContextBlock(
   })));
   const projectsFormatted = formatProjectList(allProjects);
   const tasksFormatted = formatTaskList(activeTasks, allUsers, ctx.currentUserId);
+  const orgDisplayName = ctx.orgName || '当前组织';
 
   return `## 当前系统上下文
-- 组织: Deltapex Education（金融教育公司）
+- 组织: ${orgDisplayName}
 - 当前用户ID: ${ctx.currentUserId}
 - 当前用户名: ${ctx.currentUserName}
 - 当前时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
@@ -708,18 +715,24 @@ export async function buildContextualSystemPrompt(
   context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; orgId?: number },
   mode: 'streaming' | 'json' = 'streaming'
 ): Promise<{ prompt: string; allUsers: any[]; allProjects: any[]; allTasks: any[]; allDepartments: any[]; allJobRoles: any[]; jobRoleMap: Map<number, any>; activeTasks: any[] }> {
-  const { allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks, doneTasks, overdueTasks } = await loadBusinessContext();
-
   const orgId = context.orgId || 1;
+  const { allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks, doneTasks, overdueTasks } = await loadBusinessContext(orgId);
   const memories = await storage.getUserMemories(context.currentUserId, orgId);
 
-  const contextBlock = buildContextBlock(context, allUsers, allProjects, activeTasks, allTasks, doneTasks, overdueTasks);
+  let orgName = '当前组织';
+  try {
+    const org = await storage.getOrganizationById(orgId);
+    if (org) orgName = org.name;
+  } catch {}
+
+  const contextWithOrg = { ...context, orgName };
+  const contextBlock = buildContextBlock(contextWithOrg, allUsers, allProjects, activeTasks, allTasks, doneTasks, overdueTasks);
   const modelName = context.model || 'claude-sonnet-4-6';
 
   let prompt: string;
 
   if (mode === 'streaming') {
-    prompt = `你是 Buddy，Deltapex Education 的智能助手。你熟悉公司的团队、项目和任务情况，能以自然对话的方式帮助团队成员了解工作进展、回答问题、提供建议。
+    prompt = `你是 Buddy，${orgName} 的智能助手。你熟悉公司的团队、项目和任务情况，能以自然对话的方式帮助团队成员了解工作进展、回答问题、提供建议。
 
 ${contextBlock}
 
@@ -808,6 +821,7 @@ ${contextBlock}
 绝对不要在第一步就直接输出操作块，必须先让用户审核清单。`;
   } else {
     prompt = SYSTEM_PROMPT
+      .replace(/\{\{orgName\}\}/g, orgName)
       .replace('{{currentUserId}}', String(context.currentUserId))
       .replace('{{currentUserName}}', context.currentUserName)
       .replace('{{currentTime}}', new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }))
