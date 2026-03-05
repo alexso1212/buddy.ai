@@ -64,7 +64,7 @@ export async function aggregateBriefingData(orgId: number, userId: number): Prom
     .filter((t: any) => {
       if (t.status !== 'done' || !t.updatedAt) return false;
       const updated = new Date(t.updatedAt).toISOString().slice(0, 10);
-      return updated === yesterdayStr || updated === todayStr;
+      return updated === yesterdayStr;
     })
     .slice(0, 5)
     .map((t: any) => ({ id: t.id, title: t.title, completedBy: getAssigneeName(t) }));
