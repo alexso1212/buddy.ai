@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { ArrowUp, Plus, Square, X, Globe, Palette, FileText, Image, Camera, Atom, FolderOpen, LayoutGrid, ChevronRight, Code } from "lucide-react";
+import { ArrowUp, Plus, Square, X, Globe, Palette, FileText, Image, Camera, Atom, FolderOpen, LayoutGrid, ChevronRight, Code, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface Attachment {
@@ -18,6 +18,8 @@ interface AiInputBarProps {
   onWebSearchToggle?: (enabled: boolean) => void;
   codeContextEnabled?: boolean;
   onCodeContextToggle?: (enabled: boolean) => void;
+  knowledgeBaseEnabled?: boolean;
+  onKnowledgeBaseToggle?: (enabled: boolean) => void;
   researchEnabled?: boolean;
   onResearchToggle?: (enabled: boolean) => void;
   replyStyle?: string;
@@ -104,6 +106,8 @@ function AddToChatSheet({
   onWebSearchToggle,
   codeContextEnabled,
   onCodeContextToggle,
+  knowledgeBaseEnabled,
+  onKnowledgeBaseToggle,
   researchEnabled,
   onResearchToggle,
   replyStyle,
@@ -116,6 +120,8 @@ function AddToChatSheet({
   onWebSearchToggle: (enabled: boolean) => void;
   codeContextEnabled: boolean;
   onCodeContextToggle: (enabled: boolean) => void;
+  knowledgeBaseEnabled: boolean;
+  onKnowledgeBaseToggle: (enabled: boolean) => void;
   researchEnabled: boolean;
   onResearchToggle: (enabled: boolean) => void;
   replyStyle: string;
@@ -380,6 +386,30 @@ function AddToChatSheet({
 
                 <div
                   className="flex items-center justify-between px-4 py-3.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                  onClick={() => onKnowledgeBaseToggle(!knowledgeBaseEnabled)}
+                  data-testid="toggle-knowledge-base"
+                >
+                  <div className="flex items-center gap-3">
+                    <BookOpen className="w-5 h-5 text-[var(--text-secondary)]" strokeWidth={1.5} />
+                    <span className="text-sm text-[var(--text-primary)]">知识库</span>
+                  </div>
+                  <div
+                    className="relative w-11 h-6 rounded-full transition-colors duration-200"
+                    style={{
+                      background: knowledgeBaseEnabled ? '#3B82F6' : 'rgba(255,255,255,0.15)',
+                    }}
+                  >
+                    <div
+                      className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
+                      style={{
+                        transform: knowledgeBaseEnabled ? 'translateX(22px)' : 'translateX(2px)',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div
+                  className="flex items-center justify-between px-4 py-3.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
                   data-testid="btn-add-to-project"
                 >
                   <div className="flex items-center gap-3">
@@ -429,7 +459,7 @@ function AddToChatSheet({
   );
 }
 
-export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled = false, onWebSearchToggle, codeContextEnabled = false, onCodeContextToggle, researchEnabled = false, onResearchToggle, replyStyle = 'normal', onReplyStyleChange, lastUserMessage, onEscape }: AiInputBarProps) {
+export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled = false, onWebSearchToggle, codeContextEnabled = false, onCodeContextToggle, knowledgeBaseEnabled = false, onKnowledgeBaseToggle, researchEnabled = false, onResearchToggle, replyStyle = 'normal', onReplyStyleChange, lastUserMessage, onEscape }: AiInputBarProps) {
   const [value, setValue] = useState("");
   const [showSheet, setShowSheet] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -852,6 +882,16 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
                   代码
                 </div>
               )}
+              {knowledgeBaseEnabled && (
+                <div
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-xs"
+                  style={{ background: 'rgba(34,197,94,0.15)', color: '#4ADE80' }}
+                  data-testid="knowledge-base-badge"
+                >
+                  <BookOpen className="w-3 h-3" />
+                  知识库
+                </div>
+              )}
               {researchEnabled && (
                 <div
                   className="flex items-center gap-1 px-2 py-1 rounded-md text-xs"
@@ -924,6 +964,10 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
         codeContextEnabled={codeContextEnabled}
         onCodeContextToggle={(enabled) => {
           onCodeContextToggle?.(enabled);
+        }}
+        knowledgeBaseEnabled={knowledgeBaseEnabled}
+        onKnowledgeBaseToggle={(enabled) => {
+          onKnowledgeBaseToggle?.(enabled);
         }}
         researchEnabled={researchEnabled}
         onResearchToggle={(enabled) => {

@@ -727,7 +727,7 @@ function ConversationListView({
   );
 }
 
-function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearchToggle, codeContextEnabled, onCodeContextToggle, researchEnabled, onResearchToggle, replyStyle, onReplyStyleChange, lastUserMessage, onEscape }: { onSend: (msg: string, attachments?: Attachment[]) => void; loading: boolean; onStop?: () => void; webSearchEnabled?: boolean; onWebSearchToggle?: (enabled: boolean) => void; codeContextEnabled?: boolean; onCodeContextToggle?: (enabled: boolean) => void; researchEnabled?: boolean; onResearchToggle?: (enabled: boolean) => void; replyStyle?: string; onReplyStyleChange?: (style: string) => void; lastUserMessage?: string; onEscape?: () => void }) {
+function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearchToggle, codeContextEnabled, onCodeContextToggle, knowledgeBaseEnabled, onKnowledgeBaseToggle, researchEnabled, onResearchToggle, replyStyle, onReplyStyleChange, lastUserMessage, onEscape }: { onSend: (msg: string, attachments?: Attachment[]) => void; loading: boolean; onStop?: () => void; webSearchEnabled?: boolean; onWebSearchToggle?: (enabled: boolean) => void; codeContextEnabled?: boolean; onCodeContextToggle?: (enabled: boolean) => void; knowledgeBaseEnabled?: boolean; onKnowledgeBaseToggle?: (enabled: boolean) => void; researchEnabled?: boolean; onResearchToggle?: (enabled: boolean) => void; replyStyle?: string; onReplyStyleChange?: (style: string) => void; lastUserMessage?: string; onEscape?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const bgRef = useRef<HTMLDivElement>(null);
@@ -841,6 +841,8 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
               onWebSearchToggle={onWebSearchToggle}
               codeContextEnabled={codeContextEnabled}
               onCodeContextToggle={onCodeContextToggle}
+              knowledgeBaseEnabled={knowledgeBaseEnabled}
+              onKnowledgeBaseToggle={onKnowledgeBaseToggle}
               researchEnabled={researchEnabled}
               onResearchToggle={onResearchToggle}
               replyStyle={replyStyle}
@@ -948,6 +950,7 @@ export default function Agent() {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [codeContextEnabled, setCodeContextEnabled] = useState(false);
+  const [knowledgeBaseEnabled, setKnowledgeBaseEnabled] = useState(false);
   const [researchEnabled, setResearchEnabled] = useState(false);
   const [replyStyle, setReplyStyle] = useState('normal');
   const [showScrollBtn, setShowScrollBtn] = useState(false);
@@ -1253,6 +1256,7 @@ export default function Agent() {
             replyStyle: replyStyle !== 'normal' ? replyStyle : undefined,
             webSearchEnabled,
             codeContextEnabled,
+            knowledgeBaseEnabled,
             attachments,
           }),
           signal: abortController.signal,
@@ -1689,7 +1693,7 @@ export default function Agent() {
         if (convId) clearStreamState(convId);
       }
     },
-    [activeConvId, activeConvSystemPrompt, saveMessageToDB, navigate, currentUserId, replyStyle, webSearchEnabled, codeContextEnabled]
+    [activeConvId, activeConvSystemPrompt, saveMessageToDB, navigate, currentUserId, replyStyle, webSearchEnabled, codeContextEnabled, knowledgeBaseEnabled]
   );
 
   handleSendRef.current = handleSend;
@@ -2272,6 +2276,8 @@ export default function Agent() {
         onWebSearchToggle={setWebSearchEnabled}
         codeContextEnabled={codeContextEnabled}
         onCodeContextToggle={setCodeContextEnabled}
+        knowledgeBaseEnabled={knowledgeBaseEnabled}
+        onKnowledgeBaseToggle={setKnowledgeBaseEnabled}
         researchEnabled={researchEnabled}
         onResearchToggle={setResearchEnabled}
         replyStyle={replyStyle}

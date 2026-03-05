@@ -1,0 +1,281 @@
+# task-06: 聊天界面知识库开关
+
+> **前置条件**：task-04 完成（后端已支持 knowledgeBaseEnabled 参数）
+> **预计耗时**：20 分钟
+> **改动文件**：
+> 
+> - `client/src/components/ai/AiInputBar.tsx`（新增开关按钮，约 15 行）
+> - `client/src/pages/agent.tsx`（传递 KB 状态到 API 请求，约 5 行）
+>   **风险等级**：低（前端改动，不影响后端）
+
+-----
+
+## 目标
+
+在 Agent 聊天页面的输入栏中新增一个「知识库」开关按钮，让用户可以手动开启/关闭知识库检索。交互模式参照现有的「Web 搜索」开关。
+
+-----
+
+## 设计原则
+
+**和 Web 搜索开关保持一致。** 你的 AiInputBar 已经有一个 Web 搜索的开关按钮（Tavily），知识库开关应该和它在视觉风格、交互逻辑、代码结构上完全一致。这样用户学习成本为零。
+
+-----
+
+## STEP 1：找到 Web 搜索开关的代码模式
+
+在 `client/src/components/ai/AiInputBar.tsx`（943 行）中，找到 Web 搜索开关的实现。它大概是这样的模式：
+
+```typescript
+// 状态
+const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+
+// UI：某个图标按钮，点击切换状态，激活时有高亮样式
+<Button 
+  variant="ghost" 
+  size="icon"
+  onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+  className={webSearchEnabled ? '某种高亮样式' : ''}
+>
+  <Search className="w-4 h-4" />
+</Button>
+
+// 发送消息时，把 webSearchEnabled 传出去
+onSend({ message, webSearchEnabled, ... });
+```
+
+**复制这个模式**，用于知识库开关。
+
+-----
+
+## STEP 2：新增知识库开关状态
+
+在 AiInputBar 组件中，在 `webSearchEnabled` 状态附近，新增：
+
+```typescript
+const [knowledgeBaseEnabled, setKnowledgeBaseEnabled] = useState(false);
+```
+
+-----
+
+## STEP 3：新增知识库开关按钮
+
+在输入栏的工具按钮区域（Web 搜索按钮旁边），新增知识库按钮：
+
+```typescript
+// 图标用 BookOpen 或 Library（从 lucide-react 导入）
+import { BookOpen } from 'lucide-react';
+
+// 按钮 — 完全参照 Web 搜索按钮的写法
+<Button
+  variant="ghost"
+  size="icon"
+  onClick={() => setKnowledgeBaseEnabled(!knowledgeBaseEnabled)}
+  className={knowledgeBaseEnabled ? '和 webSearch 高亮时一样的 className' : ''}
+  title={knowledgeBaseEnabled ? '关闭知识库' : '开启知识库'}
+>
+  <BookOpen className="w-4 h-4" />
+</Button>
+```
+
+**按钮位置**：放在 Web 搜索按钮的旁边（左边或右边都行，保持视觉平衡）。
+
+**高亮样式**：和 Web 搜索按钮激活时完全一样的样式。可能是：
+
+- 背景色变化（如 `bg-primary/10`）
+- 图标颜色变化（如 `text-primary`）
+- 边框变化
+- 或者是某个自定义 CSS class
+
+**直接复制 Web 搜索按钮的 className 逻辑就行。**
+
+-----
+
+## STEP 4：显示 KB 状态提示
+
+当知识库开启时，在输入框上方或下方显示一个简短提示，让用户知道当前模式：
+
+```typescript
+{knowledgeBaseEnabled && (
+  <div className="flex items-center gap-1.5 px-3 py-1 text-xs text-muted-foreground">
+    <BookOpen className="w-3 h-3" />
+    <span>知识库已开启 — AI 将基于企业文档回答</span>
+  </div>
+)}
+```
+
+**参照 Web 搜索开启时的提示写法**（如果有的话）。如果 Web 搜索没有类似提示，那知识库也可以不加，保持一致。
+
+-----
+
+## STEP 5：传递 KB 状态到发送函数
+
+在 AiInputBar 的消息发送逻辑中，找到调用 `onSend` 或类似回调的位置。把 `knowledgeBaseEnabled` 加进去。
+
+**找到现有的发送逻辑**，大概是：
+
+```typescript
+// 可能的模式 1：通过 props 回调
+onSend({
+  message: inputValue,
+  webSearchEnabled,
+  codeContextEnabled,
+  model: selectedModel,
+  extendedThinking,
+  attachments,
+});
+
+// 可能的模式 2：直接调 API
+// 可能的模式 3：dispatch 一个 action
+```
+
+**在传递的参数对象中加上**：
+
+```typescript
+knowledgeBaseEnabled,
+```
+
+-----
+
+## STEP 6：在 agent.tsx 中将 KB 状态传给 API
+
+在 `client/src/pages/agent.tsx`（2284 行）中，找到调用 `/api/ai/chat/stream` 的位置。
+
+**找到** fetch 请求的 body 构建处，大概是：
+
+```typescript
+body: JSON.stringify({
+  message,
+  conversationHistory,
+  conversationId,
+  currentUserId,
+  model,
+  extendedThinking,
+  webSearchEnabled,
+  codeContextEnabled,
+  attachments,
+  // ... 其他参数
+}),
+```
+
+**新增一行**：
+
+```typescript
+  knowledgeBaseEnabled,   // ← 新增
+```
+
+**确保这个值来自 AiInputBar 传上来的参数。** 查看 agent.tsx 中 AiInputBar 的 onSend 回调是怎么接收参数的，把 `knowledgeBaseEnabled` 加进去。
+
+-----
+
+## STEP 7：互斥处理（可选但推荐）
+
+知识库模式和代码上下文模式不应该同时开启（task-04 中设计的是 codeContext 优先）。
+
+在前端可以加一个简单的互斥逻辑：
+
+```typescript
+// 开启知识库时自动关闭代码上下文
+function toggleKnowledgeBase() {
+  const newValue = !knowledgeBaseEnabled;
+  setKnowledgeBaseEnabled(newValue);
+  if (newValue && codeContextEnabled) {
+    setCodeContextEnabled(false);
+  }
+}
+
+// 开启代码上下文时自动关闭知识库
+function toggleCodeContext() {
+  const newValue = !codeContextEnabled;
+  setCodeContextEnabled(newValue);
+  if (newValue && knowledgeBaseEnabled) {
+    setKnowledgeBaseEnabled(false);
+  }
+}
+```
+
+**但如果实现太复杂就先不做**——后端已经处理了优先级（codeContext > knowledgeBase），即使前端两个都开着也不会出问题，只是 KB 会被忽略。
+
+-----
+
+## STEP 8：KB 来源标注在消息气泡中显示（可选增强）
+
+当 AI 基于知识库回答时，回答中会包含「📄 来源：文档名」的文本。这个会被 `AIMessageContent.tsx` 的 Markdown 渲染器正常显示，**不需要额外改动**。
+
+但如果想让来源标注更醒目，可以在 `AiMessageBubble.tsx` 中对包含「📄 来源：」的行做特殊样式处理。**这是可选增强，不是必须的。**
+
+-----
+
+## 验证清单
+
+### 基础验证
+
+- [ ] `npm run dev` 启动正常
+- [ ] Agent 页面正常加载
+- [ ] 输入栏出现知识库开关按钮（📚 BookOpen 图标）
+- [ ] 按钮样式和 Web 搜索按钮一致
+
+### 功能验证
+
+- [ ] 点击开关：图标高亮/取消高亮
+- [ ] 开启状态下发送消息：API 请求 body 中包含 `knowledgeBaseEnabled: true`
+- [ ] 关闭状态下发送消息：API 请求 body 中包含 `knowledgeBaseEnabled: false`（或不包含该字段）
+- [ ] 开启 KB 后问企业知识问题：AI 回答基于文档，末尾有来源标注
+- [ ] 关闭 KB 后问同样的问题：AI 用通用知识回答，无来源标注
+- [ ] KB 和 Web 搜索可以独立切换，互不影响
+- [ ] KB 和代码上下文如果互斥：开一个自动关另一个
+
+### 样式验证
+
+- [ ] 按钮在移动端正常显示
+- [ ] 状态提示（如果加了）不影响输入栏布局
+- [ ] 暗色主题下按钮颜色正确
+
+### 回归测试
+
+- [ ] 不开 KB：普通对话正常
+- [ ] 不开 KB：Web 搜索正常
+- [ ] 不开 KB：代码上下文正常
+- [ ] 不开 KB：任务创建/引导式创建正常
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读项目根目录的 `task-06-kb-chat-toggle.md`，在聊天界面添加知识库开关。
+> 
+> **最重要的一条规则：找到 Web 搜索开关的代码，完全复制它的模式。**
+> 
+> 具体步骤：
+> 
+> 1. 在 `AiInputBar.tsx` 中找到 `webSearchEnabled` 的状态定义、按钮 UI、发送时的传参方式
+> 1. 用完全一样的模式新增 `knowledgeBaseEnabled`
+> 1. 图标用 `BookOpen`（lucide-react）
+> 1. 在 `agent.tsx` 中把 `knowledgeBaseEnabled` 加到 `/api/ai/chat/stream` 的请求 body
+> 1. 如果能简单实现 KB 和 codeContext 的互斥就加上，复杂就不加
+> 1. 完成后分别测试 KB 开/关状态下的对话效果
+
+-----
+
+## 完成后告诉 Claude
+
+回来告诉我：
+
+1. “task-06 完成” 或 “task-06 有问题：XXX”
+1. 截图：输入栏的样子（能看到 KB 开关按钮）
+1. 截图：开启 KB 后问企业知识问题的 AI 回答（看是否有来源标注）
+1. Web 搜索和代码上下文开关是否仍然正常
+
+**task-06 完成后，知识库 MVP 的全部 6 个 task 就完成了。**
+
+-----
+
+## 可调参数（更新 BUDDY_KB_TUNABLE_PARAMS.md）
+
+> 以下参数新增到参数手册：
+
+|参数                 |位置                     |当前值                    |说明                               |
+|-------------------|-----------------------|-----------------------|---------------------------------|
+|KB 开关默认状态          |AiInputBar.tsx useState|false（关闭）              |是否默认开启知识库。如果企业客户的主要场景就是查文档，可以默认开启|
+|KB 与 codeContext 互斥|AiInputBar.tsx         |互斥（如果实现了）              |两个模式是否互斥。后端已处理优先级，前端互斥只是UX优化     |
+|状态提示文案             |AiInputBar.tsx         |「知识库已开启 — AI 将基于企业文档回答」|可按企业文化调整措辞                       |
