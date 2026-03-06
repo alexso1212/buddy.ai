@@ -3436,12 +3436,14 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
 
   // ===================== Smart Setup =====================
 
+  const fsSetup = await import('fs');
+  if (!fsSetup.existsSync('uploads/setup')) {
+    fsSetup.mkdirSync('uploads/setup', { recursive: true });
+  }
+
   const setupUploadStorage = multer.diskStorage({
     destination: (_req: any, _file: any, cb: any) => {
-      const dir = 'uploads/setup/';
-      const fsMod = require('fs');
-      if (!fsMod.existsSync(dir)) fsMod.mkdirSync(dir, { recursive: true });
-      cb(null, dir);
+      cb(null, 'uploads/setup/');
     },
     filename: (_req: any, file: any, cb: any) => {
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
@@ -3487,9 +3489,8 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
 
         return res.json({ data: result });
       } catch (analyzeErr) {
-        const fsMod = require('fs');
         for (const f of files) {
-          try { fsMod.unlinkSync(f.path); } catch {}
+          try { fsSetup.unlinkSync(f.path); } catch {}
         }
         throw analyzeErr;
       }
