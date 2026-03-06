@@ -1672,6 +1672,73 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  app.post("/api/tasks/:taskId/deliverables/from-chat", authMiddleware, async (req: any, res) => {
+    try {
+      const taskId = parseInt(req.params.taskId);
+      const { messageId, title, format } = req.body;
+      const userId = req.currentUserId;
+      const orgId = req.orgId;
+
+      if (!messageId) return res.status(400).json({ error: "messageId 为必填项" });
+
+      const task = await storage.getTaskById(taskId);
+      if (!task) return res.status(404).json({ error: "任务不存在" });
+      if (task.orgId !== orgId) return res.status(403).json({ error: "无权访问该任务" });
+
+      const isAssignee = task.assigneeId === userId;
+      const isCreator = task.creatorId === userId;
+      const userRole = req.userRole;
+      const isAdminOrOwner = userRole === 'owner' || userRole === 'admin';
+      if (!isAssignee && !isCreator && !isAdminOrOwner) {
+        return res.status(403).json({ error: "只有任务的指派人、创建者或管理员可以操作" });
+      }
+
+      const chatMessage = await storage.getChatMessageById(messageId);
+      if (!chatMessage) return res.status(404).json({ error: "聊天消息不存在" });
+
+      const conversation = await storage.getConversationById(chatMessage.conversationId);
+      if (!conversation || conversation.orgId !== orgId || conversation.userId !== userId) {
+        return res.status(403).json({ error: "无权访问该聊天消息" });
+      }
+
+      const content = chatMessage.content;
+      const deliverableTitle = title || content.slice(0, 30).replace(/\n/g, ' ') || 'AI 生成内容';
+
+      const existing = await storage.getDeliverablesByTaskId(taskId);
+      const sameTitle = existing.filter(d => d.title === deliverableTitle && d.type === 'text');
+      const maxVersion = sameTitle.length > 0 ? Math.max(...sameTitle.map(d => d.version)) : 0;
+
+      if (maxVersion > 0) {
+        await storage.markPreviousVersions(taskId, 'text', deliverableTitle);
+      }
+
+      const deliverable = await storage.createDeliverable({
+        taskId,
+        orgId,
+        type: 'text',
+        title: deliverableTitle,
+        description: `来源: AI 对话 (消息 #${messageId}, 格式: ${format || 'markdown'})`,
+        content,
+        submittedBy: userId,
+        version: maxVersion + 1,
+      });
+
+      await storage.createActivityLog({
+        orgId,
+        userId,
+        entityType: "task",
+        entityId: taskId,
+        action: "add_deliverable",
+        changes: JSON.stringify({ deliverableId: deliverable.id, type: 'text', title: deliverableTitle, source: 'ai_chat', messageId }),
+        source: "ai",
+      });
+
+      return res.json({ data: deliverable });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/tasks/:taskId/deliverables", authMiddleware, async (req: any, res) => {
     try {
       const taskId = parseInt(req.params.taskId);
@@ -2692,6 +2759,40 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
       if (!q) return res.json({ data: [] });
       const data = await storage.searchConversations(req.orgId, q);
       return res.json({ data });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/chat-messages/recent-assistant", authMiddleware, async (req: any, res) => {
+    try {
+      const userId = req.currentUserId;
+      const orgId = req.orgId;
+      const limit = parseInt(req.query.limit as string) || 50;
+
+      const userConvs = await storage.getConversationsByUser(orgId, userId);
+      const convIds = userConvs.map(c => c.id);
+
+      if (convIds.length === 0) return res.json({ data: [] });
+
+      const allMessages: any[] = [];
+      for (const convId of convIds.slice(0, 20)) {
+        const msgs = await storage.getChatMessages(convId);
+        const assistantMsgs = msgs
+          .filter(m => m.role === 'assistant' && m.content && m.content.length > 100)
+          .map(m => ({
+            id: m.id,
+            conversationId: convId,
+            content: m.content,
+            createdAt: m.createdAt,
+            preview: m.content.slice(0, 80).replace(/\n/g, ' '),
+          }));
+        allMessages.push(...assistantMsgs);
+      }
+
+      allMessages.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      return res.json({ data: allMessages.slice(0, limit) });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }

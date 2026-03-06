@@ -561,6 +561,11 @@ export class DatabaseStorage {
     return db.select().from(chatMessages).where(eq(chatMessages.conversationId, conversationId)).orderBy(chatMessages.createdAt);
   }
 
+  async getChatMessageById(id: number): Promise<ChatMessage | undefined> {
+    const [result] = await db.select().from(chatMessages).where(eq(chatMessages.id, id)).limit(1);
+    return result;
+  }
+
   async createChatMessage(data: InsertChatMessage): Promise<ChatMessage> {
     const [result] = await db.insert(chatMessages).values(data).returning();
     await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, data.conversationId));
@@ -675,6 +680,12 @@ export class DatabaseStorage {
   async getConversationsByOrg(orgId: number): Promise<Conversation[]> {
     return db.select().from(conversations).where(
       and(eq(conversations.orgId, orgId), eq(conversations.isArchived, false))
+    ).orderBy(desc(conversations.updatedAt));
+  }
+
+  async getConversationsByUser(orgId: number, userId: number): Promise<Conversation[]> {
+    return db.select().from(conversations).where(
+      and(eq(conversations.orgId, orgId), eq(conversations.userId, userId), eq(conversations.isArchived, false))
     ).orderBy(desc(conversations.updatedAt));
   }
 

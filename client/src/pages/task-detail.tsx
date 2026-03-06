@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Plus, Pencil, Trash2, MessageSquare, GitBranch, ListTree, Activity, Scale, Check, X as XIcon, Loader2, UserPlus, Users, AlertCircle, AlertTriangle, Sparkles } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, MessageSquare, GitBranch, ListTree, Activity, Scale, Check, X as XIcon, Loader2, UserPlus, Users, AlertCircle, AlertTriangle, Sparkles, Bot, FileText, Search } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
 interface TaskDetailResponse {
@@ -244,6 +244,10 @@ export default function TaskDetail() {
   const [aiReviewResult, setAiReviewResult] = useState<{ summary: string; relevanceScore: number; qualityAssessment: string; suggestions: string[] } | null>(null);
   const [aiReviewLoading, setAiReviewLoading] = useState(false);
   const [detailTab, setDetailTab] = useState<"info" | "subtasks" | "deps" | "comments" | "activity">("info");
+  const [aiImportOpen, setAiImportOpen] = useState(false);
+  const [selectedChatMsgId, setSelectedChatMsgId] = useState<number | null>(null);
+  const [importTitle, setImportTitle] = useState("");
+  const [chatMsgSearch, setChatMsgSearch] = useState("");
   const [descExpanded, setDescExpanded] = useState(false);
 
   const { data: taskRes, isLoading: taskLoading } = useQuery<TaskDetailResponse>({
@@ -293,6 +297,51 @@ export default function TaskDetail() {
   const activityLogs = activityRes?.data ?? [];
 
   const pendingSubmission = submissions.find(s => s.status === 'pending');
+
+  const { data: deliverablesRes } = useQuery<{ data: any[] }>({
+    queryKey: ['/api/tasks', id, 'deliverables'],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/tasks/${id}/deliverables`);
+      return res.json();
+    },
+    enabled: !!id,
+  });
+  const deliverables = deliverablesRes?.data ?? [];
+
+  const { data: recentMsgsRes, isLoading: recentMsgsLoading } = useQuery<{ data: any[] }>({
+    queryKey: ['/api/chat-messages/recent-assistant'],
+    enabled: aiImportOpen,
+  });
+  const recentMessages = recentMsgsRes?.data ?? [];
+  const filteredMessages = chatMsgSearch.trim()
+    ? recentMessages.filter((m: any) =>
+        (m.content || "").toLowerCase().includes(chatMsgSearch.toLowerCase()) ||
+        (m.conversationTitle || "").toLowerCase().includes(chatMsgSearch.toLowerCase())
+      )
+    : recentMessages;
+
+  const importFromChatMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedChatMsgId || !id) throw new Error("Missing message or task");
+      const res = await apiRequest("POST", `/api/tasks/${id}/deliverables/from-chat`, {
+        messageId: selectedChatMsgId,
+        title: importTitle || "AI chat import",
+        format: "markdown",
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "导入成功", description: "AI 对话内容已添加为交付物" });
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks', id, 'deliverables'] });
+      setAiImportOpen(false);
+      setSelectedChatMsgId(null);
+      setImportTitle("");
+      setChatMsgSearch("");
+    },
+    onError: (err: any) => {
+      toast({ title: "导入失败", description: err.message, variant: "destructive" });
+    },
+  });
 
   const handleAiReview = async (submissionId: number) => {
     if (!task) return;
@@ -914,6 +963,152 @@ export default function TaskDetail() {
           </div>
         )}
       </Card>
+
+      <Card className={`p-4 ${detailTab === "info" ? "" : "hidden md:block"}`}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-sm flex items-center gap-2" data-testid="text-deliverables-heading">
+            <FileText className="h-4 w-4" />
+            交付物 ({deliverables.length})
+          </h3>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setAiImportOpen(true);
+              setImportTitle("");
+              setSelectedChatMsgId(null);
+              setChatMsgSearch("");
+            }}
+            data-testid="btn-import-from-ai"
+          >
+            <Bot className="mr-1.5 h-3.5 w-3.5" />
+            从AI对话导入
+          </Button>
+        </div>
+        {deliverables.length === 0 ? (
+          <p className="text-muted-foreground text-sm" data-testid="text-no-deliverables">暂无交付物</p>
+        ) : (
+          <div className="space-y-2">
+            {deliverables.map((d: any) => (
+              <div
+                key={d.id}
+                className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30"
+                data-testid={`deliverable-item-${d.id}`}
+              >
+                <FileText className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium truncate">{d.title}</div>
+                  {d.content && (
+                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{d.content.slice(0, 120)}</p>
+                  )}
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">v{d.version || 1}</Badge>
+                    {d.format && <span className="text-[10px] text-muted-foreground">{d.format}</span>}
+                    {d.sourceType === 'ai_chat' && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                        <Bot className="h-2.5 w-2.5 mr-0.5" />AI
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Dialog open={aiImportOpen} onOpenChange={setAiImportOpen}>
+        <DialogContent className="max-w-lg max-h-[80vh] flex flex-col" data-testid="ai-import-dialog">
+          <DialogHeader>
+            <DialogTitle>从AI对话导入交付物</DialogTitle>
+            <DialogDescription>选择一条AI回复内容作为任务交付物</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 flex-1 min-h-0 overflow-hidden flex flex-col">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">标题</label>
+              <Input
+                value={importTitle}
+                onChange={(e) => setImportTitle(e.target.value)}
+                placeholder="交付物标题"
+                data-testid="ai-import-title-input"
+              />
+            </div>
+            <div className="flex-1 min-h-0 flex flex-col">
+              <label className="text-xs text-muted-foreground mb-1 block">选择AI回复</label>
+              <div className="relative mb-2">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="搜索消息内容..."
+                  value={chatMsgSearch}
+                  onChange={(e) => setChatMsgSearch(e.target.value)}
+                  className="pl-8 h-8 text-sm"
+                  data-testid="ai-import-search"
+                />
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto border rounded-lg">
+                {recentMsgsLoading && (
+                  <div className="p-4 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    加载AI消息中...
+                  </div>
+                )}
+                {!recentMsgsLoading && filteredMessages.length === 0 && (
+                  <div className="p-4 text-center text-sm text-muted-foreground">
+                    {chatMsgSearch ? "没有匹配的消息" : "暂无AI回复消息"}
+                  </div>
+                )}
+                {filteredMessages.map((m: any) => (
+                  <div
+                    key={m.id}
+                    onClick={() => {
+                      setSelectedChatMsgId(m.id);
+                      if (!importTitle) {
+                        const firstLine = (m.content || "").split("\n")[0].replace(/^#+\s*/, "").slice(0, 50);
+                        setImportTitle(firstLine || "AI response");
+                      }
+                    }}
+                    className={`p-3 cursor-pointer border-b last:border-b-0 transition-colors ${
+                      selectedChatMsgId === m.id
+                        ? "bg-primary/10 border-primary/20"
+                        : "hover:bg-muted/50"
+                    }`}
+                    data-testid={`ai-import-msg-${m.id}`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <Bot className="h-3 w-3 text-muted-foreground" />
+                      {m.conversationTitle && (
+                        <span className="text-[11px] text-muted-foreground truncate max-w-[200px]">
+                          {m.conversationTitle}
+                        </span>
+                      )}
+                      <span className="text-[11px] text-muted-foreground ml-auto">
+                        {m.createdAt ? new Date(m.createdAt).toLocaleDateString() : ""}
+                      </span>
+                    </div>
+                    <p className="text-xs line-clamp-3 text-foreground/80">
+                      {(m.content || "").slice(0, 200)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setAiImportOpen(false)} data-testid="ai-import-cancel-btn">
+                取消
+              </Button>
+              <Button
+                size="sm"
+                disabled={!selectedChatMsgId || importFromChatMutation.isPending}
+                onClick={() => importFromChatMutation.mutate()}
+                data-testid="ai-import-submit-btn"
+              >
+                {importFromChatMutation.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                导入
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className={detailTab === "info" ? "" : "hidden md:block"}>
         {verdictData && verdictAccepted === null && (

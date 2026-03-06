@@ -1064,6 +1064,7 @@ export default function AiMessageBubble({
           title={extractArtifactTitle(message.content)}
           isOpen={artifactOpen}
           onClose={() => setArtifactOpen(false)}
+          messageId={message.id}
         />
       )}
     </div>
