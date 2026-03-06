@@ -10,6 +10,27 @@ export interface ExtractedFile {
   fileSize: number;
   content: string;
   fullContent: string;
+  skipped?: boolean;
+}
+
+const skipPatterns = [
+  /发票/, /invoice/i,
+  /报销单/, /expense/i,
+  /银行流水/, /bank.*statement/i,
+  /财务报表/, /financial.*report/i,
+  /税/, /tax/i,
+  /工资条/, /payroll.*slip/i, /salary.*slip/i,
+  /水电/, /utility/i,
+  /快递/, /物流单/, /shipping/i,
+  /会计凭证/, /voucher/i,
+  /扫描件/, /scan/i,
+  /照片/, /photo/i, /^img/i,
+  /截图/, /screenshot/i,
+];
+
+export function isLikelyRelevant(fileName: string): boolean {
+  const name = fileName.toLowerCase();
+  return !skipPatterns.some(p => p.test(name));
 }
 
 export async function processZipFile(zipPath: string): Promise<ExtractedFile[]> {
@@ -43,6 +64,7 @@ export async function processZipFile(zipPath: string): Promise<ExtractedFile[]> 
       const fullContent = await extractText(tempPath, ext);
 
       if (fullContent && fullContent.trim().length > 20) {
+        const skipped = !isLikelyRelevant(fileName);
         files.push({
           fileName,
           filePath: tempPath,
@@ -50,6 +72,7 @@ export async function processZipFile(zipPath: string): Promise<ExtractedFile[]> 
           fileSize: entry.header.size,
           content: fullContent.slice(0, 10000),
           fullContent,
+          skipped,
         });
       } else {
         if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
@@ -60,7 +83,11 @@ export async function processZipFile(zipPath: string): Promise<ExtractedFile[]> 
     }
   }
 
-  console.log(`[Setup] Extracted ${files.length} files from ZIP`);
+  const skippedCount = files.filter(f => f.skipped).length;
+  console.log(`[Setup] Extracted ${files.length} files from ZIP (${skippedCount} skipped by filename filter)`);
+  if (skippedCount > 0) {
+    console.log(`[Setup] Skipped files: ${files.filter(f => f.skipped).map(f => f.fileName).join(', ')}`);
+  }
   return files;
 }
 
@@ -77,6 +104,7 @@ export async function processMultipleFiles(filePaths: { originalName: string; te
       const fullContent = await extractText(tempPath, ext);
 
       if (fullContent && fullContent.trim().length > 20) {
+        const skipped = !isLikelyRelevant(originalName);
         files.push({
           fileName: originalName,
           filePath: tempPath,
@@ -84,6 +112,7 @@ export async function processMultipleFiles(filePaths: { originalName: string; te
           fileSize: stats.size,
           content: fullContent.slice(0, 10000),
           fullContent,
+          skipped,
         });
       }
     } catch (err: any) {

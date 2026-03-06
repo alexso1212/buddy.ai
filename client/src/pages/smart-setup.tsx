@@ -86,7 +86,7 @@ interface EnterpriseProfile {
 }
 
 interface AnalyzeResult {
-  profile: EnterpriseProfile;
+  profile: EnterpriseProfile & { analyzedFileCount?: number; totalFileCount?: number };
   extractedFiles: { fileName: string; content: string; fileType: string; fileSize: number; filePath: string }[];
 }
 
@@ -114,7 +114,7 @@ export default function SmartSetupPage() {
   }, [user, navigate]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
-  const [profile, setProfile] = useState<EnterpriseProfile | null>(null);
+  const [profile, setProfile] = useState<(EnterpriseProfile & { analyzedFileCount?: number; totalFileCount?: number }) | null>(null);
   const [extractedFiles, setExtractedFiles] = useState<any[]>([]);
   const [result, setResult] = useState<ConfirmResult | null>(null);
   const [sourceMode, setSourceMode] = useState<"upload" | "kb">("upload");
@@ -127,7 +127,7 @@ export default function SmartSetupPage() {
 
   const kbDocs = (kbDocsQuery.data as any)?.data ?? kbDocsQuery.data ?? [];
   const completedKbDocs = Array.isArray(kbDocs)
-    ? kbDocs.filter((d: any) => d.status === "completed")
+    ? kbDocs.filter((d: any) => d.status === "completed" || d.status === "ready")
     : [];
 
   const toggleKbDoc = (docId: number) => {
@@ -687,6 +687,12 @@ export default function SmartSetupPage() {
         {/* Step 3: Confirm */}
         {step === "confirm" && profile && (
           <div className="space-y-6" data-testid="step-confirm">
+            {profile.totalFileCount && profile.analyzedFileCount && profile.totalFileCount > profile.analyzedFileCount && (
+              <div className="flex items-center gap-2 text-sm text-[#7A7874] bg-[#F5F0EB] dark:bg-[#2A2A27] rounded-xl px-4 py-2.5" data-testid="text-filter-stats">
+                <FileText size={14} className="text-[#B4886B] shrink-0" />
+                <span>已分析 {profile.analyzedFileCount}/{profile.totalFileCount} 个关键文件，其余文件已导入知识库</span>
+              </div>
+            )}
             {/* Company Info */}
             <div className="rounded-2xl bg-white dark:bg-[#2D2D2A] border border-[#E8E4DF] dark:border-[#3D3D3A] p-5">
               <div className="flex items-center gap-2 mb-4">

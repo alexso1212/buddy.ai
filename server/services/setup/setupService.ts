@@ -2,17 +2,17 @@ import fs from 'fs';
 import path from 'path';
 import { storage } from '../../storage';
 import { processZipFile, processMultipleFiles, cleanupTempFiles, ExtractedFile } from './zipProcessor';
-import { extractEnterpriseProfile, EnterpriseProfile } from './aiExtractor';
+import { extractEnterpriseProfile, EnterpriseProfile, ExtractionResult } from './aiExtractor';
 import { processDocument } from '../kb/processDocument';
 
-export type { EnterpriseProfile } from './aiExtractor';
+export type { EnterpriseProfile, ExtractionResult } from './aiExtractor';
 export type { ExtractedFile } from './zipProcessor';
 
 export async function analyzeUpload(params: {
   zipPath?: string;
   files?: { originalName: string; tempPath: string }[];
 }): Promise<{
-  profile: EnterpriseProfile;
+  profile: ExtractionResult;
   extractedFiles: ExtractedFile[];
 }> {
   let extractedFiles: ExtractedFile[];
@@ -30,7 +30,7 @@ export async function analyzeUpload(params: {
   }
 
   const profile = await extractEnterpriseProfile(
-    extractedFiles.map(f => ({ fileName: f.fileName, content: f.content }))
+    extractedFiles.map(f => ({ fileName: f.fileName, content: f.fullContent, skipped: f.skipped }))
   );
 
   return { profile, extractedFiles };
@@ -40,7 +40,7 @@ export async function analyzeKbDocuments(params: {
   orgId: number;
   documentIds: number[];
 }): Promise<{
-  profile: EnterpriseProfile;
+  profile: ExtractionResult;
   extractedFiles: ExtractedFile[];
 }> {
   const { orgId, documentIds } = params;
@@ -49,7 +49,7 @@ export async function analyzeKbDocuments(params: {
   for (const docId of documentIds) {
     const doc = await storage.getKbDocumentById(docId);
     if (!doc || doc.orgId !== orgId) continue;
-    if (doc.status !== 'completed') continue;
+    if (doc.status !== 'ready' && doc.status !== 'completed') continue;
 
     const chunks = await storage.getKbChunksByDocument(docId);
     if (chunks.length === 0) continue;
@@ -64,7 +64,7 @@ export async function analyzeKbDocuments(params: {
       filePath: doc.fileUrl,
       fileType: doc.fileType,
       fileSize: doc.fileSize,
-      content: content.length > 3000 ? content.slice(0, 3000) + '...' : content,
+      content: content.slice(0, 10000),
       fullContent: content,
     });
   }
@@ -74,7 +74,7 @@ export async function analyzeKbDocuments(params: {
   }
 
   const profile = await extractEnterpriseProfile(
-    extractedFiles.map(f => ({ fileName: f.fileName, content: f.content }))
+    extractedFiles.map(f => ({ fileName: f.fileName, content: f.fullContent }))
   );
 
   return { profile, extractedFiles };

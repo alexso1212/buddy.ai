@@ -18,8 +18,11 @@ export interface FileAnalysis {
   visibility: 'org' | 'admin' | 'department';
   visibleDepartment?: string;
   summary: string;
+  relevanceScore: number;
+  relevanceReason: string;
   mentionedDepartments: string[];
   mentionedRoles: string[];
+  mentionedNames: string[];
 }
 
 export interface ExtractedMember {
@@ -63,7 +66,7 @@ async function analyzeFileWithHaiku(fileName: string, content: string): Promise<
       messages: [
         {
           role: 'system',
-          content: `你是一个企业文档分析助手。分析以下企业文档，返回纯 JSON（不要 markdown 代码块）。
+          content: `你是一个企业文档分析助手。根据文件名和内容开头快速判断文档类型和价值，返回纯 JSON（不要 markdown 代码块）。
 
 返回格式：
 {
@@ -71,25 +74,35 @@ async function analyzeFileWithHaiku(fileName: string, content: string): Promise<
   "visibility": "org/admin/department 三选一",
   "visibleDepartment": "如果visibility=department，填部门名（否则填空字符串）",
   "summary": "一句话概括文档内容（30字以内）",
+  "relevanceScore": 4,
+  "relevanceReason": "一句话说明为什么给这个评分",
   "mentionedDepartments": ["文档中提到的部门名称列表"],
-  "mentionedRoles": ["文档中提到的岗位/职位名称列表"]
+  "mentionedRoles": ["文档中提到的岗位/职位名称列表"],
+  "mentionedNames": ["文档中提到的人名列表"]
 }
 
 分类标准：
 - policy：规章制度、考勤、休假、行为准则、报销流程
 - contract：劳动合同、保密协议、竞业限制
 - jd：岗位说明书、职位描述、KPI考核标准
-- manual：操作手册、培训资料、使用指南
+- manual：操作手册、培训资料、使用指南、组织架构说明书
 - general：其他
 
 可见性判断：
 - org：全员应知的（考勤、办公规范、报销流程）
 - admin：涉及薪资、合同条款、人事的敏感文件
-- department：只和特定部门相关的文件`
+- department：只和特定部门相关的文件
+
+relevanceScore 评分标准（1-5整数，表示对理解公司组织架构的价值）：
+  5 = 极高价值（组织架构图、岗位说明书、劳动合同、通讯录、人员名册）
+  4 = 高价值（员工手册、管理制度、考核标准、职能说明书）
+  3 = 中等价值（工作流程、操作手册、培训资料）
+  2 = 低价值（一般性文档、模板、会议记录）
+  1 = 无价值（发票、报表、纯数据文件）`
         },
         {
           role: 'user',
-          content: `文件名：${fileName}\n\n文件内容：\n${content.slice(0, 6000)}`
+          content: `文件名：${fileName}\n\n文件内容（开头部分）：\n${content.slice(0, 500)}`
         }
       ],
     });
@@ -104,8 +117,11 @@ async function analyzeFileWithHaiku(fileName: string, content: string): Promise<
       visibility: parsed.visibility || 'org',
       visibleDepartment: parsed.visibleDepartment || '',
       summary: parsed.summary || '',
+      relevanceScore: typeof parsed.relevanceScore === 'number' ? parsed.relevanceScore : 3,
+      relevanceReason: parsed.relevanceReason || '',
       mentionedDepartments: parsed.mentionedDepartments || [],
       mentionedRoles: parsed.mentionedRoles || [],
+      mentionedNames: parsed.mentionedNames || [],
     };
   } catch (err: any) {
     console.error(`[Setup AI] Haiku analysis failed for ${fileName}:`, err.message);
@@ -114,24 +130,25 @@ async function analyzeFileWithHaiku(fileName: string, content: string): Promise<
       category: 'general',
       visibility: 'org',
       summary: '无法自动分析',
+      relevanceScore: 3,
+      relevanceReason: '分析失败，默认中等相关性',
       mentionedDepartments: [],
       mentionedRoles: [],
+      mentionedNames: [],
     };
   }
 }
 
-async function synthesizeWithSonnet(fileAnalyses: FileAnalysis[], fileContents: { fileName: string; content: string }[]): Promise<EnterpriseProfile> {
-  const summaryBlock = fileAnalyses.map(f =>
-    `【${f.fileName}】类型:${f.category} | 摘要:${f.summary} | 提到的部门:${f.mentionedDepartments.join(',')} | 提到的岗位:${f.mentionedRoles.join(',')}`
+async function synthesizeWithOpus(
+  allFileAnalyses: FileAnalysis[],
+  selectedFiles: { fileName: string; content: string }[]
+): Promise<EnterpriseProfile> {
+  const summaryBlock = allFileAnalyses.map(f =>
+    `【${f.fileName}】类型:${f.category} | 评分:${f.relevanceScore}/5 | 摘要:${f.summary} | 提到的部门:${f.mentionedDepartments.join(',')} | 提到的岗位:${f.mentionedRoles.join(',')} | 提到的人名:${f.mentionedNames.join(',')}`
   ).join('\n');
 
-  const keyContents = fileContents
-    .filter(f => {
-      const analysis = fileAnalyses.find(a => a.fileName === f.fileName);
-      return analysis && ['jd', 'policy', 'contract'].includes(analysis.category);
-    })
-    .slice(0, 8)
-    .map(f => `### ${f.fileName}\n${f.content.slice(0, 6000)}`)
+  const keyContents = selectedFiles
+    .map(f => `### ${f.fileName}\n${f.content}`)
     .join('\n\n');
 
   try {
@@ -142,7 +159,7 @@ async function synthesizeWithSonnet(fileAnalyses: FileAnalysis[], fileContents: 
       messages: [
         {
           role: 'system',
-          content: `你是一个企业组织架构分析专家。根据多份企业文件的分析摘要，整合出完整的企业组织信息。
+          content: `你是一个企业组织架构分析专家。根据多份企业文件的分析摘要和关键文件原文，整合出完整的企业组织信息。
 
 返回纯 JSON（不要 markdown 代码块）：
 {
@@ -189,9 +206,10 @@ async function synthesizeWithSonnet(fileAnalyses: FileAnalysis[], fileContents: 
 - 如果找不到某项信息，对应字段填空字符串或空数组
 - departments、jobRoles、members 数组如果完全没有信息就返回空数组
 
-人员提取规则：
-- 从组织架构图、通讯录、劳动合同、签名栏等位置识别人员
-- aliases 很重要——收集文件中出现的该人的所有不同称呼
+人员提取规则（最重要）：
+- 仔细阅读所有关键文件原文，从人员名册、组织架构图、通讯录、劳动合同、签名栏、表格等位置识别人员
+- 每个在文件中出现的内部员工都必须提取，不要遗漏
+- aliases 很重要——收集文件中出现的该人的所有不同称呼（中文名、英文名、昵称等）
 - 如果同一个人在多份文件中出现，合并信息（用最完整的版本）
 - 不要提取客户、供应商等外部人员，只提取公司内部员工
 - 如果文件中有明确的汇报关系（如"向XX汇报"），记录在该人的 contractHighlights 中
@@ -199,15 +217,15 @@ async function synthesizeWithSonnet(fileAnalyses: FileAnalysis[], fileContents: 
         },
         {
           role: 'user',
-          content: `以下是对一家企业${fileAnalyses.length}份文件的分析结果：
+          content: `以下是对一家企业${allFileAnalyses.length}份文件的分析结果：
 
-## 文件摘要
+## 全部文件摘要
 ${summaryBlock}
 
-## 关键文件内容节选
+## 关键文件内容（共${selectedFiles.length}篇）
 ${keyContents || '（无关键文件内容）'}
 
-请从以上信息中整合出这家企业的组织架构。`
+请从以上信息中整合出这家企业的完整组织架构，特别注意提取所有内部员工信息。`
         }
       ],
     });
@@ -235,33 +253,82 @@ ${keyContents || '（无关键文件内容）'}
       departments: parsed.departments || [],
       jobRoles: parsed.jobRoles || [],
       members,
-      fileClassifications: fileAnalyses,
+      fileClassifications: allFileAnalyses,
     };
   } catch (err: any) {
-    console.error('[Setup AI] Sonnet synthesis failed:', err.message);
+    console.error('[Setup AI] Opus synthesis failed:', err.message);
     return {
       companyName: '',
       companyDescription: '',
       departments: [],
       jobRoles: [],
       members: [],
-      fileClassifications: fileAnalyses,
+      fileClassifications: allFileAnalyses,
     };
   }
 }
 
-export async function extractEnterpriseProfile(files: { fileName: string; content: string }[]): Promise<EnterpriseProfile> {
-  console.log(`[Setup AI] Starting extraction for ${files.length} files`);
+export interface ExtractionResult extends EnterpriseProfile {
+  analyzedFileCount: number;
+  totalFileCount: number;
+}
 
-  console.log('[Setup AI] Phase 1: Haiku file analysis...');
+export async function extractEnterpriseProfile(
+  files: { fileName: string; content: string; skipped?: boolean }[]
+): Promise<ExtractionResult> {
+  const totalFileCount = files.length;
+  console.log(`[Setup AI] Starting extraction for ${totalFileCount} files`);
+
+  const relevantFiles = files.filter(f => !f.skipped);
+  const skippedByName = files.filter(f => f.skipped);
+  if (skippedByName.length > 0) {
+    console.log(`[Setup AI] Stage 0: ${skippedByName.length} files skipped by filename filter`);
+  }
+
+  console.log(`[Setup AI] Stage 1: Haiku scoring ${relevantFiles.length} files...`);
   const fileAnalyses = await Promise.all(
-    files.map(f => analyzeFileWithHaiku(f.fileName, f.content))
+    relevantFiles.map(f => analyzeFileWithHaiku(f.fileName, f.content))
   );
-  console.log(`[Setup AI] Phase 1 complete: ${fileAnalyses.length} files analyzed`);
 
-  console.log('[Setup AI] Phase 2: Opus synthesis...');
-  const profile = await synthesizeWithSonnet(fileAnalyses, files);
-  console.log(`[Setup AI] Phase 2 complete: ${profile.departments.length} depts, ${profile.jobRoles.length} roles`);
+  const skippedAnalyses: FileAnalysis[] = skippedByName.map(f => ({
+    fileName: f.fileName,
+    category: 'general' as const,
+    visibility: 'org' as const,
+    summary: '文件名过滤跳过',
+    relevanceScore: 1,
+    relevanceReason: '文件名匹配跳过规则',
+    mentionedDepartments: [],
+    mentionedRoles: [],
+    mentionedNames: [],
+  }));
 
-  return profile;
+  const allAnalyses = [...fileAnalyses, ...skippedAnalyses];
+  console.log(`[Setup AI] Stage 1 complete: scores = [${fileAnalyses.map(f => `${f.fileName}:${f.relevanceScore}`).join(', ')}]`);
+
+  const scored = fileAnalyses
+    .map((analysis, i) => ({ analysis, file: relevantFiles[i] }))
+    .sort((a, b) => b.analysis.relevanceScore - a.analysis.relevanceScore);
+
+  const highValue = scored.filter(s => s.analysis.relevanceScore >= 3);
+
+  const capped = highValue.slice(0, 15);
+
+  let totalChars = 0;
+  const finalFiles: { fileName: string; content: string }[] = [];
+  for (const item of capped) {
+    const charLimit = 8000;
+    const contentToSend = item.file.content.slice(0, charLimit);
+    if (totalChars + contentToSend.length > 80000) break;
+    totalChars += contentToSend.length;
+    finalFiles.push({ fileName: item.file.fileName, content: contentToSend });
+  }
+
+  const analyzedFileCount = finalFiles.length;
+  console.log(`[Setup AI] Stage 1.5 filtering: ${totalFileCount} total → ${relevantFiles.length} after filename → ${highValue.length} relevant (score≥3) → ${analyzedFileCount} sent to Opus (${totalChars} chars)`);
+
+  console.log(`[Setup AI] Stage 2: Opus deep analysis on ${analyzedFileCount} files...`);
+  const profile = await synthesizeWithOpus(allAnalyses, finalFiles);
+  console.log(`[Setup AI] Stage 2 complete: ${profile.departments.length} depts, ${profile.jobRoles.length} roles, ${profile.members.length} members`);
+
+  return { ...profile, analyzedFileCount, totalFileCount };
 }
