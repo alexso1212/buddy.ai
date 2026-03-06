@@ -45,6 +45,15 @@ A 25-table PostgreSQL database schema manages entities such as `organizations`, 
 - **Onboarding Flow:** Multi-step onboarding for new users to create or join an organization.
 - **Mobile Optimization:** Responsive layouts with adaptations for smaller screens.
 
+**AI-Assisted Workflows (Pervasive AI Suggestions):**
+- **KB Upload Simplified:** Upload dialog only requires file + title. AI auto-classifies category, visibility, and sensitivity after upload. No manual dropdown selections needed.
+- **Task Creation AI Suggest:** "AI 建议" button in NewTaskModal (task-list and project-detail). Calls `POST /api/ai/suggest-task` (Haiku) to auto-fill description, priority, assignee (based on job_roles matching + workload), and due date. Assignee dropdown shows "AI 推荐" badge.
+- **Task Dependency AI Suggest:** "AI 分析依赖" button in task-detail Dependencies tab. Calls `POST /api/ai/suggest-dependencies` (Haiku) to analyze same-project tasks and suggest prerequisite relationships with reasons. Results shown as checklist for batch-add.
+- **Project AI Decomposition:** "AI 拆解任务" button in project-detail. Calls `POST /api/ai/decompose-project` (Sonnet) to generate WBS with tasks, dependencies, and assignee suggestions. Confirmation dialog allows editing before batch creation.
+- **Submission AI Pre-Review:** "AI 预审" button in task-detail for pending submissions. Calls `POST /api/ai/review-submission` (Haiku) to analyze deliverable content vs task description, returning relevance score (1-5), quality assessment, and improvement suggestions.
+- **Join Request Auto-Match:** Frontend-only logic in team.tsx matches join request applicant name/email against pending member_profiles. Shows "AI 建议绑定" badge with one-click approve+bind.
+- **Briefing Action Suggestions:** Dashboard daily briefing includes structured `actions` array (reassign, change_priority, remind) with one-click execution buttons. Actions derived from overdue tasks, workload imbalance, and due-today items.
+
 **AI Smart Routing Architecture:**
 The AI subsystem uses intelligent task classification (e.g., `quick_reply`, `general_chat`, `code_generation`, `complex_analysis`) to dynamically select AI models, `max_tokens`, `temperature`, and enable Extended Thinking based on the user's message. Context optimization includes trimming conversation history and summarizing older messages.
 

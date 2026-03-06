@@ -39,12 +39,6 @@ const CATEGORIES = [
   { value: 'general', label: '其他' },
 ];
 
-const VISIBILITY = [
-  { value: 'org', label: '全组织' },
-  { value: 'department', label: '指定部门' },
-  { value: 'admin', label: '仅管理层' },
-];
-
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -132,8 +126,6 @@ export default function KnowledgeBase() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadTitle, setUploadTitle] = useState('');
-  const [uploadCategory, setUploadCategory] = useState('general');
-  const [uploadVisibility, setUploadVisibility] = useState('org');
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [expandedDocId, setExpandedDocId] = useState<number | null>(null);
@@ -184,7 +176,7 @@ export default function KnowledgeBase() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/kb/documents'] });
-      toast({ title: '上传成功', description: '文档正在处理中，AI 将自动分类' });
+      toast({ title: '文档上传成功', description: 'AI 正在分类...' });
       resetUploadForm();
     },
     onError: (err: Error) => {
@@ -246,8 +238,6 @@ export default function KnowledgeBase() {
     setUploadOpen(false);
     setSelectedFile(null);
     setUploadTitle('');
-    setUploadCategory('general');
-    setUploadVisibility('org');
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
@@ -256,8 +246,8 @@ export default function KnowledgeBase() {
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('title', uploadTitle || selectedFile.name.replace(/\.[^/.]+$/, ''));
-    formData.append('category', uploadCategory);
-    formData.append('visibility', uploadVisibility);
+    formData.append('category', 'general');
+    formData.append('visibility', 'org');
     uploadMutation.mutate(formData);
   }
 
@@ -606,25 +596,9 @@ export default function KnowledgeBase() {
               <Input id="upload-title" value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="输入文档标题" data-testid="input-upload-title" />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>分类 <span className="text-xs text-muted-foreground font-normal">(AI 可覆盖)</span></Label>
-                <Select value={uploadCategory} onValueChange={setUploadCategory}>
-                  <SelectTrigger data-testid="select-upload-category"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>可见范围</Label>
-                <Select value={uploadVisibility} onValueChange={setUploadVisibility}>
-                  <SelectTrigger data-testid="select-upload-visibility"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {VISIBILITY.map(v => <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/30 border border-dashed">
+              <Sparkles className="w-4 h-4 text-[#B4886B] flex-shrink-0" />
+              <p className="text-xs text-muted-foreground">上传后 AI 将自动识别文档分类、可见范围和敏感级别</p>
             </div>
 
             <div className="flex justify-end gap-2 pt-2">

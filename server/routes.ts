@@ -2791,6 +2791,296 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
+  // ===================== AI Suggest Task =====================
+  app.post("/api/ai/suggest-task", authMiddleware, async (req: any, res) => {
+    try {
+      const { title, projectId } = req.body;
+      const orgId = req.orgId || parseInt(req.headers['x-org-id'] as string) || 1;
+
+      if (!title || !title.trim()) {
+        return res.status(400).json({ error: 'title is required' });
+      }
+
+      let projectInfo = '';
+      if (projectId) {
+        const project = await storage.getProjectById(projectId);
+        if (project) {
+          projectInfo = `Project: "${project.name}" - ${project.description || 'No description'}. Status: ${project.status}.`;
+        }
+      }
+
+      const allUsers = await storage.getUsers();
+      const orgUsers = allUsers.filter(u => u.orgId === orgId && u.isActive !== false);
+      const allJobRoles = await storage.getJobRoles();
+      const jobRoleMap = new Map(allJobRoles.map(r => [r.id, r]));
+
+      const allTasks = await storage.getTasks();
+      const activeStatuses = ['todo', 'in_progress', 'in_review'];
+      const taskCountByUser = new Map<number, number>();
+      for (const t of allTasks) {
+        if (t.assigneeId && activeStatuses.includes(t.status)) {
+          taskCountByUser.set(t.assigneeId, (taskCountByUser.get(t.assigneeId) || 0) + 1);
+        }
+      }
+
+      const usersContext = orgUsers.map(u => {
+        const role = u.jobRoleId ? jobRoleMap.get(u.jobRoleId) : null;
+        return {
+          id: u.id,
+          name: u.displayName,
+          jobTitle: role?.title || 'N/A',
+          responsibilities: role?.responsibilities || 'N/A',
+          activeTaskCount: taskCountByUser.get(u.id) || 0,
+        };
+      });
+
+      const OpenAI = (await import('openai')).default;
+      const client = new OpenAI({
+        baseURL: 'https://vip.aipro.love/v1',
+        apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
+        timeout: 90000,
+      });
+
+      const systemPrompt = `You are a project management assistant. Given a task title and team context, suggest appropriate task fields.
+
+${projectInfo}
+
+Team members:
+${JSON.stringify(usersContext, null, 2)}
+
+Today's date: ${new Date().toISOString().split('T')[0]}
+
+Based on the task title, return a JSON object (no markdown, no code fence) with:
+{
+  "description": "<suggested task description in Chinese, 2-3 sentences>",
+  "priority": "<one of: low, medium, high, urgent>",
+  "assigneeId": <user id number or null if unclear>,
+  "assigneeReason": "<brief reason for assignee suggestion in Chinese>",
+  "dueDays": <estimated number of days to complete, integer>,
+  "confidence": <0.0 to 1.0, your confidence in these suggestions>
+}
+
+When choosing assigneeId:
+1. Match the task to a user whose job responsibilities are most relevant
+2. Among equally relevant users, prefer the one with fewer active tasks
+3. If no user clearly matches, set assigneeId to null`;
+
+      const response = await client.chat.completions.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        temperature: 0.3,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Task title: "${title}"` },
+        ],
+      });
+
+      const content = response.choices[0]?.message?.content || '{}';
+      const cleaned = content.replace(/```json\n?|```\n?/g, '').trim();
+      const suggestion = JSON.parse(cleaned);
+
+      const dueDays = suggestion.dueDays || 7;
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + dueDays);
+
+      return res.json({
+        data: {
+          description: suggestion.description || '',
+          priority: suggestion.priority || 'medium',
+          assigneeId: suggestion.assigneeId || null,
+          assigneeReason: suggestion.assigneeReason || '',
+          dueDate: dueDate.toISOString().split('T')[0],
+          confidence: suggestion.confidence || 0.5,
+        },
+      });
+    } catch (e: any) {
+      console.error('AI suggest-task error:', e.message);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== AI Suggest Dependencies =====================
+  app.post("/api/ai/suggest-dependencies", authMiddleware, async (req: any, res) => {
+    try {
+      const { taskId } = req.body;
+      const orgId = parseInt(req.headers['x-org-id'] as string) || 1;
+
+      if (!taskId) {
+        return res.status(400).json({ error: 'taskId is required' });
+      }
+
+      const targetTask = await storage.getTaskById(taskId);
+      if (!targetTask) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      const projectTasks = await storage.getTasks({ projectId: targetTask.projectId });
+      const otherTasks = projectTasks.filter(t => t.id !== taskId);
+
+      if (otherTasks.length === 0) {
+        return res.json({ data: [] });
+      }
+
+      const OpenAI = (await import('openai')).default;
+      const claudeSimpleClient = new OpenAI({
+        baseURL: 'https://vip.aipro.love/v1',
+        apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
+        timeout: 90000,
+      });
+
+      const taskListStr = otherTasks.map(t =>
+        `- ID: ${t.id}, Title: "${t.title}", Status: ${t.status}, Description: "${t.description || 'N/A'}"`
+      ).join('\n');
+
+      const prompt = `You are a project management expert. Analyze the following target task and determine which of the other tasks in the same project should be its prerequisites (dependencies that must be completed before the target task can start).
+
+Target Task:
+- ID: ${targetTask.id}
+- Title: "${targetTask.title}"
+- Description: "${targetTask.description || 'N/A'}"
+
+Other tasks in the same project:
+${taskListStr}
+
+Return a JSON array of suggested dependencies. Each element should have:
+- taskId: number (the ID of the prerequisite task)
+- taskTitle: string (the title of the prerequisite task)
+- reason: string (brief explanation in Chinese why this should be a prerequisite)
+- confidence: number (0-100, how confident you are)
+
+Only suggest tasks that logically should be completed before the target task. If no dependencies are needed, return an empty array.
+Return ONLY the JSON array, no other text.`;
+
+      const completion = await claudeSimpleClient.chat.completions.create({
+        model: 'claude-haiku-4-5-20251001',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 2000,
+      });
+
+      const raw = completion.choices?.[0]?.message?.content || '[]';
+      let suggestions: Array<{ taskId: number; taskTitle: string; reason: string; confidence: number }> = [];
+      try {
+        const jsonMatch = raw.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          suggestions = JSON.parse(jsonMatch[0]);
+        }
+      } catch {
+        suggestions = [];
+      }
+
+      const validTaskIds = new Set(otherTasks.map(t => t.id));
+      suggestions = suggestions.filter(s => validTaskIds.has(s.taskId));
+
+      return res.json({ data: suggestions });
+    } catch (e: any) {
+      console.error('AI suggest-dependencies error:', e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== AI Review Submission =====================
+  app.post("/api/ai/review-submission", authMiddleware, async (req: any, res) => {
+    try {
+      const { taskId, submissionId } = req.body;
+      const orgId = parseInt(req.headers['x-org-id'] as string) || req.orgId || 1;
+
+      if (!taskId || !submissionId) {
+        return res.status(400).json({ error: 'taskId and submissionId are required' });
+      }
+
+      const task = await storage.getTaskById(taskId);
+      if (!task) return res.status(404).json({ error: 'Task not found' });
+
+      const submission = await storage.getSubmissionById(submissionId);
+      if (!submission) return res.status(404).json({ error: 'Submission not found' });
+      if (submission.taskId !== taskId) return res.status(400).json({ error: 'Submission does not belong to this task' });
+
+      const deliverableIds = (submission.deliverableIds as number[]) || [];
+      const allDeliverables = await storage.getDeliverablesByTaskId(taskId);
+      const deliverables = allDeliverables.filter(d => deliverableIds.includes(d.id));
+
+      const deliverableDescriptions: string[] = [];
+      for (const d of deliverables) {
+        let contentStr = '';
+        if (d.type === 'text' && d.content) {
+          contentStr = d.content;
+        } else if (d.type === 'file' && d.fileUrl) {
+          try {
+            const fs = await import('fs');
+            const path = await import('path');
+            const uploadsDir = path.resolve(process.cwd(), 'uploads');
+            const filePath = path.resolve(process.cwd(), d.fileUrl);
+            if (!filePath.startsWith(uploadsDir)) {
+              contentStr = `[File: ${d.fileName || d.fileUrl}]`;
+            } else if (fs.existsSync(filePath)) {
+              const buf = fs.readFileSync(filePath, 'utf-8');
+              contentStr = buf.slice(0, 3000);
+            } else {
+              contentStr = `[File: ${d.fileName || d.fileUrl}]`;
+            }
+          } catch {
+            contentStr = `[File: ${d.fileName || d.fileUrl}]`;
+          }
+        } else if (d.type === 'link' && d.linkUrl) {
+          contentStr = `[Link: ${d.linkUrl}]`;
+        }
+        deliverableDescriptions.push(
+          `Deliverable #${d.id} (${d.type}): Title="${d.title}"${d.description ? `, Description="${d.description}"` : ''}\nContent: ${contentStr || '(empty)'}`
+        );
+      }
+
+      const prompt = `You are a task submission reviewer. Evaluate the following submission for a task.
+
+Task:
+- Title: "${task.title}"
+- Description: "${task.description || 'N/A'}"
+
+Submission Note: "${submission.note || 'N/A'}"
+
+Deliverables:
+${deliverableDescriptions.join('\n\n')}
+
+Please evaluate and return a JSON object with:
+- "summary": string - A brief content summary of all deliverables combined (in Chinese)
+- "relevanceScore": number (1-5) - How well the deliverables match the task description
+- "qualityAssessment": string - A brief quality assessment (in Chinese)
+- "suggestions": string[] - Array of improvement suggestions (in Chinese)
+
+Return ONLY the JSON object, no other text.`;
+
+      const OpenAI = (await import('openai')).default;
+      const claudeSimpleClient = new OpenAI({
+        baseURL: 'https://vip.aipro.love/v1',
+        apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
+        timeout: 90000,
+      });
+
+      const completion = await claudeSimpleClient.chat.completions.create({
+        model: 'claude-haiku-4-5-20251001',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 2000,
+      });
+
+      const raw = completion.choices?.[0]?.message?.content || '{}';
+      let result: { summary: string; relevanceScore: number; qualityAssessment: string; suggestions: string[] };
+      try {
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          result = JSON.parse(jsonMatch[0]);
+        } else {
+          result = { summary: raw, relevanceScore: 3, qualityAssessment: raw, suggestions: [] };
+        }
+      } catch {
+        result = { summary: raw, relevanceScore: 3, qualityAssessment: raw, suggestions: [] };
+      }
+
+      return res.json({ data: result });
+    } catch (e: any) {
+      console.error('AI review-submission error:', e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
   // ===================== AI Guided Options =====================
   app.get("/api/ai/guided-options", authMiddleware, async (req: any, res) => {
     try {
@@ -2851,36 +3141,132 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   // ===================== AI Decompose Project =====================
   app.post("/api/ai/decompose-project", authMiddleware, async (req: any, res) => {
     try {
-      const { projectName, projectDescription } = req.body;
-      if (!projectName) {
-        return res.status(400).json({ error: 'projectName is required' });
+      const { projectId, projectName, projectDescription } = req.body;
+
+      const orgId = req.orgId || parseInt(req.headers['x-org-id'] as string) || 1;
+
+      let name = projectName || '';
+      let description = projectDescription || '';
+      let existingTaskTitles: string[] = [];
+
+      if (projectId) {
+        const project = await storage.getProjectById(projectId);
+        if (!project) {
+          return res.status(404).json({ error: 'Project not found' });
+        }
+        name = project.name;
+        description = project.description || '';
+
+        const existingTasks = await storage.getTasks({ projectId });
+        existingTaskTitles = existingTasks.map(t => t.title);
       }
 
-      const userId = req.currentUserId;
-      const user = await storage.getUserById(userId);
-      const userName = user?.displayName || 'Unknown';
+      if (!name) {
+        return res.status(400).json({ error: 'projectName or projectId is required' });
+      }
 
-      const result = await generateProjectTasks(projectName, projectDescription || '', {
-        currentUserId: userId,
-        currentUserName: userName,
+      const orgUsers = await storage.getUsers();
+      const filteredUsers = orgUsers.filter(u => u.orgId === orgId && u.isActive);
+      const jobRoles = await storage.getJobRoles();
+      const jobRoleMap = new Map(jobRoles.map(r => [r.id, r]));
+
+      const teamInfo = filteredUsers.map(u => {
+        const role = u.jobRoleId ? jobRoleMap.get(u.jobRoleId) : null;
+        return {
+          id: u.id,
+          name: u.displayName,
+          jobTitle: role?.title || '',
+          responsibilities: role?.responsibilities || '',
+          requiredSkills: role?.requiredSkills || '',
+        };
       });
 
-      if (result.tokenUsage) {
+      const teamBlock = teamInfo.length > 0
+        ? teamInfo.map(m => `- ID:${m.id} ${m.name} | ${m.jobTitle} | ${m.responsibilities} | ${m.requiredSkills}`).join('\n')
+        : '(no team members)';
+
+      const existingBlock = existingTaskTitles.length > 0
+        ? existingTaskTitles.map(t => `- ${t}`).join('\n')
+        : '(none)';
+
+      const OpenAI = (await import('openai')).default;
+      const claudeClient = new OpenAI({
+        baseURL: 'https://vip.aipro.love/v1',
+        apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
+        timeout: 90000,
+      });
+      const genModel = 'claude-sonnet-4-6';
+
+      const response = await claudeClient.chat.completions.create({
+        model: genModel,
+        max_tokens: 4096,
+        messages: [
+          {
+            role: 'system',
+            content: `You are a project management expert. Given a project and team info, generate a Work Breakdown Structure (WBS).
+
+Output pure JSON (no markdown wrapping):
+{
+  "tasks": [
+    {
+      "title": "task title (Chinese preferred)",
+      "description": "brief description",
+      "priority": "medium",
+      "estimatedDays": 3,
+      "suggestedAssigneeId": null,
+      "suggestedAssigneeName": ""
+    }
+  ],
+  "dependencies": [
+    { "fromIndex": 0, "toIndex": 1, "reason": "brief reason" }
+  ]
+}
+
+Rules:
+- Generate 4-10 tasks covering major work areas
+- Order tasks logically
+- priority: critical/high/medium/low
+- estimatedDays: realistic estimate (1-30)
+- suggestedAssigneeId: pick from team members by matching skills/responsibilities, or null if unclear
+- suggestedAssigneeName: the name of the suggested assignee
+- dependencies: fromIndex task must finish before toIndex task starts. Use 0-based indices into the tasks array.
+- Do NOT duplicate any existing tasks
+- Task titles and descriptions should be in Chinese`
+          },
+          {
+            role: 'user',
+            content: `Project: ${name}
+Description: ${description || 'No description'}
+
+Team members:
+${teamBlock}
+
+Existing tasks (do not duplicate):
+${existingBlock}`
+          }
+        ],
+      });
+
+      const usage = response.usage;
+      const tokenInfo = usage ? {
+        model: genModel,
+        promptTokens: usage.prompt_tokens ?? 0,
+        completionTokens: usage.completion_tokens ?? 0,
+        totalTokens: usage.total_tokens ?? 0,
+      } : undefined;
+
+      if (tokenInfo) {
         const { calculateCost } = await import('./services/ai/tokenCost');
-        const cost = calculateCost(
-          result.tokenUsage.model,
-          result.tokenUsage.promptTokens,
-          result.tokenUsage.completionTokens
-        );
+        const cost = calculateCost(tokenInfo.model, tokenInfo.promptTokens, tokenInfo.completionTokens);
         try {
           await storage.createTokenUsage({
-            orgId: req.orgId,
-            userId,
+            orgId,
+            userId: req.currentUserId,
             conversationId: null,
-            model: result.tokenUsage.model,
-            promptTokens: result.tokenUsage.promptTokens,
-            completionTokens: result.tokenUsage.completionTokens,
-            totalTokens: result.tokenUsage.totalTokens,
+            model: tokenInfo.model,
+            promptTokens: tokenInfo.promptTokens,
+            completionTokens: tokenInfo.completionTokens,
+            totalTokens: tokenInfo.totalTokens,
             costUsd: cost,
             purpose: 'chat',
           });
@@ -2889,7 +3275,23 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
         }
       }
 
-      return res.json({ data: result.tasks });
+      let aiText = response.choices[0]?.message?.content || '';
+      const codeBlockMatch = aiText.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (codeBlockMatch) {
+        aiText = codeBlockMatch[1].trim();
+      }
+
+      try {
+        const parsed = JSON.parse(aiText);
+        return res.json({
+          data: {
+            tasks: parsed.tasks || [],
+            dependencies: parsed.dependencies || [],
+          }
+        });
+      } catch {
+        return res.json({ data: { tasks: [], dependencies: [] } });
+      }
     } catch (e: any) {
       console.error('Project decompose error:', e);
       return res.status(500).json({ error: e.message });

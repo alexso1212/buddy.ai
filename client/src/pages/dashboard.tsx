@@ -1,12 +1,25 @@
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { AlertTriangle, CheckCircle, Star, Sparkles, RefreshCw, Building2, FolderKanban } from "lucide-react";
+import { AlertTriangle, CheckCircle, Star, Sparkles, RefreshCw, Building2, FolderKanban, ArrowRight, Bell } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import SwipeableTaskCard from "@/components/SwipeableTaskCard";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
 import type { Task, Project, User, Department } from "@shared/schema";
 import type { DeptStatsMap, DeptStats } from "@/components/org/types";
 
@@ -19,6 +32,17 @@ type TaskWithParticipants = Task & {
     user: User | null;
   }>;
 };
+
+interface BriefingAction {
+  type: 'reassign' | 'change_priority' | 'remind';
+  description: string;
+  taskId?: number;
+  taskTitle?: string;
+  fromUserId?: number;
+  toUserId?: number;
+  toUserName?: string;
+  priority?: string;
+}
 
 interface StatsOverview {
   totalTasks: number;
@@ -38,10 +62,35 @@ interface AttentionTask {
   reasons: AttentionReason[];
 }
 
-function DailyBriefing() {
-  const queryClient = useQueryClient();
+function getActionIcon(type: BriefingAction['type']) {
+  switch (type) {
+    case 'reassign':
+      return <ArrowRight className="w-4 h-4 text-blue-500 flex-shrink-0" />;
+    case 'change_priority':
+      return <AlertTriangle className="w-4 h-4 text-orange-500 flex-shrink-0" />;
+    case 'remind':
+      return <Bell className="w-4 h-4 text-amber-500 flex-shrink-0" />;
+  }
+}
 
-  const { data: briefingResponse, isLoading } = useQuery<{ data: { content: string; isNew: boolean; date: string } }>({
+function getActionButtonLabel(type: BriefingAction['type']) {
+  switch (type) {
+    case 'reassign':
+      return '执行转派';
+    case 'change_priority':
+      return '调整优先级';
+    case 'remind':
+      return '发送提醒';
+  }
+}
+
+function DailyBriefing() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [confirmAction, setConfirmAction] = useState<BriefingAction | null>(null);
+  const [executedActions, setExecutedActions] = useState<Set<number>>(new Set());
+
+  const { data: briefingResponse, isLoading } = useQuery<{ data: { content: string; isNew: boolean; date: string; actions: BriefingAction[] } }>({
     queryKey: ['/api/briefing/today'],
     staleTime: 5 * 60 * 1000,
   });
@@ -52,7 +101,54 @@ function DailyBriefing() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/briefing/today'] });
+      qc.invalidateQueries({ queryKey: ['/api/briefing/today'] });
+      setExecutedActions(new Set());
+    },
+  });
+
+  const actionMutation = useMutation({
+    mutationFn: async (action: BriefingAction) => {
+      if (action.type === 'change_priority' && action.taskId) {
+        const res = await apiRequest('PATCH', `/api/tasks/${action.taskId}`, {
+          priority: action.priority || 'urgent',
+        });
+        return res.json();
+      }
+      if (action.type === 'reassign' && action.taskId && action.toUserId) {
+        const res = await apiRequest('PATCH', `/api/tasks/${action.taskId}`, {
+          assigneeId: action.toUserId,
+        });
+        return res.json();
+      }
+      if (action.type === 'remind' && action.taskId) {
+        const res = await apiRequest('POST', '/api/notifications', {
+          type: 'reminder',
+          entityType: 'task',
+          entityId: action.taskId,
+          entityTitle: action.taskTitle || '',
+          message: action.description,
+        });
+        return res.json();
+      }
+      return { ok: true };
+    },
+    onSuccess: (_data, action) => {
+      qc.invalidateQueries({ queryKey: ['/api/tasks'] });
+      qc.invalidateQueries({ queryKey: ['/api/notifications'] });
+      if (action.taskId) {
+        setExecutedActions(prev => new Set(prev).add(action.taskId!));
+      }
+      toast({
+        title: '操作成功',
+        description: `已执行: ${action.description}`,
+      });
+    },
+    onError: (err: any) => {
+      toast({
+        title: '操作失败',
+        description: err.message || '请稍后重试',
+        variant: 'destructive',
+      });
     },
   });
 
@@ -69,6 +165,8 @@ function DailyBriefing() {
 
   const briefing = briefingResponse?.data;
   if (!briefing?.content) return null;
+
+  const actions = briefing.actions || [];
 
   return (
     <div className="bg-card rounded-lg shadow-sm p-4 md:p-6 mb-6" data-testid="briefing-card">
@@ -92,6 +190,63 @@ function DailyBriefing() {
       <div className="prose prose-sm dark:prose-invert max-w-none text-foreground [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-0 [&_h2]:mb-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_p]:text-sm [&_p]:my-1 [&_li]:text-sm [&_li]:my-0.5 [&_hr]:my-2 [&_em]:text-xs [&_em]:text-muted-foreground" data-testid="briefing-content">
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{briefing.content}</ReactMarkdown>
       </div>
+
+      {actions.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-border" data-testid="briefing-actions-section">
+          <h3 className="text-sm font-semibold text-foreground mb-2" data-testid="briefing-actions-title">AI 建议操作</h3>
+          <div className="space-y-2">
+            {actions.map((action, idx) => {
+              const isExecuted = action.taskId ? executedActions.has(action.taskId) : false;
+              return (
+                <div
+                  key={idx}
+                  className="flex items-center gap-3 p-2.5 rounded-md bg-muted/50"
+                  data-testid={`briefing-action-${idx}`}
+                >
+                  {getActionIcon(action.type)}
+                  <span className="flex-1 text-sm text-foreground" data-testid={`briefing-action-desc-${idx}`}>
+                    {action.description}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant={isExecuted ? "secondary" : "outline"}
+                    disabled={isExecuted || actionMutation.isPending}
+                    onClick={() => setConfirmAction(action)}
+                    data-testid={`button-action-${idx}`}
+                  >
+                    {isExecuted ? '已执行' : getActionButtonLabel(action.type)}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <AlertDialog open={!!confirmAction} onOpenChange={(open) => { if (!open) setConfirmAction(null); }}>
+        <AlertDialogContent data-testid="action-confirm-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认执行操作</AlertDialogTitle>
+            <AlertDialogDescription data-testid="action-confirm-desc">
+              {confirmAction?.description}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-action-cancel">取消</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="button-action-confirm"
+              onClick={() => {
+                if (confirmAction) {
+                  actionMutation.mutate(confirmAction);
+                  setConfirmAction(null);
+                }
+              }}
+            >
+              确认
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

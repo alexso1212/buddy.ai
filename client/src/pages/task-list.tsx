@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Filter, ArrowUpDown, AlertTriangle, Trash2, Star } from "lucide-react";
+import { Filter, ArrowUpDown, AlertTriangle, Trash2, Star, Sparkles, Loader2 } from "lucide-react";
 import SwipeableTaskCard from "@/components/SwipeableTaskCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -136,6 +136,9 @@ function NewTaskModal({
   projects: Project[];
   users: User[];
 }) {
+  const [aiSuggestedAssigneeId, setAiSuggestedAssigneeId] = useState<number | null>(null);
+  const [aiAssigneeReason, setAiAssigneeReason] = useState<string>("");
+
   const form = useForm<TaskFormValues>({
     resolver: zodResolver(taskFormSchema),
     defaultValues: {
@@ -154,6 +157,33 @@ function NewTaskModal({
       progress: 0,
     },
   });
+
+  const aiSuggestMutation = useMutation({
+    mutationFn: async ({ title, projectId }: { title: string; projectId?: number }) => {
+      const response = await apiRequest("POST", "/api/ai/suggest-task", { title, projectId });
+      return response.json();
+    },
+    onSuccess: (result: any) => {
+      const data = result.data;
+      if (data.description) form.setValue("description", data.description);
+      if (data.priority) form.setValue("priority", data.priority);
+      if (data.assigneeId) {
+        form.setValue("assigneeId", data.assigneeId);
+        setAiSuggestedAssigneeId(data.assigneeId);
+        setAiAssigneeReason(data.assigneeReason || "");
+      }
+      if (data.dueDate) form.setValue("dueDate", data.dueDate);
+    },
+  });
+
+  const handleAiSuggest = () => {
+    const title = form.getValues("title");
+    if (!title.trim()) return;
+    const projectId = form.getValues("projectId");
+    setAiSuggestedAssigneeId(null);
+    setAiAssigneeReason("");
+    aiSuggestMutation.mutate({ title, projectId: projectId ? Number(projectId) : undefined });
+  };
 
   const mutation = useMutation({
     mutationFn: async (data: TaskFormValues) => {
@@ -174,6 +204,8 @@ function NewTaskModal({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       form.reset();
+      setAiSuggestedAssigneeId(null);
+      setAiAssigneeReason("");
       onClose();
     },
   });
@@ -199,9 +231,26 @@ function NewTaskModal({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>任务标题 *</FormLabel>
-                  <FormControl>
-                    <Input placeholder="输入任务标题" {...field} />
-                  </FormControl>
+                  <div className="flex gap-2">
+                    <FormControl>
+                      <Input placeholder="输入任务标题" {...field} />
+                    </FormControl>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAiSuggest}
+                      disabled={aiSuggestMutation.isPending || !form.watch("title")?.trim()}
+                      data-testid="btn-ai-suggest"
+                    >
+                      {aiSuggestMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-4 w-4" />
+                      )}
+                      <span className="ml-1">AI 建议</span>
+                    </Button>
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}
@@ -291,11 +340,19 @@ function NewTaskModal({
                     <SelectContent>
                       {users.map((user) => (
                         <SelectItem key={user.id} value={String(user.id)}>
-                          {user.displayName}
+                          <span className="flex items-center gap-2">
+                            {user.displayName}
+                            {aiSuggestedAssigneeId === user.id && (
+                              <Badge variant="secondary" className="text-xs" data-testid="badge-ai-recommended">AI 推荐</Badge>
+                            )}
+                          </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {aiAssigneeReason && aiSuggestedAssigneeId && (
+                    <p className="text-xs text-muted-foreground" data-testid="text-ai-assignee-reason">{aiAssigneeReason}</p>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}

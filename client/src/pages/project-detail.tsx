@@ -13,7 +13,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, Plus, Pencil, Trash2, CheckCircle } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { ArrowLeft, Plus, Pencil, Trash2, CheckCircle, Sparkles, Loader2, ArrowDown } from "lucide-react";
 
 interface ProjectDetailResponse {
   data: Project & { tasks: Task[] };
@@ -218,6 +220,33 @@ function NewTaskModal({
   const [assigneeId, setAssigneeId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [aiSuggestedAssigneeId, setAiSuggestedAssigneeId] = useState<number | null>(null);
+  const [aiAssigneeReason, setAiAssigneeReason] = useState<string>("");
+
+  const aiSuggestMutation = useMutation({
+    mutationFn: async ({ title, projectId }: { title: string; projectId?: number }) => {
+      const response = await apiRequest("POST", "/api/ai/suggest-task", { title, projectId });
+      return response.json();
+    },
+    onSuccess: (result: any) => {
+      const data = result.data;
+      if (data.description) setDescription(data.description);
+      if (data.priority) setPriority(data.priority);
+      if (data.assigneeId) {
+        setAssigneeId(String(data.assigneeId));
+        setAiSuggestedAssigneeId(data.assigneeId);
+        setAiAssigneeReason(data.assigneeReason || "");
+      }
+      if (data.dueDate) setDueDate(data.dueDate);
+    },
+  });
+
+  const handleAiSuggest = () => {
+    if (!title.trim()) return;
+    setAiSuggestedAssigneeId(null);
+    setAiAssigneeReason("");
+    aiSuggestMutation.mutate({ title, projectId });
+  };
 
   const createTaskMutation = useMutation({
     mutationFn: async () => {
@@ -246,6 +275,8 @@ function NewTaskModal({
       setAssigneeId("");
       setStartDate("");
       setDueDate("");
+      setAiSuggestedAssigneeId(null);
+      setAiAssigneeReason("");
       onOpenChange(false);
     },
     onError: (error: Error) => {
@@ -265,11 +296,29 @@ function NewTaskModal({
         <div className="space-y-4">
           <div>
             <label className="text-sm font-medium">Title *</label>
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Task title"
-            />
+            <div className="flex gap-2">
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Task title"
+                data-testid="input-task-title"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleAiSuggest}
+                disabled={aiSuggestMutation.isPending || !title.trim()}
+                data-testid="btn-ai-suggest"
+              >
+                {aiSuggestMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                <span className="ml-1">AI 建议</span>
+              </Button>
+            </div>
           </div>
           <div>
             <label className="text-sm font-medium">Description</label>
@@ -304,11 +353,19 @@ function NewTaskModal({
               <SelectContent>
                 {users.map((user) => (
                   <SelectItem key={user.id} value={user.id.toString()}>
-                    {user.displayName}
+                    <span className="flex items-center gap-2">
+                      {user.displayName}
+                      {aiSuggestedAssigneeId === user.id && (
+                        <Badge variant="secondary" className="text-xs" data-testid="badge-ai-recommended">AI 推荐</Badge>
+                      )}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {aiAssigneeReason && aiSuggestedAssigneeId && (
+              <p className="text-xs text-muted-foreground mt-1" data-testid="text-ai-assignee-reason">{aiAssigneeReason}</p>
+            )}
           </div>
           <div>
             <label className="text-sm font-medium">Start Date</label>
@@ -343,6 +400,300 @@ function NewTaskModal({
   );
 }
 
+interface AiSuggestedTask {
+  title: string;
+  description?: string;
+  priority: string;
+  estimatedDays: number;
+  suggestedAssigneeId: number | null;
+  suggestedAssigneeName: string;
+}
+
+interface AiDependency {
+  fromIndex: number;
+  toIndex: number;
+  reason: string;
+}
+
+interface AiDecomposeDialogProps {
+  projectId: number;
+  orgId: number;
+  users: User[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+function AiDecomposeDialog({ projectId, orgId, users, open, onOpenChange }: AiDecomposeDialogProps) {
+  const { toast } = useToast();
+  const [suggestedTasks, setSuggestedTasks] = useState<AiSuggestedTask[]>([]);
+  const [dependencies, setDependencies] = useState<AiDependency[]>([]);
+  const [checkedTasks, setCheckedTasks] = useState<boolean[]>([]);
+  const [hasResults, setHasResults] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+
+  const decomposeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/ai/decompose-project", { projectId });
+      return await res.json();
+    },
+    onSuccess: (data: { data: { tasks: AiSuggestedTask[]; dependencies: AiDependency[] } }) => {
+      const tasks = data.data?.tasks || [];
+      const deps = data.data?.dependencies || [];
+      setSuggestedTasks(tasks);
+      setDependencies(deps);
+      setCheckedTasks(tasks.map(() => true));
+      setHasResults(true);
+    },
+    onError: (error: Error) => {
+      toast({ title: "AI 拆解失败", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleToggleTask = (index: number) => {
+    setCheckedTasks(prev => {
+      const next = [...prev];
+      next[index] = !next[index];
+      return next;
+    });
+  };
+
+  const handleEditField = (index: number, field: keyof AiSuggestedTask, value: string) => {
+    setSuggestedTasks(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+
+  const handleCreateAll = async () => {
+    setIsCreating(true);
+    try {
+      const selectedIndices: number[] = [];
+      const createdTaskIds: number[] = [];
+
+      for (let i = 0; i < suggestedTasks.length; i++) {
+        if (!checkedTasks[i]) continue;
+        selectedIndices.push(i);
+
+        const task = suggestedTasks[i];
+        const now = new Date();
+        const dueDate = task.estimatedDays
+          ? new Date(now.getTime() + task.estimatedDays * 86400000)
+          : null;
+
+        const res = await apiRequest("POST", "/api/tasks", {
+          title: task.title,
+          description: task.description || null,
+          priority: task.priority || "medium",
+          assigneeId: task.suggestedAssigneeId || null,
+          startDate: null,
+          dueDate,
+          type: "task",
+          status: "todo",
+          orgId,
+          projectId,
+          creatorId: 1,
+          weight: 1,
+          progress: 0,
+        });
+        const created = await res.json();
+        createdTaskIds.push(created.data.id);
+      }
+
+      for (const dep of dependencies) {
+        const fromSelectedIdx = selectedIndices.indexOf(dep.fromIndex);
+        const toSelectedIdx = selectedIndices.indexOf(dep.toIndex);
+        if (fromSelectedIdx === -1 || toSelectedIdx === -1) continue;
+
+        const fromTaskId = createdTaskIds[fromSelectedIdx];
+        const toTaskId = createdTaskIds[toSelectedIdx];
+        if (!fromTaskId || !toTaskId) continue;
+
+        try {
+          await apiRequest("POST", "/api/task-dependencies", {
+            taskId: toTaskId,
+            dependsOnTaskId: fromTaskId,
+            type: "finish_to_start",
+          });
+        } catch {
+        }
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId.toString()] });
+      toast({ title: `已创建 ${createdTaskIds.length} 个任务` });
+      onOpenChange(false);
+      setSuggestedTasks([]);
+      setDependencies([]);
+      setCheckedTasks([]);
+      setHasResults(false);
+    } catch (error: any) {
+      toast({ title: "创建任务失败", description: error.message, variant: "destructive" });
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleOpenChange = (val: boolean) => {
+    if (!val) {
+      setSuggestedTasks([]);
+      setDependencies([]);
+      setCheckedTasks([]);
+      setHasResults(false);
+    }
+    onOpenChange(val);
+  };
+
+  const getDependencyInfo = (index: number) => {
+    const deps = dependencies.filter(d => d.toIndex === index && checkedTasks[d.fromIndex]);
+    return deps;
+  };
+
+  const checkedCount = checkedTasks.filter(Boolean).length;
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle data-testid="text-ai-decompose-title">AI 拆解任务</DialogTitle>
+          <DialogDescription>AI 将根据项目信息和团队成员自动生成任务拆解方案</DialogDescription>
+        </DialogHeader>
+
+        {!hasResults && !decomposeMutation.isPending && (
+          <div className="flex flex-col items-center gap-4 py-8">
+            <Sparkles className="h-12 w-12 text-muted-foreground" />
+            <p className="text-muted-foreground text-center">
+              点击下方按钮，AI 将分析项目信息并生成任务拆解方案
+            </p>
+            <Button
+              onClick={() => decomposeMutation.mutate()}
+              data-testid="btn-start-decompose"
+            >
+              <Sparkles className="h-4 w-4 mr-2" />
+              开始拆解
+            </Button>
+          </div>
+        )}
+
+        {decomposeMutation.isPending && (
+          <div className="flex flex-col items-center gap-4 py-12" data-testid="loading-decompose">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="text-muted-foreground">AI 正在分析项目并生成任务...</p>
+          </div>
+        )}
+
+        {hasResults && suggestedTasks.length === 0 && (
+          <div className="flex flex-col items-center gap-4 py-8">
+            <p className="text-muted-foreground">AI 未能生成任务建议，请重试</p>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setHasResults(false);
+                decomposeMutation.mutate();
+              }}
+              data-testid="btn-retry-decompose"
+            >
+              重试
+            </Button>
+          </div>
+        )}
+
+        {hasResults && suggestedTasks.length > 0 && (
+          <>
+            <ScrollArea className="flex-1 min-h-0">
+              <div className="space-y-3 pr-4">
+                {suggestedTasks.map((task, index) => {
+                  const taskDeps = getDependencyInfo(index);
+                  return (
+                    <div
+                      key={index}
+                      className={cn(
+                        "border rounded-md p-3 space-y-2 transition-opacity",
+                        !checkedTasks[index] && "opacity-50"
+                      )}
+                      data-testid={`ai-task-item-${index}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <Checkbox
+                          checked={checkedTasks[index]}
+                          onCheckedChange={() => handleToggleTask(index)}
+                          className="mt-1"
+                          data-testid={`checkbox-ai-task-${index}`}
+                        />
+                        <div className="flex-1 min-w-0 space-y-2">
+                          <Input
+                            value={task.title}
+                            onChange={(e) => handleEditField(index, "title", e.target.value)}
+                            className="font-medium"
+                            data-testid={`input-ai-task-title-${index}`}
+                          />
+                          <Input
+                            value={task.description || ""}
+                            onChange={(e) => handleEditField(index, "description", e.target.value)}
+                            placeholder="描述"
+                            className="text-sm"
+                            data-testid={`input-ai-task-desc-${index}`}
+                          />
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge className={getPriorityColor(task.priority)} data-testid={`badge-ai-task-priority-${index}`}>
+                              {getPriorityLabel(task.priority)}
+                            </Badge>
+                            {task.estimatedDays > 0 && (
+                              <Badge variant="secondary" data-testid={`badge-ai-task-days-${index}`}>
+                                {task.estimatedDays} 天
+                              </Badge>
+                            )}
+                            {task.suggestedAssigneeName && (
+                              <Badge variant="outline" data-testid={`badge-ai-task-assignee-${index}`}>
+                                {task.suggestedAssigneeName}
+                              </Badge>
+                            )}
+                          </div>
+                          {taskDeps.length > 0 && (
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <ArrowDown className="h-3 w-3" />
+                              <span>
+                                依赖: {taskDeps.map(d => suggestedTasks[d.fromIndex]?.title).filter(Boolean).join(", ")}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+            <div className="flex items-center justify-between pt-4 border-t gap-2">
+              <p className="text-sm text-muted-foreground" data-testid="text-selected-count">
+                已选 {checkedCount} / {suggestedTasks.length} 个任务
+              </p>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => handleOpenChange(false)} data-testid="btn-cancel-decompose">
+                  取消
+                </Button>
+                <Button
+                  onClick={handleCreateAll}
+                  disabled={isCreating || checkedCount === 0}
+                  data-testid="btn-create-all-tasks"
+                >
+                  {isCreating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      创建中...
+                    </>
+                  ) : (
+                    `全部创建 (${checkedCount})`
+                  )}
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function ProjectDetail() {
   const [, params] = useRoute("/projects/:id");
   const [, setLocation] = useLocation();
@@ -352,6 +703,7 @@ export default function ProjectDetail() {
   const [editOpen, setEditOpen] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
+  const [decomposeOpen, setDecomposeOpen] = useState(false);
 
   const deleteProjectMutation = useMutation({
     mutationFn: async () => {
@@ -514,15 +866,25 @@ export default function ProjectDetail() {
 
       {/* Tasks section */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <h2 className="text-lg md:text-2xl font-bold">Tasks</h2>
-          <Button
-            onClick={() => setNewTaskOpen(true)}
-            data-testid="btn-new-task"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            New Task
-          </Button>
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              onClick={() => setDecomposeOpen(true)}
+              data-testid="btn-ai-decompose"
+            >
+              <Sparkles className="h-4 w-4 mr-2" />
+              AI 拆解任务
+            </Button>
+            <Button
+              onClick={() => setNewTaskOpen(true)}
+              data-testid="btn-new-task"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              New Task
+            </Button>
+          </div>
         </div>
 
         {/* Tasks table */}
@@ -590,10 +952,17 @@ export default function ProjectDetail() {
       <NewTaskModal
         projectId={project.id}
         orgId={project.orgId}
-        creatorId={1} // Assuming current user ID is 1
+        creatorId={1}
         users={users}
         open={newTaskOpen}
         onOpenChange={setNewTaskOpen}
+      />
+      <AiDecomposeDialog
+        projectId={project.id}
+        orgId={project.orgId}
+        users={users}
+        open={decomposeOpen}
+        onOpenChange={setDecomposeOpen}
       />
     </div>
   );

@@ -4,12 +4,12 @@ export interface BriefingData {
   userName: string;
   orgName: string;
   totalActiveTasks: number;
-  tasksDueToday: { id: number; title: string; assigneeName: string }[];
-  tasksOverdue: { id: number; title: string; assigneeName: string; daysOverdue: number }[];
+  tasksDueToday: { id: number; title: string; assigneeName: string; assigneeId?: number }[];
+  tasksOverdue: { id: number; title: string; assigneeName: string; assigneeId?: number; daysOverdue: number }[];
   tasksCompletedYesterday: { id: number; title: string; completedBy: string }[];
   tasksCreatedYesterday: number;
   memberCount: number;
-  busiestMember: { name: string; activeTaskCount: number } | null;
+  busiestMember: { name: string; userId?: number; activeTaskCount: number } | null;
   kbDocCount: number;
   kbRecentUploads: { title: string; uploadedAt: string }[];
 }
@@ -47,7 +47,7 @@ export async function aggregateBriefingData(orgId: number, userId: number): Prom
   const tasksDueToday = activeTasks
     .filter((t: any) => t.dueDate && new Date(t.dueDate).toISOString().slice(0, 10) === todayStr)
     .slice(0, 5)
-    .map((t: any) => ({ id: t.id, title: t.title, assigneeName: getAssigneeName(t) }));
+    .map((t: any) => ({ id: t.id, title: t.title, assigneeName: getAssigneeName(t), assigneeId: t.assigneeId || undefined }));
 
   const tasksOverdue = activeTasks
     .filter((t: any) => t.dueDate && new Date(t.dueDate) < today && t.status !== 'done')
@@ -55,6 +55,7 @@ export async function aggregateBriefingData(orgId: number, userId: number): Prom
       id: t.id,
       title: t.title,
       assigneeName: getAssigneeName(t),
+      assigneeId: t.assigneeId || undefined,
       daysOverdue: Math.floor((today.getTime() - new Date(t.dueDate).getTime()) / 86400000),
     }))
     .sort((a, b) => b.daysOverdue - a.daysOverdue)
@@ -77,6 +78,7 @@ export async function aggregateBriefingData(orgId: number, userId: number): Prom
   if (members.length > 0) {
     const memberTaskCounts = members.map((m: any) => ({
       name: m.displayName || 'unknown',
+      userId: m.userId,
       activeTaskCount: activeTasks.filter((t: any) => t.assigneeId === m.userId).length,
     })).sort((a, b) => b.activeTaskCount - a.activeTaskCount);
     if (memberTaskCounts[0]?.activeTaskCount > 0) {

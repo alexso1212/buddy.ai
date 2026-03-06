@@ -1366,6 +1366,48 @@ interface JoinRequest {
   user: { id: number; displayName: string; email: string; avatarUrl: string | null };
 }
 
+function findMatchingProfile(
+  request: JoinRequest,
+  profiles: MemberProfile[]
+): MemberProfile | null {
+  const userName = (request.user.displayName || "").toLowerCase().trim();
+  const userEmail = (request.user.email || "").toLowerCase().trim();
+
+  for (const profile of profiles) {
+    if (profile.status !== "pending" && profile.status !== "manual") continue;
+
+    const profileName = (profile.fullName || "").toLowerCase().trim();
+    let aliasesList: string[] = [];
+    if (profile.aliases) {
+      try { aliasesList = JSON.parse(profile.aliases); } catch { aliasesList = profile.aliases ? [profile.aliases] : []; }
+    }
+    const allNames = [profileName, ...aliasesList.map(a => a.toLowerCase().trim())].filter(Boolean);
+
+    if (userEmail && profile.email && userEmail === profile.email.toLowerCase().trim()) {
+      return profile;
+    }
+
+    if (userName && profileName) {
+      if (userName === profileName) return profile;
+      if (userName.length >= 2 && profileName.length >= 2) {
+        if (userName.includes(profileName) || profileName.includes(userName)) {
+          return profile;
+        }
+      }
+    }
+
+    for (const alias of allNames) {
+      if (alias && userName && alias.length >= 2 && userName.length >= 2) {
+        if (userName.includes(alias) || alias.includes(userName)) {
+          return profile;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 function RequestsTab({
   orgId,
   toast,
@@ -1389,6 +1431,14 @@ function RequestsTab({
     enabled: !!orgId && historyOpen,
   });
 
+  const { data: profilesData } = useQuery<{ data: MemberProfile[] }>({
+    queryKey: ["/api/member-profiles"],
+    enabled: !!orgId,
+  });
+
+  const memberProfiles = profilesData?.data ?? [];
+  const pendingProfiles = memberProfiles.filter(p => p.status === "pending" || p.status === "manual");
+
   const pending = pendingData?.data ?? [];
   const history = (allData?.data ?? []).filter(r => r.status !== "pending");
 
@@ -1400,6 +1450,22 @@ function RequestsTab({
       queryClient.invalidateQueries({ queryKey: ["/api/organizations", orgId, "join-requests"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       toast({ title: "已批准加入申请" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "操作失败", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const approveAndBindMutation = useMutation({
+    mutationFn: async ({ requestId, profileId, userId }: { requestId: number; profileId: number; userId: number }) => {
+      await apiRequest("PUT", `/api/organizations/${orgId}/join-requests/${requestId}`, { status: "approved" });
+      await apiRequest("POST", `/api/member-profiles/${profileId}/bind/${userId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations", orgId, "join-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/member-profiles"] });
+      toast({ title: "已批准并绑定档案" });
     },
     onError: (err: Error) => {
       toast({ title: "操作失败", description: err.message, variant: "destructive" });
@@ -1449,50 +1515,77 @@ function RequestsTab({
         </Card>
       ) : (
         <div className="space-y-3">
-          {pending.map((req) => (
-            <Card key={req.id} className="p-4" data-testid={`request-card-${req.id}`}>
-              <div className="flex items-start gap-3">
-                <Avatar className="h-10 w-10 shrink-0">
-                  <AvatarImage src={req.user.avatarUrl ?? undefined} />
-                  <AvatarFallback>{req.user.displayName?.charAt(0)?.toUpperCase() ?? "?"}</AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className="font-semibold truncate" data-testid={`request-name-${req.id}`}>{req.user.displayName}</span>
-                    <span className="text-sm text-muted-foreground truncate">{req.user.email}</span>
+          {pending.map((req) => {
+            const matchedProfile = findMatchingProfile(req, pendingProfiles);
+            return (
+              <Card key={req.id} className="p-4" data-testid={`request-card-${req.id}`}>
+                <div className="flex items-start gap-3">
+                  <Avatar className="h-10 w-10 shrink-0">
+                    <AvatarImage src={req.user.avatarUrl ?? undefined} />
+                    <AvatarFallback>{req.user.displayName?.charAt(0)?.toUpperCase() ?? "?"}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <span className="font-semibold truncate" data-testid={`request-name-${req.id}`}>{req.user.displayName}</span>
+                      <span className="text-sm text-muted-foreground truncate">{req.user.email}</span>
+                    </div>
+                    {matchedProfile && (
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        <Badge variant="secondary" className="text-xs gap-1" data-testid={`badge-match-${req.id}`}>
+                          <UserCheck className="w-3 h-3" />
+                          AI 建议绑定: {matchedProfile.fullName}
+                        </Badge>
+                      </div>
+                    )}
+                    {req.message && (
+                      <p className="text-sm italic text-muted-foreground mt-1" data-testid={`request-message-${req.id}`}>{req.message}</p>
+                    )}
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                      <Clock className="w-3 h-3" />
+                      <span>{formatRelativeTime(req.createdAt)}</span>
+                    </div>
                   </div>
-                  {req.message && (
-                    <p className="text-sm italic text-muted-foreground mt-1" data-testid={`request-message-${req.id}`}>{req.message}</p>
-                  )}
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                    <Clock className="w-3 h-3" />
-                    <span>{formatRelativeTime(req.createdAt)}</span>
+                  <div className="flex gap-2 shrink-0 flex-wrap">
+                    {matchedProfile && (
+                      <Button
+                        size="sm"
+                        onClick={() => approveAndBindMutation.mutate({
+                          requestId: req.id,
+                          profileId: matchedProfile.id,
+                          userId: req.userId,
+                        })}
+                        disabled={approveAndBindMutation.isPending}
+                        data-testid={`btn-approve-bind-${req.id}`}
+                      >
+                        <UserCheck className="w-4 h-4 mr-1" />
+                        一键审批并绑定
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant={matchedProfile ? "outline" : "default"}
+                      onClick={() => approveMutation.mutate(req.id)}
+                      disabled={approveMutation.isPending}
+                      data-testid={`btn-approve-${req.id}`}
+                    >
+                      <Check className="w-4 h-4 mr-1" />
+                      批准
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setRejectTarget(req)}
+                      disabled={rejectMutation.isPending}
+                      data-testid={`btn-reject-${req.id}`}
+                    >
+                      <X className="w-4 h-4 mr-1" />
+                      拒绝
+                    </Button>
                   </div>
                 </div>
-                <div className="flex gap-2 shrink-0">
-                  <Button
-                    size="sm"
-                    onClick={() => approveMutation.mutate(req.id)}
-                    disabled={approveMutation.isPending}
-                    data-testid={`btn-approve-${req.id}`}
-                  >
-                    <Check className="w-4 h-4 mr-1" />
-                    批准
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setRejectTarget(req)}
-                    disabled={rejectMutation.isPending}
-                    data-testid={`btn-reject-${req.id}`}
-                  >
-                    <X className="w-4 h-4 mr-1" />
-                    拒绝
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       )}
 

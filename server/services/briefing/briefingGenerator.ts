@@ -8,19 +8,33 @@ const aiClient = new OpenAI({
   timeout: 30000,
 });
 
+export interface BriefingAction {
+  type: 'reassign' | 'change_priority' | 'remind';
+  description: string;
+  taskId?: number;
+  taskTitle?: string;
+  fromUserId?: number;
+  toUserId?: number;
+  toUserName?: string;
+  priority?: string;
+}
+
 export async function getTodayBriefing(orgId: number, userId: number): Promise<{
   content: string;
   isNew: boolean;
   date: string;
+  actions: BriefingAction[];
 }> {
   const today = new Date().toISOString().slice(0, 10);
 
+  const data = await aggregateBriefingData(orgId, userId);
+  const actions = generateActions(data);
+
   const cached = await storage.getBriefing(orgId, userId, today);
   if (cached) {
-    return { content: cached.content, isNew: false, date: today };
+    return { content: cached.content, isNew: false, date: today, actions };
   }
 
-  const data = await aggregateBriefingData(orgId, userId);
   const content = await generateBriefingWithAI(data, today);
 
   try {
@@ -37,7 +51,61 @@ export async function getTodayBriefing(orgId: number, userId: number): Promise<{
     console.warn('[Briefing] Failed to cache:', err.message);
   }
 
-  return { content, isNew: true, date: today };
+  return { content, isNew: true, date: today, actions };
+}
+
+function generateActions(data: BriefingData): BriefingAction[] {
+  const actions: BriefingAction[] = [];
+
+  for (const t of data.tasksOverdue) {
+    if (t.daysOverdue >= 3) {
+      actions.push({
+        type: 'change_priority',
+        description: `"${t.title}" 已逾期 ${t.daysOverdue} 天，建议提升优先级为紧急`,
+        taskId: t.id,
+        taskTitle: t.title,
+        priority: 'urgent',
+      });
+    }
+    actions.push({
+      type: 'remind',
+      description: `提醒 ${t.assigneeName} 跟进逾期任务 "${t.title}"`,
+      taskId: t.id,
+      taskTitle: t.title,
+      toUserId: t.assigneeId,
+      toUserName: t.assigneeName,
+    });
+  }
+
+  if (data.busiestMember && data.busiestMember.activeTaskCount >= 5) {
+    const busiestName = data.busiestMember.name;
+    const busiestUserId = data.busiestMember.userId;
+    for (const t of data.tasksDueToday) {
+      if (t.assigneeName === busiestName) {
+        actions.push({
+          type: 'reassign',
+          description: `${busiestName} 负载较高(${data.busiestMember.activeTaskCount}个任务)，建议转派 "${t.title}"`,
+          taskId: t.id,
+          taskTitle: t.title,
+          fromUserId: busiestUserId,
+        });
+        break;
+      }
+    }
+  }
+
+  for (const t of data.tasksDueToday) {
+    actions.push({
+      type: 'remind',
+      description: `"${t.title}" 今日到期，提醒 ${t.assigneeName} 按时完成`,
+      taskId: t.id,
+      taskTitle: t.title,
+      toUserId: t.assigneeId,
+      toUserName: t.assigneeName,
+    });
+  }
+
+  return actions.slice(0, 5);
 }
 
 async function generateBriefingWithAI(data: BriefingData, dateStr: string): Promise<string> {

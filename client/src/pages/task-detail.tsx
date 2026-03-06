@@ -3,7 +3,7 @@ import { useRoute, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Task, TaskDependency, TaskComment, User, Project, ActivityLog } from "@shared/schema";
+import type { Task, TaskDependency, TaskComment, User, Project, ActivityLog, TaskSubmission } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Plus, Pencil, Trash2, MessageSquare, GitBranch, ListTree, Activity, Scale, Check, X as XIcon, Loader2, UserPlus, Users, AlertCircle, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, MessageSquare, GitBranch, ListTree, Activity, Scale, Check, X as XIcon, Loader2, UserPlus, Users, AlertCircle, AlertTriangle, Sparkles } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
 interface TaskDetailResponse {
@@ -237,6 +237,12 @@ export default function TaskDetail() {
   const [verdictData, setVerdictData] = useState<VerdictData | null>(null);
   const [verdictLoading, setVerdictLoading] = useState(false);
   const [verdictAccepted, setVerdictAccepted] = useState<boolean | null>(null);
+  const [aiDepSuggestions, setAiDepSuggestions] = useState<Array<{ taskId: number; taskTitle: string; reason: string; confidence: number }>>([]);
+  const [aiDepLoading, setAiDepLoading] = useState(false);
+  const [aiDepChecked, setAiDepChecked] = useState<Set<number>>(new Set());
+  const [aiDepAdding, setAiDepAdding] = useState(false);
+  const [aiReviewResult, setAiReviewResult] = useState<{ summary: string; relevanceScore: number; qualityAssessment: string; suggestions: string[] } | null>(null);
+  const [aiReviewLoading, setAiReviewLoading] = useState(false);
   const [detailTab, setDetailTab] = useState<"info" | "subtasks" | "deps" | "comments" | "activity">("info");
   const [descExpanded, setDescExpanded] = useState(false);
 
@@ -257,6 +263,15 @@ export default function TaskDetail() {
     queryKey: ['/api/tasks'],
   });
 
+  const { data: submissionsRes } = useQuery<{ data: TaskSubmission[] }>({
+    queryKey: ['/api/tasks', id, 'submissions'],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/tasks/${id}/submissions`);
+      return res.json();
+    },
+    enabled: !!id,
+  });
+
   const { data: activityRes } = useQuery<ActivityLogsResponse>({
     queryKey: ['/api/activity-logs', id],
     queryFn: async () => {
@@ -274,7 +289,29 @@ export default function TaskDetail() {
   const users = usersRes?.data ?? [];
   const projects = projectsRes?.data ?? [];
   const allTasks = allTasksRes?.data ?? [];
+  const submissions = submissionsRes?.data ?? [];
   const activityLogs = activityRes?.data ?? [];
+
+  const pendingSubmission = submissions.find(s => s.status === 'pending');
+
+  const handleAiReview = async (submissionId: number) => {
+    if (!task) return;
+    setAiReviewLoading(true);
+    setAiReviewResult(null);
+    try {
+      const res = await apiRequest("POST", "/api/ai/review-submission", {
+        taskId: Number(id),
+        submissionId,
+        orgId: task.orgId,
+      });
+      const json = await res.json();
+      setAiReviewResult(json.data);
+    } catch (err: any) {
+      toast({ title: "AI 预审失败", description: err.message, variant: "destructive" });
+    } finally {
+      setAiReviewLoading(false);
+    }
+  };
 
   const getUserName = (userId: number | null | undefined) => {
     if (!userId) return "-";
@@ -904,6 +941,62 @@ export default function TaskDetail() {
             </div>
           </Card>
         )}
+
+        {pendingSubmission && (
+          <div className="space-y-3">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleAiReview(pendingSubmission.id)}
+              disabled={aiReviewLoading}
+              data-testid="btn-ai-pre-review"
+            >
+              {aiReviewLoading ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5 mr-1" />
+              )}
+              AI 预审
+            </Button>
+
+            {aiReviewResult && (
+              <div className="bg-muted rounded-lg p-4 space-y-3" data-testid="ai-review-result">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-muted-foreground" />
+                  <h3 className="font-semibold text-sm">AI 预审结果</h3>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">相关性评分:</span>
+                  <Badge data-testid="ai-review-relevance-score">
+                    {aiReviewResult.relevanceScore} / 5
+                  </Badge>
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">质量评估:</p>
+                  <p className="text-sm" data-testid="ai-review-quality">{aiReviewResult.qualityAssessment}</p>
+                </div>
+
+                {aiReviewResult.suggestions.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-muted-foreground">改进建议:</p>
+                    <ul className="list-disc list-inside space-y-1" data-testid="ai-review-suggestions">
+                      {aiReviewResult.suggestions.map((s, i) => (
+                        <li key={i} className="text-sm">{s}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">内容摘要:</p>
+                  <p className="text-sm" data-testid="ai-review-summary">{aiReviewResult.summary}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <Card className={`p-6 ${detailTab === "subtasks" ? "" : "hidden md:block"}`}>
@@ -963,10 +1056,44 @@ export default function TaskDetail() {
             <GitBranch className="h-5 w-5" />
             依赖关系
           </h2>
-          <Button size="sm" onClick={() => setDepOpen(true)} data-testid="btn-add-dependency">
-            <Plus className="mr-1 h-4 w-4" />
-            添加依赖
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="btn-ai-suggest-deps"
+              disabled={aiDepLoading}
+              onClick={async () => {
+                setAiDepLoading(true);
+                setAiDepSuggestions([]);
+                setAiDepChecked(new Set());
+                try {
+                  const res = await apiRequest("POST", "/api/ai/suggest-dependencies", {
+                    taskId: Number(id),
+                    orgId: task.orgId,
+                  });
+                  const json = await res.json();
+                  const items = json.data || [];
+                  setAiDepSuggestions(items);
+                  setAiDepChecked(new Set(items.map((s: { taskId: number }) => s.taskId)));
+                } catch (err: any) {
+                  toast({ title: "AI 分析失败", description: err.message, variant: "destructive" });
+                } finally {
+                  setAiDepLoading(false);
+                }
+              }}
+            >
+              {aiDepLoading ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="mr-1 h-4 w-4" />
+              )}
+              AI 分析依赖
+            </Button>
+            <Button size="sm" onClick={() => setDepOpen(true)} data-testid="btn-add-dependency">
+              <Plus className="mr-1 h-4 w-4" />
+              添加依赖
+            </Button>
+          </div>
         </div>
         <div data-testid="dependency-list" className="space-y-2">
           {dependencies.length === 0 && (
@@ -990,6 +1117,88 @@ export default function TaskDetail() {
             </div>
           ))}
         </div>
+        {aiDepSuggestions.length > 0 && (
+          <div className="mt-4 space-y-3" data-testid="ai-dep-suggestions">
+            <h3 className="text-sm font-medium text-muted-foreground">AI 建议的前置依赖</h3>
+            <div className="space-y-2">
+              {aiDepSuggestions.map(s => {
+                const alreadyAdded = dependencies.some(d => d.dependsOnTaskId === s.taskId);
+                return (
+                  <div
+                    key={s.taskId}
+                    data-testid={`ai-dep-item-${s.taskId}`}
+                    className="flex items-start gap-3 p-3 rounded-md border"
+                  >
+                    <Checkbox
+                      data-testid={`ai-dep-check-${s.taskId}`}
+                      checked={aiDepChecked.has(s.taskId)}
+                      disabled={alreadyAdded}
+                      onCheckedChange={(checked) => {
+                        setAiDepChecked(prev => {
+                          const next = new Set(prev);
+                          if (checked) {
+                            next.add(s.taskId);
+                          } else {
+                            next.delete(s.taskId);
+                          }
+                          return next;
+                        });
+                      }}
+                    />
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium truncate" data-testid={`ai-dep-title-${s.taskId}`}>
+                          {s.taskTitle}
+                        </span>
+                        {alreadyAdded && (
+                          <Badge variant="secondary" className="text-xs">已添加</Badge>
+                        )}
+                        <Badge variant="outline" className="text-xs" data-testid={`ai-dep-confidence-${s.taskId}`}>
+                          {s.confidence}%
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground" data-testid={`ai-dep-reason-${s.taskId}`}>
+                        {s.reason}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <Button
+              size="sm"
+              data-testid="btn-add-ai-deps"
+              disabled={aiDepAdding || aiDepChecked.size === 0}
+              onClick={async () => {
+                setAiDepAdding(true);
+                const existingDepIds = new Set(dependencies.map(d => d.dependsOnTaskId));
+                const toAdd = Array.from(aiDepChecked).filter(tid => !existingDepIds.has(tid));
+                try {
+                  for (const tid of toAdd) {
+                    await apiRequest("POST", "/api/task-dependencies", {
+                      taskId: Number(id),
+                      dependsOnTaskId: tid,
+                      type: "finish_to_start",
+                    });
+                  }
+                  queryClient.invalidateQueries({ queryKey: ['/api/tasks', id] });
+                  toast({ title: `已添加 ${toAdd.length} 个依赖` });
+                  setAiDepSuggestions([]);
+                  setAiDepChecked(new Set());
+                } catch (err: any) {
+                  toast({ title: "添加失败", description: err.message, variant: "destructive" });
+                } finally {
+                  setAiDepAdding(false);
+                }
+              }}
+            >
+              {aiDepAdding ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : null}
+              添加选中 ({aiDepChecked.size})
+            </Button>
+          </div>
+        )}
       </Card>
 
       <Dialog open={participantOpen} onOpenChange={setParticipantOpen}>
