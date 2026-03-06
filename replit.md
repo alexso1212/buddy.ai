@@ -41,6 +41,7 @@ A 24-table PostgreSQL database schema manages entities like `organizations`, `de
 - **ArtifactPanel:** A slide-out panel for displaying long documents or code blocks from AI messages.
 - **Multi-Conversation Background Processing:** Allows users to switch conversations while AI generates responses in the background, with progress indicators and persistence to the database.
 - **Token Budget & Balance System:** Displays an organization's token budget, usage, and remaining balance, with warnings for high usage.
+- **Smart Setup (智能初始化):** Admin-only page (`/setup`) for AI-powered enterprise initialization. Upload org structure documents (PDF/DOCX/TXT/MD/ZIP), AI extracts departments, job roles, and file classifications via `server/services/setup/`. 4-step wizard: Upload → AI Analysis → Confirm/Edit → Complete. Creates departments, job roles, and imports documents to KB in one click. Routes: `POST /api/setup/analyze`, `POST /api/setup/confirm`. Sidebar entry under "企业管理" section (owner/admin only).
 - **Onboarding Flow:** A multi-step onboarding process for new users to create or join an organization.
 - **Mobile Optimization:** Responsive layouts with adaptations for smaller screens, including specific fixes for GraphChatFloat on iOS.
 

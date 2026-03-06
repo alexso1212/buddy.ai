@@ -3434,6 +3434,98 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
+  // ===================== Smart Setup =====================
+
+  const setupUploadStorage = multer.diskStorage({
+    destination: (_req: any, _file: any, cb: any) => {
+      const dir = 'uploads/setup/';
+      const fsMod = require('fs');
+      if (!fsMod.existsSync(dir)) fsMod.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (_req: any, file: any, cb: any) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+      const ext = pathModule.extname(file.originalname);
+      cb(null, uniqueSuffix + ext);
+    },
+  });
+  const setupUpload = multer({
+    storage: setupUploadStorage,
+    limits: { fileSize: 50 * 1024 * 1024 },
+    fileFilter: (_req: any, file: any, cb: any) => {
+      const allowed = ['.pdf', '.docx', '.txt', '.md', '.zip'];
+      const ext = pathModule.extname(file.originalname).toLowerCase();
+      if (allowed.includes(ext)) cb(null, true);
+      else cb(new Error('不支持的文件格式，仅支持 PDF/DOCX/TXT/MD/ZIP'));
+    },
+  });
+
+  app.post("/api/setup/analyze", authMiddleware, setupUpload.array('files', 20), async (req: any, res) => {
+    try {
+      if (!['owner', 'admin'].includes(req.role)) {
+        return res.status(403).json({ error: "仅管理员可使用智能初始化" });
+      }
+
+      const { analyzeUpload } = await import('./services/setup/setupService');
+      const files = req.files as any[];
+
+      if (!files || files.length === 0) {
+        return res.status(400).json({ error: "请上传至少一个文件" });
+      }
+
+      const isZip = files.length === 1 && pathModule.extname(files[0].originalname).toLowerCase() === '.zip';
+
+      try {
+        const result = isZip
+          ? await analyzeUpload({ zipPath: files[0].path })
+          : await analyzeUpload({
+              files: files.map((f: any) => ({
+                originalName: f.originalname,
+                tempPath: f.path,
+              })),
+            });
+
+        return res.json({ data: result });
+      } catch (analyzeErr) {
+        const fsMod = require('fs');
+        for (const f of files) {
+          try { fsMod.unlinkSync(f.path); } catch {}
+        }
+        throw analyzeErr;
+      }
+    } catch (e: any) {
+      console.error('[Setup] Analyze error:', e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/setup/confirm", authMiddleware, async (req: any, res) => {
+    try {
+      if (!['owner', 'admin'].includes(req.role)) {
+        return res.status(403).json({ error: "仅管理员可使用智能初始化" });
+      }
+
+      const { confirmAndSetup } = await import('./services/setup/setupService');
+      const { profile, extractedFiles } = req.body;
+
+      if (!profile) {
+        return res.status(400).json({ error: "缺少组织信息" });
+      }
+
+      const result = await confirmAndSetup({
+        orgId: req.orgId,
+        userId: req.currentUserId,
+        profile,
+        extractedFiles: extractedFiles || [],
+      });
+
+      return res.json({ data: result });
+    } catch (e: any) {
+      console.error('[Setup] Confirm error:', e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
   // ===================== Knowledge Base =====================
 
   const fsKb = await import('fs');
