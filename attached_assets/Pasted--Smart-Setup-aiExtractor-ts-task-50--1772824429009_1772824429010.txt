@@ -1,0 +1,166 @@
+# Smart Setup 文件过滤优化
+
+> 直接在 aiExtractor.ts 中实现，不需要单独的 task 文件。
+
+-----
+
+## 三阶段漏斗
+
+```
+用户上传 50 个文件
+    ↓
+阶段 0：文件名过滤（免费，毫秒级）
+    跳过：发票扫描件、照片、财务报表明细...
+    剩余：30 个文件
+    ↓
+阶段 1：Haiku 快扫（每个文件 ¥0.003，前 500 字符）
+    返回：相关性评分 1-5 + 包含什么类型的信息
+    只保留评分 ≥ 3 的文件
+    剩余：12 个文件
+    ↓
+阶段 2：Opus 深度分析（只分析精选的 12 个文件）
+    每个文件 8000 字符
+    提取：组织架构 + 岗位 + 人员 + 合同条款
+```
+
+-----
+
+## 阶段 0：文件名规则过滤（零成本）
+
+在 `processZipFile` 或 `analyzeUpload` 的入口处，根据文件名跳过明显无关的文件：
+
+```typescript
+function isLikelyRelevant(fileName: string): boolean {
+  const name = fileName.toLowerCase();
+  
+  // 跳过这些（大概率无关）
+  const skipPatterns = [
+    /发票/, /invoice/,
+    /报销单/, /expense/,
+    /银行流水/, /bank.*statement/,
+    /财务报表/, /financial.*report/,
+    /税/, /tax/,
+    /工资条/, /payroll.*slip/, /salary.*slip/,
+    /水电/, /utility/,
+    /快递/, /物流单/, /shipping/,
+    /会计凭证/, /voucher/,
+    /扫描件/, /scan/,
+    /照片/, /photo/, /img/,
+    /截图/, /screenshot/,
+    /\.xls/, /\.xlsx/, /\.csv/,  // 表格文件通常是数据不是制度
+  ];
+  
+  return !skipPatterns.some(p => p.test(name));
+}
+
+// 在提取文件时过滤
+const relevantFiles = extractedFiles.filter(f => isLikelyRelevant(f.fileName));
+const skippedFiles = extractedFiles.filter(f => !isLikelyRelevant(f.fileName));
+
+if (skippedFiles.length > 0) {
+  console.log(`[Setup] Skipped ${skippedFiles.length} likely-irrelevant files: ${skippedFiles.map(f => f.fileName).join(', ')}`);
+}
+```
+
+被跳过的文件**仍然存入知识库**（走正常的切片管道），只是不送去给 Opus 分析组织架构。知识库是来者不拒的，AI分析才需要过滤。
+
+-----
+
+## 阶段 1：Haiku 快速评分（每个文件 ¥0.003）
+
+把现有的阶段 1（Haiku 文件分类）扩展为同时做相关性评分。
+
+修改 `analyzeFileWithHaiku` 的 prompt，让它额外返回一个 `relevanceScore`：
+
+```typescript
+// 修改 Haiku 的返回格式，新增 relevanceScore
+{
+  "category": "policy/contract/jd/manual/general",
+  "visibility": "org/admin/department",
+  "summary": "一句话概括",
+  "relevanceScore": 4,
+  "relevanceReason": "包含组织架构和岗位描述",
+  "mentionedDepartments": [...],
+  "mentionedRoles": [...],
+  "mentionedNames": [...]
+}
+```
+
+Haiku prompt 中新增：
+
+```
+额外返回：
+- relevanceScore: 1-5 的整数，表示该文件对理解公司组织架构的价值
+  5 = 极高价值（组织架构图、岗位说明书、劳动合同、通讯录）
+  4 = 高价值（员工手册、管理制度、考核标准）
+  3 = 中等价值（工作流程、操作手册、培训资料）
+  2 = 低价值（一般性文档、模板、会议记录）
+  1 = 无价值（发票、报表、纯数据文件）
+- relevanceReason: 一句话说明为什么给这个评分
+- mentionedNames: 文件中提到的人名列表（用于后续人员提取）
+```
+
+**只给 Haiku 看每个文件的前 500 字符**——文件开头通常有标题和目录，足够判断相关性。成本极低：50个文件 × 500字符 ≈ 25,000 tokens ≈ ¥0.15。
+
+-----
+
+## 阶段 1.5：筛选（零成本）
+
+```typescript
+// Haiku 评分完成后，按评分排序，只取高分文件送 Opus
+const scoredFiles = fileAnalyses
+  .map((analysis, i) => ({ ...analysis, file: extractedFiles[i] }))
+  .sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+// 筛选规则
+const highValueFiles = scoredFiles.filter(f => f.relevanceScore >= 3);
+
+// 限制总量：最多 15 个文件送 Opus（防止极端情况）
+const filesToAnalyze = highValueFiles.slice(0, 15);
+
+// 限制总字符：所有文件加起来不超过 80,000 字符
+let totalChars = 0;
+const finalFiles = [];
+for (const f of filesToAnalyze) {
+  const charLimit = 8000;
+  const contentToSend = f.file.content.slice(0, charLimit);
+  if (totalChars + contentToSend.length > 80000) break;
+  totalChars += contentToSend.length;
+  finalFiles.push({ ...f, truncatedContent: contentToSend });
+}
+
+console.log(`[Setup] Filtering: ${extractedFiles.length} total → ${highValueFiles.length} relevant → ${finalFiles.length} sent to Opus (${totalChars} chars)`);
+```
+
+-----
+
+## 阶段 2：Opus 只分析精选文件
+
+把 `synthesizeWithSonnet`（现在改为 `synthesizeWithOpus`）的输入从全部文件改为只用筛选后的文件。
+
+**但 Haiku 的分类结果（所有文件的 category/visibility）仍然全部保留**——这些用于知识库入库时的自动分类。Opus 只负责提取组织架构和人员信息。
+
+-----
+
+## 成本对比
+
+|场景        |不过滤                              |有过滤                             |
+|----------|---------------------------------|--------------------------------|
+|50 个文件    |50 × 8000 = 400K 字符给 Opus ≈ ¥8-15|12 × 8000 = 96K 字符给 Opus ≈ ¥2-4 |
+|100 个文件   |太贵，可能超 context                   |15 × 8000 = 120K 字符给 Opus ≈ ¥3-5|
+|Haiku 评分成本|—                                |50 × 500 = 25K 字符 ≈ ¥0.15       |
+
+**过滤后成本降低 60-80%，且不会因文件多而超 context。**
+
+-----
+
+## 给 Replit 的实现指引
+
+1. 在 `zipProcessor.ts` 的文件提取后加 `isLikelyRelevant` 文件名过滤
+1. 修改 `analyzeFileWithHaiku` 的 prompt 新增 `relevanceScore` + `mentionedNames`
+1. 在阶段 1 和阶段 2 之间加筛选逻辑（评分 ≥ 3，最多 15 个，总量 ≤ 80K 字符）
+1. 阶段 2 用 Opus + 只分析精选文件
+1. 被跳过的文件仍然正常进入知识库（Haiku 的分类结果够用）
+1. 在 Smart Setup 确认页面显示一行提示：「已分析 12/50 个关键文件，其余 38 个文件已导入知识库」
+
+直接实现，不需要单独的 task 文件。和 task-16 一起做掉。
