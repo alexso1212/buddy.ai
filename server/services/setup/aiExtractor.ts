@@ -69,7 +69,7 @@ export interface EnterpriseProfile {
   fileClassifications: FileAnalysis[];
 }
 
-async function analyzeFileWithHaiku(fileName: string, content: string): Promise<FileAnalysis> {
+export async function analyzeFileWithHaiku(fileName: string, content: string): Promise<FileAnalysis> {
   try {
     const response = await aiClient.chat.completions.create({
       model: 'claude-haiku-4-5-20251001',

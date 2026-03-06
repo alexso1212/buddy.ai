@@ -1,6 +1,7 @@
 import { storage } from '../../storage';
 import { extractText } from './extractText';
 import { chunkText } from './chunkText';
+import { analyzeFileWithHaiku } from '../setup/aiExtractor';
 
 export async function processDocument(documentId: number): Promise<void> {
   try {
@@ -87,6 +88,26 @@ export async function processDocument(documentId: number): Promise<void> {
     });
 
     console.log(`[KB] Document ready: ${doc.title} (${chunks.length} chunks)`);
+
+    try {
+      const classification = await analyzeFileWithHaiku(doc.fileName, rawText.slice(0, 500));
+      const updateData: any = {
+        orgRelevance: classification.orgRelevance,
+        kbRelevance: classification.kbRelevance,
+        sensitivity: classification.sensitivity,
+        aiSummary: classification.summary,
+      };
+      if (doc.category === 'general' && classification.category !== 'general') {
+        updateData.category = classification.category;
+      }
+      if (classification.sensitivity === 'high' && doc.visibility !== 'admin') {
+        updateData.visibility = 'admin';
+      }
+      await storage.updateKbDocument(documentId, updateData);
+      console.log(`[KB] AI classified: ${doc.fileName} → ${classification.category} (org:${classification.orgRelevance} kb:${classification.kbRelevance} sensitivity:${classification.sensitivity})`);
+    } catch (classifyErr: any) {
+      console.warn(`[KB] AI classification failed (non-fatal): ${classifyErr.message}`);
+    }
 
   } catch (err: any) {
     console.error(`[KB] Processing error for document ${documentId}:`, err.message);

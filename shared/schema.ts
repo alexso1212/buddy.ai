@@ -881,6 +881,10 @@ export const kbDocuments = pgTable('kb_documents', {
   status: varchar('status', { length: 50 }).notNull().default('pending'),
   chunkCount: integer('chunk_count').notNull().default(0),
   errorMessage: text('error_message'),
+  orgRelevance: integer('org_relevance'),
+  kbRelevance: integer('kb_relevance'),
+  sensitivity: varchar('sensitivity', { length: 20 }),
+  aiSummary: text('ai_summary'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

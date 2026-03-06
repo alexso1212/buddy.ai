@@ -24,7 +24,6 @@ import Artifacts from "@/pages/artifacts";
 import ChatsPage from "@/pages/chats";
 import OnboardingPage from "@/pages/OnboardingPage";
 import KnowledgeBase from "@/pages/knowledge-base";
-import SmartSetup from "@/pages/smart-setup";
 import SettingsPage from "@/components/SettingsPage";
 import { useStreamingConvIds } from "@/stores/chatStreamStore";
 import {
@@ -714,28 +713,6 @@ function Sidebar({
                   >
                     <BookOpen size={16} color="#ECECEC" strokeWidth={1.5} />
                     <span style={{ fontSize: 14, fontWeight: 400, color: '#ECECEC' }}>知识库</span>
-                  </div>
-                </Link>
-              )}
-              {['owner', 'admin'].includes(authUser?.role || '') && (
-                <Link href="/setup" onClick={onClose} style={{ textDecoration: 'none' }}>
-                  <div
-                    className={`sidebar-item sidebar-item-grid ${isActive('/setup') ? 'sidebar-item-active' : ''}`}
-                    style={{
-                      height: 36,
-                      padding: '0 12px',
-                      borderRadius: 10,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      background: isActive('/setup') ? '#000' : 'transparent',
-                      border: '1px solid transparent',
-                      cursor: 'pointer',
-                    }}
-                    data-testid="nav-smart-setup"
-                  >
-                    <Sparkles size={16} color="#ECECEC" strokeWidth={1.5} />
-                    <span style={{ fontSize: 14, fontWeight: 400, color: '#ECECEC' }}>智能初始化</span>
                   </div>
                 </Link>
               )}
@@ -1568,7 +1545,6 @@ function Router() {
             <Route path="/tasks/:id" component={TaskDetail} />
             <Route path="/team" component={Team} />
             <Route path="/knowledge-base" component={KnowledgeBase} />
-            <Route path="/setup" component={SmartSetup} />
             <Route path="/settings" component={Settings} />
             <Route path="/notifications" component={Notifications} />
             <Route path="/artifacts" component={Artifacts} />
