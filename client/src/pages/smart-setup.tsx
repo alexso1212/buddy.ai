@@ -22,7 +22,15 @@ import {
   Sparkles,
   ArrowLeft,
   FolderOpen,
+  UserRoundPlus,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface FileAnalysis {
   fileName: string;
@@ -53,11 +61,25 @@ interface JobRoleItem {
   requiredSkills: string;
 }
 
+interface ExtractedMember {
+  fullName: string;
+  aliases: string[];
+  departmentName: string;
+  jobRoleTitle: string;
+  employeeId: string;
+  phone: string;
+  email: string;
+  title: string;
+  hireDate: string;
+  contractHighlights: string;
+}
+
 interface EnterpriseProfile {
   companyName: string;
   companyDescription: string;
   departments: DeptItem[];
   jobRoles: JobRoleItem[];
+  members: ExtractedMember[];
   fileClassifications: FileAnalysis[];
 }
 
@@ -71,6 +93,7 @@ interface ConfirmResult {
   departmentsCreated: number;
   jobRolesCreated: number;
   documentsCreated: number;
+  membersCreated: number;
 }
 
 type Step = "upload" | "analyzing" | "confirm" | "complete";
@@ -139,6 +162,7 @@ export default function SmartSetupPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/job-roles"] });
       queryClient.invalidateQueries({ queryKey: ["/api/kb/documents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/member-profiles"] });
     },
     onError: (err: any) => {
       toast({ title: "初始化失败", description: err.message, variant: "destructive" });
@@ -257,6 +281,59 @@ export default function SmartSetupPage() {
         { title: "", departmentName: "", responsibilities: "", boundaries: "", requiredSkills: "" },
       ],
     });
+  };
+
+  const updateMember = (idx: number, field: keyof ExtractedMember, value: string | string[]) => {
+    if (!profile) return;
+    const members = [...profile.members];
+    members[idx] = { ...members[idx], [field]: value };
+    setProfile({ ...profile, members });
+  };
+
+  const removeMember = (idx: number) => {
+    if (!profile) return;
+    setProfile({ ...profile, members: profile.members.filter((_, i) => i !== idx) });
+  };
+
+  const addMember = () => {
+    if (!profile) return;
+    setProfile({
+      ...profile,
+      members: [
+        ...profile.members,
+        {
+          fullName: "",
+          aliases: [],
+          departmentName: "",
+          jobRoleTitle: "",
+          employeeId: "",
+          phone: "",
+          email: "",
+          title: "",
+          hireDate: "",
+          contractHighlights: "",
+        },
+      ],
+    });
+  };
+
+  const getAllDeptNames = (): string[] => {
+    if (!profile) return [];
+    const names: string[] = [];
+    for (const dept of profile.departments) {
+      if (dept.name) names.push(dept.name);
+      if (dept.children) {
+        for (const child of dept.children) {
+          if (child.name) names.push(child.name);
+        }
+      }
+    }
+    return names;
+  };
+
+  const getAllRoleTitles = (): string[] => {
+    if (!profile) return [];
+    return profile.jobRoles.map((r) => r.title).filter(Boolean);
   };
 
   const formatFileSize = (bytes: number) => {
@@ -634,6 +711,131 @@ export default function SmartSetupPage() {
               </div>
             </div>
 
+            {/* Members */}
+            <div className="rounded-2xl bg-white dark:bg-[#2D2D2A] border border-[#E8E4DF] dark:border-[#3D3D3A] p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <UserRoundPlus size={18} className="text-[#B4886B]" />
+                  <h3 className="font-medium text-[#2D2D2A] dark:text-[#ECECEC]">
+                    成员档案
+                    <span className="text-xs font-normal text-[#7A7874] ml-2">
+                      ({profile.members.length} 位成员)
+                    </span>
+                  </h3>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={addMember}
+                  className="text-[#B4886B] hover:text-[#A07A5F]"
+                  data-testid="button-add-member"
+                >
+                  <Plus size={14} className="mr-1" />
+                  添加
+                </Button>
+              </div>
+              <div className="space-y-3">
+                {profile.members.map((member, i) => {
+                  const deptNames = getAllDeptNames();
+                  const roleTitles = getAllRoleTitles();
+                  return (
+                    <div
+                      key={i}
+                      className="p-3 rounded-xl bg-[#F5F0EB]/50 dark:bg-[#1A1918]/50 border border-[#E8E4DF] dark:border-[#3D3D3A]"
+                      data-testid={`member-item-${i}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <Input
+                              value={member.fullName}
+                              onChange={(e) => updateMember(i, "fullName", e.target.value)}
+                              placeholder="姓名"
+                              className="rounded-lg text-sm h-8"
+                              data-testid={`input-member-name-${i}`}
+                            />
+                            <Input
+                              value={member.aliases.join(", ")}
+                              onChange={(e) =>
+                                updateMember(
+                                  i,
+                                  "aliases",
+                                  e.target.value.split(",").map((s) => s.trim()).filter(Boolean)
+                                )
+                              }
+                              placeholder="别名（逗号分隔）"
+                              className="rounded-lg text-sm h-8"
+                              data-testid={`input-member-aliases-${i}`}
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Select
+                              value={member.departmentName || "__none__"}
+                              onValueChange={(val) => updateMember(i, "departmentName", val === "__none__" ? "" : val)}
+                            >
+                              <SelectTrigger className="rounded-lg text-sm h-8" data-testid={`select-member-dept-${i}`}>
+                                <SelectValue placeholder="所属部门" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">未指定</SelectItem>
+                                {deptNames.map((dn) => (
+                                  <SelectItem key={dn} value={dn}>
+                                    {dn}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Select
+                              value={member.jobRoleTitle || "__none__"}
+                              onValueChange={(val) => updateMember(i, "jobRoleTitle", val === "__none__" ? "" : val)}
+                            >
+                              <SelectTrigger className="rounded-lg text-sm h-8" data-testid={`select-member-role-${i}`}>
+                                <SelectValue placeholder="岗位" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">未指定</SelectItem>
+                                {roleTitles.map((rt) => (
+                                  <SelectItem key={rt} value={rt}>
+                                    {rt}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Input
+                              value={member.title}
+                              onChange={(e) => updateMember(i, "title", e.target.value)}
+                              placeholder="职位头衔"
+                              className="rounded-lg text-sm h-8"
+                              data-testid={`input-member-title-${i}`}
+                            />
+                            <Input
+                              value={member.hireDate}
+                              onChange={(e) => updateMember(i, "hireDate", e.target.value)}
+                              placeholder="入职日期"
+                              className="rounded-lg text-sm h-8"
+                              data-testid={`input-member-hiredate-${i}`}
+                            />
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => removeMember(i)}
+                          className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-[#7A7874] hover:text-red-500 transition-colors mt-0.5"
+                          data-testid={`button-remove-member-${i}`}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {profile.members.length === 0 && (
+                  <p className="text-sm text-[#7A7874] text-center py-4">未识别到成员信息</p>
+                )}
+              </div>
+            </div>
+
             {/* File Classifications */}
             {profile.fileClassifications.length > 0 && (
               <div className="rounded-2xl bg-white dark:bg-[#2D2D2A] border border-[#E8E4DF] dark:border-[#3D3D3A] p-5">
@@ -713,24 +915,31 @@ export default function SmartSetupPage() {
             <h2 className="text-lg font-medium text-[#2D2D2A] dark:text-[#ECECEC] mb-2">初始化完成！</h2>
             <p className="text-sm text-[#7A7874] dark:text-[#8A8A85] mb-8">以下信息已同步到系统中</p>
 
-            <div className="grid grid-cols-3 gap-4 max-w-lg mx-auto mb-8">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-2xl mx-auto mb-8">
               <div className="p-4 rounded-xl bg-white dark:bg-[#2D2D2A] border border-[#E8E4DF] dark:border-[#3D3D3A]">
                 <Users size={24} className="mx-auto mb-2 text-[#B4886B]" />
-                <p className="text-2xl font-semibold text-[#2D2D2A] dark:text-[#ECECEC]">
+                <p className="text-2xl font-semibold text-[#2D2D2A] dark:text-[#ECECEC]" data-testid="text-depts-created">
                   {result.departmentsCreated}
                 </p>
                 <p className="text-xs text-[#7A7874]">部门已创建</p>
               </div>
               <div className="p-4 rounded-xl bg-white dark:bg-[#2D2D2A] border border-[#E8E4DF] dark:border-[#3D3D3A]">
                 <BookOpen size={24} className="mx-auto mb-2 text-[#B4886B]" />
-                <p className="text-2xl font-semibold text-[#2D2D2A] dark:text-[#ECECEC]">
+                <p className="text-2xl font-semibold text-[#2D2D2A] dark:text-[#ECECEC]" data-testid="text-roles-created">
                   {result.jobRolesCreated}
                 </p>
                 <p className="text-xs text-[#7A7874]">岗位已创建</p>
               </div>
               <div className="p-4 rounded-xl bg-white dark:bg-[#2D2D2A] border border-[#E8E4DF] dark:border-[#3D3D3A]">
+                <UserRoundPlus size={24} className="mx-auto mb-2 text-[#B4886B]" />
+                <p className="text-2xl font-semibold text-[#2D2D2A] dark:text-[#ECECEC]" data-testid="text-members-created">
+                  {result.membersCreated || 0}
+                </p>
+                <p className="text-xs text-[#7A7874]">成员已创建</p>
+              </div>
+              <div className="p-4 rounded-xl bg-white dark:bg-[#2D2D2A] border border-[#E8E4DF] dark:border-[#3D3D3A]">
                 <FileText size={24} className="mx-auto mb-2 text-[#B4886B]" />
-                <p className="text-2xl font-semibold text-[#2D2D2A] dark:text-[#ECECEC]">
+                <p className="text-2xl font-semibold text-[#2D2D2A] dark:text-[#ECECEC]" data-testid="text-docs-created">
                   {result.documentsCreated}
                 </p>
                 <p className="text-xs text-[#7A7874]">文档已入库</p>

@@ -640,8 +640,26 @@ function buildDisplayData(data: Record<string, any>, users: any[], projects: any
   return display;
 }
 
-function formatTeamMembers(users: { id: number; displayName: string; role: string; email: string }[]): string {
-  return users.map(u => `- ID:${u.id} ${u.displayName}（${u.role}）${u.email}`).join('\n');
+interface TeamMemberEntry {
+  id: number;
+  displayName: string;
+  role: string;
+  email: string;
+  idType: 'assigneeId' | 'memberProfileId';
+  aliases?: string[];
+  deptName?: string;
+  jobTitle?: string;
+}
+
+function formatTeamMembers(members: TeamMemberEntry[]): string {
+  return members.map(m => {
+    const aliasStr = m.aliases && m.aliases.length > 0 ? `（${m.aliases.join('/')}）` : '';
+    const deptRole = m.deptName || m.jobTitle
+      ? ` [${m.deptName || '未分配'}·${m.jobTitle || '未分配'}]`
+      : '';
+    const status = m.idType === 'memberProfileId' ? '（待认领）' : '';
+    return `- ${m.displayName}${aliasStr}${deptRole}${status} → 分配任务时用 ${m.idType}: ${m.id}`;
+  }).join('\n');
 }
 
 function formatProjectList(projects: { id: number; name: string; status: string; description?: string | null }[]): string {
@@ -660,13 +678,46 @@ async function loadBusinessContext(orgId?: number) {
   const allTasks = orgId ? allTasksRaw.filter((t: any) => t.orgId === orgId) : allTasksRaw;
   const allDepartments = orgId ? allDepartmentsRaw.filter((d: any) => d.orgId === orgId) : allDepartmentsRaw;
 
+  const pendingProfiles = orgId ? await storage.getPendingProfilesByOrg(orgId) : [];
+
   const jobRoleMap = new Map(allJobRoles.map(r => [r.id, r]));
+  const deptMap = new Map(allDepartments.map((d: any) => [d.id, d]));
   const activeTasks = allTasks.filter(t => t.status !== 'done' && t.status !== 'cancelled');
   const doneTasks = allTasks.filter(t => t.status === 'done');
   const now = new Date();
   const overdueTasks = allTasks.filter(t => t.dueDate && new Date(t.dueDate) < now && t.status !== 'done' && t.status !== 'cancelled');
 
-  return { allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks, doneTasks, overdueTasks };
+  const teamMembers: TeamMemberEntry[] = [
+    ...allUsers.map((u: any) => {
+      const dept = u.deptId ? deptMap.get(u.deptId) : null;
+      const jr = u.jobRoleId ? jobRoleMap.get(u.jobRoleId) : null;
+      return {
+        id: u.id,
+        displayName: u.displayName || u.email,
+        role: u.role || 'member',
+        email: u.email,
+        idType: 'assigneeId' as const,
+        deptName: dept?.name,
+        jobTitle: jr?.title,
+      };
+    }),
+    ...pendingProfiles.map(p => {
+      const dept = p.deptId ? deptMap.get(p.deptId) : null;
+      const jr = p.jobRoleId ? jobRoleMap.get(p.jobRoleId) : null;
+      return {
+        id: p.id,
+        displayName: p.fullName,
+        role: 'pending',
+        email: p.email || '',
+        idType: 'memberProfileId' as const,
+        aliases: (() => { try { return p.aliases ? JSON.parse(p.aliases) : []; } catch { return []; } })(),
+        deptName: dept?.name,
+        jobTitle: jr?.title || p.title || undefined,
+      };
+    }),
+  ];
+
+  return { allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks, doneTasks, overdueTasks, teamMembers, pendingProfiles };
 }
 
 function buildContextBlock(
@@ -677,14 +728,18 @@ function buildContextBlock(
   allTasks: any[],
   doneTasks: any[],
   overdueTasks: any[],
+  teamMembers?: TeamMemberEntry[],
 ): string {
   const modelName = ctx.model || 'claude-sonnet-4-6';
-  const teamFormatted = formatTeamMembers(allUsers.map(u => ({
-    id: u.id,
-    displayName: u.displayName || u.email,
-    role: u.role || 'member',
-    email: u.email,
-  })));
+  const teamFormatted = teamMembers
+    ? formatTeamMembers(teamMembers)
+    : formatTeamMembers(allUsers.map((u: any) => ({
+        id: u.id,
+        displayName: u.displayName || u.email,
+        role: u.role || 'member',
+        email: u.email,
+        idType: 'assigneeId' as const,
+      })));
   const projectsFormatted = formatProjectList(allProjects);
   const tasksFormatted = formatTaskList(activeTasks, allUsers, ctx.currentUserId);
   const orgDisplayName = ctx.orgName || '当前组织';
@@ -716,7 +771,7 @@ export async function buildContextualSystemPrompt(
   mode: 'streaming' | 'json' = 'streaming'
 ): Promise<{ prompt: string; allUsers: any[]; allProjects: any[]; allTasks: any[]; allDepartments: any[]; allJobRoles: any[]; jobRoleMap: Map<number, any>; activeTasks: any[] }> {
   const orgId = context.orgId || 1;
-  const { allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks, doneTasks, overdueTasks } = await loadBusinessContext(orgId);
+  const { allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks, doneTasks, overdueTasks, teamMembers } = await loadBusinessContext(orgId);
   const memories = await storage.getUserMemories(context.currentUserId, orgId);
 
   let orgName = '当前组织';
@@ -726,7 +781,7 @@ export async function buildContextualSystemPrompt(
   } catch {}
 
   const contextWithOrg = { ...context, orgName };
-  const contextBlock = buildContextBlock(contextWithOrg, allUsers, allProjects, activeTasks, allTasks, doneTasks, overdueTasks);
+  const contextBlock = buildContextBlock(contextWithOrg, allUsers, allProjects, activeTasks, allTasks, doneTasks, overdueTasks, teamMembers);
   const modelName = context.model || 'claude-sonnet-4-6';
 
   let prompt: string;
@@ -825,12 +880,7 @@ ${contextBlock}
       .replace('{{currentUserId}}', String(context.currentUserId))
       .replace('{{currentUserName}}', context.currentUserName)
       .replace('{{currentTime}}', new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }))
-      .replace('{{teamMembers}}', formatTeamMembers(allUsers.map(u => ({
-        id: u.id,
-        displayName: u.displayName || u.email,
-        role: u.role || 'member',
-        email: u.email,
-      }))))
+      .replace('{{teamMembers}}', formatTeamMembers(teamMembers))
       .replace('{{projectList}}', formatProjectList(allProjects))
       .replace('{{taskList}}', formatTaskList(activeTasks, allUsers))
       .replace('{{totalTasks}}', String(allTasks.length))

@@ -716,6 +716,31 @@ export async function registerRoutes(server: Server, app: Express) {
         });
 
         await storage.cancelOtherPendingJoinRequests(joinRequest.userId, orgId, requestId);
+
+        const newUser = await storage.getUserById(joinRequest.userId);
+        if (newUser) {
+          const pendingProfiles = await storage.getPendingProfilesByOrg(orgId);
+          let suggestedProfile = null;
+          for (const profile of pendingProfiles) {
+            if (profile.email && newUser.email && profile.email.toLowerCase() === newUser.email.toLowerCase()) {
+              suggestedProfile = profile;
+              break;
+            }
+            if (profile.fullName === newUser.displayName) {
+              suggestedProfile = profile;
+              break;
+            }
+            let aliases: string[] = [];
+            try { aliases = profile.aliases ? JSON.parse(profile.aliases) : []; } catch {}
+            if (aliases.some((alias: string) => alias.toLowerCase() === newUser.displayName.toLowerCase())) {
+              suggestedProfile = profile;
+              break;
+            }
+          }
+          if (suggestedProfile) {
+            return res.json({ data: { ...updated, suggestedProfile } });
+          }
+        }
       }
 
       res.json({ data: updated });
@@ -3524,6 +3549,253 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     } catch (e: any) {
       console.error('[Setup] Confirm error:', e);
       return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== Member Profiles =====================
+
+  app.get("/api/member-profiles", authMiddleware, async (req: any, res) => {
+    try {
+      const profiles = await storage.getMemberProfilesByOrg(req.orgId);
+      res.json({ data: profiles });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/member-profiles", authMiddleware, async (req: any, res) => {
+    try {
+      if (!['owner', 'admin'].includes(req.userRole)) {
+        return res.status(403).json({ error: "仅管理员可创建成员档案" });
+      }
+      const { fullName, aliases, deptId, jobRoleId, employeeId, phone, email, title, hireDate, contractInfo } = req.body;
+      if (!fullName) return res.status(400).json({ error: "姓名不能为空" });
+
+      const profile = await storage.createMemberProfile({
+        orgId: req.orgId,
+        fullName,
+        aliases: aliases ? (typeof aliases === 'string' ? aliases : JSON.stringify(aliases)) : null,
+        deptId: deptId || null,
+        jobRoleId: jobRoleId || null,
+        employeeId: employeeId || null,
+        phone: phone || null,
+        email: email || null,
+        title: title || null,
+        hireDate: hireDate || null,
+        contractInfo: contractInfo || null,
+        status: 'manual',
+        sourceDocument: null,
+      });
+      res.json({ data: profile });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/member-profiles/:id", authMiddleware, async (req: any, res) => {
+    try {
+      if (!['owner', 'admin'].includes(req.userRole)) {
+        return res.status(403).json({ error: "仅管理员可修改成员档案" });
+      }
+      const profileId = Number(req.params.id);
+      const existing = await storage.getMemberProfileById(profileId);
+      if (!existing || existing.orgId !== req.orgId) {
+        return res.status(404).json({ error: "档案不存在" });
+      }
+      const updateData: any = {};
+      const allowedFields = ['fullName', 'aliases', 'deptId', 'jobRoleId', 'employeeId', 'phone', 'email', 'title', 'hireDate', 'contractInfo'];
+      for (const field of allowedFields) {
+        if (req.body[field] !== undefined) {
+          if (field === 'aliases' && Array.isArray(req.body[field])) {
+            updateData[field] = JSON.stringify(req.body[field]);
+          } else {
+            updateData[field] = req.body[field];
+          }
+        }
+      }
+      const updated = await storage.updateMemberProfile(profileId, updateData);
+      res.json({ data: updated });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/member-profiles/:id", authMiddleware, async (req: any, res) => {
+    try {
+      if (!['owner', 'admin'].includes(req.userRole)) {
+        return res.status(403).json({ error: "仅管理员可删除成员档案" });
+      }
+      const profileId = Number(req.params.id);
+      const existing = await storage.getMemberProfileById(profileId);
+      if (!existing || existing.orgId !== req.orgId) {
+        return res.status(404).json({ error: "档案不存在" });
+      }
+      await storage.deleteMemberProfile(profileId);
+      res.json({ data: { success: true } });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/member-profiles/match", authMiddleware, async (req: any, res) => {
+    try {
+      const profiles = await storage.getPendingProfilesByOrg(req.orgId);
+      const user = await storage.getUserById(req.currentUserId);
+      if (!user) return res.json({ data: null });
+
+      let matched = null;
+      for (const profile of profiles) {
+        if (profile.email && user.email && profile.email.toLowerCase() === user.email.toLowerCase()) {
+          matched = profile;
+          break;
+        }
+        if (profile.fullName === user.displayName) {
+          matched = profile;
+          break;
+        }
+        let aliases: string[] = [];
+        try { aliases = profile.aliases ? JSON.parse(profile.aliases) : []; } catch {}
+        if (aliases.some((alias: string) => alias.toLowerCase() === user.displayName.toLowerCase())) {
+          matched = profile;
+          break;
+        }
+      }
+
+      if (matched) {
+        const taskCount = await storage.getTaskCountByMemberProfile(matched.id);
+        res.json({ data: { ...matched, pendingTaskCount: taskCount } });
+      } else {
+        res.json({ data: null });
+      }
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/member-profiles/:id/claim", authMiddleware, async (req: any, res) => {
+    try {
+      const profileId = Number(req.params.id);
+      const profile = await storage.getMemberProfileById(profileId);
+      if (!profile || profile.orgId !== req.orgId) {
+        return res.status(404).json({ error: "档案不存在" });
+      }
+      if (profile.status === 'claimed') {
+        return res.status(400).json({ error: "该档案已被认领" });
+      }
+
+      const userId = req.currentUserId;
+
+      const existingClaim = await storage.getMemberProfilesByOrg(req.orgId);
+      const alreadyBound = existingClaim.find(p => p.userId === userId && p.status === 'claimed');
+      if (alreadyBound) {
+        return res.status(400).json({ error: "你已经认领了另一个档案" });
+      }
+
+      const user = await storage.getUserById(userId);
+      if (!user) return res.status(404).json({ error: "用户不存在" });
+
+      let isMatch = false;
+      if (profile.email && user.email && profile.email.toLowerCase() === user.email.toLowerCase()) isMatch = true;
+      if (profile.fullName === user.displayName) isMatch = true;
+      let aliases: string[] = [];
+      try { aliases = profile.aliases ? JSON.parse(profile.aliases) : []; } catch {}
+      if (aliases.some((a: string) => a.toLowerCase() === user.displayName.toLowerCase())) isMatch = true;
+      if (!isMatch) {
+        return res.status(403).json({ error: "该档案与你的信息不匹配，请联系管理员绑定" });
+      }
+
+      await storage.updateUser(userId, {
+        deptId: profile.deptId,
+        jobRoleId: profile.jobRoleId,
+      } as any);
+
+      await storage.updateOrgMembership(req.orgId, userId, {
+        deptId: profile.deptId,
+        jobRoleId: profile.jobRoleId,
+      });
+
+      const migratedCount = await storage.migrateTasksFromProfile(profileId, userId);
+
+      await storage.updateMemberProfile(profileId, {
+        status: 'claimed',
+        userId,
+        claimedAt: new Date(),
+      } as any);
+
+      await storage.createActivityLog({
+        orgId: req.orgId,
+        userId,
+        entityType: 'member_profile',
+        entityId: profileId,
+        action: 'claim',
+        changes: JSON.stringify({ profileName: profile.fullName, userId, migratedTasks: migratedCount }),
+        source: 'user',
+      });
+
+      res.json({ data: { success: true, migratedTasks: migratedCount, profile } });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/member-profiles/:id/bind/:userId", authMiddleware, async (req: any, res) => {
+    try {
+      if (!['owner', 'admin'].includes(req.userRole)) {
+        return res.status(403).json({ error: "仅管理员可手动绑定" });
+      }
+      const profileId = Number(req.params.id);
+      const targetUserId = Number(req.params.userId);
+
+      const profile = await storage.getMemberProfileById(profileId);
+      if (!profile || profile.orgId !== req.orgId) {
+        return res.status(404).json({ error: "档案不存在" });
+      }
+      if (profile.status === 'claimed') {
+        return res.status(400).json({ error: "该档案已被认领" });
+      }
+
+      const targetUser = await storage.getUserById(targetUserId);
+      if (!targetUser) {
+        return res.status(404).json({ error: "目标用户不存在" });
+      }
+
+      const allProfiles = await storage.getMemberProfilesByOrg(req.orgId);
+      const alreadyBound = allProfiles.find(p => p.userId === targetUserId && p.status === 'claimed');
+      if (alreadyBound) {
+        return res.status(400).json({ error: "该用户已绑定了另一个档案" });
+      }
+
+      await storage.updateUser(targetUserId, {
+        deptId: profile.deptId,
+        jobRoleId: profile.jobRoleId,
+      } as any);
+
+      await storage.updateOrgMembership(req.orgId, targetUserId, {
+        deptId: profile.deptId,
+        jobRoleId: profile.jobRoleId,
+      });
+
+      const migratedCount = await storage.migrateTasksFromProfile(profileId, targetUserId);
+
+      await storage.updateMemberProfile(profileId, {
+        status: 'claimed',
+        userId: targetUserId,
+        claimedAt: new Date(),
+      } as any);
+
+      await storage.createActivityLog({
+        orgId: req.orgId,
+        userId: req.currentUserId,
+        entityType: 'member_profile',
+        entityId: profileId,
+        action: 'bind',
+        changes: JSON.stringify({ profileName: profile.fullName, targetUserId, migratedTasks: migratedCount }),
+        source: 'user',
+      });
+
+      res.json({ data: { success: true, migratedTasks: migratedCount, profile } });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 

@@ -9,13 +9,24 @@ export async function executeAction(
 ): Promise<{ success: boolean; message: string; entity?: any; duplicateWarning?: string }> {
   switch (actionType) {
     case 'create_task': {
-      const duplicate = await storage.checkDuplicateTask(orgId, data.title, data.assigneeId);
+      const duplicate = await storage.checkDuplicateTask(orgId, data.title, data.assigneeId, data.memberProfileId);
       let duplicateWarning: string | undefined;
       if (duplicate) {
         duplicateWarning = `系统中已存在类似任务「${duplicate.title}」(#${duplicate.id})，创建于 ${new Date(duplicate.createdAt).toLocaleString('zh-CN')}`;
       }
 
       const hasWarnings = Array.isArray(data.warnings) && data.warnings.length > 0;
+      let assigneeId = data.assigneeId || userId;
+      let memberProfileId = null;
+      if (data.memberProfileId) {
+        const profile = await storage.getMemberProfileById(data.memberProfileId);
+        if (!profile || profile.orgId !== orgId) {
+          return { success: false, message: `成员档案 #${data.memberProfileId} 不存在或不属于当前组织` };
+        }
+        memberProfileId = data.memberProfileId;
+        assigneeId = null;
+      }
+
       const taskData = {
         orgId,
         projectId: data.projectId,
@@ -25,7 +36,8 @@ export async function executeAction(
         status: data.status || 'todo',
         priority: data.priority || 'medium',
         creatorId: userId,
-        assigneeId: data.assigneeId || userId,
+        assigneeId,
+        memberProfileId,
         dueDate: data.dueDate ? new Date(data.dueDate) : null,
         weight: data.weight || 3,
         progress: 0,
@@ -73,7 +85,17 @@ export async function executeAction(
       if (updateFields.title) updateData.title = updateFields.title;
       if (updateFields.status) updateData.status = updateFields.status;
       if (updateFields.priority) updateData.priority = updateFields.priority;
-      if (updateFields.assigneeId) updateData.assigneeId = updateFields.assigneeId;
+      if (updateFields.memberProfileId) {
+        const mp = await storage.getMemberProfileById(updateFields.memberProfileId);
+        if (!mp || mp.orgId !== orgId) {
+          return { success: false, message: `成员档案 #${updateFields.memberProfileId} 不存在或不属于当前组织` };
+        }
+        updateData.memberProfileId = updateFields.memberProfileId;
+        updateData.assigneeId = null;
+      } else if (updateFields.assigneeId) {
+        updateData.assigneeId = updateFields.assigneeId;
+        updateData.memberProfileId = null;
+      }
       if (updateFields.dueDate) updateData.dueDate = new Date(updateFields.dueDate);
       if (updateFields.weight) updateData.weight = updateFields.weight;
       if (updateFields.progress !== undefined) updateData.progress = updateFields.progress;
@@ -337,12 +359,22 @@ export async function executeBatchActions(
 
     for (let i = 0; i < createTaskActions.length; i++) {
       const data = createTaskActions[i].data;
-      const duplicate = await storage.checkDuplicateTask(orgId, data.title, data.assigneeId);
+      const duplicate = await storage.checkDuplicateTask(orgId, data.title, data.assigneeId, data.memberProfileId);
       if (duplicate) {
         duplicateWarnings.set(i, `系统中已存在类似任务「${duplicate.title}」(#${duplicate.id})`);
       }
 
       const hasWarnings = Array.isArray(data.warnings) && data.warnings.length > 0;
+      let batchAssigneeId = data.assigneeId || userId;
+      let batchMemberProfileId = null;
+      if (data.memberProfileId) {
+        const mp = await storage.getMemberProfileById(data.memberProfileId);
+        if (mp && mp.orgId === orgId) {
+          batchMemberProfileId = data.memberProfileId;
+          batchAssigneeId = null;
+        }
+      }
+
       taskItems.push({
         data: {
           orgId,
@@ -353,7 +385,8 @@ export async function executeBatchActions(
           status: data.status || 'todo',
           priority: data.priority || 'medium',
           creatorId: userId,
-          assigneeId: data.assigneeId || userId,
+          assigneeId: batchAssigneeId,
+          memberProfileId: batchMemberProfileId,
           dueDate: data.dueDate ? new Date(data.dueDate) : null,
           weight: data.weight || 3,
           progress: 0,

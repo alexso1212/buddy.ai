@@ -45,11 +45,13 @@ export async function confirmAndSetup(params: {
   updatedOrg: boolean;
   departmentsCreated: number;
   jobRolesCreated: number;
+  membersCreated: number;
   documentsCreated: number;
 }> {
   const { orgId, userId, profile, extractedFiles } = params;
   let departmentsCreated = 0;
   let jobRolesCreated = 0;
+  let membersCreated = 0;
   let documentsCreated = 0;
   let updatedOrg = false;
 
@@ -121,6 +123,41 @@ export async function confirmAndSetup(params: {
 
   console.log(`[Setup] Created ${jobRolesCreated} job roles`);
 
+  const roleNameToId: Record<string, number> = {};
+  const allJobRoles = await storage.getJobRolesByOrg(orgId);
+  for (const jr of allJobRoles) {
+    roleNameToId[jr.title] = jr.id;
+  }
+
+  if (profile.members && profile.members.length > 0) {
+    for (const member of profile.members) {
+      if (!member.fullName) continue;
+      try {
+        const deptId = deptNameToId[member.departmentName] || null;
+        const jobRoleId = roleNameToId[member.jobRoleTitle] || null;
+        await storage.createMemberProfile({
+          orgId,
+          fullName: member.fullName,
+          aliases: member.aliases && member.aliases.length > 0 ? JSON.stringify(member.aliases) : null,
+          deptId,
+          jobRoleId,
+          employeeId: member.employeeId || null,
+          phone: member.phone || null,
+          email: member.email || null,
+          title: member.title || null,
+          hireDate: member.hireDate || null,
+          contractInfo: member.contractHighlights || null,
+          status: 'pending',
+          sourceDocument: null,
+        });
+        membersCreated++;
+      } catch (err: any) {
+        console.warn(`[Setup] Failed to create member profile ${member.fullName}:`, err.message);
+      }
+    }
+    console.log(`[Setup] Created ${membersCreated} member profiles`);
+  }
+
   for (const file of extractedFiles) {
     try {
       const classification = profile.fileClassifications.find(
@@ -184,11 +221,12 @@ export async function confirmAndSetup(params: {
     changes: JSON.stringify({
       departmentsCreated,
       jobRolesCreated,
+      membersCreated,
       documentsCreated,
       companyName: profile.companyName,
     }),
     source: 'ai',
   });
 
-  return { updatedOrg, departmentsCreated, jobRolesCreated, documentsCreated };
+  return { updatedOrg, departmentsCreated, jobRolesCreated, membersCreated, documentsCreated };
 }

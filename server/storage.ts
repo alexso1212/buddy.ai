@@ -58,6 +58,9 @@ import {
   type Invitation,
   type InsertInvitation,
   organizationJoinRequests,
+  memberProfiles,
+  type MemberProfile,
+  type InsertMemberProfile,
   type OrganizationJoinRequest,
   type InsertOrganizationJoinRequest,
   taskDeliverables,
@@ -291,7 +294,7 @@ export class DatabaseStorage {
     });
   }
 
-  async checkDuplicateTask(orgId: number, title: string, assigneeId?: number): Promise<Task | null> {
+  async checkDuplicateTask(orgId: number, title: string, assigneeId?: number | null, memberProfileId?: number | null): Promise<Task | null> {
     const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
     const conditions = [
       eq(tasks.orgId, orgId),
@@ -300,6 +303,8 @@ export class DatabaseStorage {
     ];
     if (assigneeId) {
       conditions.push(eq(tasks.assigneeId, assigneeId));
+    } else if (memberProfileId) {
+      conditions.push(eq(tasks.memberProfileId, memberProfileId));
     }
     const [result] = await db.select().from(tasks).where(and(...conditions)).limit(1);
     return result ?? null;
@@ -1055,6 +1060,60 @@ export class DatabaseStorage {
     await db.delete(briefings).where(
       and(eq(briefings.orgId, orgId), eq(briefings.userId, userId), eq(briefings.date, date))
     );
+  }
+
+  // ===================== Member Profiles =====================
+
+  async createMemberProfile(data: InsertMemberProfile): Promise<MemberProfile> {
+    const [result] = await db.insert(memberProfiles).values(data).returning();
+    return result;
+  }
+
+  async getMemberProfilesByOrg(orgId: number): Promise<MemberProfile[]> {
+    return db.select().from(memberProfiles).where(eq(memberProfiles.orgId, orgId));
+  }
+
+  async getPendingProfilesByOrg(orgId: number): Promise<MemberProfile[]> {
+    return db.select().from(memberProfiles).where(
+      and(eq(memberProfiles.orgId, orgId), or(eq(memberProfiles.status, 'pending'), eq(memberProfiles.status, 'manual')))
+    );
+  }
+
+  async getMemberProfileById(id: number): Promise<MemberProfile | undefined> {
+    const [result] = await db.select().from(memberProfiles).where(eq(memberProfiles.id, id));
+    return result;
+  }
+
+  async updateMemberProfile(id: number, data: Partial<InsertMemberProfile>): Promise<MemberProfile | undefined> {
+    const [result] = await db.update(memberProfiles).set({ ...data, updatedAt: new Date() }).where(eq(memberProfiles.id, id)).returning();
+    return result;
+  }
+
+  async deleteMemberProfile(id: number): Promise<void> {
+    await db.delete(memberProfiles).where(eq(memberProfiles.id, id));
+  }
+
+  async migrateTasksFromProfile(profileId: number, userId: number): Promise<number> {
+    const result = await db.update(tasks)
+      .set({ assigneeId: userId, memberProfileId: null })
+      .where(eq(tasks.memberProfileId, profileId))
+      .returning();
+    return result.length;
+  }
+
+  async updateOrgMembership(orgId: number, userId: number, data: { deptId?: number | null; jobRoleId?: number | null; role?: string }): Promise<OrgMembership | undefined> {
+    const [result] = await db.update(orgMemberships)
+      .set(data)
+      .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.userId, userId)))
+      .returning();
+    return result;
+  }
+
+  async getTaskCountByMemberProfile(profileId: number): Promise<number> {
+    const result = await db.select({ count: sql<number>`count(*)::int` })
+      .from(tasks)
+      .where(eq(tasks.memberProfileId, profileId));
+    return result[0]?.count ?? 0;
   }
 }
 

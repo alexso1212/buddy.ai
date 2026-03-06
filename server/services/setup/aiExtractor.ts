@@ -22,6 +22,19 @@ export interface FileAnalysis {
   mentionedRoles: string[];
 }
 
+export interface ExtractedMember {
+  fullName: string;
+  aliases: string[];
+  departmentName: string;
+  jobRoleTitle: string;
+  employeeId: string;
+  phone: string;
+  email: string;
+  title: string;
+  hireDate: string;
+  contractHighlights: string;
+}
+
 export interface EnterpriseProfile {
   companyName: string;
   companyDescription: string;
@@ -37,6 +50,7 @@ export interface EnterpriseProfile {
     boundaries: string;
     requiredSkills: string;
   }[];
+  members: ExtractedMember[];
   fileClassifications: FileAnalysis[];
 }
 
@@ -114,7 +128,7 @@ async function synthesizeWithSonnet(fileAnalyses: FileAnalysis[], fileContents: 
   const keyContents = fileContents
     .filter(f => {
       const analysis = fileAnalyses.find(a => a.fileName === f.fileName);
-      return analysis && ['jd', 'policy'].includes(analysis.category);
+      return analysis && ['jd', 'policy', 'contract'].includes(analysis.category);
     })
     .slice(0, 5)
     .map(f => `### ${f.fileName}\n${f.content.slice(0, 3000)}`)
@@ -151,6 +165,20 @@ async function synthesizeWithSonnet(fileAnalyses: FileAnalysis[], fileContents: 
       "boundaries": "不负责的事项（没有就填空）",
       "requiredSkills": "技能要求（没有就填空）"
     }
+  ],
+  "members": [
+    {
+      "fullName": "员工正式姓名（必填）",
+      "aliases": ["该员工的其他称呼：英文名、小名、昵称、职位简称等"],
+      "departmentName": "所属部门（和departments中的name对应）",
+      "jobRoleTitle": "岗位名称（和jobRoles中的title对应）",
+      "employeeId": "工号（如果有）",
+      "phone": "手机号（如果有）",
+      "email": "邮箱（如果有）",
+      "title": "职位头衔",
+      "hireDate": "入职日期（如果有）",
+      "contractHighlights": "合同关键条款摘要（如果是从合同中提取的）"
+    }
   ]
 }
 
@@ -159,7 +187,15 @@ async function synthesizeWithSonnet(fileAnalyses: FileAnalysis[], fileContents: 
 - 去重：多个文件提到同一个部门只列一次
 - 识别层级关系（如"大客户组"隶属于"销售部"放在children里）
 - 如果找不到某项信息，对应字段填空字符串或空数组
-- departments 和 jobRoles 数组如果完全没有信息就返回空数组`
+- departments、jobRoles、members 数组如果完全没有信息就返回空数组
+
+人员提取规则：
+- 从组织架构图、通讯录、劳动合同、签名栏等位置识别人员
+- aliases 很重要——收集文件中出现的该人的所有不同称呼
+- 如果同一个人在多份文件中出现，合并信息（用最完整的版本）
+- 不要提取客户、供应商等外部人员，只提取公司内部员工
+- 如果文件中有明确的汇报关系（如"向XX汇报"），记录在该人的 contractHighlights 中
+- 不要提取薪资等敏感信息，只提取职责相关的条款`
         },
         {
           role: 'user',
@@ -180,11 +216,25 @@ ${keyContents || '（无关键文件内容）'}
     const cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
     const parsed = JSON.parse(cleaned);
 
+    const members = (parsed.members || []).map((m: any) => ({
+      fullName: m.fullName || '',
+      aliases: Array.isArray(m.aliases) ? m.aliases : [],
+      departmentName: m.departmentName || '',
+      jobRoleTitle: m.jobRoleTitle || '',
+      employeeId: m.employeeId || '',
+      phone: m.phone || '',
+      email: m.email || '',
+      title: m.title || '',
+      hireDate: m.hireDate || '',
+      contractHighlights: m.contractHighlights || '',
+    }));
+
     return {
       companyName: parsed.companyName || '',
       companyDescription: parsed.companyDescription || '',
       departments: parsed.departments || [],
       jobRoles: parsed.jobRoles || [],
+      members,
       fileClassifications: fileAnalyses,
     };
   } catch (err: any) {
@@ -194,6 +244,7 @@ ${keyContents || '（无关键文件内容）'}
       companyDescription: '',
       departments: [],
       jobRoles: [],
+      members: [],
       fileClassifications: fileAnalyses,
     };
   }

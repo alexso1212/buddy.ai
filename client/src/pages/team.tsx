@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { User, Department, JobRole } from "@shared/schema";
+import type { User, Department, JobRole, MemberProfile } from "@shared/schema";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,7 +36,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
-import { Plus, Pencil, Trash2, X, Check, Copy, RefreshCw, Inbox, ChevronDown, Clock, Users, ListChecks, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, Copy, RefreshCw, Inbox, ChevronDown, Clock, Users, ListChecks, CheckCircle2, AlertTriangle, Link2, UserCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { DeptStatsMap, DeptStats, UserStatsMap } from "@/components/org/types";
 import { getCompletionRate } from "@/components/org/types";
@@ -153,6 +153,7 @@ export default function Team() {
             showAddUser={showAddUser}
             setShowAddUser={setShowAddUser}
             toast={toast}
+            isAdminOrOwner={!!isAdminOrOwner}
           />
         </TabsContent>
 
@@ -206,6 +207,7 @@ function MembersTab({
   showAddUser,
   setShowAddUser,
   toast,
+  isAdminOrOwner,
 }: {
   users: User[];
   departments: Department[];
@@ -216,11 +218,25 @@ function MembersTab({
   showAddUser: boolean;
   setShowAddUser: (v: boolean) => void;
   toast: ReturnType<typeof useToast>["toast"];
+  isAdminOrOwner: boolean;
 }) {
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
   const [deptId, setDeptId] = useState<string>("");
+  const [bindTarget, setBindTarget] = useState<MemberProfile | null>(null);
+  const [bindUserId, setBindUserId] = useState<string>("");
+
+  const { data: profilesData, isLoading: profilesLoading } = useQuery<{ data: MemberProfile[] }>({
+    queryKey: ["/api/member-profiles"],
+  });
+
+  const profiles = profilesData?.data ?? [];
+  const pendingProfiles = profiles.filter(p => p.status === "pending" || p.status === "manual");
+  const claimedProfiles = profiles.filter(p => p.status === "claimed");
+  const claimedUserIds = new Set(claimedProfiles.map(p => p.userId).filter(Boolean));
+
+  const unboundUsers = users.filter(u => !claimedUserIds.has(u.id));
 
   const addUserMutation = useMutation({
     mutationFn: async () => {
@@ -247,10 +263,57 @@ function MembersTab({
     },
   });
 
+  const bindMutation = useMutation({
+    mutationFn: async ({ profileId, userId }: { profileId: number; userId: number }) => {
+      await apiRequest("POST", `/api/member-profiles/${profileId}/bind/${userId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/member-profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setBindTarget(null);
+      setBindUserId("");
+      toast({ title: "档案已绑定" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "绑定失败", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteProfileMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/member-profiles/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/member-profiles"] });
+      toast({ title: "档案已删除" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "删除失败", description: err.message, variant: "destructive" });
+    },
+  });
+
+  function parseAliases(aliases: string | null | undefined): string[] {
+    if (!aliases) return [];
+    try { return JSON.parse(aliases); } catch { return aliases ? [aliases] : []; }
+  }
+
+  function getStatusBadge(status: string) {
+    switch (status) {
+      case "pending":
+        return <Badge variant="outline" className="text-xs" data-testid="badge-pending">待认领</Badge>;
+      case "manual":
+        return <Badge variant="secondary" className="text-xs" data-testid="badge-manual">手动创建</Badge>;
+      case "claimed":
+        return <Badge variant="default" className="text-xs" data-testid="badge-claimed">已认领</Badge>;
+      default:
+        return <Badge variant="outline" className="text-xs">{status}</Badge>;
+    }
+  }
+
   return (
     <>
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">成员列表</h2>
+        <h2 className="text-lg font-semibold" data-testid="section-registered-members">已注册成员</h2>
         <Button onClick={() => setShowAddUser(true)} data-testid="btn-add-user">
           <Plus className="w-4 h-4 mr-1" />
           添加成员
@@ -266,7 +329,6 @@ function MembersTab({
           </div>
         ) : (
           <>
-            {/* Desktop Table */}
             <div className="hidden md:block">
               <Table data-testid="user-table">
                 <TableHeader>
@@ -326,7 +388,6 @@ function MembersTab({
               </Table>
             </div>
 
-            {/* Mobile Card List */}
             <div className="md:hidden">
               {users.length === 0 ? (
                 <div className="p-4 text-center text-muted-foreground">暂无成员</div>
@@ -387,6 +448,138 @@ function MembersTab({
           </>
         )}
       </Card>
+
+      {pendingProfiles.length > 0 && (
+        <>
+          <div className="flex items-center justify-between gap-2 mt-6">
+            <h2 className="text-lg font-semibold" data-testid="section-pending-profiles">
+              待认领档案
+              <Badge variant="secondary" className="ml-2 text-xs">{pendingProfiles.length}</Badge>
+            </h2>
+          </div>
+
+          <div className="hidden md:block">
+            <Card>
+              <Table data-testid="pending-profiles-table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>姓名</TableHead>
+                    <TableHead>别名</TableHead>
+                    <TableHead>部门</TableHead>
+                    <TableHead>岗位</TableHead>
+                    <TableHead>状态</TableHead>
+                    <TableHead>来源</TableHead>
+                    {isAdminOrOwner && <TableHead>操作</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pendingProfiles.map((profile) => {
+                    const aliases = parseAliases(profile.aliases);
+                    return (
+                      <TableRow key={profile.id} data-testid={`profile-row-${profile.id}`}>
+                        <TableCell className="font-medium">{profile.fullName}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-1 flex-wrap">
+                            {aliases.map((a, i) => (
+                              <Badge key={i} variant="outline" className="text-xs">{a}</Badge>
+                            ))}
+                            {aliases.length === 0 && <span className="text-muted-foreground">-</span>}
+                          </div>
+                        </TableCell>
+                        <TableCell>{profile.deptId ? deptMap.get(profile.deptId)?.name ?? "-" : "-"}</TableCell>
+                        <TableCell>{profile.jobRoleId ? jobRoleMap.get(profile.jobRoleId)?.title ?? "-" : "-"}</TableCell>
+                        <TableCell>{getStatusBadge(profile.status)}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          {profile.sourceDocument ? "AI提取" : "手动"}
+                        </TableCell>
+                        {isAdminOrOwner && (
+                          <TableCell>
+                            <div className="flex gap-1">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => { setBindTarget(profile); setBindUserId(""); }}
+                                data-testid={`btn-bind-profile-${profile.id}`}
+                              >
+                                <Link2 className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => {
+                                  if (window.confirm(`确定删除档案「${profile.fullName}」吗？`)) {
+                                    deleteProfileMutation.mutate(profile.id);
+                                  }
+                                }}
+                                data-testid={`btn-delete-profile-${profile.id}`}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </Card>
+          </div>
+
+          <div className="md:hidden space-y-2">
+            {pendingProfiles.map((profile) => {
+              const aliases = parseAliases(profile.aliases);
+              return (
+                <Card key={profile.id} className="p-4" data-testid={`profile-card-${profile.id}`}>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="font-medium truncate min-w-0">{profile.fullName}</span>
+                    {getStatusBadge(profile.status)}
+                  </div>
+                  {aliases.length > 0 && (
+                    <div className="flex gap-1 flex-wrap mb-2">
+                      {aliases.map((a, i) => (
+                        <Badge key={i} variant="outline" className="text-xs">{a}</Badge>
+                      ))}
+                    </div>
+                  )}
+                  <div className="text-sm text-muted-foreground mb-1">
+                    {profile.deptId ? deptMap.get(profile.deptId)?.name ?? "-" : "-"}
+                  </div>
+                  <div className="text-xs text-muted-foreground mb-3">
+                    {profile.jobRoleId ? jobRoleMap.get(profile.jobRoleId)?.title ?? "-" : "-"}
+                  </div>
+                  {isAdminOrOwner && (
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => { setBindTarget(profile); setBindUserId(""); }}
+                        data-testid={`btn-bind-profile-mobile-${profile.id}`}
+                      >
+                        <Link2 className="w-4 h-4 mr-1" />
+                        绑定
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          if (window.confirm(`确定删除档案「${profile.fullName}」吗？`)) {
+                            deleteProfileMutation.mutate(profile.id);
+                          }
+                        }}
+                        data-testid={`btn-delete-profile-mobile-${profile.id}`}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        删除
+                      </Button>
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       <Dialog open={showAddUser} onOpenChange={setShowAddUser}>
         <DialogContent data-testid="modal-add-user">
@@ -457,6 +650,51 @@ function MembersTab({
               {addUserMutation.isPending ? "提交中..." : "提交"}
             </Button>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!bindTarget} onOpenChange={(open) => { if (!open) { setBindTarget(null); setBindUserId(""); } }}>
+        <DialogContent data-testid="modal-bind-profile">
+          <DialogHeader>
+            <DialogTitle>绑定档案</DialogTitle>
+            <DialogDescription>
+              将档案「{bindTarget?.fullName}」绑定到一个已注册成员，该成员将继承档案中的部门、岗位信息及相关任务。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>选择成员</Label>
+              <Select value={bindUserId} onValueChange={setBindUserId}>
+                <SelectTrigger data-testid="select-bind-user">
+                  <SelectValue placeholder="选择要绑定的成员" />
+                </SelectTrigger>
+                <SelectContent>
+                  {unboundUsers.map((u) => (
+                    <SelectItem key={u.id} value={String(u.id)}>
+                      {u.displayName} ({u.email})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setBindTarget(null); setBindUserId(""); }} data-testid="btn-cancel-bind">
+              取消
+            </Button>
+            <Button
+              onClick={() => {
+                if (bindTarget && bindUserId) {
+                  bindMutation.mutate({ profileId: bindTarget.id, userId: Number(bindUserId) });
+                }
+              }}
+              disabled={!bindUserId || bindMutation.isPending}
+              data-testid="btn-confirm-bind"
+            >
+              <UserCheck className="w-4 h-4 mr-1" />
+              {bindMutation.isPending ? "绑定中..." : "确认绑定"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

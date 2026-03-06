@@ -1,12 +1,23 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'wouter';
-import { Loader2, ArrowLeft, Copy, Check, Building2, Link2, Clock, CheckCircle2, Users } from 'lucide-react';
+import { Loader2, ArrowLeft, Copy, Check, Building2, Link2, Clock, CheckCircle2, Users, Briefcase, UserCheck } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/hooks/use-toast';
 import { tapMotionProps } from '@/hooks/use-tap-motion';
 import AgentLogo from '@/components/AgentLogo';
 
 type OnboardingStep = 'welcome' | 'create' | 'create-success' | 'join' | 'join-preview' | 'pending' | 'complete';
+
+interface MatchedProfile {
+  id: number;
+  fullName: string;
+  aliases: string | null;
+  deptId: number | null;
+  jobRoleId: number | null;
+  title: string | null;
+  email: string | null;
+  pendingTaskCount: number;
+}
 
 interface OrgPreview {
   id: number;
@@ -132,6 +143,11 @@ export default function OnboardingPage() {
   const [orgPreview, setOrgPreview] = useState<OrgPreview | null>(null);
   const [joinMessage, setJoinMessage] = useState('');
 
+  const [matchedProfile, setMatchedProfile] = useState<MatchedProfile | null>(null);
+  const [claimLoading, setClaimLoading] = useState(false);
+  const [deptName, setDeptName] = useState<string | null>(null);
+  const [roleName, setRoleName] = useState<string | null>(null);
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -165,8 +181,62 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     if (step === 'complete') {
-      const timer = setTimeout(() => navigate('/'), 3000);
-      return () => clearTimeout(timer);
+      let cancelled = false;
+      let redirectTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const doMatchCheck = async () => {
+        const token = localStorage.getItem('buddy_token');
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        try {
+          const res = await fetch('/api/member-profiles/match', { headers });
+          if (cancelled) return;
+          const data = res.ok ? await res.json() : null;
+          if (cancelled) return;
+
+          if (data?.data) {
+            const profile = data.data as MatchedProfile;
+            setMatchedProfile(profile);
+
+            if (profile.deptId) {
+              try {
+                const dRes = await fetch('/api/departments', { headers });
+                if (dRes.ok) {
+                  const dData = await dRes.json();
+                  const dept = (dData.data || []).find((d: any) => d.id === profile.deptId);
+                  if (dept && !cancelled) setDeptName(dept.name);
+                }
+              } catch {}
+            }
+            if (profile.jobRoleId) {
+              try {
+                const rRes = await fetch('/api/job-roles', { headers });
+                if (rRes.ok) {
+                  const rData = await rRes.json();
+                  const role = (rData.data || []).find((r: any) => r.id === profile.jobRoleId);
+                  if (role && !cancelled) setRoleName(role.title);
+                }
+              } catch {}
+            }
+          } else {
+            if (!cancelled) {
+              redirectTimer = setTimeout(() => navigate('/'), 3000);
+            }
+          }
+        } catch {
+          if (!cancelled) {
+            redirectTimer = setTimeout(() => navigate('/'), 3000);
+          }
+        }
+      };
+
+      doMatchCheck();
+
+      return () => {
+        cancelled = true;
+        if (redirectTimer) clearTimeout(redirectTimer);
+      };
     }
   }, [step, navigate]);
 
@@ -268,6 +338,39 @@ export default function OnboardingPage() {
     }).catch(() => {
       toast({ title: '复制失败', variant: 'destructive' });
     });
+  };
+
+  const handleClaimProfile = async () => {
+    if (!matchedProfile) return;
+    setClaimLoading(true);
+    try {
+      const token = localStorage.getItem('buddy_token');
+      const res = await fetch(`/api/member-profiles/${matchedProfile.id}/claim`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || '认领失败');
+      }
+      const data = await res.json();
+      await refreshAuth();
+      toast({ title: '档案认领成功', description: `已迁移 ${data.data?.migratedTasks || 0} 个待办任务` });
+      setMatchedProfile(null);
+      navigate('/');
+    } catch (err: any) {
+      toast({ title: '认领失败', description: err.message, variant: 'destructive' });
+    } finally {
+      setClaimLoading(false);
+    }
+  };
+
+  const handleDismissClaim = () => {
+    setMatchedProfile(null);
+    navigate('/');
   };
 
   const handleEnterWorkspace = async () => {
@@ -615,6 +718,101 @@ export default function OnboardingPage() {
   }
 
   if (step === 'complete') {
+    if (matchedProfile) {
+      const aliasesList = matchedProfile.aliases ? (() => { try { return JSON.parse(matchedProfile.aliases!); } catch { return []; } })() : [];
+      return (
+        <div style={pageStyle} data-testid="onboarding-claim">
+          <div style={containerStyle}>
+            <div style={{ textAlign: 'center', marginBottom: 28 }}>
+              <div style={{
+                width: 56, height: 56, borderRadius: '50%',
+                background: 'rgba(212,184,150,0.15)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 20px',
+              }}>
+                <UserCheck size={28} color="#D4B896" />
+              </div>
+              <h1 style={{ color: 'white', fontSize: 22, fontWeight: 700, marginBottom: 8 }}>
+                发现匹配的档案
+              </h1>
+              <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>
+                系统发现一份可能属于你的员工档案
+              </p>
+            </div>
+
+            <div style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 16,
+              padding: '24px 20px',
+              marginBottom: 24,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <div style={{
+                  width: 44, height: 44, borderRadius: '50%',
+                  background: 'rgba(212,184,150,0.2)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <span style={{ fontSize: 18, fontWeight: 700, color: '#D4B896' }}>
+                    {matchedProfile.fullName.charAt(0)}
+                  </span>
+                </div>
+                <div>
+                  <div data-testid="text-claim-name" style={{ color: 'white', fontSize: 17, fontWeight: 600 }}>
+                    {matchedProfile.fullName}
+                  </div>
+                  {aliasesList.length > 0 && (
+                    <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, marginTop: 2 }}>
+                      {aliasesList.join(' / ')}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {(deptName || roleName) && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Briefcase size={14} color="rgba(255,255,255,0.4)" />
+                    <span data-testid="text-claim-dept-role" style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>
+                      {[deptName, roleName].filter(Boolean).join(' · ')}
+                    </span>
+                  </div>
+                )}
+                {matchedProfile.title && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Users size={14} color="rgba(255,255,255,0.4)" />
+                    <span data-testid="text-claim-title" style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>
+                      {matchedProfile.title}
+                    </span>
+                  </div>
+                )}
+                {matchedProfile.pendingTaskCount > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <CheckCircle2 size={14} color="rgba(255,255,255,0.4)" />
+                    <span data-testid="text-claim-task-count" style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>
+                      {matchedProfile.pendingTaskCount} 个待办任务将分配给你
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <PrimaryButton onClick={handleClaimProfile} disabled={claimLoading} testId="button-claim-profile">
+                {claimLoading ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" />认领中...</>
+                ) : '是的，这是我'}
+              </PrimaryButton>
+              <SecondaryButton onClick={handleDismissClaim} testId="button-dismiss-claim">
+                不是我
+              </SecondaryButton>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div style={pageStyle} data-testid="onboarding-complete">
         <div style={{ ...containerStyle, textAlign: 'center' }}>

@@ -170,6 +170,7 @@ export const tasks = pgTable('tasks', {
 
   creatorId: integer('creator_id').references(() => users.id).notNull(),
   assigneeId: integer('assignee_id').references(() => users.id),
+  memberProfileId: integer('member_profile_id'),
 
   startDate: timestamp('start_date'),
   dueDate: timestamp('due_date'),
@@ -495,6 +496,10 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
     fields: [tasks.assigneeId],
     references: [users.id],
     relationName: 'taskAssignee',
+  }),
+  memberProfile: one(memberProfiles, {
+    fields: [tasks.memberProfileId],
+    references: [memberProfiles.id],
   }),
   comments: many(taskComments),
   participants: many(taskParticipants),
@@ -947,5 +952,44 @@ export const insertBriefingSchema = createInsertSchema(briefings).omit({
 });
 export type InsertBriefing = z.infer<typeof insertBriefingSchema>;
 export type Briefing = typeof briefings.$inferSelect;
+
+// ============================================================
+// Member Profiles — member_profiles（成员档案）
+// ============================================================
+export const memberProfiles = pgTable('member_profiles', {
+  id: serial('id').primaryKey(),
+  orgId: integer('org_id').references(() => organizations.id).notNull(),
+  fullName: varchar('full_name', { length: 100 }).notNull(),
+  aliases: text('aliases'),
+  deptId: integer('dept_id').references(() => departments.id),
+  jobRoleId: integer('job_role_id').references(() => jobRoles.id),
+  employeeId: varchar('employee_id', { length: 50 }),
+  phone: varchar('phone', { length: 20 }),
+  email: varchar('email', { length: 255 }),
+  title: varchar('title', { length: 100 }),
+  hireDate: varchar('hire_date', { length: 20 }),
+  contractInfo: text('contract_info'),
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  userId: integer('user_id').references(() => users.id),
+  claimedAt: timestamp('claimed_at'),
+  sourceDocument: varchar('source_document', { length: 255 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const memberProfilesRelations = relations(memberProfiles, ({ one }) => ({
+  organization: one(organizations, { fields: [memberProfiles.orgId], references: [organizations.id] }),
+  department: one(departments, { fields: [memberProfiles.deptId], references: [departments.id] }),
+  jobRole: one(jobRoles, { fields: [memberProfiles.jobRoleId], references: [jobRoles.id] }),
+  user: one(users, { fields: [memberProfiles.userId], references: [users.id] }),
+}));
+
+export const insertMemberProfileSchema = createInsertSchema(memberProfiles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertMemberProfile = z.infer<typeof insertMemberProfileSchema>;
+export type MemberProfile = typeof memberProfiles.$inferSelect;
 
 export * from "./models/auth";
