@@ -1,0 +1,156 @@
+# task-16 冲突处理指令
+
+> 直接实现时处理，不需要调整整体设计。以下是每个冲突的处理方式。
+
+-----
+
+## 冲突 1：org_memberships 同步
+
+**处理**：claimProfile 时同时更新 `users` 和 `org_memberships` 两张表。
+
+```typescript
+// claimProfile 中：
+// 1. 更新 users 表
+await storage.updateUser(userId, { deptId: profile.deptId, jobRoleId: profile.jobRoleId });
+
+// 2. 同时更新 org_memberships 表
+await storage.updateOrgMembership(orgId, userId, { deptId: profile.deptId, jobRoleId: profile.jobRoleId });
+// 如果没有 updateOrgMembership 方法，新增一个
+```
+
+在团队管理页手动修改部门/岗位时也要同时更新两张表。**凡是改 deptId/jobRoleId 的地方，两张表都更新。**
+
+-----
+
+## 冲突 2：assigneeId 类型
+
+**处理**：不在 AI 返回中用字符串前缀。改为在 AI prompt 中用两个独立字段。
+
+```
+AI 返回的 JSON 中：
+- assigneeId: 数字（已注册用户的 user ID）
+- memberProfileId: 数字（待认领档案的 profile ID）
+- 两个字段互斥，只填一个
+```
+
+system prompt 中团队成员列表格式改为：
+
+```
+团队成员：
+- 张三（Sam/三哥）[销售部·销售经理] — assigneeId: 5（已注册）
+- 王五 [财务部·出纳] — memberProfileId: 3（待认领）
+```
+
+actionExecutor 中：
+
+```typescript
+if (data.memberProfileId) {
+  taskData.memberProfileId = data.memberProfileId;
+  taskData.assigneeId = null;
+} else if (data.assigneeId) {
+  taskData.assigneeId = data.assigneeId;
+  taskData.memberProfileId = null;
+}
+```
+
+这样 assigneeId 始终是整数或 null，不需要做字符串解析。
+
+-----
+
+## 冲突 3：checkDuplicateTask
+
+**处理**：扩展查重方法，支持 memberProfileId。
+
+```typescript
+async checkDuplicateTask(orgId: number, title: string, assigneeId?: number | null, memberProfileId?: number | null) {
+  // 如果有 assigneeId，用 assigneeId 查重
+  if (assigneeId) {
+    return await db.select()...where(and(eq(tasks.orgId, orgId), eq(tasks.title, title), eq(tasks.assigneeId, assigneeId)));
+  }
+  // 如果有 memberProfileId，用 memberProfileId 查重
+  if (memberProfileId) {
+    return await db.select()...where(and(eq(tasks.orgId, orgId), eq(tasks.title, title), eq(tasks.memberProfileId, memberProfileId)));
+  }
+  // 都没有，只按标题查重
+  return await db.select()...where(and(eq(tasks.orgId, orgId), eq(tasks.title, title), isNull(tasks.assigneeId)));
+}
+```
+
+-----
+
+## 冲突 4：formatTeamMembers 双调用点
+
+**处理**：两处都改。最干净的方式是修改 `formatTeamMembers` 函数本身（或 `loadBusinessContext`），让它在数据源头就合并 users + pending profiles。这样两个调用点自动都能拿到完整列表。
+
+```typescript
+// 在 loadBusinessContext 中（或它调用的 formatTeamMembers 中）
+const registeredMembers = await storage.getOrgMembersWithDetails(orgId);
+const pendingProfiles = await storage.getPendingProfilesByOrg(orgId);
+
+const allTeamMembers = [
+  ...registeredMembers.map(m => ({
+    id: m.id,
+    displayName: m.displayName,
+    role: m.role,
+    email: m.email,
+    deptName: m.departmentName,
+    jobTitle: m.jobRoleTitle,
+    idType: 'assigneeId', // AI 用这个字段名分配任务
+  })),
+  ...pendingProfiles.map(p => ({
+    id: p.id,
+    displayName: p.fullName,
+    aliases: p.aliases ? JSON.parse(p.aliases) : [],
+    deptName: '从deptId查部门名',
+    jobTitle: p.title,
+    idType: 'memberProfileId', // AI 用这个字段名分配任务
+  })),
+];
+```
+
+在 formatTeamMembers 的输出中，每个成员标注 AI 应该用哪个字段来分配：
+
+```
+- 张三（Sam）[销售部·销售经理] → 分配任务时用 memberProfileId: 3
+- Lisa [行政部·行政主管] → 分配任务时用 assigneeId: 5
+```
+
+**两处调用点（第682行和第828行）都自动受益，因为改的是底层数据源函数。**
+
+-----
+
+## 关于加入审批触发认领
+
+同意 Replit 的建议：在 `PUT /api/organizations/:id/join-requests/:requestId` 中，当 `status === 'approved'` 时调用 `findMatchingProfile`。如果匹配到，在 response 中返回匹配信息，前端弹出认领确认。
+
+```typescript
+// 审批通过后
+if (status === 'approved') {
+  // ... 现有的审批逻辑 ...
+  
+  // 新增：查找匹配的成员档案
+  const matchedProfile = await findMatchingProfile(orgId, newUser);
+  if (matchedProfile) {
+    // 不自动认领，返回匹配建议让前端展示
+    return res.json({ 
+      data: { 
+        ...approvalResult, 
+        suggestedProfile: matchedProfile 
+      } 
+    });
+  }
+}
+```
+
+-----
+
+## 总结
+
+4个冲突都可以在实现时直接处理，不影响整体设计。关键原则：
+
+1. **deptId/jobRoleId 改动处同时更新 users 和 org_memberships**
+1. **不用字符串前缀，用两个独立的整数字段（assigneeId / memberProfileId）**
+1. **查重逻辑支持两种分配方式**
+1. **改 formatTeamMembers 的数据源头，两个调用点自动受益**
+
+直接实现吧。

@@ -1,0 +1,481 @@
+# task-16（重新设计）: AI 提取成员档案 + 认领机制
+
+> **前置条件**：Smart Setup (task-08/09) 已完成
+> **预计耗时**：15-20 分钟
+> **核心思路**：从合同/组织架构文件中提取员工信息 → 创建「待认领」成员档案 → 员工注册后认领自己的档案
+
+-----
+
+## 一、完整的人员流程
+
+```
+老板/管理员上传公司文件（合同、组织架构、通讯录）
+    ↓
+AI 提取员工信息：
+  张三（销售经理）、李四（行政主管）、王五（出纳）
+  小名/英文名：张三=Sam、李四=Lisa
+    ↓
+系统创建「待认领」成员档案（不是真用户，是预设档案）
+  → 部门已分配、岗位已分配、职责已填充
+  → 状态：pending（等待认领）
+    ↓
+老板可以立刻给这些人分配任务、记录会议纪要
+  「把Q2报告交给张三」→ AI 匹配到张三的档案 → 任务创建成功
+    ↓
+张三注册 BuddyAI → 加入组织 → 系统提示"你是不是张三（销售经理）？"
+    ↓
+张三点击「是的，这是我」→ 档案和真实账号绑定
+  → 之前分配给他的任务自动归到他名下
+  → 通知、权限、一切就位
+```
+
+-----
+
+## 二、数据库设计
+
+### 新增 member_profiles 表
+
+这张表存的是”公司里应该有的人”，不是”已注册的用户”。
+
+```typescript
+export const memberProfiles = pgTable('member_profiles', {
+  id: serial('id').primaryKey(),
+  orgId: integer('org_id').references(() => organizations.id).notNull(),
+  
+  // 基本信息（从文件中提取）
+  fullName: varchar('full_name', { length: 100 }).notNull(),  // 正式姓名：张三
+  aliases: text('aliases'),  // JSON数组：["Sam", "三哥", "张总监"] — 所有可能的称呼
+  
+  // 组织信息（从文件中提取，关联已创建的部门和岗位）
+  deptId: integer('dept_id').references(() => departments.id),
+  jobRoleId: integer('job_role_id').references(() => jobRoles.id),
+  
+  // 从合同/JD中提取的额外信息
+  employeeId: varchar('employee_id', { length: 50 }),  // 工号（如果文件中有）
+  phone: varchar('phone', { length: 20 }),              // 手机号（如果有）
+  email: varchar('email', { length: 255 }),             // 邮箱（如果有）
+  title: varchar('title', { length: 100 }),             // 职位头衔
+  hireDate: varchar('hire_date', { length: 20 }),       // 入职日期
+  contractInfo: text('contract_info'),                  // 合同关键条款摘要
+  
+  // 状态
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  // 'pending' = 等待认领
+  // 'claimed' = 已被认领（绑定了真实用户）
+  // 'manual' = 手动创建的（不是AI提取的）
+  
+  // 绑定关系
+  userId: integer('user_id').references(() => users.id),  // 认领后绑定的真实用户ID
+  claimedAt: timestamp('claimed_at'),
+  
+  // 来源
+  sourceDocument: varchar('source_document', { length: 255 }),  // 从哪个文件提取的
+  
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+```
+
+### 为什么不直接在 users 表中创建？
+
+因为 users 表需要 email + passwordHash 才能登录。未注册的人没有这些信息。用独立的 member_profiles 表：
+
+- 不污染认证系统
+- 支持”一个真实用户认领一个档案”的清晰绑定
+- AI 分配任务时可以搜索 member_profiles + users 两张表
+
+### tasks 表的 assigneeId 兼容
+
+当前 tasks.assigneeId 引用 users.id。对于未注册的成员，有两种处理方式：
+
+**方式A（推荐）**：tasks 表新增 `memberProfileId` 字段
+
+```typescript
+// 在 tasks 表中新增
+memberProfileId: integer('member_profile_id').references(() => memberProfiles.id),
+```
+
+任务可以分配给 `userId`（已注册用户）或 `memberProfileId`（待认领档案）。认领后批量更新 `assigneeId = userId, memberProfileId = null`。
+
+**方式B**：给未注册成员也在 users 表中创建”占位用户”
+
+在 users 表中创建没有 passwordHash 的记录，标记 `isPlaceholder: true`。认领时合并。但这会污染认证系统。
+
+**选方式A**。
+
+-----
+
+## 三、AI 提取员工信息
+
+### 增强 Smart Setup 的 AI 提取
+
+在 `aiExtractor.ts` 的 Sonnet 阶段，增加人员提取。修改 prompt 中的 JSON 输出格式：
+
+```json
+{
+  "companyName": "...",
+  "departments": [...],
+  "jobRoles": [...],
+  "fileClassifications": [...],
+  
+  "members": [
+    {
+      "fullName": "张三",
+      "aliases": ["Sam", "三哥"],
+      "departmentName": "销售部",
+      "jobRoleTitle": "销售经理",
+      "employeeId": "EMP001",
+      "phone": "138xxxx1234",
+      "email": "zhangsan@company.com",
+      "title": "销售部经理",
+      "hireDate": "2022-03-15",
+      "contractHighlights": "试用期6个月；年假15天；负责华南区大客户"
+    },
+    {
+      "fullName": "李四",
+      "aliases": ["Lisa"],
+      "departmentName": "行政部",
+      "jobRoleTitle": "行政主管",
+      "title": "行政主管",
+      "hireDate": "2021-06-01"
+    }
+  ]
+}
+```
+
+### 新增的 prompt 段落
+
+在 aiExtractor.ts 的 Sonnet prompt 中追加：
+
+```
+"members": [
+  {
+    "fullName": "员工正式姓名（必填）",
+    "aliases": ["该员工的其他称呼：英文名、小名、昵称、职位简称等"],
+    "departmentName": "所属部门（和departments中的name对应）",
+    "jobRoleTitle": "岗位名称（和jobRoles中的title对应）",
+    "employeeId": "工号（如果有）",
+    "phone": "手机号（如果有）",
+    "email": "邮箱（如果有）",
+    "title": "职位头衔",
+    "hireDate": "入职日期（如果有）",
+    "contractHighlights": "合同关键条款摘要（如果是从合同中提取的）"
+  }
+]
+
+人员提取规则：
+- 从组织架构图、通讯录、劳动合同、签名栏等位置识别人员
+- aliases 很重要——收集文件中出现的该人的所有不同称呼
+- 如果同一个人在多份文件中出现，合并信息（用最完整的版本）
+- 不要提取客户、供应商等外部人员，只提取公司内部员工
+- 如果文件中有明确的汇报关系（如"向XX汇报"），记录在该人的 contractHighlights 中
+```
+
+-----
+
+## 四、认领机制
+
+### 4.1 自动匹配建议
+
+成员注册并加入组织后，系统自动用以下规则匹配：
+
+```typescript
+async function findMatchingProfile(orgId: number, user: { displayName: string; email: string }): Promise<MemberProfile | null> {
+  const profiles = await storage.getPendingProfilesByOrg(orgId);
+  
+  for (const profile of profiles) {
+    // 规则1：邮箱完全匹配（最可靠）
+    if (profile.email && user.email && profile.email.toLowerCase() === user.email.toLowerCase()) {
+      return profile;
+    }
+    
+    // 规则2：姓名完全匹配
+    if (profile.fullName === user.displayName) {
+      return profile;
+    }
+    
+    // 规则3：别名匹配
+    const aliases = profile.aliases ? JSON.parse(profile.aliases) : [];
+    if (aliases.some((alias: string) => alias.toLowerCase() === user.displayName.toLowerCase())) {
+      return profile;
+    }
+    
+    // 规则4：手机号匹配（如果用户用手机注册）
+    // 预留，当前注册只有邮箱
+  }
+  
+  return null;
+}
+```
+
+### 4.2 认领界面
+
+成员加入组织后，如果找到匹配的档案，弹出确认：
+
+```
+┌──────────────────────────────────────────────────┐
+│                                                  │
+│  👋 欢迎加入鑫达国际！                            │
+│                                                  │
+│  系统识别到你可能是：                              │
+│                                                  │
+│  ┌──────────────────────────────────────────┐    │
+│  │  👤 张三（Sam）                           │    │
+│  │  销售部 · 销售经理                        │    │
+│  │  工号：EMP001                            │    │
+│  │  入职日期：2022-03-15                     │    │
+│  │                                          │    │
+│  │  已有 3 个任务等待你处理                   │    │
+│  │                                          │    │
+│  │  [是的，这是我]          [不是我]          │    │
+│  └──────────────────────────────────────────┘    │
+│                                                  │
+│  如果以上都不是你，管理员可以在团队管理中手动分配。  │
+│                                                  │
+└──────────────────────────────────────────────────┘
+```
+
+如果没有自动匹配到，管理员可以在团队管理页手动绑定：
+
+```
+┌──────────────────────────────────────────────────────┐
+│  👥 团队管理                                          │
+│                                                      │
+│  ── 已注册成员 ──                                     │
+│  👤 Lisa (lisa@xinda.test)     行政部·行政主管 ✅     │
+│  👤 新注册的人 (new@test.com)  [绑定档案 ▼]   ⚠️     │
+│      → 选择：张三 / 王五 / 创建新档案                  │
+│                                                      │
+│  ── 待认领档案（已从文件提取但未注册）──                │
+│  👤 张三 (Sam) — 销售部·销售经理       📋 待认领      │
+│     3个待办任务                                       │
+│  👤 王五 — 财务部·出纳                 📋 待认领      │
+│     1个待办任务                                       │
+│                                                      │
+└──────────────────────────────────────────────────────┘
+```
+
+### 4.3 认领后的数据迁移
+
+```typescript
+async function claimProfile(profileId: number, userId: number, orgId: number) {
+  const profile = await storage.getMemberProfileById(profileId);
+  if (!profile || profile.orgId !== orgId) throw new Error('档案不存在');
+  if (profile.status === 'claimed') throw new Error('该档案已被认领');
+  
+  // 1. 更新用户信息（把档案中的部门和岗位写到用户记录）
+  await storage.updateUser(userId, {
+    deptId: profile.deptId,
+    jobRoleId: profile.jobRoleId,
+    displayName: profile.fullName, // 可选：用档案中的正式姓名替换注册名
+  });
+  
+  // 2. 迁移任务：把分配给该档案的任务转移到真实用户
+  await storage.migrateTasksFromProfile(profileId, userId);
+  // SQL: UPDATE tasks SET assignee_id = userId, member_profile_id = NULL 
+  //      WHERE member_profile_id = profileId
+  
+  // 3. 标记档案为已认领
+  await storage.updateMemberProfile(profileId, {
+    status: 'claimed',
+    userId,
+    claimedAt: new Date(),
+  });
+  
+  // 4. 记录日志
+  await storage.createActivityLog({
+    orgId,
+    userId,
+    entityType: 'member_profile',
+    entityId: profileId,
+    action: 'claim',
+    changes: JSON.stringify({ profileName: profile.fullName, userId }),
+    source: 'user',
+  });
+}
+```
+
+-----
+
+## 五、AI 任务分配的名称匹配
+
+这是让整个系统”活起来”的关键——AI 在创建任务时要能匹配到正确的人。
+
+### 当前的问题
+
+AI 的 system prompt 中有 `{{teamMembers}}` 变量，但只包含已注册的 users。需要同时包含未认领的 member_profiles。
+
+### 修改 buildContextualSystemPrompt
+
+在构建团队成员列表时，合并两个来源：
+
+```typescript
+// 在 buildContextualSystemPrompt 或 loadBusinessContext 中
+
+// 已注册用户
+const registeredUsers = await storage.getOrgMembers(orgId);
+
+// 未认领的成员档案
+const pendingProfiles = await storage.getPendingProfilesByOrg(orgId);
+
+// 合并为团队成员列表给 AI
+const teamMembers = [
+  ...registeredUsers.map(u => ({
+    id: u.id,
+    type: 'user',
+    name: u.displayName,
+    aliases: [], // 已注册用户暂时没有 aliases
+    department: u.departmentName || '未分配',
+    role: u.jobRoleTitle || '未分配',
+  })),
+  ...pendingProfiles.map(p => ({
+    id: p.id,
+    type: 'profile', // 标记为待认领档案
+    name: p.fullName,
+    aliases: p.aliases ? JSON.parse(p.aliases) : [],
+    department: '从profile关联的部门名',
+    role: p.title || '从profile关联的岗位名',
+  })),
+];
+
+// 在 system prompt 中：
+// 团队成员列表：
+// - 张三（Sam/三哥）[销售部·销售经理] (ID: profile_3)
+// - Lisa [行政部·行政主管] (ID: user_5)
+// - 王五 [财务部·出纳] (ID: profile_7)
+```
+
+### AI 匹配逻辑
+
+在 prompt 中告诉 AI 如何匹配人名：
+
+```
+## 团队成员匹配规则
+当用户提到一个人名时，按以下顺序匹配：
+1. 精确匹配姓名
+2. 匹配别名（括号中的名称）
+3. 模糊匹配（如"张总"匹配"张三"，因为他是经理级别）
+4. 如果匹配不到任何人，在 summary 中说明"未找到该成员"
+
+团队成员可能有两种类型：
+- user_XX：已注册用户，可以直接分配任务
+- profile_XX：待认领档案，可以分配任务但该成员尚未登录系统
+```
+
+### 在 actionExecutor 中处理 profile 类型的分配
+
+```typescript
+// 在执行 create_task 时
+if (data.assigneeId && data.assigneeId.startsWith('profile_')) {
+  const profileId = parseInt(data.assigneeId.replace('profile_', ''));
+  // 不设 assigneeId（因为没有真实 userId），设 memberProfileId
+  taskData.memberProfileId = profileId;
+  taskData.assigneeId = null;
+} else if (data.assigneeId && data.assigneeId.startsWith('user_')) {
+  taskData.assigneeId = parseInt(data.assigneeId.replace('user_', ''));
+  taskData.memberProfileId = null;
+}
+```
+
+-----
+
+## 六、在 Smart Setup 确认页面中展示
+
+Smart Setup 的 Step 3 确认页面新增「成员」区域：
+
+```
+── 识别到的成员 ──────────────────────── [+ 手动添加] ──
+
+👤 张三（Sam, 三哥）                              [✏️][✕]
+   销售部 · 销售经理 · 入职2022-03-15
+   合同要点：试用期6个月，年假15天
+
+👤 李四（Lisa）                                    [✏️][✕]
+   行政部 · 行政主管 · 入职2021-06-01
+
+👤 王五                                           [✏️][✕]
+   财务部 · 出纳
+
+💡 这些成员的任务和职责信息会立即生效。
+   成员注册 BuddyAI 后可以认领自己的档案。
+```
+
+每个成员可以编辑：
+
+- 姓名和别名（添加/删除别名）
+- 部门（下拉选择已创建的部门）
+- 岗位（下拉选择已创建的岗位）
+- 删除（AI 识别错了的人）
+
+可以手动添加（AI 没识别到的人）。
+
+-----
+
+## 七、开发步骤
+
+### Step 1: 数据库
+
+- 新增 `member_profiles` 表
+- tasks 表新增 `memberProfileId` 字段
+- `npm run db:push`
+
+### Step 2: Storage 方法
+
+- `createMemberProfile`, `getMemberProfilesByOrg`, `getPendingProfilesByOrg`
+- `getMemberProfileById`, `updateMemberProfile`
+- `migrateTasksFromProfile(profileId, userId)`
+
+### Step 3: 修改 aiExtractor.ts
+
+- Sonnet prompt 新增 members 提取
+- EnterpriseProfile 类型新增 members 字段
+
+### Step 4: 修改 setupService.ts
+
+- `confirmAndSetup` 中新增批量创建 member_profiles 的逻辑
+
+### Step 5: 修改 AI 上下文
+
+- `buildContextualSystemPrompt` 合并 users + pending profiles 作为团队成员列表
+- prompt 中说明 user_XX 和 profile_XX 两种ID类型
+
+### Step 6: 前端
+
+- Smart Setup 确认页新增成员区域
+- 团队管理页显示「已注册」和「待认领」两个分组
+- 认领弹窗（成员加入时自动弹出）
+- 管理员手动绑定功能
+
+### Step 7: 路由
+
+- `POST /api/member-profiles` — 创建
+- `GET /api/member-profiles` — 获取列表
+- `PATCH /api/member-profiles/:id` — 更新
+- `DELETE /api/member-profiles/:id` — 删除
+- `POST /api/member-profiles/:id/claim` — 认领
+- `POST /api/member-profiles/:id/bind/:userId` — 管理员手动绑定
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读项目根目录的 `task-16-member-profiles.md`，按步骤执行。
+> 
+> 重要规则：
+> 
+> 1. `member_profiles` 是独立于 `users` 的表——不要在 users 表中创建占位用户
+> 1. `tasks` 表新增 `memberProfileId` 字段，允许任务分配给未注册的成员档案
+> 1. 修改 `aiExtractor.ts` 的 prompt，让 AI 同时提取员工信息
+> 1. 修改 `buildContextualSystemPrompt`，团队成员列表合并 users + pending profiles
+> 1. 认领逻辑必须是原子操作：更新用户信息 + 迁移任务 + 标记档案 一次性完成
+> 1. 别名（aliases）存为 JSON 数组，AI 匹配人名时要搜索别名
+> 1. 合同中的敏感信息（薪资等）不要提取，只提取职责相关的条款
+
+-----
+
+## 完成后告诉 Claude
+
+1. “task-16 完成” 或 “task-16 有问题”
+1. Smart Setup 上传测试文件后，AI 提取到了几个成员？
+1. 团队管理页的截图（已注册 + 待认领两个分组）
+1. 给待认领成员分配任务是否正常？
