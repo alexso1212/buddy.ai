@@ -25,6 +25,8 @@ import {
   FolderOpen,
   UserRoundPlus,
   Database,
+  Star,
+  AlertTriangle,
 } from "lucide-react";
 import {
   Select,
@@ -37,12 +39,42 @@ import {
 interface FileAnalysis {
   fileName: string;
   category: string;
-  visibility: string;
-  visibleDepartment?: string;
+  orgRelevance: number;
+  kbRelevance: number;
+  sensitivity: string;
   summary: string;
+  suggestedVisibility: string;
+  suggestedDepartment?: string;
   mentionedDepartments: string[];
   mentionedRoles: string[];
+  mentionedNames: string[];
 }
+
+const categoryLabels: Record<string, string> = {
+  org_chart: '组织架构',
+  roster: '花名册',
+  jd: '岗位说明',
+  contract: '劳动合同',
+  kpi: '考核标准',
+  policy: '规章制度',
+  handbook: '员工手册',
+  sop: '操作流程',
+  product: '产品',
+  sales: '销售',
+  project: '项目',
+  finance: '财务',
+  legal: '法务',
+  marketing: '市场',
+  brand: '品牌',
+  technical: '技术',
+  general: '其他',
+};
+
+const visibilityLabels: Record<string, string> = {
+  org: '全员可见',
+  admin: '管理层可见',
+  department: '部门可见',
+};
 
 interface DeptChild {
   name: string;
@@ -136,7 +168,7 @@ export default function SmartSetupPage() {
     );
   };
 
-  const allowedExtensions = [".pdf", ".docx", ".txt", ".md", ".zip"];
+  const allowedExtensions = [".pdf", ".docx", ".doc", ".txt", ".md", ".zip", ".xlsx", ".xls", ".csv", ".pptx", ".html", ".htm", ".rtf", ".json"];
 
   const analyzeKbMutation = useMutation({
     mutationFn: async (documentIds: number[]) => {
@@ -500,7 +532,7 @@ export default function SmartSetupPage() {
                     拖拽文件到这里，或点击选择
                   </p>
                   <p className="text-sm text-[#7A7874] dark:text-[#8A8A85] mb-4">
-                    支持 PDF、Word、TXT、Markdown、ZIP 格式，最大 50MB
+                    支持 PDF、Word、Excel、PPT、TXT、CSV、HTML、MD、ZIP 格式，最大 50MB
                   </p>
                   <Button
                     onClick={() => fileInputRef.current?.click()}
@@ -515,7 +547,7 @@ export default function SmartSetupPage() {
                     ref={fileInputRef}
                     type="file"
                     multiple
-                    accept=".pdf,.docx,.txt,.md,.zip"
+                    accept=".pdf,.docx,.doc,.txt,.md,.zip,.xlsx,.xls,.csv,.pptx,.html,.htm,.rtf,.json"
                     onChange={handleFileSelect}
                     className="hidden"
                     data-testid="input-file"
@@ -1015,38 +1047,85 @@ export default function SmartSetupPage() {
               </div>
             </div>
 
-            {/* File Classifications */}
-            {profile.fileClassifications.length > 0 && (
-              <div className="rounded-2xl bg-white dark:bg-[#2D2D2A] border border-[#E8E4DF] dark:border-[#3D3D3A] p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <FileText size={18} className="text-[#B4886B]" />
-                  <h3 className="font-medium text-[#2D2D2A] dark:text-[#ECECEC]">
-                    文件分类
-                    <span className="text-xs font-normal text-[#7A7874] ml-2">
-                      (将自动导入知识库)
-                    </span>
-                  </h3>
-                </div>
-                <div className="space-y-2">
-                  {profile.fileClassifications.map((fc, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-3 p-2.5 rounded-lg bg-[#F5F0EB]/50 dark:bg-[#1A1918]/50"
-                      data-testid={`file-classification-${i}`}
-                    >
-                      <FileText size={14} className="text-[#7A7874] flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-[#2D2D2A] dark:text-[#ECECEC] truncate">{fc.fileName}</p>
-                        <p className="text-xs text-[#7A7874]">{fc.summary}</p>
-                      </div>
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-[#B4886B]/10 text-[#B4886B] flex-shrink-0">
-                        {fc.category}
-                      </span>
+            {/* File Classifications - Grouped */}
+            {profile.fileClassifications.length > 0 && (() => {
+              const coreFiles = profile.fileClassifications.filter(fc => fc.orgRelevance >= 3);
+              const kbFiles = profile.fileClassifications.filter(fc => fc.orgRelevance < 3 && fc.kbRelevance >= 2);
+              const otherFiles = profile.fileClassifications.filter(fc => fc.orgRelevance < 3 && fc.kbRelevance < 2);
+
+              const renderFileRow = (fc: FileAnalysis, i: number) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 p-2.5 rounded-lg bg-[#F5F0EB]/50 dark:bg-[#1A1918]/50"
+                  data-testid={`file-classification-${i}`}
+                >
+                  <FileText size={14} className="text-[#7A7874] flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm text-[#2D2D2A] dark:text-[#ECECEC] truncate">{fc.fileName}</p>
+                      {fc.sensitivity === 'high' && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 flex-shrink-0 inline-flex items-center gap-0.5" data-testid={`badge-sensitive-${i}`}><AlertTriangle size={10} /> 敏感</span>
+                      )}
                     </div>
-                  ))}
+                    <p className="text-xs text-[#7A7874]">{fc.summary}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-[#B4886B]/10 text-[#B4886B]">
+                      {categoryLabels[fc.category] || fc.category}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-[#E8E4DF] dark:bg-[#3D3D3A] text-[#7A7874]">
+                      {visibilityLabels[fc.suggestedVisibility] || fc.suggestedVisibility}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+
+              return (
+                <div className="rounded-2xl bg-white dark:bg-[#2D2D2A] border border-[#E8E4DF] dark:border-[#3D3D3A] p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <FileText size={18} className="text-[#B4886B]" />
+                    <h3 className="font-medium text-[#2D2D2A] dark:text-[#ECECEC]">
+                      文档分类
+                      <span className="text-xs font-normal text-[#7A7874] ml-2">
+                        (将自动导入知识库)
+                      </span>
+                    </h3>
+                  </div>
+                  <div className="space-y-4">
+                    {coreFiles.length > 0 && (
+                      <div data-testid="file-group-core">
+                        <p className="text-xs font-medium text-[#B4886B] mb-2 flex items-center gap-1.5">
+                          <Star size={12} className="text-[#B4886B]" /> 核心组织文件（AI 已深度分析）
+                        </p>
+                        <div className="space-y-1.5">
+                          {coreFiles.map((fc, i) => renderFileRow(fc, i))}
+                        </div>
+                      </div>
+                    )}
+                    {kbFiles.length > 0 && (
+                      <div data-testid="file-group-kb">
+                        <p className="text-xs font-medium text-[#7A7874] mb-2 flex items-center gap-1.5">
+                          <BookOpen size={12} className="text-[#7A7874]" /> 知识库文档
+                        </p>
+                        <div className="space-y-1.5">
+                          {kbFiles.map((fc, i) => renderFileRow(fc, coreFiles.length + i))}
+                        </div>
+                      </div>
+                    )}
+                    {otherFiles.length > 0 && (
+                      <div data-testid="file-group-other">
+                        <p className="text-xs font-medium text-[#7A7874] mb-2 flex items-center gap-1.5">
+                          <FolderOpen size={12} className="text-[#7A7874]" /> 其他文件
+                        </p>
+                        <div className="space-y-1.5">
+                          {otherFiles.map((fc, i) => renderFileRow(fc, coreFiles.length + kbFiles.length + i))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Actions */}
             <div className="flex items-center justify-between">

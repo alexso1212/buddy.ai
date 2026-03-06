@@ -16,10 +16,22 @@ import {
 } from 'lucide-react';
 
 const CATEGORIES = [
-  { value: 'policy', label: '制度' },
-  { value: 'contract', label: '合同' },
+  { value: 'org_chart', label: '组织架构' },
+  { value: 'roster', label: '花名册' },
   { value: 'jd', label: '岗位说明' },
-  { value: 'manual', label: '操作手册' },
+  { value: 'contract', label: '劳动合同' },
+  { value: 'kpi', label: '考核标准' },
+  { value: 'policy', label: '规章制度' },
+  { value: 'handbook', label: '员工手册' },
+  { value: 'sop', label: '操作流程' },
+  { value: 'product', label: '产品' },
+  { value: 'sales', label: '销售' },
+  { value: 'project', label: '项目' },
+  { value: 'finance', label: '财务' },
+  { value: 'legal', label: '法务' },
+  { value: 'marketing', label: '市场' },
+  { value: 'brand', label: '品牌' },
+  { value: 'technical', label: '技术' },
   { value: 'general', label: '其他' },
 ];
 
@@ -40,8 +52,8 @@ function formatDate(dateStr: string): string {
 }
 
 function getCategoryLabel(category: string): string {
-  const map: Record<string, string> = { policy: '制度', contract: '合同', jd: '岗位说明', manual: '操作手册', general: '其他' };
-  return map[category] || category;
+  const found = CATEGORIES.find(c => c.value === category);
+  return found?.label || category;
 }
 
 function getVisibilityLabel(visibility: string): string {
@@ -392,7 +404,7 @@ export default function KnowledgeBase() {
               type="file"
               ref={fileInputRef}
               className="hidden"
-              accept=".pdf,.docx,.txt,.md"
+              accept=".pdf,.docx,.doc,.txt,.md,.xlsx,.xls,.csv,.pptx,.html,.htm,.rtf,.json"
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) {
@@ -411,7 +423,7 @@ export default function KnowledgeBase() {
               >
                 <FileUp className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
                 <p className="text-sm font-medium text-foreground">点击选择文件</p>
-                <p className="text-xs text-muted-foreground mt-1">支持 PDF / Word / TXT / MD，最大 50MB</p>
+                <p className="text-xs text-muted-foreground mt-1">支持 PDF / Word / Excel / PPT / TXT / CSV / HTML / MD / RTF / JSON，最大 50MB</p>
               </div>
             ) : (
               <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">

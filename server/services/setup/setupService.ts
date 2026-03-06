@@ -217,12 +217,15 @@ export async function confirmAndSetup(params: {
       fs.copyFileSync(file.filePath, kbPath);
 
       let visibleDeptIds: string | null = null;
-      if (classification?.visibility === 'department' && classification?.visibleDepartment) {
-        const deptId = deptNameToId[classification.visibleDepartment];
+      if (classification?.suggestedVisibility === 'department' && classification?.suggestedDepartment) {
+        const deptId = deptNameToId[classification.suggestedDepartment];
         if (deptId) {
           visibleDeptIds = JSON.stringify([deptId]);
         }
       }
+
+      const visibility = classification?.sensitivity === 'high' ? 'admin'
+        : classification?.suggestedVisibility || 'org';
 
       const doc = await storage.createKbDocument({
         orgId,
@@ -233,7 +236,7 @@ export async function confirmAndSetup(params: {
         fileSize: file.fileSize,
         fileUrl: `/uploads/kb/${newFileName}`,
         category: classification?.category || 'general',
-        visibility: classification?.visibility || 'org',
+        visibility,
         visibleDeptIds,
         status: 'pending',
         chunkCount: 0,

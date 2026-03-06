@@ -43,7 +43,7 @@ export async function processZipFile(zipPath: string): Promise<ExtractedFile[]> 
     fs.mkdirSync(tempDir, { recursive: true });
   }
 
-  const supportedExts = ['pdf', 'docx', 'txt', 'md'];
+  const supportedExts = ['pdf', 'docx', 'doc', 'txt', 'md', 'xlsx', 'xls', 'csv', 'pptx', 'html', 'htm', 'rtf', 'json'];
 
   for (const entry of entries) {
     if (entry.isDirectory) continue;
@@ -93,7 +93,7 @@ export async function processZipFile(zipPath: string): Promise<ExtractedFile[]> 
 
 export async function processMultipleFiles(filePaths: { originalName: string; tempPath: string }[]): Promise<ExtractedFile[]> {
   const files: ExtractedFile[] = [];
-  const supportedExts = ['pdf', 'docx', 'txt', 'md'];
+  const supportedExts = ['pdf', 'docx', 'doc', 'txt', 'md', 'xlsx', 'xls', 'csv', 'pptx', 'html', 'htm', 'rtf', 'json'];
 
   for (const { originalName, tempPath } of filePaths) {
     const ext = originalName.split('.').pop()?.toLowerCase() || '';

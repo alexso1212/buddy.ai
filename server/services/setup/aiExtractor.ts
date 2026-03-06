@@ -12,14 +12,26 @@ const complexClient = new OpenAI({
   timeout: 300000,
 });
 
+export type DocumentCategory =
+  | 'org_chart' | 'roster' | 'jd' | 'contract' | 'kpi'
+  | 'policy' | 'handbook' | 'sop'
+  | 'product' | 'sales' | 'project'
+  | 'finance' | 'legal'
+  | 'marketing' | 'brand'
+  | 'technical'
+  | 'general';
+
 export interface FileAnalysis {
   fileName: string;
-  category: 'policy' | 'contract' | 'jd' | 'manual' | 'general';
-  visibility: 'org' | 'admin' | 'department';
-  visibleDepartment?: string;
+  category: DocumentCategory;
+  orgRelevance: number;
+  kbRelevance: number;
+  orgReason: string;
+  kbReason: string;
+  sensitivity: 'high' | 'medium' | 'low';
   summary: string;
-  relevanceScore: number;
-  relevanceReason: string;
+  suggestedVisibility: 'org' | 'admin' | 'department';
+  suggestedDepartment: string;
   mentionedDepartments: string[];
   mentionedRoles: string[];
   mentionedNames: string[];
@@ -66,39 +78,67 @@ async function analyzeFileWithHaiku(fileName: string, content: string): Promise<
       messages: [
         {
           role: 'system',
-          content: `你是一个企业文档分析助手。根据文件名和内容开头快速判断文档类型和价值，返回纯 JSON（不要 markdown 代码块）。
+          content: `你是一个企业文档分析助手。请分析以下企业文件，返回纯 JSON（不要 markdown 代码块）。
 
-返回格式：
+只看文件名和文件开头内容（前500字符），快速判断以下信息：
+
 {
-  "category": "policy/contract/jd/manual/general 五选一",
-  "visibility": "org/admin/department 三选一",
-  "visibleDepartment": "如果visibility=department，填部门名（否则填空字符串）",
-  "summary": "一句话概括文档内容（30字以内）",
-  "relevanceScore": 4,
-  "relevanceReason": "一句话说明为什么给这个评分",
-  "mentionedDepartments": ["文档中提到的部门名称列表"],
-  "mentionedRoles": ["文档中提到的岗位/职位名称列表"],
-  "mentionedNames": ["文档中提到的人名列表"]
+  "category": "从以下选项中选一个：org_chart/roster/jd/contract/kpi/policy/handbook/sop/product/sales/project/finance/legal/marketing/brand/technical/general",
+  "orgRelevance": 4,
+  "kbRelevance": 3,
+  "orgReason": "一句话说明为什么给这个 orgRelevance 分数",
+  "kbReason": "一句话说明为什么给这个 kbRelevance 分数",
+  "sensitivity": "low",
+  "summary": "一句话概括文件内容（20字以内）",
+  "suggestedVisibility": "org/admin/department 三选一",
+  "suggestedDepartment": "如果 suggestedVisibility=department，填哪个部门（否则空字符串）",
+  "mentionedDepartments": ["识别到的部门名称"],
+  "mentionedRoles": ["识别到的岗位/职位名称"],
+  "mentionedNames": ["识别到的人名"]
 }
 
-分类标准：
-- policy：规章制度、考勤、休假、行为准则、报销流程
-- contract：劳动合同、保密协议、竞业限制
-- jd：岗位说明书、职位描述、KPI考核标准
-- manual：操作手册、培训资料、使用指南、组织架构说明书
-- general：其他
+分类说明：
+- org_chart: 组织架构图
+- roster: 花名册/通讯录/人员名册
+- jd: 岗位说明书/职位描述
+- contract: 劳动合同/保密协议
+- kpi: 绩效考核标准/KPI表
+- policy: 规章制度（考勤、报销、行政等）
+- handbook: 员工手册（综合性文档）
+- sop: 标准操作流程
+- product: 产品相关（目录、手册、规格）
+- sales: 销售相关（话术、客户、报价）
+- project: 项目相关（方案、计划、纪要）
+- finance: 财务相关
+- legal: 法务合同/协议
+- marketing: 市场营销相关
+- brand: 品牌/公司介绍
+- technical: 技术文档
+- general: 无法分类的
 
-可见性判断：
-- org：全员应知的（考勤、办公规范、报销流程）
-- admin：涉及薪资、合同条款、人事的敏感文件
-- department：只和特定部门相关的文件
+orgRelevance 评分标准（对理解组织架构的价值，1-5整数）：
+  5 = 直接包含组织架构信息（组织架构图、花名册、通讯录）
+  4 = 包含岗位职责或人员信息（岗位说明书、劳动合同、绩效考核表）
+  3 = 间接包含组织信息（员工手册中提到部门、SOP中提到负责人、项目方案中有分工）
+  2 = 可能有零星的人名或部门提及（会议纪要、工作报告）
+  1 = 与组织架构完全无关（产品手册、财务数据、发票、市场资料）
 
-relevanceScore 评分标准（1-5整数，表示对理解公司组织架构的价值）：
-  5 = 极高价值（组织架构图、岗位说明书、劳动合同、通讯录、人员名册）
-  4 = 高价值（员工手册、管理制度、考核标准、职能说明书）
-  3 = 中等价值（工作流程、操作手册、培训资料）
-  2 = 低价值（一般性文档、模板、会议记录）
-  1 = 无价值（发票、报表、纯数据文件）`
+kbRelevance 评分标准（员工日常查询价值，1-5整数）：
+  5 = 员工高频查询（考勤制度、报销流程、请假规定、产品FAQ）
+  4 = 工作参考文档（SOP、产品手册、销售话术、技术规范）
+  3 = 偶尔参考（培训计划、项目方案、竞品分析）
+  2 = 低频但有存档价值（合同、年度计划、品牌手册）
+  1 = 几乎不会被查询（发票、银行流水、物流单号、水电费通知）
+
+sensitivity 判断：
+  high = 涉及个人薪资、银行信息、商业核心机密
+  medium = 涉及合同条款、客户名单、财务概况
+  low = 可以全员公开的制度、流程、产品信息
+
+suggestedVisibility 判断：
+  org = 全员应知的（考勤、办公规范、报销流程、产品知识）
+  admin = 涉及薪资、合同条款、人事的敏感文件
+  department = 只和特定部门相关的文件`
         },
         {
           role: 'user',
@@ -114,11 +154,14 @@ relevanceScore 评分标准（1-5整数，表示对理解公司组织架构的�
     return {
       fileName,
       category: parsed.category || 'general',
-      visibility: parsed.visibility || 'org',
-      visibleDepartment: parsed.visibleDepartment || '',
+      orgRelevance: typeof parsed.orgRelevance === 'number' ? parsed.orgRelevance : 3,
+      kbRelevance: typeof parsed.kbRelevance === 'number' ? parsed.kbRelevance : 3,
+      orgReason: parsed.orgReason || '',
+      kbReason: parsed.kbReason || '',
+      sensitivity: ['high', 'medium', 'low'].includes(parsed.sensitivity) ? parsed.sensitivity : 'low',
       summary: parsed.summary || '',
-      relevanceScore: typeof parsed.relevanceScore === 'number' ? parsed.relevanceScore : 3,
-      relevanceReason: parsed.relevanceReason || '',
+      suggestedVisibility: parsed.suggestedVisibility || 'org',
+      suggestedDepartment: parsed.suggestedDepartment || '',
       mentionedDepartments: parsed.mentionedDepartments || [],
       mentionedRoles: parsed.mentionedRoles || [],
       mentionedNames: parsed.mentionedNames || [],
@@ -128,10 +171,14 @@ relevanceScore 评分标准（1-5整数，表示对理解公司组织架构的�
     return {
       fileName,
       category: 'general',
-      visibility: 'org',
+      orgRelevance: 3,
+      kbRelevance: 3,
+      orgReason: '分析失败，默认中等相关性',
+      kbReason: '分析失败，默认中等相关性',
+      sensitivity: 'low',
       summary: '无法自动分析',
-      relevanceScore: 3,
-      relevanceReason: '分析失败，默认中等相关性',
+      suggestedVisibility: 'org',
+      suggestedDepartment: '',
       mentionedDepartments: [],
       mentionedRoles: [],
       mentionedNames: [],
@@ -144,7 +191,7 @@ async function synthesizeWithOpus(
   selectedFiles: { fileName: string; content: string }[]
 ): Promise<EnterpriseProfile> {
   const summaryBlock = allFileAnalyses.map(f =>
-    `【${f.fileName}】类型:${f.category} | 评分:${f.relevanceScore}/5 | 摘要:${f.summary} | 提到的部门:${f.mentionedDepartments.join(',')} | 提到的岗位:${f.mentionedRoles.join(',')} | 提到的人名:${f.mentionedNames.join(',')}`
+    `【${f.fileName}】类型:${f.category} | 组织:${f.orgRelevance}/5 知识库:${f.kbRelevance}/5 | 摘要:${f.summary} | 部门:${f.mentionedDepartments.join(',')} | 岗位:${f.mentionedRoles.join(',')} | 人名:${f.mentionedNames.join(',')}`
   ).join('\n');
 
   const keyContents = selectedFiles
@@ -222,7 +269,7 @@ async function synthesizeWithOpus(
 ## 全部文件摘要
 ${summaryBlock}
 
-## 关键文件内容（共${selectedFiles.length}篇）
+## 关键文件内容（共${selectedFiles.length}篇，orgRelevance≥3）
 ${keyContents || '（无关键文件内容）'}
 
 请从以上信息中整合出这家企业的完整组织架构，特别注意提取所有内部员工信息。`
@@ -293,23 +340,27 @@ export async function extractEnterpriseProfile(
   const skippedAnalyses: FileAnalysis[] = skippedByName.map(f => ({
     fileName: f.fileName,
     category: 'general' as const,
-    visibility: 'org' as const,
+    orgRelevance: 1,
+    kbRelevance: 1,
+    orgReason: '文件名匹配跳过规则',
+    kbReason: '文件名匹配跳过规则',
+    sensitivity: 'low' as const,
     summary: '文件名过滤跳过',
-    relevanceScore: 1,
-    relevanceReason: '文件名匹配跳过规则',
+    suggestedVisibility: 'org' as const,
+    suggestedDepartment: '',
     mentionedDepartments: [],
     mentionedRoles: [],
     mentionedNames: [],
   }));
 
   const allAnalyses = [...fileAnalyses, ...skippedAnalyses];
-  console.log(`[Setup AI] Stage 1 complete: scores = [${fileAnalyses.map(f => `${f.fileName}:${f.relevanceScore}`).join(', ')}]`);
+  console.log(`[Setup AI] Stage 1 complete: scores = [${fileAnalyses.map(f => `${f.fileName}:org${f.orgRelevance}/kb${f.kbRelevance}`).join(', ')}]`);
 
   const scored = fileAnalyses
     .map((analysis, i) => ({ analysis, file: relevantFiles[i] }))
-    .sort((a, b) => b.analysis.relevanceScore - a.analysis.relevanceScore);
+    .sort((a, b) => b.analysis.orgRelevance - a.analysis.orgRelevance);
 
-  const highValue = scored.filter(s => s.analysis.relevanceScore >= 3);
+  const highValue = scored.filter(s => s.analysis.orgRelevance >= 3);
 
   const capped = highValue.slice(0, 15);
 
@@ -324,7 +375,7 @@ export async function extractEnterpriseProfile(
   }
 
   const analyzedFileCount = finalFiles.length;
-  console.log(`[Setup AI] Stage 1.5 filtering: ${totalFileCount} total → ${relevantFiles.length} after filename → ${highValue.length} relevant (score≥3) → ${analyzedFileCount} sent to Opus (${totalChars} chars)`);
+  console.log(`[Setup AI] Stage 1.5 filtering: ${totalFileCount} total → ${relevantFiles.length} after filename → ${highValue.length} org-relevant (orgRelevance≥3) → ${analyzedFileCount} sent to Opus (${totalChars} chars)`);
 
   console.log(`[Setup AI] Stage 2: Opus deep analysis on ${analyzedFileCount} files...`);
   const profile = await synthesizeWithOpus(allAnalyses, finalFiles);

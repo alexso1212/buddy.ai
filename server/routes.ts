@@ -3480,10 +3480,10 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     storage: setupUploadStorage,
     limits: { fileSize: 50 * 1024 * 1024 },
     fileFilter: (_req: any, file: any, cb: any) => {
-      const allowed = ['.pdf', '.docx', '.txt', '.md', '.zip'];
+      const allowed = ['.pdf', '.docx', '.doc', '.txt', '.md', '.zip', '.xlsx', '.xls', '.csv', '.pptx', '.html', '.htm', '.rtf', '.json'];
       const ext = pathModule.extname(file.originalname).toLowerCase();
       if (allowed.includes(ext)) cb(null, true);
-      else cb(new Error('不支持的文件格式，仅支持 PDF/DOCX/TXT/MD/ZIP'));
+      else cb(new Error('不支持的文件格式，支持 PDF/Word/Excel/PPT/TXT/CSV/HTML/MD/RTF/JSON/ZIP'));
     },
   });
 
@@ -3842,12 +3842,12 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     storage: kbUploadStorage,
     limits: { fileSize: 50 * 1024 * 1024 },
     fileFilter: (_req: any, file: any, cb: any) => {
-      const allowedTypes = ['.pdf', '.docx', '.txt', '.md'];
+      const allowedTypes = ['.pdf', '.docx', '.doc', '.txt', '.md', '.xlsx', '.xls', '.csv', '.pptx', '.html', '.htm', '.rtf', '.json'];
       const ext = pathModule.extname(file.originalname).toLowerCase();
       if (allowedTypes.includes(ext)) {
         cb(null, true);
       } else {
-        cb(new Error(`不支持的文件类型: ${ext}。支持格式: PDF, DOCX, TXT, MD`));
+        cb(new Error(`不支持的文件类型: ${ext}。支持格式: PDF/Word/Excel/PPT/TXT/CSV/HTML/MD/RTF/JSON`));
       }
     },
   });
