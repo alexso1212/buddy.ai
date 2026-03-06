@@ -9,7 +9,7 @@ const aiClient = new OpenAI({
 const complexClient = new OpenAI({
   baseURL: 'https://vip.aipro.love/v1',
   apiKey: process.env.CLAUDE_COMPLEX_API_KEY || '',
-  timeout: 180000,
+  timeout: 300000,
 });
 
 export interface FileAnalysis {
@@ -130,14 +130,14 @@ async function synthesizeWithSonnet(fileAnalyses: FileAnalysis[], fileContents: 
       const analysis = fileAnalyses.find(a => a.fileName === f.fileName);
       return analysis && ['jd', 'policy', 'contract'].includes(analysis.category);
     })
-    .slice(0, 5)
-    .map(f => `### ${f.fileName}\n${f.content.slice(0, 3000)}`)
+    .slice(0, 8)
+    .map(f => `### ${f.fileName}\n${f.content.slice(0, 6000)}`)
     .join('\n\n');
 
   try {
     const response = await complexClient.chat.completions.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
+      model: 'claude-opus-4-6',
+      max_tokens: 8000,
       temperature: 0.2,
       messages: [
         {
@@ -259,7 +259,7 @@ export async function extractEnterpriseProfile(files: { fileName: string; conten
   );
   console.log(`[Setup AI] Phase 1 complete: ${fileAnalyses.length} files analyzed`);
 
-  console.log('[Setup AI] Phase 2: Sonnet synthesis...');
+  console.log('[Setup AI] Phase 2: Opus synthesis...');
   const profile = await synthesizeWithSonnet(fileAnalyses, files);
   console.log(`[Setup AI] Phase 2 complete: ${profile.departments.length} depts, ${profile.jobRoles.length} roles`);
 

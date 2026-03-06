@@ -77,6 +77,7 @@ The AI subsystem uses intelligent task classification and dynamic parameter sele
 | Document processing | Sonnet | 16384 | on (10k) | 0.3 |
 | Knowledge QA | Sonnet | 8192 | off | 0.3 |
 | Deep mode (Opus) | Opus | 64000 | on (32k) | 0.5 |
+| Smart Setup synthesis | Opus | 8000 | off | 0.2 |
 
 **Extended Thinking Control:** The user's "Extended Thinking" toggle acts as a permission flag. Even when enabled, thinking only activates for code/complex/document tasks — never for quick replies or general chat.
 
