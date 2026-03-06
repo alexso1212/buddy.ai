@@ -33,6 +33,10 @@ function getActivityUserId(body: any, fallback: number = 1): number {
 }
 
 export async function registerRoutes(server: Server, app: Express) {
+  app.get("/api/health", (_req, res) => {
+    res.status(200).json({ status: "ok", timestamp: Date.now() });
+  });
+
   await setupAuth(app);
   registerAuthRoutes(app);
 

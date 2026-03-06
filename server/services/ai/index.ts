@@ -1376,7 +1376,11 @@ export async function* chatStream(
       }
     };
   } catch (err: any) {
-    yield { type: 'error', content: err.message || 'Stream error' };
+    const statusCode = err.status || err.statusCode || '';
+    const errBody = err.error?.message || err.response?.data?.error?.message || '';
+    const detail = errBody || err.message || 'Stream error';
+    console.error(`[AI Stream Error] model=${modelName} status=${statusCode} message=${detail}`);
+    yield { type: 'error', content: detail };
   }
 }
 
@@ -1641,6 +1645,10 @@ export async function* codeToolChatStream(
       },
     };
   } catch (err: any) {
-    yield { type: 'error', content: err.message || 'Code tool stream error' };
+    const statusCode = err.status || err.statusCode || '';
+    const errBody = err.error?.message || err.response?.data?.error?.message || '';
+    const detail = errBody || err.message || 'Code tool stream error';
+    console.error(`[AI CodeTool Stream Error] model=${model} status=${statusCode} message=${detail}`);
+    yield { type: 'error', content: detail };
   }
 }
