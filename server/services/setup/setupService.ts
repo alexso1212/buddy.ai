@@ -36,6 +36,50 @@ export async function analyzeUpload(params: {
   return { profile, extractedFiles };
 }
 
+export async function analyzeKbDocuments(params: {
+  orgId: number;
+  documentIds: number[];
+}): Promise<{
+  profile: EnterpriseProfile;
+  extractedFiles: ExtractedFile[];
+}> {
+  const { orgId, documentIds } = params;
+  const extractedFiles: ExtractedFile[] = [];
+
+  for (const docId of documentIds) {
+    const doc = await storage.getKbDocumentById(docId);
+    if (!doc || doc.orgId !== orgId) continue;
+    if (doc.status !== 'completed') continue;
+
+    const chunks = await storage.getKbChunksByDocument(docId);
+    if (chunks.length === 0) continue;
+
+    const content = chunks
+      .sort((a, b) => a.chunkIndex - b.chunkIndex)
+      .map(c => c.content)
+      .join('\n\n');
+
+    extractedFiles.push({
+      fileName: doc.fileName,
+      filePath: doc.fileUrl,
+      fileType: doc.fileType,
+      fileSize: doc.fileSize,
+      content: content.length > 3000 ? content.slice(0, 3000) + '...' : content,
+      fullContent: content,
+    });
+  }
+
+  if (extractedFiles.length === 0) {
+    throw new Error('所选文档没有可用的文本内容。请确保文档已完成处理。');
+  }
+
+  const profile = await extractEnterpriseProfile(
+    extractedFiles.map(f => ({ fileName: f.fileName, content: f.content }))
+  );
+
+  return { profile, extractedFiles };
+}
+
 export async function confirmAndSetup(params: {
   orgId: number;
   userId: number;

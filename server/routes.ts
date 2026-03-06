@@ -3525,6 +3525,30 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
     }
   });
 
+  app.post("/api/setup/analyze-kb", authMiddleware, async (req: any, res) => {
+    try {
+      if (!['owner', 'admin'].includes(req.userRole)) {
+        return res.status(403).json({ error: "仅管理员可使用智能初始化" });
+      }
+
+      const { documentIds } = req.body;
+      if (!Array.isArray(documentIds) || documentIds.length === 0) {
+        return res.status(400).json({ error: "请选择至少一个知识库文档" });
+      }
+
+      const { analyzeKbDocuments } = await import('./services/setup/setupService');
+      const result = await analyzeKbDocuments({
+        orgId: req.orgId,
+        documentIds: documentIds.map(Number),
+      });
+
+      return res.json({ data: result });
+    } catch (e: any) {
+      console.error('[Setup] Analyze KB error:', e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/setup/confirm", authMiddleware, async (req: any, res) => {
     try {
       if (!['owner', 'admin'].includes(req.userRole)) {

@@ -1,12 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Upload,
   FileText,
@@ -23,6 +24,7 @@ import {
   ArrowLeft,
   FolderOpen,
   UserRoundPlus,
+  Database,
 } from "lucide-react";
 import {
   Select,
@@ -115,8 +117,43 @@ export default function SmartSetupPage() {
   const [profile, setProfile] = useState<EnterpriseProfile | null>(null);
   const [extractedFiles, setExtractedFiles] = useState<any[]>([]);
   const [result, setResult] = useState<ConfirmResult | null>(null);
+  const [sourceMode, setSourceMode] = useState<"upload" | "kb">("upload");
+  const [selectedKbDocIds, setSelectedKbDocIds] = useState<number[]>([]);
+
+  const kbDocsQuery = useQuery<any[]>({
+    queryKey: ["/api/kb/documents"],
+    enabled: sourceMode === "kb",
+  });
+
+  const kbDocs = (kbDocsQuery.data as any)?.data ?? kbDocsQuery.data ?? [];
+  const completedKbDocs = Array.isArray(kbDocs)
+    ? kbDocs.filter((d: any) => d.status === "completed")
+    : [];
+
+  const toggleKbDoc = (docId: number) => {
+    setSelectedKbDocIds(prev =>
+      prev.includes(docId) ? prev.filter(id => id !== docId) : [...prev, docId]
+    );
+  };
 
   const allowedExtensions = [".pdf", ".docx", ".txt", ".md", ".zip"];
+
+  const analyzeKbMutation = useMutation({
+    mutationFn: async (documentIds: number[]) => {
+      const res = await apiRequest("POST", "/api/setup/analyze-kb", { documentIds });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      const analyzeResult: AnalyzeResult = data.data;
+      setProfile(analyzeResult.profile);
+      setExtractedFiles(analyzeResult.extractedFiles);
+      setStep("confirm");
+    },
+    onError: (err: any) => {
+      toast({ title: "分析失败", description: err.message, variant: "destructive" });
+      setStep("upload");
+    },
+  });
 
   const analyzeMutation = useMutation({
     mutationFn: async (files: File[]) => {
@@ -195,12 +232,21 @@ export default function SmartSetupPage() {
   };
 
   const startAnalysis = () => {
-    if (selectedFiles.length === 0) {
-      toast({ title: "请先选择文件", variant: "destructive" });
-      return;
+    if (sourceMode === "kb") {
+      if (selectedKbDocIds.length === 0) {
+        toast({ title: "请先选择知识库文档", variant: "destructive" });
+        return;
+      }
+      setStep("analyzing");
+      analyzeKbMutation.mutate(selectedKbDocIds);
+    } else {
+      if (selectedFiles.length === 0) {
+        toast({ title: "请先选择文件", variant: "destructive" });
+        return;
+      }
+      setStep("analyzing");
+      analyzeMutation.mutate(selectedFiles);
     }
-    setStep("analyzing");
-    analyzeMutation.mutate(selectedFiles);
   };
 
   const updateDeptName = (idx: number, name: string) => {
@@ -406,79 +452,195 @@ export default function SmartSetupPage() {
         {/* Step 1: Upload */}
         {step === "upload" && (
           <div className="space-y-6" data-testid="step-upload">
-            <div
-              className={`rounded-2xl border-2 border-dashed transition-colors p-12 text-center ${
-                dragOver
-                  ? "border-[#B4886B] bg-[#B4886B]/5"
-                  : "border-[#C4C0BB] dark:border-[#3D3D3A] hover:border-[#B4886B]/50"
-              }`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(true);
-              }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={handleFileDrop}
-              data-testid="file-dropzone"
-            >
-              <Upload size={40} className="mx-auto mb-4 text-[#B4886B]" />
-              <p className="text-[#2D2D2A] dark:text-[#ECECEC] font-medium mb-1">
-                拖拽文件到这里，或点击选择
-              </p>
-              <p className="text-sm text-[#7A7874] dark:text-[#8A8A85] mb-4">
-                支持 PDF、Word、TXT、Markdown、ZIP 格式，最大 50MB
-              </p>
-              <Button
-                onClick={() => fileInputRef.current?.click()}
-                variant="outline"
-                className="rounded-xl"
-                data-testid="button-select-files"
+            <div className="flex items-center gap-2 rounded-xl bg-black/5 dark:bg-white/5 p-1">
+              <button
+                onClick={() => { setSourceMode("upload"); setSelectedKbDocIds([]); }}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  sourceMode === "upload"
+                    ? "bg-white dark:bg-[#2D2D2A] text-[#2D2D2A] dark:text-[#ECECEC] shadow-sm"
+                    : "text-[#7A7874] hover:text-[#2D2D2A] dark:hover:text-[#ECECEC]"
+                }`}
+                data-testid="button-source-upload"
               >
-                <FolderOpen size={16} className="mr-2" />
-                选择文件
-              </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept=".pdf,.docx,.txt,.md,.zip"
-                onChange={handleFileSelect}
-                className="hidden"
-                data-testid="input-file"
-              />
+                <Upload size={16} />
+                上传新文件
+              </button>
+              <button
+                onClick={() => { setSourceMode("kb"); setSelectedFiles([]); }}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  sourceMode === "kb"
+                    ? "bg-white dark:bg-[#2D2D2A] text-[#2D2D2A] dark:text-[#ECECEC] shadow-sm"
+                    : "text-[#7A7874] hover:text-[#2D2D2A] dark:hover:text-[#ECECEC]"
+                }`}
+                data-testid="button-source-kb"
+              >
+                <Database size={16} />
+                从知识库选择
+              </button>
             </div>
 
-            {selectedFiles.length > 0 && (
-              <div className="space-y-2" data-testid="file-list">
-                <p className="text-sm font-medium text-[#2D2D2A] dark:text-[#ECECEC]">
-                  已选择 {selectedFiles.length} 个文件
-                </p>
-                {selectedFiles.map((f, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-[#2D2D2A] border border-[#E8E4DF] dark:border-[#3D3D3A]"
-                    data-testid={`file-item-${i}`}
+            {sourceMode === "upload" && (
+              <>
+                <div
+                  className={`rounded-2xl border-2 border-dashed transition-colors p-12 text-center ${
+                    dragOver
+                      ? "border-[#B4886B] bg-[#B4886B]/5"
+                      : "border-[#C4C0BB] dark:border-[#3D3D3A] hover:border-[#B4886B]/50"
+                  }`}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragOver(true);
+                  }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={handleFileDrop}
+                  data-testid="file-dropzone"
+                >
+                  <Upload size={40} className="mx-auto mb-4 text-[#B4886B]" />
+                  <p className="text-[#2D2D2A] dark:text-[#ECECEC] font-medium mb-1">
+                    拖拽文件到这里，或点击选择
+                  </p>
+                  <p className="text-sm text-[#7A7874] dark:text-[#8A8A85] mb-4">
+                    支持 PDF、Word、TXT、Markdown、ZIP 格式，最大 50MB
+                  </p>
+                  <Button
+                    onClick={() => fileInputRef.current?.click()}
+                    variant="outline"
+                    className="rounded-xl"
+                    data-testid="button-select-files"
                   >
-                    <FileText size={18} className="text-[#B4886B] flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-[#2D2D2A] dark:text-[#ECECEC] truncate">{f.name}</p>
-                      <p className="text-xs text-[#7A7874]">{formatFileSize(f.size)}</p>
-                    </div>
-                    <button
-                      onClick={() => removeFile(i)}
-                      className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/5"
-                      data-testid={`button-remove-file-${i}`}
-                    >
-                      <X size={14} className="text-[#7A7874]" />
-                    </button>
+                    <FolderOpen size={16} className="mr-2" />
+                    选择文件
+                  </Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept=".pdf,.docx,.txt,.md,.zip"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    data-testid="input-file"
+                  />
+                </div>
+
+                {selectedFiles.length > 0 && (
+                  <div className="space-y-2" data-testid="file-list">
+                    <p className="text-sm font-medium text-[#2D2D2A] dark:text-[#ECECEC]">
+                      已选择 {selectedFiles.length} 个文件
+                    </p>
+                    {selectedFiles.map((f, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-[#2D2D2A] border border-[#E8E4DF] dark:border-[#3D3D3A]"
+                        data-testid={`file-item-${i}`}
+                      >
+                        <FileText size={18} className="text-[#B4886B] flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-[#2D2D2A] dark:text-[#ECECEC] truncate">{f.name}</p>
+                          <p className="text-xs text-[#7A7874]">{formatFileSize(f.size)}</p>
+                        </div>
+                        <button
+                          onClick={() => removeFile(i)}
+                          className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/5"
+                          data-testid={`button-remove-file-${i}`}
+                        >
+                          <X size={14} className="text-[#7A7874]" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
+              </>
+            )}
+
+            {sourceMode === "kb" && (
+              <div className="space-y-3" data-testid="kb-doc-selector">
+                {kbDocsQuery.isLoading ? (
+                  <div className="flex items-center justify-center py-12 text-[#7A7874]">
+                    <Loader2 size={20} className="animate-spin mr-2" />
+                    加载知识库文档...
+                  </div>
+                ) : completedKbDocs.length === 0 ? (
+                  <div className="rounded-2xl border-2 border-dashed border-[#C4C0BB] dark:border-[#3D3D3A] p-12 text-center">
+                    <Database size={40} className="mx-auto mb-4 text-[#7A7874]" />
+                    <p className="text-[#2D2D2A] dark:text-[#ECECEC] font-medium mb-1">
+                      暂无可用的知识库文档
+                    </p>
+                    <p className="text-sm text-[#7A7874] dark:text-[#8A8A85]">
+                      请先在知识库中上传并处理文档，或切换到"上传新文件"
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-[#2D2D2A] dark:text-[#ECECEC]">
+                        已处理完成的文档（{completedKbDocs.length} 个可用）
+                      </p>
+                      {completedKbDocs.length > 0 && (
+                        <button
+                          onClick={() => {
+                            if (selectedKbDocIds.length === completedKbDocs.length) {
+                              setSelectedKbDocIds([]);
+                            } else {
+                              setSelectedKbDocIds(completedKbDocs.map((d: any) => d.id));
+                            }
+                          }}
+                          className="text-xs text-[#B4886B] hover:text-[#A07A5F]"
+                          data-testid="button-toggle-select-all-kb"
+                        >
+                          {selectedKbDocIds.length === completedKbDocs.length ? "取消全选" : "全选"}
+                        </button>
+                      )}
+                    </div>
+                    {completedKbDocs.map((doc: any) => (
+                      <label
+                        key={doc.id}
+                        className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors border ${
+                          selectedKbDocIds.includes(doc.id)
+                            ? "bg-[#B4886B]/5 border-[#B4886B]/30 dark:bg-[#B4886B]/10"
+                            : "bg-white dark:bg-[#2D2D2A] border-[#E8E4DF] dark:border-[#3D3D3A] hover:border-[#B4886B]/30"
+                        }`}
+                        data-testid={`kb-doc-item-${doc.id}`}
+                      >
+                        <Checkbox
+                          checked={selectedKbDocIds.includes(doc.id)}
+                          onCheckedChange={() => toggleKbDoc(doc.id)}
+                          data-testid={`checkbox-kb-doc-${doc.id}`}
+                        />
+                        <FileText size={18} className="text-[#B4886B] flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-[#2D2D2A] dark:text-[#ECECEC] truncate">{doc.title || doc.fileName}</p>
+                          <div className="flex items-center gap-2 text-xs text-[#7A7874]">
+                            <span>{doc.fileType?.toUpperCase()}</span>
+                            <span>·</span>
+                            <span>{formatFileSize(doc.fileSize)}</span>
+                            {doc.chunkCount > 0 && (
+                              <>
+                                <span>·</span>
+                                <span>{doc.chunkCount} 个片段</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                    {selectedKbDocIds.length > 0 && (
+                      <p className="text-sm text-[#B4886B]">
+                        已选择 {selectedKbDocIds.length} 个文档
+                      </p>
+                    )}
+                  </>
+                )}
               </div>
             )}
 
             <div className="flex justify-end">
               <Button
                 onClick={startAnalysis}
-                disabled={selectedFiles.length === 0}
+                disabled={
+                  sourceMode === "upload"
+                    ? selectedFiles.length === 0
+                    : selectedKbDocIds.length === 0
+                }
                 className="rounded-xl bg-[#B4886B] hover:bg-[#A07A5F] text-white px-6"
                 data-testid="button-start-analysis"
               >
@@ -500,13 +662,24 @@ export default function SmartSetupPage() {
               正在提取组织架构、部门结构和岗位信息，请稍候
             </p>
             <div className="mt-8 space-y-3 max-w-sm mx-auto">
-              {selectedFiles.map((f, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm text-[#7A7874]">
-                  <FileText size={14} />
-                  <span className="truncate">{f.name}</span>
-                  <Loader2 size={12} className="animate-spin ml-auto flex-shrink-0" />
-                </div>
-              ))}
+              {sourceMode === "upload"
+                ? selectedFiles.map((f, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm text-[#7A7874]">
+                      <FileText size={14} />
+                      <span className="truncate">{f.name}</span>
+                      <Loader2 size={12} className="animate-spin ml-auto flex-shrink-0" />
+                    </div>
+                  ))
+                : completedKbDocs
+                    .filter((d: any) => selectedKbDocIds.includes(d.id))
+                    .map((d: any) => (
+                      <div key={d.id} className="flex items-center gap-2 text-sm text-[#7A7874]">
+                        <FileText size={14} />
+                        <span className="truncate">{d.title || d.fileName}</span>
+                        <Loader2 size={12} className="animate-spin ml-auto flex-shrink-0" />
+                      </div>
+                    ))
+              }
             </div>
           </div>
         )}
