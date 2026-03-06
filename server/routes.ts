@@ -3464,7 +3464,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
 
   app.post("/api/setup/analyze", authMiddleware, setupUpload.array('files', 20), async (req: any, res) => {
     try {
-      if (!['owner', 'admin'].includes(req.role)) {
+      if (!['owner', 'admin'].includes(req.userRole)) {
         return res.status(403).json({ error: "仅管理员可使用智能初始化" });
       }
 
@@ -3502,7 +3502,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
 
   app.post("/api/setup/confirm", authMiddleware, async (req: any, res) => {
     try {
-      if (!['owner', 'admin'].includes(req.role)) {
+      if (!['owner', 'admin'].includes(req.userRole)) {
         return res.status(403).json({ error: "仅管理员可使用智能初始化" });
       }
 
