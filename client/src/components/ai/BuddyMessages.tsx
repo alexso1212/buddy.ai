@@ -39,8 +39,6 @@ const DISLIKE_REASONS = [
   { value: 'other', label: '其他' },
 ];
 
-const ACTION_BTN = "flex h-8 w-8 items-center justify-center rounded-md transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-transparent active:scale-95";
-
 function AiReplyActions({ content, onRegenerate, isLastAssistant }: { content: string; onRegenerate?: () => void; isLastAssistant?: boolean }) {
   const [liked, setLiked] = useState<boolean | null>(null);
   const [copied, setCopied] = useState(false);
@@ -79,51 +77,61 @@ function AiReplyActions({ content, onRegenerate, isLastAssistant }: { content: s
   }, []);
 
   return (
-    <div className="mt-1" data-testid="ai-reply-actions">
-      <div className="flex items-center text-[var(--text-tertiary,#6b6a68)]">
+    <div className="mt-2 ml-0.5" data-testid="ai-reply-actions">
+      <div className="flex items-center gap-1">
         <button
           onClick={handleCopy}
-          className={ACTION_BTN}
+          className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
           title={copied ? "已复制" : "复制"}
           data-testid="btn-copy-reply"
         >
-          {copied ? <Check className="w-4 h-4" strokeWidth={1.5} /> : <Copy className="w-4 h-4" strokeWidth={1.5} />}
+          {copied ? <Check className="w-3.5 h-3.5" strokeWidth={1.5} /> : <Copy className="w-3.5 h-3.5" strokeWidth={1.5} />}
         </button>
         {isLastAssistant && onRegenerate && (
           <button
             onClick={onRegenerate}
-            className={ACTION_BTN}
+            className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
             title="重新生成"
             data-testid="btn-regenerate"
           >
-            <RotateCcw className="w-4 h-4" strokeWidth={1.5} />
+            <RotateCcw className="w-3.5 h-3.5" strokeWidth={1.5} />
           </button>
         )}
         <button
           onClick={handleShare}
-          className={ACTION_BTN}
+          className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
           title="分享"
           data-testid="btn-share-reply"
         >
-          <Share2 className="w-4 h-4" strokeWidth={1.5} />
+          <Share2 className="w-3.5 h-3.5" strokeWidth={1.5} />
         </button>
         <button
           onClick={() => setLiked(liked === true ? null : true)}
-          className={cn(ACTION_BTN, liked === true && "text-[var(--brand)]")}
-          style={liked === true ? { background: 'rgba(174,86,48,0.15)' } : undefined}
+          className={cn(
+            "flex items-center justify-center w-7 h-7 rounded-md transition-colors",
+            liked === true
+              ? "text-[var(--text-primary)]"
+              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5"
+          )}
+          style={liked === true ? { background: 'rgba(174,86,48,0.15)', color: 'var(--brand)' } : undefined}
           title="有帮助"
           data-testid="btn-like-reply"
         >
-          <ThumbsUp className="w-4 h-4" strokeWidth={1.5} />
+          <ThumbsUp className="w-3.5 h-3.5" strokeWidth={1.5} />
         </button>
         <button
           onClick={handleDislike}
-          className={cn(ACTION_BTN, liked === false && "text-red-400")}
+          className={cn(
+            "flex items-center justify-center w-7 h-7 rounded-md transition-colors",
+            liked === false
+              ? "text-red-400"
+              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5"
+          )}
           style={liked === false ? { background: 'rgba(248,113,113,0.1)' } : undefined}
           title="不太好"
           data-testid="btn-dislike-reply"
         >
-          <ThumbsDown className="w-4 h-4" strokeWidth={1.5} />
+          <ThumbsDown className="w-3.5 h-3.5" strokeWidth={1.5} />
         </button>
       </div>
       {showFeedback && (
@@ -136,7 +144,14 @@ function AiReplyActions({ content, onRegenerate, isLastAssistant }: { content: s
             <button
               key={reason.value}
               onClick={() => handleFeedbackSelect(reason.value)}
-              className="text-xs px-2.5 py-1 rounded-full transition-colors border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[#393937]"
+              className="text-xs px-2.5 py-1 rounded-full transition-colors"
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                color: 'var(--text-secondary)',
+                border: '1px solid rgba(255,255,255,0.1)',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
               data-testid={`feedback-${reason.value}`}
             >
               {reason.label}
@@ -165,19 +180,23 @@ function SearchSourcesBar({ results }: { results: { title: string; url: string; 
     <div className="mb-3" data-testid="search-sources-bar">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-opacity opacity-90 hover:opacity-100 text-[var(--text-secondary)]"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-opacity opacity-90 hover:opacity-100"
+        style={{ color: 'var(--text-secondary)' }}
         data-testid="toggle-sources"
       >
-        <Globe className="w-3.5 h-3.5 text-[var(--brand)]" strokeWidth={1.5} />
-        <span className="text-[var(--text-primary)] font-medium">Sources</span>
-        <span>
+        <Globe className="w-3.5 h-3.5" strokeWidth={1.5} style={{ color: 'var(--brand)' }} />
+        <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>Sources</span>
+        <span style={{ color: 'var(--text-secondary)' }}>
           {results.slice(0, 3).map(r => r.title.slice(0, 20) + (r.title.length > 20 ? '...' : '')).join(' \u00B7 ')}
           {results.length > 3 && ` +${results.length - 3}`}
         </span>
         {expanded ? <ChevronUp className="w-3 h-3 ml-auto" /> : <ChevronDown className="w-3 h-3 ml-auto" />}
       </button>
       {expanded && (
-        <div className="mt-1.5 rounded-lg overflow-hidden border border-[var(--border-subtle)] bg-[#393937]/30">
+        <div
+          className="mt-1.5 rounded-lg overflow-hidden"
+          style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+        >
           {results.map((r, i) => {
             const favicon = getFavicon(r.url);
             return (
@@ -186,19 +205,19 @@ function SearchSourcesBar({ results }: { results: { title: string; url: string; 
                 href={r.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-start gap-2.5 px-3 py-2.5 transition-opacity opacity-90 hover:opacity-100 no-underline"
-                style={{ borderBottom: i < results.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}
+                className="flex items-start gap-2.5 px-3 py-2.5 transition-opacity opacity-90 hover:opacity-100"
+                style={{ textDecoration: 'none', borderBottom: i < results.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}
                 data-testid={`source-link-${i}`}
               >
                 {favicon && (
-                  <img src={favicon} alt="" className="w-4 h-4 mt-0.5 rounded-sm shrink-0 opacity-80" />
+                  <img src={favicon} alt="" className="w-4 h-4 mt-0.5 rounded-sm shrink-0" style={{ opacity: 0.8 }} />
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1">
-                    <span className="text-xs font-medium truncate text-[var(--text-primary)]">{r.title}</span>
-                    <ExternalLink className="w-3 h-3 shrink-0 text-[var(--text-secondary)] opacity-50" />
+                    <span className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{r.title}</span>
+                    <ExternalLink className="w-3 h-3 shrink-0" style={{ color: 'var(--text-secondary)', opacity: 0.5 }} />
                   </div>
-                  <div className="text-xs mt-0.5 line-clamp-2 text-[var(--text-secondary)] opacity-70" style={{ lineHeight: 1.4 }}>
+                  <div className="text-xs mt-0.5 line-clamp-2" style={{ color: 'var(--text-secondary)', opacity: 0.7, lineHeight: 1.4 }}>
                     {r.content.slice(0, 120)}{r.content.length > 120 ? '...' : ''}
                   </div>
                 </div>
@@ -218,7 +237,7 @@ function TokenUsageBadge({ usage }: { usage: { promptTokens: number; completionT
   };
   return (
     <span
-      className="text-[10px] text-[var(--text-tertiary,#6b6a68)] ml-1"
+      className="text-[10px] text-[var(--text-tertiary)] ml-1"
       title={`Prompt: ${usage.promptTokens} | Completion: ${usage.completionTokens} | Total: ${usage.totalTokens}`}
       data-testid="token-usage-badge"
     >
@@ -247,10 +266,10 @@ function ToolCallCard({ toolCall, index }: { toolCall: { toolName: string; label
 
   return (
     <div
-      className="rounded-lg overflow-hidden border"
+      className="rounded-lg overflow-hidden"
       style={{
         background: isError ? 'rgba(239,68,68,0.08)' : 'rgba(255,255,255,0.04)',
-        borderColor: isError ? 'rgba(239,68,68,0.2)' : 'var(--border-subtle)',
+        border: isError ? '1px solid rgba(239,68,68,0.2)' : '1px solid rgba(255,255,255,0.06)',
       }}
       data-testid={`tool-call-card-${index}`}
     >
@@ -261,11 +280,11 @@ function ToolCallCard({ toolCall, index }: { toolCall: { toolName: string; label
         data-testid={`tool-call-toggle-${index}`}
       >
         {isRunning ? (
-          <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 text-[var(--brand)]" />
+          <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: 'var(--brand, #AE5630)' }} />
         ) : isError ? (
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-[#F87171]" />
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: '#F87171' }} />
         ) : (
-          <Icon className="w-3.5 h-3.5 shrink-0 text-[#4ADE80]" />
+          <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: '#4ADE80' }} />
         )}
         <span
           className="text-xs flex-1 truncate"
@@ -278,17 +297,21 @@ function ToolCallCard({ toolCall, index }: { toolCall: { toolName: string; label
         </span>
         {!isRunning && toolCall.detail && (
           expanded
-            ? <ChevronUp className="w-3 h-3 shrink-0 text-[var(--text-secondary)]" />
-            : <ChevronDown className="w-3 h-3 shrink-0 text-[var(--text-secondary)]" />
+            ? <ChevronUp className="w-3 h-3 shrink-0" style={{ color: 'var(--text-secondary)' }} />
+            : <ChevronDown className="w-3 h-3 shrink-0" style={{ color: 'var(--text-secondary)' }} />
         )}
       </button>
       {expanded && toolCall.detail && (
         <div
-          className="px-3 pb-2 text-xs text-[var(--text-secondary)] opacity-80 whitespace-pre-wrap break-words"
+          className="px-3 pb-2 text-xs"
           style={{
+            color: 'var(--text-secondary)',
+            opacity: 0.8,
             lineHeight: 1.5,
-            borderTop: '1px solid var(--border-subtle)',
+            borderTop: '1px solid rgba(255,255,255,0.04)',
             paddingTop: 8,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
             maxHeight: 200,
             overflowY: 'auto',
           }}
@@ -316,7 +339,7 @@ function CooldownTimer({ cooldownUntil }: { cooldownUntil: number }) {
 
   if (remaining <= 0) return null;
   return (
-    <span className="text-xs tabular-nums text-[var(--text-secondary)]" data-testid="cooldown-timer">
+    <span className="text-xs tabular-nums" style={{ color: 'var(--text-secondary)' }} data-testid="cooldown-timer">
       {remaining}s
     </span>
   );
@@ -416,10 +439,10 @@ function ErrorBlock({ message }: { message: BuddyMessage }) {
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-[var(--text-primary)]" data-testid="error-title">
+            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }} data-testid="error-title">
               {config.title}
             </div>
-            <div className="text-xs mt-0.5 text-[var(--text-secondary)]" style={{ lineHeight: 1.5 }} data-testid="error-description">
+            <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }} data-testid="error-description">
               {config.description}
             </div>
           </div>
@@ -428,7 +451,7 @@ function ErrorBlock({ message }: { message: BuddyMessage }) {
 
         {message.partialContent && errorType === 'stream_interrupted' && (
           <div className="mt-2 pt-2" style={{ borderTop: `1px solid ${config.borderColor}` }}>
-            <div className="text-xs text-[var(--text-secondary)]">
+            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
               Partial response received ({message.partialContent.length} chars)
             </div>
           </div>
@@ -463,7 +486,8 @@ function ErrorBlock({ message }: { message: BuddyMessage }) {
               {onTrimAndRetry && (
                 <button
                   onClick={() => onTrimAndRetry(message.id)}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors font-medium border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[#393937]"
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors font-medium"
+                  style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--text-secondary)', border: '1px solid rgba(255,255,255,0.08)' }}
                   data-testid="btn-trim-retry"
                 >
                   <Scissors size={12} />
@@ -476,7 +500,8 @@ function ErrorBlock({ message }: { message: BuddyMessage }) {
           {!isAutoRetrying && errorType !== 'context_too_long' && onRetry && message.retryPayload && (
             <button
               onClick={() => onRetry(message.id)}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors font-medium border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[#393937]"
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors font-medium"
+              style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--text-secondary)', border: '1px solid rgba(255,255,255,0.08)' }}
               disabled={!!cooldownActive}
               data-testid="btn-retry"
             >
@@ -501,23 +526,35 @@ export function BuddyUserMessage() {
   if (isEditing) {
     return (
       <div
-        className="group relative mx-auto mt-1 mb-1 block w-full max-w-3xl"
+        className="flex justify-end px-3 mb-6"
         style={{ animation: 'messageAppear 200ms ease-out' }}
         data-testid={`ai-message-${message.id}`}
       >
-        <div className="inline-flex max-w-[75ch] flex-col gap-2 rounded-xl bg-[#393937] py-2.5 pr-6 pl-2.5">
+        <div style={{ maxWidth: '82%', width: '100%' }}>
           <textarea
             value={editText}
             onChange={(e) => setEditText(e.target.value)}
             autoFocus
-            className="w-full bg-transparent text-[#eee] outline-none resize-none font-serif"
-            style={{ minHeight: 60, fontSize: 15, lineHeight: '1.65rem' }}
+            style={{
+              width: '100%',
+              background: 'rgba(0,0,0,0.75)',
+              borderRadius: 18,
+              padding: '10px 14px',
+              fontFamily: 'var(--font-sans)',
+              fontSize: 16,
+              lineHeight: 1.5,
+              color: 'var(--text-primary)',
+              border: '1px solid var(--brand)',
+              outline: 'none',
+              resize: 'none',
+              minHeight: 60,
+            }}
             data-testid="edit-message-input"
           />
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 mt-2">
             <button
               onClick={() => { setIsEditing(false); setEditText(message.content); }}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm text-[var(--text-secondary)] hover:bg-[#393937] transition-colors"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm text-[var(--text-secondary)] hover:bg-white/5 transition-colors"
               data-testid="btn-cancel-edit"
             >
               <X className="w-3.5 h-3.5" />
@@ -531,7 +568,8 @@ export function BuddyUserMessage() {
                 }
                 setIsEditing(false);
               }}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm text-white bg-[#ae5630] hover:bg-[#c4633a] transition-colors active:scale-95"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm text-white transition-colors"
+              style={{ background: 'var(--brand)' }}
               data-testid="btn-submit-edit"
             >
               <Check className="w-3.5 h-3.5" />
@@ -545,68 +583,76 @@ export function BuddyUserMessage() {
 
   return (
     <div
-      className="group/user relative mx-auto mt-1 mb-1 block w-full max-w-3xl"
+      className="group flex justify-end px-3 mb-6"
       style={{ animation: 'messageAppear 200ms ease-out' }}
       data-testid={`ai-message-${message.id}`}
     >
+      {onEditMessage && (
+        <button
+          onClick={() => { setEditText(message.content); setIsEditing(true); }}
+          className="self-start mt-2 mr-2 flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors opacity-0 group-hover:opacity-100"
+          title="编辑消息"
+          data-testid="btn-edit-message"
+        >
+          <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
+        </button>
+      )}
       <div
-        className="wrap-break-word relative inline-flex max-w-[75ch] flex-col gap-2 rounded-xl bg-[#393937] py-2.5 pr-6 pl-2.5 text-[#eee] transition-all"
+        style={{
+          maxWidth: '82%',
+          background: 'rgba(0,0,0,0.75)',
+          borderRadius: '18px 18px 4px 18px',
+          padding: '10px 14px',
+          fontFamily: 'var(--font-sans)',
+          fontSize: 16,
+          lineHeight: 1.5,
+          color: 'var(--text-primary)',
+          wordBreak: 'break-word',
+        }}
+        className="whitespace-pre-wrap"
         data-testid={`user-bubble-${message.id}`}
       >
-        <div className="relative flex flex-row gap-2">
-          <div className="shrink-0 self-start transition-all duration-300">
-            <div className="flex h-7 w-7 shrink-0 select-none items-center justify-center rounded-full bg-[#eee] font-bold text-[12px] text-[#2b2a27]">
-              U
-            </div>
-          </div>
-          <div className="flex-1">
-            <div className="relative grid grid-cols-1 gap-2 py-0.5">
-              {message.attachments && message.attachments.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {message.attachments.map((att, i) => (
-                    att.type === 'image' ? (
-                      <img
-                        key={i}
-                        src={att.previewUrl || `data:${att.mimeType};base64,${att.base64}`}
-                        alt={att.name}
-                        className="max-w-[200px] max-h-[200px] rounded-xl object-cover"
-                        data-testid={`attachment-image-${i}`}
-                      />
-                    ) : (
-                      <div
-                        key={i}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/8 text-[13px] text-[var(--text-secondary)]"
-                        data-testid={`attachment-file-${i}`}
-                      >
-                        <FileText size={14} />
-                        {att.name}
-                      </div>
-                    )
-                  ))}
-                </div>
-              )}
-              <div className="wrap-break-word whitespace-pre-wrap font-serif" style={{ lineHeight: '1.65rem' }}>
-                {message.content}
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="pointer-events-none absolute right-2 bottom-0">
-          <div className="pointer-events-auto min-w-max translate-x-1 translate-y-4 rounded-lg border-[0.5px] border-[rgba(108,106,96,0.25)] bg-[#1f1e1b]/80 p-0.5 opacity-0 shadow-sm backdrop-blur-sm transition group-hover/user:translate-x-0.5 group-hover/user:opacity-100">
-            <div className="flex items-center text-[var(--text-tertiary,#6b6a68)]">
-              {onEditMessage && (
-                <button
-                  onClick={() => { setEditText(message.content); setIsEditing(true); }}
-                  className={ACTION_BTN}
-                  title="编辑消息"
-                  data-testid="btn-edit-message"
+        {message.attachments && message.attachments.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: message.content ? 8 : 0 }}>
+            {message.attachments.map((att, i) => (
+              att.type === 'image' ? (
+                <img
+                  key={i}
+                  src={att.previewUrl || `data:${att.mimeType};base64,${att.base64}`}
+                  alt={att.name}
+                  style={{ maxWidth: 200, maxHeight: 200, borderRadius: 12, objectFit: 'cover' }}
+                  data-testid={`attachment-image-${i}`}
+                />
+              ) : (
+                <div
+                  key={i}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 10px',
+                    background: 'rgba(255,255,255,0.08)',
+                    borderRadius: 8,
+                    fontSize: 13,
+                    color: 'var(--text-secondary)',
+                  }}
+                  data-testid={`attachment-file-${i}`}
                 >
-                  <Pencil className="w-4 h-4" strokeWidth={1.5} />
-                </button>
-              )}
-            </div>
+                  <FileText size={14} />
+                  {att.name}
+                </div>
+              )
+            ))}
           </div>
-        </div>
+        )}
+        {message.content}
+        {message.timestamp != null && (
+          <div className="flex justify-end mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="text-[10px] text-[var(--text-secondary)] opacity-40">
+              {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -651,7 +697,7 @@ export function BuddyAssistantMessage() {
   if (message.type === "confirm" && message.action && callbacks.onConfirm && callbacks.onReject) {
     return (
       <div
-        className="relative mx-auto mt-1 mb-1 block w-full max-w-3xl font-serif"
+        className="flex justify-start px-3 mb-6"
         style={{ animation: 'messageAppear 200ms ease-out' }}
         data-testid={`ai-message-${message.id}`}
       >
@@ -685,27 +731,17 @@ export function BuddyAssistantMessage() {
     const hasSteps = message.followUp.steps && message.followUp.steps.length > 0;
     if (!hasSteps) {
       return (
-        <div
-          className="relative mx-auto mt-1 mb-12 block w-full max-w-3xl font-serif"
-          style={{ animation: 'messageAppear 200ms ease-out' }}
-          data-testid={`ai-message-${message.id}`}
-        >
-          <div className="mb-1"><BrandLogo /></div>
-          <div className="wrap-break-word whitespace-normal pr-8 pl-2 text-[#eee]" style={{ lineHeight: '1.65rem' }}>
+        <div className="flex justify-start px-3 mb-6" style={{ animation: 'messageAppear 200ms ease-out' }} data-testid={`ai-message-${message.id}`}>
+          <div className="max-w-full">
+            <div className="mb-2"><BrandLogo /></div>
             <AIMessageContent content={message.followUp.message || message.content} />
-          </div>
-          <div className="pl-2">
             <AiReplyActions content={message.followUp.message || message.content} />
           </div>
         </div>
       );
     }
     return (
-      <div
-        className="relative mx-auto mt-1 mb-1 block w-full max-w-3xl font-serif"
-        style={{ animation: 'messageAppear 200ms ease-out' }}
-        data-testid={`ai-message-${message.id}`}
-      >
+      <div className="px-3 mb-6" style={{ animation: 'messageAppear 200ms ease-out' }} data-testid={`ai-message-${message.id}`}>
         <AiGuidedCreation
           followUp={message.followUp as any}
           onComplete={(mergedData, creationType) => callbacks.onFollowUpSubmit!(message.id, mergedData, creationType)}
@@ -752,19 +788,17 @@ function MultiConfirmGroup({
 
   return (
     <div
-      className="relative mx-auto mt-1 mb-1 block w-full max-w-3xl font-serif space-y-2"
+      className="flex flex-col justify-start px-3 mb-6 space-y-2"
       style={{ animation: 'messageAppear 200ms ease-out' }}
       data-testid={`ai-message-${message.id}`}
     >
       {message.content && (
-        <div className="relative mb-12">
-          <div className="mb-1"><BrandLogo /></div>
-          <div className="wrap-break-word whitespace-normal pr-8 pl-2 text-[#eee]" style={{ lineHeight: '1.65rem' }}>
-            <AIMessageContent content={message.content} />
+        <div className="max-w-full">
+          <div className="mb-2">
+            <BrandLogo />
           </div>
-          <div className="pl-2">
-            <AiReplyActions content={message.content} />
-          </div>
+          <AIMessageContent content={message.content} />
+          <AiReplyActions content={message.content} />
         </div>
       )}
       {hasUndecided && (
@@ -773,10 +807,10 @@ function MultiConfirmGroup({
             onClick={handleConfirmAll}
             disabled={confirmingAll}
             className={cn(
-              "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150 active:scale-[0.98]",
+              "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150",
               confirmingAll
-                ? "bg-[#ae5630]/80 text-white/80 cursor-not-allowed"
-                : "bg-[#ae5630] text-white hover:bg-[#c4633a]"
+                ? "bg-brand/80 text-white/80 cursor-not-allowed"
+                : "bg-brand text-white"
             )}
             data-testid={`confirm-all-${message.id}`}
           >
@@ -821,11 +855,11 @@ function DefaultAssistantMessage({ message, isLastAssistant }: { message: BuddyM
 
   return (
     <div
-      className="group relative mx-auto mt-1 mb-1 block w-full max-w-3xl"
+      className="group flex justify-start px-3 mb-6"
       style={{ animation: 'messageAppear 200ms ease-out' }}
       data-testid={`ai-message-${message.id}`}
     >
-      <div className="relative mb-12 font-serif">
+      <div className="max-w-3xl min-w-0" style={{ maxWidth: 'min(768px, calc(100vw - 40px))' }}>
         <div className="mb-1 flex items-center gap-2">
           <BrandLogo breathing={!!message.isStreaming} />
         </div>
@@ -859,13 +893,7 @@ function DefaultAssistantMessage({ message, isLastAssistant }: { message: BuddyM
             ))}
           </div>
         )}
-        <div className="relative" style={{ lineHeight: '1.65rem' }}>
-          <div className="grid grid-cols-1 gap-2.5">
-            <div className="wrap-break-word whitespace-normal pr-8 pl-2 font-serif text-[#eee]">
-              <AIMessageContent content={displayContent} />
-            </div>
-          </div>
-        </div>
+        <AIMessageContent content={displayContent} />
         {isLongMessage && !contentExpanded && (
           <div style={{ position: 'relative' }}>
             <div style={{
@@ -879,7 +907,18 @@ function DefaultAssistantMessage({ message, isLastAssistant }: { message: BuddyM
             }} />
             <button
               onClick={() => setContentExpanded(true)}
-              className="w-full py-2 text-center text-[13px] text-[var(--brand)] font-medium font-serif hover:underline"
+              style={{
+                width: '100%',
+                padding: '8px 0',
+                textAlign: 'center',
+                fontSize: 13,
+                color: 'var(--brand)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-sans)',
+                fontWeight: 500,
+              }}
               data-testid="btn-show-more"
             >
               显示更多
@@ -889,42 +928,36 @@ function DefaultAssistantMessage({ message, isLastAssistant }: { message: BuddyM
         {showArtifactButton && (
           <button
             onClick={() => setArtifactOpen(true)}
-            className="flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[#393937] active:scale-[0.98]"
+            className="flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              color: 'var(--text-secondary)',
+              border: '1px solid rgba(255,255,255,0.08)',
+            }}
             data-testid={`btn-open-artifact-${message.id}`}
           >
             <PanelRightOpen className="w-3.5 h-3.5" strokeWidth={1.5} />
             Open in panel
           </button>
         )}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0">
-          <div className="pointer-events-auto flex w-full translate-y-full flex-col items-end px-2 pt-2 transition">
-            {!message.isStreaming && (
-              <>
-                <div className="flex items-center text-[var(--text-tertiary,#6b6a68)]">
-                  <AiReplyActions
-                    content={message.content}
-                    onRegenerate={onRegenerate ? () => onRegenerate(message.id) : undefined}
-                    isLastAssistant={isLastAssistant}
-                  />
-                  {message.tokenUsage && <TokenUsageBadge usage={message.tokenUsage} />}
-                  {message.timestamp != null && (
-                    <span
-                      className="text-[10px] text-[var(--text-secondary)] opacity-0 group-hover:opacity-40 transition-opacity ml-2"
-                      data-testid="message-timestamp"
-                    >
-                      {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  )}
-                </div>
-                {isLastAssistant && (
-                  <p className="mt-2 w-full text-right text-[var(--claude-disclaimer,#b8b5a9)] text-[0.65rem] leading-[0.85rem] opacity-90 sm:text-[0.75rem]">
-                    AI 生成内容可能存在错误，请核实重要信息。
-                  </p>
-                )}
-              </>
+        {!message.isStreaming && (
+          <div className="flex items-center">
+            <AiReplyActions
+              content={message.content}
+              onRegenerate={onRegenerate ? () => onRegenerate(message.id) : undefined}
+              isLastAssistant={isLastAssistant}
+            />
+            {message.tokenUsage && <TokenUsageBadge usage={message.tokenUsage} />}
+            {message.timestamp != null && (
+              <span
+                className="text-[10px] text-[var(--text-secondary)] opacity-0 group-hover:opacity-40 transition-opacity ml-2"
+                data-testid="message-timestamp"
+              >
+                {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+              </span>
             )}
           </div>
-        </div>
+        )}
       </div>
       {artifactOpen && (
         <ArtifactPanel

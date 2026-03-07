@@ -188,7 +188,7 @@ function AddToChatSheet({
       >
         <div
           style={{
-            background: '#1f1e1b',
+            background: '#1E1D1B',
             borderTopLeftRadius: 16,
             borderTopRightRadius: 16,
             paddingBottom: 'calc(16px + env(safe-area-inset-bottom))',
@@ -300,7 +300,7 @@ function AddToChatSheet({
                     onClick={() => item.ref.current?.click()}
                     className="flex flex-col items-center justify-center gap-2 py-4 rounded-2xl transition-colors"
                     style={{
-                      background: '#393937',
+                      background: '#2A2928',
                       cursor: 'pointer',
                     }}
                     data-testid={item.testId}
@@ -667,16 +667,20 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
         <div
           ref={composerWrapRef}
           style={{
-            borderRadius: 16,
+            borderRadius: 20,
             position: 'relative' as const,
-            padding: 2,
-            background: '#1f1e1b',
-            boxShadow: isFocused
-              ? '0 0.25rem 1.25rem rgba(0,0,0,0.5), 0 0 0 0.5px rgba(108,106,96,0.3)'
-              : '0 0.25rem 1.25rem rgba(0,0,0,0.4), 0 0 0 0.5px rgba(108,106,96,0.15)',
-            outline: isDragOver ? '2px dashed rgba(174,86,48,0.5)' : 'none',
+            padding: 1,
+            background: showGlow
+              ? `radial-gradient(ellipse 120px 80px at ${glowPos.x * 100}% ${glowPos.y * 100}%, rgba(255,255,255,${isPressed ? 0.65 : 0.4}) 0%, rgba(255,255,255,${isPressed ? 0.25 : 0.15}) 50%, rgba(255,255,255,0.08) 100%)`
+              : 'linear-gradient(to bottom, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.10) 40%, rgba(255,255,255,0.05) 100%)',
+            boxShadow: showGlow
+              ? `0 0 ${isPressed ? 24 : 14}px rgba(255,255,255,${isPressed ? 0.15 : 0.08})`
+              : 'none',
+            outline: isDragOver ? '2px dashed rgba(212,162,127,0.5)' : 'none',
             outlineOffset: 2,
-            transition: 'box-shadow 200ms ease',
+            transition: showGlow && !isPressed
+              ? 'background 0.5s ease, box-shadow 0.5s ease'
+              : 'background 0.05s ease, box-shadow 0.05s ease',
           }}
           onPointerDown={handleComposerPointerDown}
           onPointerUp={handleComposerPointerUp}
@@ -688,11 +692,30 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
           data-testid="ai-composer"
         >
           <div style={{
-            background: '#1f1e1b',
-            borderRadius: 14,
+            background: '#1A1918',
+            borderRadius: 19,
             overflow: 'hidden',
             position: 'relative',
           }}>
+          {spotPos && (
+            <div
+              style={{
+                position: 'absolute',
+                width: '150%',
+                height: 0,
+                paddingBottom: '150%',
+                borderRadius: '50%',
+                background: 'radial-gradient(circle at center, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 30%, rgba(255,255,255,0.01) 60%, rgba(255,255,255,0) 100%)',
+                pointerEvents: 'none',
+                transform: 'translate(-50%, -50%)',
+                left: spotPos.x - 1,
+                top: spotPos.y - 1,
+                opacity: spotVisible ? 1 : 0,
+                transition: 'opacity 300ms ease-out',
+                zIndex: 0,
+              }}
+            />
+          )}
           <textarea
             ref={textareaRef}
             value={value}
@@ -713,9 +736,9 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
               maxHeight: 288,
               padding: '14px 16px 8px 16px',
               fontSize: 16,
-              fontFamily: 'var(--font-serif)',
+              fontFamily: 'var(--font-sans)',
               lineHeight: 1.5,
-              color: '#eee',
+              color: 'var(--text-primary)',
               background: 'transparent',
               border: 'none',
               outline: 'none',
@@ -725,7 +748,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
               zIndex: 1,
             }}
             className={cn(
-              "placeholder:text-[#9a9893]",
+              "placeholder:text-[var(--text-placeholder)]",
               "disabled:opacity-50 disabled:cursor-not-allowed"
             )}
             data-testid="ai-input"
@@ -767,7 +790,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
                         width: 48,
                         height: 48,
                         borderRadius: 8,
-                        background: '#393937',
+                        background: 'rgba(255,255,255,0.08)',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
@@ -790,7 +813,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
                       width: 18,
                       height: 18,
                       borderRadius: 9,
-                      background: '#393937',
+                      background: '#444',
                       border: 'none',
                       display: 'flex',
                       alignItems: 'center',
@@ -820,10 +843,23 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowSheet(true)}
-                className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-[rgba(108,106,96,0.25)] bg-transparent text-[#9a9893] transition-all hover:bg-[#393937] hover:text-[#eee] active:scale-[0.98]"
+                style={{
+                  width: 32,
+                  height: 32,
+                  background: 'transparent',
+                  border: 'none',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: 'var(--text-secondary)',
+                  transition: 'background 150ms',
+                }}
+                className="hover:bg-white/5"
                 data-testid="ai-attach"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-5 h-5" />
               </button>
 
               {webSearchEnabled && (
@@ -871,16 +907,43 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
             {loading ? (
               <button
                 onClick={onStop}
-                className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#eee] transition-colors hover:bg-white active:scale-95"
+                style={{
+                  width: 34,
+                  height: 34,
+                  background: '#ECECEC',
+                  borderRadius: '50%',
+                  border: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'opacity 150ms, transform 100ms',
+                }}
+                onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.95)'; }}
+                onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
                 data-testid="ai-stop"
               >
-                <Square className="w-3 h-3 text-[#2b2a27]" strokeWidth={3} fill="#2b2a27" />
+                <Square className="w-3 h-3 text-[#1A1918]" strokeWidth={3} fill="#1A1918" />
               </button>
             ) : (
               <button
                 onClick={handleSend}
                 disabled={isEmpty}
-                className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#ae5630] transition-colors hover:bg-[#c4633a] active:scale-95 disabled:pointer-events-none disabled:opacity-50"
+                style={{
+                  width: 34,
+                  height: 34,
+                  background: 'var(--brand)',
+                  borderRadius: '50%',
+                  border: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: isEmpty ? 'default' : 'pointer',
+                  opacity: isEmpty ? 0.35 : 1,
+                  transition: 'opacity 150ms, transform 100ms',
+                }}
+                onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.95)'; }}
+                onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
                 data-testid="ai-send"
               >
                 <ArrowUp className="w-4 h-4 text-white" strokeWidth={2.5} />

@@ -193,8 +193,8 @@ function HighlightText({ text, query }: { text: string; query: string }) {
       {parts.map((p, i) =>
         p.match ? (
           <span key={i} style={{
-            background: '#393937',
-            color: '#eee',
+            background: '#1a1a1a',
+            color: '#ffffff',
             padding: '1px 3px',
             borderRadius: 3,
             fontWeight: 500,
@@ -2161,7 +2161,7 @@ export default function Agent() {
   const showWelcome = !activeConvId && messages.length === 0 && !showChat;
 
   return (
-    <div className="relative h-full bg-[#2b2a27] overflow-x-hidden font-serif" style={{ touchAction: 'pan-y' }} data-testid="agent-page">
+    <div className="relative h-full bg-transparent overflow-x-hidden" style={{ touchAction: 'pan-y' }} data-testid="agent-page">
       
 
       {showWelcome ? (
@@ -2169,7 +2169,7 @@ export default function Agent() {
           
           <div className="flex flex-col items-center gap-4 mb-8">
             <AgentLogo size={72} animate={true} glow={true} />
-            <h1 className="font-serif text-2xl text-[#eee]" data-testid="text-welcome-heading">有什么可以帮你的？</h1>
+            <h1 className="font-serif text-2xl text-[var(--text-primary)]" data-testid="text-welcome-heading">有什么可以帮你的？</h1>
           </div>
           <div className="grid grid-cols-2 gap-3 w-full max-w-md">
             {smartSuggestions.map((s) => {
@@ -2178,14 +2178,14 @@ export default function Agent() {
                 <button
                   key={s.text}
                   onClick={() => handleSend(s.text)}
-                  className="rounded-xl border border-[rgba(108,106,96,0.25)] hover:bg-[#393937] p-4 cursor-pointer text-left transition-all duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] active:scale-[0.98]"
+                  className="rounded-card border border-[var(--border-subtle)] hover:bg-black/5 dark:hover:bg-white/5 p-4 cursor-pointer text-left transition-colors"
                   data-testid={`suggestion-${s.description || s.text}`}
                 >
-                  <SIcon className="w-4 h-4 text-[#9a9893] mb-2" />
+                  <SIcon className="w-4 h-4 text-[var(--text-secondary)] mb-2" />
                   {s.description && (
-                    <span className="text-xs text-[#9a9893] block mb-1">{s.description}</span>
+                    <span className="text-xs text-[var(--text-secondary)] block mb-1">{s.description}</span>
                   )}
-                  <span className="text-sm text-[#eee]">{s.text}</span>
+                  <span className="text-sm text-[var(--text-primary)]">{s.text}</span>
                 </button>
               );
             })}
@@ -2203,10 +2203,10 @@ export default function Agent() {
           onCancel={handleStop}
           callbacks={buddyCallbacks}
         >
-          <ThreadPrimitive.Root className="absolute inset-0 flex flex-col items-stretch bg-[#2b2a27] font-serif">
+          <ThreadPrimitive.Root className="absolute inset-0 flex flex-col" style={{ background: 'transparent' }}>
             <ThreadPrimitive.Viewport
               autoScroll
-              className="flex grow flex-col overflow-y-scroll"
+              className="flex-1 overflow-y-auto overflow-x-hidden"
               ref={scrollRef as any}
               onScroll={handleScrollEvent}
               data-testid="agent-messages"
@@ -2231,20 +2231,19 @@ export default function Agent() {
               <div className="absolute z-30 flex justify-center" style={{ bottom: 'calc(170px + 3.33vh)', left: 0, right: 0, pointerEvents: 'none' }}>
                 <button
                   onClick={handleStop}
-                  className="flex items-center gap-2 transition-all duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:scale-105 active:scale-[0.98]"
+                  className="flex items-center gap-2 transition-all hover:scale-105"
                   style={{
                     padding: '6px 16px',
                     borderRadius: 999,
-                    background: '#1f1e1b',
-                    border: '1px solid rgba(108,106,96,0.4)',
-                    color: '#9a9893',
+                    background: 'rgba(255,255,255,0.08)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'var(--text-secondary)',
                     fontSize: 13,
-                    fontFamily: 'var(--font-serif)',
+                    fontFamily: 'var(--font-sans)',
                     pointerEvents: 'auto',
                     cursor: 'pointer',
                     backdropFilter: 'blur(16px)',
                     WebkitBackdropFilter: 'blur(16px)',
-                    boxShadow: '0 0.25rem 1.25rem rgba(0,0,0,0.4)',
                   }}
                   data-testid="btn-stop-streaming"
                 >
@@ -2256,7 +2255,7 @@ export default function Agent() {
 
             <ThreadPrimitive.ScrollToBottom asChild>
               <button
-                className="absolute z-30 flex items-center justify-center hover:scale-105 transition-all duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] active:scale-95"
+                className="absolute z-30 flex items-center justify-center hover:scale-105 transition-transform"
                 style={{
                   bottom: 'calc(160px + 3.33vh)',
                   left: '50%',
@@ -2264,16 +2263,16 @@ export default function Agent() {
                   width: 36,
                   height: 36,
                   borderRadius: '50%',
-                  background: '#1f1e1b',
-                  border: '1px solid rgba(108,106,96,0.4)',
+                  background: 'rgba(255,255,255,0.12)',
+                  border: '1px solid rgba(255,255,255,0.15)',
                   backdropFilter: 'blur(24px)',
                   WebkitBackdropFilter: 'blur(24px)',
-                  boxShadow: '0 0.25rem 1.25rem rgba(0,0,0,0.4)',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)',
                   cursor: 'pointer',
                 }}
                 data-testid="btn-scroll-bottom"
               >
-                <ArrowDown className="w-4 h-4 text-[#eee]" strokeWidth={2} />
+                <ArrowDown className="w-4 h-4" style={{ color: 'rgba(255,255,255,0.85)' }} strokeWidth={2} />
               </button>
             </ThreadPrimitive.ScrollToBottom>
           </ThreadPrimitive.Root>
