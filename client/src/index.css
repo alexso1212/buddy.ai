@@ -635,6 +635,72 @@ html, body {
   animation: thinking-shimmer 2s ease-in-out infinite;
 }
 
+@keyframes shimmer {
+  from { background-position: -200% center; }
+  to   { background-position: 200% center; }
+}
+
+.thinking-collapse-bar {
+  position: relative;
+  width: 100%;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 8px 12px;
+  margin: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: default;
+  overflow: hidden;
+}
+
+.thinking-collapse-bar.active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.04) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.thinking-collapse-bar.clickable {
+  cursor: pointer;
+}
+
+.thinking-expand-content {
+  background: var(--bg-secondary);
+  padding: 12px;
+  border-radius: 0 0 12px 12px;
+  max-height: 300px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  margin-top: -4px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+@keyframes toolSpinner {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.tool-spinner {
+  animation: toolSpinner 0.8s linear infinite;
+}
+
+@keyframes expandSlideDown {
+  from { max-height: 0; opacity: 0; }
+  to { max-height: 300px; opacity: 1; }
+}
+
+.expand-slide-down {
+  animation: expandSlideDown 300ms ease forwards;
+  overflow: hidden;
+}
+
 .ai-table-zebra tbody tr:nth-child(even) {
   background: rgba(255, 255, 255, 0.03);
 }

@@ -1,0 +1,168 @@
+# Task: Implement Claude-Style Streaming Response UI — Phase 3: Artifacts & Panels
+
+## Prerequisites
+
+Phase 1 and Phase 2 must be fully working before starting this phase.
+
+## Reference
+
+Full specification: `BUDDY_CLAUDE_STREAMING_UI_SPEC.md`, Sections 13, 14, 21.
+
+## Deliverables (Phase 3 Only)
+
+### 1. Artifact Card (Inline)
+
+When the AI creates an artifact (document, code file, analysis), show an inline card in the chat at that position in the token stream.
+
+**Layout** (matches Claude.ai exactly):
+
+```
+┌───────────────────────────────────────────────────┐
+│  ┌──────────┐                                     │
+│  │          │  BUDDY CLAUDE STREAMING UI SPEC     │
+│  │  [icon]  │  File · MD                          │
+│  │          │                                     │
+│  └──────────┘                                     │
+└───────────────────────────────────────────────────┘
+```
+
+**Card container**:
+
+- Background: #2a2a2a
+- Border: 1px solid #3a3a3a
+- Border radius: 16px
+- Padding: 10px
+- Margin: 6px 0 (compact)
+- Display: flex, align-items: center, gap: 12px
+- Cursor: pointer
+- Hover: background → #333, border-color → #555
+- Entry animation: slide up 12px + fade in, 250ms
+
+**Left thumbnail square**:
+
+- Width: 56px, Height: 56px, flex-shrink: 0
+- Background: #333333
+- Border: 1px solid #3a3a3a
+- Border radius: 10px
+- Display: flex, center the icon inside
+
+**Right text area**:
+
+- Title: color #e8e8e8, font-size 15px, font-weight 500, line-clamp 2
+- Subtitle: color #6b6b6b, font-size 13px
+- Gap between title and subtitle: 4px
+
+### File Type Icons (24x24, inside the thumbnail)
+
+**Document icon** (for .md, .txt, .pdf, generic files):
+
+```svg
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#e8e8e8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M6 3h8l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/>
+  <polyline points="14,3 14,8 19,8"/>
+  <path d="M8 13c1-1 2 1 3 0s2 1 3 0" fill="none"/>
+  <path d="M8 16.5c1-1 2 1 3 0s2 1 3 0" fill="none"/>
+</svg>
+```
+
+**Code icon** (for .html, .jsx, .tsx, .py, .ts, .css, .svg, .mermaid):
+
+```svg
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <rect x="2" y="2" width="20" height="20" rx="4" fill="#1a1a1a" stroke="#3a3a3a" stroke-width="1"/>
+  <polyline points="9,8 5.5,12 9,16" fill="none" stroke="#e8e8e8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="15,8 18.5,12 15,16" fill="none" stroke="#e8e8e8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="13" y1="7" x2="11" y2="17" stroke="#e8e8e8" stroke-width="1.5" stroke-linecap="round"/>
+</svg>
+```
+
+### Subtitle mapping
+
+|Extensions|Icon    |Subtitle              |
+|----------|--------|----------------------|
+|.md, .txt |Document|File · MD, File · TXT |
+|.pdf      |Document|File · PDF            |
+|.html     |Code    |Code · HTML           |
+|.jsx, .tsx|Code    |Code · JSX, Code · TSX|
+|.py       |Code    |Code · Python         |
+|.ts, .js  |Code    |Code · TS, Code · JS  |
+|.css      |Code    |Code · CSS            |
+|.svg      |Code    |Code · SVG            |
+|.mermaid  |Code    |Code · Mermaid        |
+|other     |Document|File · {EXT}          |
+
+### 2. Background Processing Banner
+
+When an artifact is large and still generating, show this below the artifact card:
+
+```
+🌟  Claude is responding in the background.
+    Once it's complete, you'll see it here.
+```
+
+- Left: animated starburst icon (same as Phase 1 thinking indicator), 24x24
+- Text: color #a0a0a0, font-size 13px
+- Padding: 6px 0
+- Gap: 10px
+- This banner disappears when the artifact finishes generating
+
+### 3. Side Panel (Desktop, viewport ≥ 768px)
+
+When user taps an artifact card on desktop:
+
+- Panel slides in from the right edge
+- Width: 50% of viewport (min 400px, max 700px)
+- Animation: translateX(100%) → translateX(0), 350ms, ease-out-quart
+- Background: #1a1a1a
+- Left border: 1px solid #3a3a3a
+- The chat area shrinks to accommodate the panel (not an overlay)
+
+**Panel header**:
+
+- File name, close button (X) on the right
+- Height: 48px, padding 0 16px, border-bottom 1px solid #3a3a3a
+
+**Panel body**:
+
+- Full artifact content rendered inside
+- Padding: 16px
+- Overflow-y: auto
+
+**Close**: clicking X or pressing Esc slides panel out (reverse animation, 250ms) and chat area expands back.
+
+### 4. Bottom Sheet (Mobile, viewport < 768px)
+
+When user taps an artifact card on mobile:
+
+- Overlay: fixed, full screen, background rgba(0,0,0,0.5), fade in 200ms
+- Sheet: slides up from bottom, max-height 90vh
+- Background: #1a1a1a
+- Border radius: 16px 16px 0 0
+- Animation: translateY(100%) → translateY(0), 400ms, ease-spring
+
+**Drag handle**: 36px wide, 4px tall, background #3a3a3a, border-radius 2px, centered at top, margin 8px auto
+
+**Body**: same as panel body
+
+**Close**: tap overlay, drag handle down, or swipe down gesture
+
+**CRITICAL**: Do NOT put touch-action: none on the document. Only apply it to the drag handle element. This was a past bug that blocked all page scrolling.
+
+## DO NOT Implement in This Phase
+
+- Interactive widgets (single select, multi select, rank)
+- Citation superscripts and popovers
+
+## Validation
+
+After implementation, verify:
+
+1. Artifact card appears inline with correct thumbnail icon (document vs code)
+1. Subtitle shows correct “File · MD” or “Code · HTML” format
+1. Background banner appears while generating, disappears when done
+1. Desktop: tapping card opens side panel with slide-in animation
+1. Desktop: closing panel slides it out, chat area restores
+1. Mobile: tapping card opens bottom sheet with overlay
+1. Mobile: drag handle works, swipe down dismisses, overlay tap dismisses
+1. Mobile: page scrolling still works normally (no touch-action bug)
+1. All cards have tight 6px margin, not floating with big gaps

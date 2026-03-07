@@ -55,7 +55,14 @@ The application is built with an Express.js backend, a React (TypeScript) fronte
 - Action buttons (copy, retry, thumbs up/down) restyled: 32x32 tap target, 16x16 icons, `--text-tertiary` color with hover to `--text-secondary`, fade-in 300ms delayed 200ms after stream completes.
 - Send/Stop button unified: single 36x36 circular button, cross-fades between send arrow (dark fill) and stop square (light fill) via `transition: all 200ms ease`.
 - Auto-scroll improved: `isAutoScrolling` ref with 50px threshold, stops on user scroll up, resumes when near bottom, force-scrolls on send.
-- Phases 2-5 (thinking bar, code blocks, markdown, artifacts, widgets, citations, polish) are NOT yet implemented.
+
+**Claude-Style Streaming UI (Phase 2 — Rich Content):**
+- **ThinkingBlock redesign** (`ThinkingBlock.tsx`): Full-width collapsible bar with `var(--bg-secondary)` background, 12px radius. Left timer SVG icon (16x16), center summary text with real-time elapsed timer during streaming ("Thinking for Xs..."), post-completion shows duration + auto-generated one-line summary. Right chevron (12x12) appears on complete, rotates 90deg on expand. Active shimmer animation via `::after` pseudo-element. Expanded content slides down (300ms) with max-height 300px scrollable area.
+- **CodeBlock redesign** (`AIMessageContent.tsx`): `var(--bg-code)` background, `var(--border-code)` border, 8px radius. Header with `var(--bg-code-header)` background shows language label left + Copy button right (14x14 inline SVG icons, checkmark on copy for 1.5s). Code area: 16px padding, monospace font, 13px size, 1.5 line-height. Removed line numbers, share button, and collapse/expand. Clipboard error handling added.
+- **ToolCallCard redesign** (`AiMessageBubble.tsx`): Inline SVG icons per tool type (magnifying glass for search, terminal for code/default). Status indicators: spinner SVG (0.8s rotation) for running, green check circle for complete (cross-fade 200ms), red X for error. `var(--bg-secondary)` background, 10px radius, tight 4px margin spacing. Expandable detail area on complete with chevron rotation animation.
+- **CSS additions** (`index.css`): `@keyframes shimmer` (background-position sweep), `@keyframes toolSpinner` (0.8s linear rotation), `@keyframes expandSlideDown` (300ms max-height/opacity). Classes: `.thinking-collapse-bar`, `.thinking-collapse-bar.active::after`, `.thinking-collapse-bar.clickable`, `.thinking-expand-content`, `.tool-spinner`, `.expand-slide-down`.
+- All colors use CSS variables (`var(--bg-secondary)`, `var(--text-secondary)`, `var(--border-code)`, `var(--accent-green)`, etc.) for theme compatibility.
+- Phases 3-5 (artifacts, widgets, citations, polish) are NOT yet implemented.
 
 **iOS App (Capacitor):** The project is configured for iOS packaging via Capacitor, loading the web application from a deployed domain.
 

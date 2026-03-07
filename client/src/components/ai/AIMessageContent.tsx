@@ -15,7 +15,7 @@ import yaml from 'highlight.js/lib/languages/yaml';
 import go from 'highlight.js/lib/languages/go';
 import java from 'highlight.js/lib/languages/java';
 import rust from 'highlight.js/lib/languages/rust';
-import { Copy, Check, Share2, ExternalLink, ChevronDown } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 
 hljs.registerLanguage('javascript', javascript);
 hljs.registerLanguage('js', javascript);
@@ -45,200 +45,151 @@ interface AIMessageContentProps {
   content: string;
 }
 
-function ActionButton({ onClick, icon, label, doneLabel, doneIcon, testId }: {
-  onClick: () => Promise<void> | void;
-  icon: ReactNode;
-  label: string;
-  doneLabel: string;
-  doneIcon: ReactNode;
-  testId?: string;
-}) {
-  const [done, setDone] = useState(false);
+function copyText(text: string) {
+  return navigator.clipboard.writeText(text).catch(() => {});
+}
 
-  const handleClick = useCallback(async () => {
-    try {
-      await onClick();
-      setDone(true);
-      setTimeout(() => setDone(false), 2000);
-    } catch {}
-  }, [onClick]);
-
+function CopyIcon() {
   return (
-    <button
-      onClick={handleClick}
-      style={{
-        fontSize: 12,
-        color: 'var(--text-secondary)',
-        background: 'none',
-        border: 'none',
-        cursor: 'pointer',
-        fontFamily: 'var(--font-sans)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 4,
-        padding: '2px 6px',
-        borderRadius: 4,
-        transition: 'background 150ms',
-      }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
-      data-testid={testId || `btn-${label.toLowerCase()}`}
-    >
-      {done ? doneIcon : icon}
-      <span>{done ? doneLabel : label}</span>
-    </button>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
   );
 }
 
-function copyText(text: string) {
-  return navigator.clipboard.writeText(text);
-}
-
-async function shareText(text: string) {
-  if (navigator.share) {
-    try {
-      await navigator.share({ text });
-      return;
-    } catch {}
-  }
-  await navigator.clipboard.writeText(text);
+function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
 }
 
 function CodeBlock({ language, code }: { language: string; code: string }) {
-  const lines = useMemo(() => code.split('\n'), [code]);
-  const lineCount = lines.length;
-  const [collapsed, setCollapsed] = useState(lineCount > 30);
-  const displayCode = collapsed ? lines.slice(0, 15).join('\n') : code;
-  const displayLines = collapsed ? lines.slice(0, 15) : lines;
+  const [copied, setCopied] = useState(false);
 
   const highlighted = useMemo(() => {
     try {
       if (language && language !== 'code' && hljs.getLanguage(language)) {
-        return hljs.highlight(displayCode, { language }).value;
+        return hljs.highlight(code, { language }).value;
       }
-      const auto = hljs.highlightAuto(displayCode);
+      const auto = hljs.highlightAuto(code);
       if (auto.relevance > 5) return auto.value;
     } catch {}
     return null;
-  }, [displayCode, language]);
+  }, [code, language]);
+
+  const handleCopy = useCallback(() => {
+    copyText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [code]);
 
   return (
-    <div style={{
+    <div className="streaming-code-block" style={{
       background: 'var(--bg-code)',
+      border: '1px solid var(--border-code)',
       borderRadius: 8,
+      margin: '8px 0',
       overflow: 'hidden',
-      margin: '16px 0',
     }}>
       <div style={{
-        background: 'var(--bg-code-header)',
-        padding: '6px 12px',
+        padding: '8px 12px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
+        borderBottom: '1px solid var(--border-code)',
+        background: 'var(--bg-code-header)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-sans)' }}>{language}</span>
-          <span style={{ fontSize: 11, color: 'var(--text-secondary)', opacity: 0.5, fontFamily: 'var(--font-sans)' }}>{lineCount} lines</span>
-        </div>
-        <div style={{ display: 'flex', gap: 2 }}>
-          <ActionButton
-            onClick={() => copyText(code)}
-            icon={<Copy className="w-3.5 h-3.5" />}
-            label="Copy"
-            doneLabel="Copied!"
-            doneIcon={<Check className="w-3.5 h-3.5" />}
-            testId="btn-copy-code"
-          />
-          <ActionButton
-            onClick={() => shareText(code)}
-            icon={<Share2 className="w-3.5 h-3.5" />}
-            label="Share"
-            doneLabel="Shared!"
-            doneIcon={<Check className="w-3.5 h-3.5" />}
-            testId="btn-share-code"
-          />
-        </div>
-      </div>
-      <div style={{
-        overflowX: 'auto',
-        overflowY: collapsed ? 'hidden' : 'auto',
-        maxHeight: collapsed ? 'none' : 400,
-        WebkitOverflowScrolling: 'touch',
-        touchAction: 'pan-x pan-y',
-      }}>
-        <div style={{ display: 'flex' }}>
-          <div style={{
-            padding: '14px 0',
-            paddingLeft: 12,
-            paddingRight: 8,
-            borderRight: '1px solid rgba(255,255,255,0.06)',
-            userSelect: 'none',
-            textAlign: 'right',
-            minWidth: 36,
-            flexShrink: 0,
-            position: 'sticky',
-            left: 0,
-            background: 'var(--bg-code)',
-            zIndex: 1,
-          }}>
-            {displayLines.map((_, i) => (
-              <div key={i} style={{ fontSize: 12, lineHeight: '1.55em', color: 'rgba(255,255,255,0.2)', fontFamily: 'var(--font-mono)' }}>
-                {i + 1}
-              </div>
-            ))}
-          </div>
-          <pre style={{
-            padding: '14px 16px',
-            margin: 0,
-            flex: 1,
-            minWidth: 0,
-            overflowX: 'auto',
-          }}>
-            {highlighted ? (
-              <code
-                className="hljs"
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 13.5,
-                  lineHeight: 1.55,
-                }}
-                dangerouslySetInnerHTML={{ __html: highlighted }}
-              />
-            ) : (
-              <code style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 13.5,
-                lineHeight: 1.55,
-                color: 'var(--text-primary)',
-              }}>{displayCode}</code>
-            )}
-          </pre>
-        </div>
-      </div>
-      {lineCount > 30 && (
+        <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-sans)' }}>{language}</span>
         <button
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={handleCopy}
           style={{
-            width: '100%',
-            padding: '8px',
-            textAlign: 'center',
             fontSize: 12,
-            color: 'var(--brand)',
-            background: 'rgba(174,86,48,0.08)',
+            color: copied ? 'var(--accent-green)' : 'var(--text-secondary)',
+            background: 'none',
             border: 'none',
             cursor: 'pointer',
             fontFamily: 'var(--font-sans)',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
             gap: 4,
+            padding: '2px 6px',
+            borderRadius: 4,
+            transition: 'color 150ms',
           }}
-          data-testid="btn-toggle-code-collapse"
+          data-testid="btn-copy-code"
         >
-          <ChevronDown style={{ width: 14, height: 14, transform: collapsed ? 'rotate(0)' : 'rotate(180deg)', transition: 'transform 200ms' }} />
-          {collapsed ? `展开剩余 ${lineCount - 15} 行` : '收起'}
+          {copied ? <CheckIcon /> : <CopyIcon />}
+          <span>{copied ? 'Copied!' : 'Copy'}</span>
         </button>
-      )}
+      </div>
+      <div style={{
+        overflowX: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        touchAction: 'pan-x pan-y',
+      }}>
+        <pre style={{
+          padding: 16,
+          margin: 0,
+          minWidth: 0,
+        }}>
+          {highlighted ? (
+            <code
+              className="hljs"
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 13,
+                lineHeight: 1.5,
+              }}
+              dangerouslySetInnerHTML={{ __html: highlighted }}
+            />
+          ) : (
+            <code style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 13,
+              lineHeight: 1.5,
+              color: 'var(--text-primary)',
+            }}>{code}</code>
+          )}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+function TableCopyButton({ extractTableText }: { extractTableText: () => string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(() => {
+    copyText(extractTableText());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [extractTableText]);
+
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 2, marginBottom: 4 }}>
+      <button
+        onClick={handleCopy}
+        style={{
+          fontSize: 12,
+          color: copied ? 'var(--accent-green)' : 'var(--text-secondary)',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          fontFamily: 'var(--font-sans)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '2px 6px',
+          borderRadius: 4,
+          transition: 'color 150ms',
+        }}
+        data-testid="btn-copy-table"
+      >
+        {copied ? <CheckIcon /> : <CopyIcon />}
+        <span>{copied ? 'Copied!' : 'Copy'}</span>
+      </button>
     </div>
   );
 }
@@ -304,29 +255,7 @@ function TableBlock({ children }: { children: ReactNode }) {
 
   return (
     <div ref={containerRef} style={{ margin: '16px 0', position: 'relative' }}>
-      <div style={{
-        display: 'flex',
-        justifyContent: 'flex-end',
-        gap: 2,
-        marginBottom: 4,
-      }}>
-        <ActionButton
-          onClick={() => copyText(extractTableText())}
-          icon={<Copy className="w-3.5 h-3.5" />}
-          label="Copy"
-          doneLabel="Copied!"
-          doneIcon={<Check className="w-3.5 h-3.5" />}
-          testId="btn-copy-table"
-        />
-        <ActionButton
-          onClick={() => shareText(extractTableText())}
-          icon={<Share2 className="w-3.5 h-3.5" />}
-          label="Share"
-          doneLabel="Shared!"
-          doneIcon={<Check className="w-3.5 h-3.5" />}
-          testId="btn-share-table"
-        />
-      </div>
+      <TableCopyButton extractTableText={extractTableText} />
       <div
         ref={(el) => {
           (scrollRef as any).current = el;

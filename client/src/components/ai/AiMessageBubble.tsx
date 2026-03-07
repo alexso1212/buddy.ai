@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { Check, Copy, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink, FileText, RefreshCw, PanelRightOpen, Loader2, Search, Terminal, AlertTriangle, WifiOff, Clock, MessageSquarePlus, Scissors, ServerCrash, PlayCircle, AlertCircle } from "lucide-react";
+import { Check, Copy, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink, FileText, RefreshCw, PanelRightOpen, WifiOff, Clock, MessageSquarePlus, Scissors, ServerCrash, PlayCircle, AlertCircle } from "lucide-react";
 import AiConfirmCard from "./AiConfirmCard";
 import AiGuidedCreation from "./AiGuidedCreation";
 import AIMessageContent from "./AIMessageContent";
@@ -395,84 +395,122 @@ function TokenUsageBadge({ usage }: { usage: { promptTokens: number; completionT
   );
 }
 
-function getToolIcon(type?: string) {
-  switch (type) {
-    case 'search': return Search;
-    case 'file': return FileText;
-    case 'code': return Terminal;
-    default: return Terminal;
+function ToolIconSvg({ type }: { type?: string }) {
+  if (type === 'search') {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+        <circle cx="7" cy="7" r="4.5" stroke="var(--text-secondary)" strokeWidth="1.5" />
+        <line x1="10.5" y1="10.5" x2="14" y2="14" stroke="var(--text-secondary)" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
   }
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+      <rect x="1.5" y="2.5" width="13" height="11" rx="2" stroke="var(--text-secondary)" strokeWidth="1.2" />
+      <line x1="4" y1="6" x2="7" y2="6" stroke="var(--text-secondary)" strokeWidth="1.2" strokeLinecap="round" />
+      <line x1="4" y1="9" x2="10" y2="9" stroke="var(--text-secondary)" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ToolStatusIcon({ status }: { status: 'running' | 'complete' | 'error' }) {
+  if (status === 'running') {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="tool-spinner" style={{ flexShrink: 0 }}>
+        <circle cx="8" cy="8" r="6" stroke="var(--border-medium)" strokeWidth="1.5" />
+        <path d="M8 2a6 6 0 0 1 6 6" stroke="var(--text-secondary)" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (status === 'error') {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+        <circle cx="8" cy="8" r="6" stroke="#F87171" strokeWidth="1.5" />
+        <line x1="6" y1="6" x2="10" y2="10" stroke="#F87171" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="10" y1="6" x2="6" y2="10" stroke="#F87171" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, transition: 'opacity 200ms ease' }}>
+      <circle cx="8" cy="8" r="6" fill="var(--accent-green)" />
+      <path d="M5.5 8.5L7 10L10.5 6.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 function ToolCallCard({ toolCall, index }: { toolCall: { toolName: string; label: string; status: 'running' | 'complete' | 'error'; detail?: string; type?: string; completedLabel?: string }; index: number }) {
   const [expanded, setExpanded] = useState(false);
-  const Icon = getToolIcon(toolCall.type);
   const isRunning = toolCall.status === 'running';
-  const isError = toolCall.status === 'error';
-  const displayLabel = toolCall.status === 'complete' && toolCall.completedLabel
+  const isComplete = toolCall.status === 'complete';
+  const canExpand = !isRunning && !!toolCall.detail;
+  const displayLabel = isComplete && toolCall.completedLabel
     ? toolCall.completedLabel
     : toolCall.label;
 
   return (
-    <div
-      className="rounded-lg overflow-hidden"
-      style={{
-        background: isError
-          ? 'rgba(239,68,68,0.08)'
-          : 'rgba(255,255,255,0.04)',
-        border: isError
-          ? '1px solid rgba(239,68,68,0.2)'
-          : '1px solid rgba(255,255,255,0.06)',
-      }}
-      data-testid={`tool-call-card-${index}`}
-    >
+    <div data-testid={`tool-call-card-${index}`}>
       <button
-        onClick={() => !isRunning && toolCall.detail && setExpanded(!expanded)}
-        className="flex items-center gap-2.5 w-full px-3 py-2 text-left"
+        onClick={() => canExpand && setExpanded(!expanded)}
+        className="flex items-center w-full text-left"
         style={{
-          cursor: !isRunning && toolCall.detail ? 'pointer' : 'default',
+          background: 'var(--bg-secondary)',
+          borderRadius: expanded ? '10px 10px 0 0' : '10px',
+          padding: '8px 12px',
+          gap: 8,
+          cursor: canExpand ? 'pointer' : 'default',
+          border: 'none',
+          outline: 'none',
+          transition: 'border-radius 200ms ease',
         }}
         data-testid={`tool-call-toggle-${index}`}
       >
-        {isRunning ? (
-          <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: 'var(--brand, #AE5630)' }} />
-        ) : isError ? (
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: '#F87171' }} />
-        ) : (
-          <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: '#4ADE80' }} />
-        )}
+        <ToolIconSvg type={toolCall.type} />
+        <ToolStatusIcon status={toolCall.status} />
         <span
-          className="text-xs flex-1 truncate"
           style={{
-            color: isError
-              ? '#FCA5A5'
-              : isRunning
-                ? 'var(--text-primary)'
-                : 'var(--text-secondary)',
-            fontWeight: isRunning ? 500 : 400,
+            flex: 1,
+            fontSize: 13,
+            color: 'var(--text-secondary)',
+            fontWeight: 500,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
           }}
         >
           {displayLabel}
         </span>
-        {!isRunning && toolCall.detail && (
-          expanded
-            ? <ChevronUp className="w-3 h-3 shrink-0" style={{ color: 'var(--text-secondary)' }} />
-            : <ChevronDown className="w-3 h-3 shrink-0" style={{ color: 'var(--text-secondary)' }} />
+        {canExpand && (
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            fill="none"
+            style={{
+              flexShrink: 0,
+              transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform 200ms ease',
+            }}
+          >
+            <path d="M4.5 2.5L8 6L4.5 9.5" stroke="var(--text-secondary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         )}
       </button>
       {expanded && toolCall.detail && (
         <div
-          className="px-3 pb-2 text-xs"
+          className="expand-slide-down"
           style={{
+            background: 'var(--bg-secondary)',
+            padding: 12,
+            borderRadius: '0 0 10px 10px',
+            maxHeight: 300,
+            overflowY: 'auto',
+            fontSize: 13,
+            lineHeight: 1.6,
             color: 'var(--text-secondary)',
-            opacity: 0.8,
-            lineHeight: 1.5,
-            borderTop: '1px solid rgba(255,255,255,0.04)',
-            paddingTop: 8,
+            borderTop: '1px solid var(--border-subtle)',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
-            maxHeight: 200,
-            overflowY: 'auto',
           }}
           data-testid={`tool-call-detail-${index}`}
         >
@@ -1022,7 +1060,7 @@ export default function AiMessageBubble({
           </div>
         )}
         {message.toolCalls && message.toolCalls.length > 0 && (
-          <div className="flex flex-col gap-1.5 mb-3" data-testid="tool-calls-info">
+          <div className="flex flex-col" style={{ gap: 4, marginBottom: 4 }} data-testid="tool-calls-info">
             {message.toolCalls.map((tc, i) => (
               <ToolCallCard key={i} toolCall={tc} index={i} />
             ))}
