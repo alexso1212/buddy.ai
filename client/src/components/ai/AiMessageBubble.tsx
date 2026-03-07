@@ -91,8 +91,15 @@ interface AiMessageBubbleProps {
   isLastAssistant?: boolean;
 }
 
-function BrandLogo() {
-  return <AgentLogo size={28} animate={false} glow={false} />;
+function BrandLogo({ breathing }: { breathing?: boolean }) {
+  return (
+    <div
+      className={breathing ? 'logo-breathing' : ''}
+      style={{ width: 20, height: 20, flexShrink: 0 }}
+    >
+      <AgentLogo size={20} animate={false} glow={false} />
+    </div>
+  );
 }
 
 const DISLIKE_REASONS = [
@@ -392,17 +399,6 @@ function TokenUsageBadge({ usage }: { usage: { promptTokens: number; completionT
       data-testid="token-usage-badge"
     >
       {formatTokens(usage.totalTokens)} tokens
-    </span>
-  );
-}
-
-function MessageTimestamp({ timestamp }: { timestamp: number }) {
-  const time = new Date(timestamp);
-  const h = time.getHours().toString().padStart(2, '0');
-  const m = time.getMinutes().toString().padStart(2, '0');
-  return (
-    <span className="text-[10px] text-[var(--text-tertiary)] ml-auto" data-testid="message-timestamp">
-      {h}:{m}
     </span>
   );
 }
@@ -903,8 +899,10 @@ export default function AiMessageBubble({
           )}
           {message.content}
           {message.timestamp != null && (
-            <div className="flex justify-end mt-1">
-              <MessageTimestamp timestamp={message.timestamp} />
+            <div className="flex justify-end mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="text-[10px] text-[var(--text-secondary)] opacity-40">
+                {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+              </span>
             </div>
           )}
         </div>
@@ -1004,11 +1002,8 @@ export default function AiMessageBubble({
       data-testid={`ai-message-${message.id}`}
     >
       <div className="max-w-3xl">
-        <div className="mb-2 flex items-center gap-2">
-          <BrandLogo />
-          {message.timestamp != null && (
-            <MessageTimestamp timestamp={message.timestamp} />
-          )}
+        <div className="mb-1 flex items-center gap-2">
+          <BrandLogo breathing={!!message.isStreaming} />
         </div>
         {message.thinking && (
           <ThinkingBlock
@@ -1040,9 +1035,7 @@ export default function AiMessageBubble({
             ))}
           </div>
         )}
-        <div className={message.isStreaming ? 'streaming-cursor' : ''}>
-          <AIMessageContent content={displayContent} />
-        </div>
+        <AIMessageContent content={displayContent} />
         {isLongMessage && !contentExpanded && (
           <div style={{ position: 'relative' }}>
             <div style={{
@@ -1097,6 +1090,14 @@ export default function AiMessageBubble({
               isLastAssistant={isLastAssistant}
             />
             {message.tokenUsage && <TokenUsageBadge usage={message.tokenUsage} />}
+            {message.timestamp != null && (
+              <span
+                className="text-[10px] text-[var(--text-secondary)] opacity-0 group-hover:opacity-40 transition-opacity ml-2"
+                data-testid="message-timestamp"
+              >
+                {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
           </div>
         )}
       </div>

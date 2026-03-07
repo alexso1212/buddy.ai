@@ -1,0 +1,142 @@
+# hotfix-03: AI 消息气泡布局修复
+
+> 对照截图修复，让 AI 回复看起来像 Claude
+
+-----
+
+## 问题
+
+1. AI Logo 太大，应该是 20-24px 小图标
+1. 时间戳 “19:01” 不应该常驻显示，应该 hover 时才出现
+1. 流式光标悬在 Logo 下方，应该在文字开始出现的位置（和 Logo 同行或紧跟其后）
+1. Logo 和内容之间间距过大
+
+## Claude 的布局参考
+
+```
+┌─────────────────────────────────────────────┐
+│                                             │
+│  [●] ← 20px小Logo，左侧                     │
+│  这是 AI 的回复文字，紧跟在 Logo 下方，       │
+│  左边和 Logo 对齐，没有多余间距。              │
+│  文字正常渲染 Markdown...                    │
+│                                             │
+│  [复制] [重新生成] [分享] [👍] [👎]           │
+│                                             │
+└─────────────────────────────────────────────┘
+
+流式输出时：
+  [●]
+  正在输出的文字▎   ← 光标紧跟文字末尾
+```
+
+注意：
+
+- Logo 和文字之间**没有时间戳**
+- 时间戳只在 hover 整个消息区域时才在底部淡出显示
+- Logo 是小尺寸（20-24px），不需要那么显眼
+- 流式光标 `▎` 紧跟在最后一个字符后面，不会跑到下一行
+
+## 修复方式
+
+### 在 AiMessageBubble.tsx 中
+
+找到 AI 消息的 Logo + 时间戳 渲染部分，改为：
+
+```tsx
+{/* AI 消息头部 - 只有小 Logo，没有时间戳 */}
+{message.role === 'assistant' && (
+  <div className="flex items-start gap-0 mb-1">
+    <AgentLogo size={20} animate={false} glow={false} />
+  </div>
+)}
+```
+
+把时间戳移到 hover 才显示（参考 task-19 中 C2 的实现）。
+
+### Logo 尺寸
+
+确保 `<AgentLogo size={20} />` 或最多 `size={24}`。不要用 28 或更大的值。如果 AgentLogo 组件的 `size` prop 被忽略了，直接在外面套一个固定尺寸的容器：
+
+```tsx
+<div style={{ width: 20, height: 20, flexShrink: 0 }}>
+  <AgentLogo size={20} animate={false} glow={false} />
+</div>
+```
+
+### Logo 动画（替代流式光标）
+
+Claude 不用闪烁光标，而是让 Logo 在生成中做呼吸脉冲动画。文字直接流式出现，不需要光标。
+
+```tsx
+{/* AI 消息头部 - Logo 在生成中有脉冲动画 */}
+{message.role === 'assistant' && (
+  <div className={message.isStreaming ? 'logo-breathing' : ''}>
+    <AgentLogo size={20} animate={false} glow={false} />
+  </div>
+)}
+```
+
+CSS 动画：
+
+```css
+@keyframes logo-breathe {
+  0%, 100% { 
+    transform: scale(1); 
+    opacity: 1;
+    filter: drop-shadow(0 0 0px var(--brand));
+  }
+  50% { 
+    transform: scale(1.15); 
+    opacity: 0.85;
+    filter: drop-shadow(0 0 6px var(--brand));
+  }
+}
+
+.logo-breathing {
+  animation: logo-breathe 2s ease-in-out infinite;
+}
+```
+
+**关键**：
+
+- `isStreaming=true` 时 Logo 做呼吸动画
+- `isStreaming=false` 时 Logo 静止
+- 不需要任何文字光标（删掉 task-19 中的 `streaming-cursor` 和 `cursor-blink` 相关CSS）
+- 文字直接流式出现，不加任何光标效果
+
+### 去掉常驻时间戳
+
+搜索 AiMessageBubble 中所有显示时间戳的地方（搜索 `19:01`、`timestamp`、`toLocaleTimeString`、`formatRelativeTime`），把它们全部改为 hover 才显示：
+
+```tsx
+// 不要这样（常驻显示）：
+<span className="text-xs">{formatTime(message.timestamp)}</span>
+
+// 改为这样（hover显示）：
+// 在组件顶部
+const [hovered, setHovered] = useState(false);
+
+// 在最外层 div
+<div onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+  {/* ...消息内容... */}
+  
+  {/* 时间戳只在 hover 时显示 */}
+  {hovered && message.timestamp && (
+    <span className="text-[10px] text-[var(--text-secondary)] opacity-40 mt-1">
+      {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+    </span>
+  )}
+</div>
+```
+
+-----
+
+## 验证
+
+- [ ] AI Logo 为 20-24px 小图标
+- [ ] 时间戳不再常驻显示（hover 才出现）
+- [ ] 流式输出时 Logo 做呼吸脉冲动画（放大+发光）
+- [ ] 输出完成后 Logo 动画停止
+- [ ] 没有任何文字闪烁光标
+- [ ] 消息布局紧凑，没有多余间距

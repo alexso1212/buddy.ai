@@ -596,10 +596,6 @@ html, body {
   to { transform: translateY(0); }
 }
 
-@keyframes blink-cursor {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
-}
 
 @keyframes thinking-shimmer {
   0% { transform: translateX(-100%); }
@@ -629,12 +625,21 @@ html, body {
   background: rgba(255, 255, 255, 0.03);
 }
 
-.streaming-cursor::after {
-  content: '▎';
-  color: var(--brand);
-  animation: blink-cursor 1s step-end infinite;
-  font-weight: 300;
-  margin-left: 1px;
+@keyframes logo-breathe {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+    filter: drop-shadow(0 0 0px var(--brand));
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.85;
+    filter: drop-shadow(0 0 6px var(--brand));
+  }
+}
+
+.logo-breathing {
+  animation: logo-breathe 2s ease-in-out infinite;
 }
 
 .sidebar-item {
