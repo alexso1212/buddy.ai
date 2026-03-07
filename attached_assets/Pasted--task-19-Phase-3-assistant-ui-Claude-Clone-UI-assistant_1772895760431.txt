@@ -1,0 +1,93 @@
+# task-19 Phase 3：直接照抄 assistant-ui 的 Claude Clone 样式
+
+> **指令很简单：把 UI 改成和 assistant-ui 官方 Claude Clone 示例一模一样。**
+
+## 参考源码
+
+GitHub 源码文件：
+https://github.com/assistant-ui/assistant-ui/blob/main/apps/docs/components/examples/claude.tsx
+
+在线效果演示：
+https://www.assistant-ui.com/examples/claude
+
+## 做什么
+
+1. 打开上面的 GitHub 源码文件，**完整阅读** claude.tsx 的代码
+1. 把里面的样式、颜色、字体、阴影、间距、动画**全部搬到我们的 BuddyMessages.tsx 和 agent.tsx 中**
+1. 不需要改后端逻辑，只改样式和布局
+
+## 关键样式参数（从官方文档提取）
+
+```
+背景色：
+  亮色：#F5F5F0 → 暗色：#2b2a27（我们用暗色）
+
+输入框背景：
+  亮色：white → 暗色：#1f1e1b
+
+文字色：
+  亮色：#1a1a18 → 暗色：#eee
+
+淡色文字：
+  亮色：#6b6a68 → 暗色：#9a9893
+
+品牌色（橙）：#ae5630
+品牌色hover：#c4633a
+
+用户消息气泡：
+  亮色：#DDD9CE → 暗色：#393937
+
+字体：font-serif（衬线体）
+阴影：box-shadow: 0 0.25rem 1.25rem rgba(0,0,0,0.035)（输入框）
+边框：border-color: #00000015（极淡）
+过渡：duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)]
+按钮按下：active:scale-[0.98]
+```
+
+## 需要对齐的具体组件
+
+### 1. 整体容器
+
+```tsx
+<ThreadPrimitive.Root className="flex h-full flex-col bg-[#2b2a27] p-4 pt-16 font-serif">
+```
+
+### 2. 输入框（Composer）
+
+```tsx
+<ComposerPrimitive.Root className="mx-auto flex w-full max-w-3xl flex-col rounded-2xl bg-[#1f1e1b] p-0.5 shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.035)]">
+  <ComposerPrimitive.Input
+    placeholder="输入消息..."
+    className="w-full resize-none bg-transparent text-[#eee] outline-none"
+  />
+  <div className="flex items-center gap-2">
+    <ComposerPrimitive.AddAttachment className="rounded-lg border border-[#00000015] hover:bg-[#393937]">
+      <PlusIcon />
+    </ComposerPrimitive.AddAttachment>
+    <ComposerPrimitive.Send className="rounded-lg bg-[#ae5630] hover:bg-[#c4633a]">
+      <ArrowUpIcon className="text-white" />
+    </ComposerPrimitive.Send>
+  </div>
+</ComposerPrimitive.Root>
+```
+
+### 3. 用户消息
+
+暗色背景 `#393937`，圆角，右对齐（或根据 Claude Clone 源码中的实际布局）
+
+### 4. AI 消息
+
+无背景，左对齐，小 Logo，衬线体排版
+
+### 5. 操作按钮
+
+复制/重新生成/点赞/点踩用 `#9a9893` 淡色，hover 变亮，active:scale-[0.98]
+
+## 注意事项
+
+- 我们用**暗色主题**（dark mode），所以用上面表格中的暗色值
+- **保留所有业务组件**（AiConfirmCard、AiGuidedCreation 等），只改它们外围的样式
+- **保留 AiInputBar 的功能**（知识库开关、搜索开关等），但样式对齐 Claude Clone
+- 如果 Claude Clone 源码中有我们没有的组件（如模型选择器样式），也照搬
+- 字体 font-serif 确保全局生效（消息区域和输入框都用衬线体）
+- 完成后截图对比：我们的 vs Claude Clone 演示页面，确保视觉一致
