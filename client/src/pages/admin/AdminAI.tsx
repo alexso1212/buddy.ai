@@ -288,6 +288,19 @@ function BatchAddDialog({
   const [probing, setProbing] = useState(false);
   const [probedModels, setProbedModels] = useState<{ id: string; name: string }[] | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
+  const [customModels, setCustomModels] = useState<{ id: string; label: string }[]>([]);
+  const [customModelInput, setCustomModelInput] = useState("");
+
+  const addCustomModel = () => {
+    const id = customModelInput.trim();
+    if (!id) return;
+    if (customModels.some(m => m.id === id) || (selectedProvider?.models || []).some(m => m.id === id)) {
+      return;
+    }
+    setCustomModels(prev => [...prev, { id, label: id }]);
+    setSelectedModels(prev => new Set([...prev, id]));
+    setCustomModelInput("");
+  };
 
   const selectProvider = (p: typeof API_PROVIDERS[number]) => {
     setSelectedProvider(p);
@@ -297,6 +310,8 @@ function BatchAddDialog({
       baseUrl: p.baseUrl,
     }));
     setSelectedModels(new Set(p.models.map(m => m.id)));
+    setCustomModels([]);
+    setCustomModelInput("");
     setProbedModels(null);
     setProbeError(null);
     setStep('config');
@@ -380,9 +395,10 @@ function BatchAddDialog({
   };
 
   const isCustom = selectedProvider?.id === 'custom';
-  const displayModels = probedModels
+  const baseModels = probedModels
     ? probedModels.map(m => ({ id: m.id, label: m.name || m.id }))
     : selectedProvider?.models || [];
+  const displayModels = [...baseModels, ...customModels];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" data-testid="dialog-batch-add">
@@ -557,6 +573,31 @@ function BatchAddDialog({
               </div>
             )}
 
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">手动添加模型</label>
+              <div className="flex gap-2">
+                <input
+                  className="flex-1 bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                  value={customModelInput}
+                  onChange={(e) => setCustomModelInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomModel(); } }}
+                  placeholder="输入模型 ID，如 gpt-5.4"
+                  data-testid="input-custom-model"
+                />
+                <button
+                  onClick={addCustomModel}
+                  disabled={!customModelInput.trim()}
+                  className="px-3 py-2 text-sm bg-primary/10 text-primary border border-primary/20 rounded-lg hover:bg-primary/20 transition-colors disabled:opacity-50 shrink-0"
+                  data-testid="button-add-custom-model"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                如果列表中没有你需要的模型，可以手动输入模型 ID 添加
+              </p>
+            </div>
+
             {isCustom && !probedModels && !form.baseUrl && (
               <p className="text-xs text-muted-foreground text-center py-2">
                 请填写 Base URL 后点击"探测可用模型"
@@ -585,7 +626,7 @@ function BatchAddDialog({
             >
               取消
             </button>
-            {step === 'config' && displayModels.length > 0 && (
+            {step === 'config' && (displayModels.length > 0 || selectedModels.size > 0) && (
               <button
                 onClick={handleSave}
                 disabled={saving || selectedModels.size === 0 || !form.providerName || (!form.apiKey && !form.apiKeyEnvVar)}
