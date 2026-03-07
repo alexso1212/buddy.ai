@@ -1,0 +1,760 @@
+# task-19: Agent 交互品质升级（对标 Claude）
+
+> **预计耗时**：25-35 分钟（改动量大但都是前端，不涉及后端逻辑）
+> **改动文件**：6个现有组件 + 1个新组件 + 全局样式
+> **风险等级**：低（纯UI/UX改进，不改数据流和业务逻辑）
+> **对标标准**：Claude iOS/Web 2025-2026 最新版本
+
+-----
+
+## 一、差异总览
+
+### 你们已经有的（做得不错的）✅
+
+|功能        |现状                             |
+|----------|-------------------------------|
+|Markdown渲染|ReactMarkdown + remarkGfm ✅    |
+|代码块语法高亮   |highlight.js 13种语言 + 复制/分享按钮 ✅ |
+|表格横向滚动    |拖拽滚动 + 右侧淡出 + 复制为MD ✅          |
+|思考过程      |ThinkingBlock + 文本累积 + 耗时统计 ✅  |
+|SSE事件处理   |10种事件类型 + 50ms token缓冲 ✅       |
+|输入栏功能     |附件/搜索/代码/知识库/风格/Add-to-chat面板 ✅|
+|对话管理      |搜索/分组/长按菜单/收藏/重命名 ✅            |
+|错误处理      |5种错误分类 + 重试/继续生成 ✅             |
+|工具调用显示    |tool_use/tool_result 状态动画 ✅    |
+|反馈系统      |点赞/点踩 + 不满意原因选择 ✅              |
+
+### 需要改进的（和 Claude 的差距）🔧
+
+按优先级排序，分为 A/B/C 三档：
+
+-----
+
+## 二、A档改动（视觉冲击力最大，用户第一感受）
+
+### A1：思考过程动画升级
+
+**现状**：ThinkingAnimation 是一个简单的旋转/脉冲 Logo 动画
+**Claude 的做法**：渐变光条在容器内流动，像一条发光的光带从左到右缓慢移动
+
+```
+现在：
+  [🔄 加载中...]  ← 简单的 spinner
+
+Claude：
+  ┌──────────────────────────────────────────┐
+  │ ░░░████████░░░░░░░░░░░░░░░░░░░░░░░░░░░ │  ← 渐变光条左右流动
+  │                                          │
+  │  思考中...                    12秒        │
+  │  "让我分析一下这个问题..."                │  ← 思考文本实时显示
+  │                                          │
+  └──────────────────────────────────────────┘
+     点击可展开/折叠思考过程
+```
+
+**改动文件**：`client/src/components/ThinkingAnimation.tsx` + `client/src/components/ai/ThinkingBlock.tsx`
+
+**具体实现**：
+
+```css
+/* 渐变光条动画 */
+@keyframes thinking-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.thinking-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(174, 86, 48, 0.15);
+  overflow: hidden;
+  position: relative;
+}
+
+.thinking-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, var(--brand), transparent);
+  animation: thinking-shimmer 2s ease-in-out infinite;
+}
+```
+
+ThinkingBlock 改造：
+
+1. 顶部显示渐变光条（替代 spinner）
+1. “思考中…” 文字 + 右侧实时计时器（“12秒”）
+1. 思考内容默认折叠，点击”查看思考过程”展开
+1. 展开后的思考文字用 `color: var(--text-secondary)` 淡化，和正文区分
+1. 思考完成后光条消失，显示”思考了 X 秒”，可点击展开
+
+```typescript
+// ThinkingBlock 改造后的结构
+function ThinkingBlock({ thinking, isThinking, duration }: Props) {
+  const [expanded, setExpanded] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  
+  // 实时计时
+  useEffect(() => {
+    if (!isThinking) return;
+    const start = Date.now();
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [isThinking]);
+
+  return (
+    <div className="my-3">
+      {/* 光条 */}
+      {isThinking && <div className="thinking-bar mb-2" />}
+      
+      {/* 标题行 */}
+      <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 text-sm">
+        <ChevronRight className={cn("w-3.5 h-3.5 transition-transform", expanded && "rotate-90")} />
+        <span className="text-[var(--text-secondary)]">
+          {isThinking ? `思考中...` : `思考了 ${duration || elapsed} 秒`}
+        </span>
+        {isThinking && (
+          <span className="text-xs text-[var(--text-secondary)] tabular-nums">{elapsed}s</span>
+        )}
+      </button>
+      
+      {/* 思考内容 */}
+      {expanded && thinking && (
+        <div className="mt-2 pl-5 text-sm text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap"
+             style={{ maxHeight: 300, overflowY: 'auto' }}>
+          {thinking}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+### A2：Logo 呼吸动画（流式输出指示）
+
+**现状**：生成中可能只是文字直接出现，没有明显的”正在生成”视觉信号
+**Claude 的做法**：Logo 在生成中做呼吸脉冲动画（微微放大+发光），文字直接流式出现，无光标
+
+**改动文件**：`client/src/components/ai/AiMessageBubble.tsx` + `client/src/index.css`
+
+```css
+@keyframes logo-breathe {
+  0%, 100% { 
+    transform: scale(1); 
+    opacity: 1;
+    filter: drop-shadow(0 0 0px var(--brand));
+  }
+  50% { 
+    transform: scale(1.15); 
+    opacity: 0.85;
+    filter: drop-shadow(0 0 6px var(--brand));
+  }
+}
+
+.logo-breathing {
+  animation: logo-breathe 2s ease-in-out infinite;
+}
+```
+
+在 AiMessageBubble 中，AI 消息头部的 Logo 容器根据 `isStreaming` 状态切换动画：
+
+```typescript
+<div className={message.isStreaming ? 'logo-breathing' : ''}>
+  <AgentLogo size={20} animate={false} glow={false} />
+</div>
+```
+
+`isStreaming=true` → Logo 呼吸脉冲；`isStreaming=false` → Logo 静止。不需要任何文字光标。
+
+### A3：停止生成按钮改进
+
+**现状**：输入栏的发送按钮变为停止按钮（Square图标）
+**Claude 的做法**：在消息气泡下方居中显示一个明显的”停止生成”按钮
+
+```
+现在：
+  输入栏 [________________] [⬛]  ← 只在这里有停止按钮
+
+Claude：
+  AI 正在输出文字...
+  AI 正在输出更多文字...
+  
+         [⬛ 停止生成]  ← 在消息列表底部居中显示
+  
+  输入栏 [________________] [⬛]  ← 这里也有
+```
+
+**改动文件**：`client/src/pages/agent.tsx`
+
+在消息列表底部、输入栏之上，当 `isStreaming` 时显示居中的停止按钮：
+
+```typescript
+{isStreaming && (
+  <div className="flex justify-center py-2">
+    <button 
+      onClick={handleStop}
+      className="flex items-center gap-2 px-4 py-1.5 rounded-full text-sm
+                 bg-[rgba(255,255,255,0.08)] hover:bg-[rgba(255,255,255,0.12)]
+                 text-[var(--text-secondary)] hover:text-[var(--text-primary)]
+                 border border-[rgba(255,255,255,0.1)] transition-all"
+    >
+      <Square className="w-3 h-3 fill-current" />
+      停止生成
+    </button>
+  </div>
+)}
+```
+
+### A4：消息出现动画
+
+**现状**：消息直接出现，没有过渡动画
+**Claude 的做法**：新消息从下方淡入滑上，用户消息也有微妙的出现动画
+
+```css
+@keyframes message-appear {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-enter {
+  animation: message-appear 300ms ease-out;
+}
+```
+
+在 AiMessageBubble 组件的最外层 div 上加 `message-enter` class（仅对新消息）。
+
+-----
+
+## 三、B档改动（使用体验提升）
+
+### B1：代码块增强
+
+**现状**：有语法高亮和复制按钮 ✅，但缺少：
+
+- 行号
+- 折叠超长代码（当前 max-height: 400px + scroll）
+- 文件名/路径提示
+
+**改动文件**：`client/src/components/ai/AIMessageContent.tsx` 的 `CodeBlock` 组件
+
+```typescript
+// 1. 添加行号
+function CodeBlock({ language, code }: { language: string; code: string }) {
+  const [collapsed, setCollapsed] = useState(code.split('\n').length > 30);
+  const lines = code.split('\n');
+  const lineCount = lines.length;
+  
+  // 超过30行默认折叠，显示前15行 + "展开剩余XX行"
+  const displayCode = collapsed ? lines.slice(0, 15).join('\n') : code;
+  
+  return (
+    <div style={{ background: 'var(--bg-code)', borderRadius: 8, overflow: 'hidden', margin: '16px 0' }}>
+      {/* 头部：语言标签 + 行数 + 操作按钮 */}
+      <div style={{ 
+        background: 'var(--bg-code-header)', 
+        padding: '6px 12px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center' 
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{language}</span>
+          <span style={{ fontSize: 11, color: 'var(--text-secondary)', opacity: 0.6 }}>{lineCount} lines</span>
+        </div>
+        <div style={{ display: 'flex', gap: 2 }}>
+          <ActionButton onClick={() => copyText(code)} icon={<Copy />} label="Copy" doneLabel="Copied!" doneIcon={<Check />} />
+        </div>
+      </div>
+      
+      {/* 代码区域：带行号 */}
+      <div style={{ display: 'flex' }}>
+        {/* 行号列 */}
+        <div style={{
+          padding: '14px 0',
+          paddingLeft: 12,
+          paddingRight: 8,
+          borderRight: '1px solid rgba(255,255,255,0.06)',
+          userSelect: 'none',
+          textAlign: 'right',
+          minWidth: 36,
+        }}>
+          {displayCode.split('\n').map((_, i) => (
+            <div key={i} style={{ fontSize: 12, lineHeight: '1.55em', color: 'rgba(255,255,255,0.2)' }}>
+              {i + 1}
+            </div>
+          ))}
+        </div>
+        
+        {/* 代码 */}
+        <pre style={{ padding: '14px 16px', margin: 0, overflowX: 'auto', flex: 1 }}>
+          <code /* ...高亮渲染... */ />
+        </pre>
+      </div>
+      
+      {/* 折叠/展开 */}
+      {lines.length > 30 && (
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          style={{
+            width: '100%', padding: '8px', textAlign: 'center',
+            fontSize: 12, color: 'var(--brand)',
+            background: 'rgba(174,86,48,0.08)',
+            border: 'none', cursor: 'pointer',
+          }}
+        >
+          {collapsed ? `展开剩余 ${lines.length - 15} 行` : '收起'}
+        </button>
+      )}
+    </div>
+  );
+}
+```
+
+### B2：用户消息气泡样式
+
+**现状**：用户消息和 AI 消息的视觉区分不够明显
+**Claude 的做法**：用户消息右对齐，暖色背景气泡；AI消息左对齐，无气泡
+
+**改动文件**：`client/src/components/ai/AiMessageBubble.tsx`
+
+```
+Claude 的消息布局：
+
+用户消息：
+                    ┌──────────────────────┐
+                    │ 帮我分析一下Q2数据    │  ← 右对齐，暖米色背景
+                    └──────────────────────┘
+
+AI 消息：
+  [Logo]
+  好的，我来分析Q2数据。                       ← 左对齐，无背景，正文直接展示
+  
+  以下是关键指标...
+```
+
+检查现有的 AiMessageBubble，确保：
+
+- 用户消息：`ml-auto`（右对齐），`max-width: 85%`，背景色 `rgba(174,86,48,0.12)`（暖色），圆角 `18px 18px 4px 18px`
+- AI消息：左对齐，无背景色，左侧显示 Logo
+- 区分要够明显，一眼就知道谁说的
+
+### B3：输入栏多行自动扩展
+
+**现状**：检查 AiInputBar 中 textarea 是否有自动扩展高度的逻辑
+
+**Claude 的做法**：输入一行时是单行高度；打多行时 textarea 自动变高，最高到 200px 后出滚动条
+
+**改动文件**：`client/src/components/ai/AiInputBar.tsx`
+
+```typescript
+// 自动调整高度
+const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+const autoResize = useCallback(() => {
+  const ta = textareaRef.current;
+  if (!ta) return;
+  ta.style.height = 'auto'; // 先重置
+  ta.style.height = Math.min(ta.scrollHeight, 200) + 'px'; // 自适应，最高200px
+}, []);
+
+useEffect(() => {
+  autoResize();
+}, [text, autoResize]);
+
+// textarea 属性
+<textarea
+  ref={textareaRef}
+  value={text}
+  onChange={(e) => { setText(e.target.value); autoResize(); }}
+  onKeyDown={handleKeyDown}
+  rows={1}
+  style={{
+    resize: 'none',
+    minHeight: 24,
+    maxHeight: 200,
+    overflowY: text.split('\n').length > 8 ? 'auto' : 'hidden',
+    transition: 'height 100ms ease',
+  }}
+/>
+```
+
+### B4：搜索结果展示优化
+
+**现状**：searchResults 在消息中显示为可折叠列表（标题+URL+摘要）
+**Claude 的做法**：搜索中显示动画，结果以来源标签形式折叠在回答末尾
+
+**改动**：在 AiMessageBubble 中，searchResults 区域改为：
+
+```
+AI 回答之前：
+  [🔍 搜索了3个来源...]  ← 折叠的标签，可点击展开
+
+展开后：
+  🔍 搜索了3个来源
+  ├── 标题1  docs.anthropic.com
+  ├── 标题2  support.claude.com
+  └── 标题3  medium.com/...
+```
+
+### B5：附件预览优化
+
+**现状**：上传附件后显示文件名和类型图标
+**Claude 的做法**：图片显示缩略图预览，文件显示图标+文件名+大小，可删除
+
+检查 AiInputBar 中的附件渲染，确保：
+
+- 图片附件：显示缩略图（base64 preview），圆角8px，最大宽度120px
+- 文件附件：显示文件类型图标 + 文件名 + 文件大小
+- 每个附件右上角有删除按钮（X）
+- 多个附件横向排列，可滚动
+
+### B6：空状态欢迎页
+
+**现状**：有 DEFAULT_SUGGESTIONS（4个建议按钮）
+**Claude 的做法**：大Logo + 问候语 + 建议标签云
+
+```
+现在的空状态（可能已经有了，确认并改进）：
+
+         🤖
+      Buddy AI
+   
+   今天我能帮你什么？
+
+   [创建新任务]  [查看项目进度]
+   [分析团队负载]  [查询待办事项]
+```
+
+确保建议按钮的样式：
+
+- 圆角药丸形状（rounded-full）
+- 背景 `rgba(255,255,255,0.06)`
+- hover 变亮
+- 文字 14px
+- 间距适中
+
+-----
+
+## 四、C档改动（细节完善）
+
+### C1：滚动到底部按钮
+
+**现状**：可能有自动滚动逻辑但缺少手动”跳到底部”按钮
+**Claude 的做法**：当用户向上滚动时，右下角出现向下箭头按钮
+
+```typescript
+// 在消息列表容器中
+const [showScrollBottom, setShowScrollBottom] = useState(false);
+
+const handleScroll = useCallback(() => {
+  const el = messagesContainerRef.current;
+  if (!el) return;
+  const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+  setShowScrollBottom(fromBottom > 200);
+}, []);
+
+// 按钮
+{showScrollBottom && (
+  <button
+    onClick={() => scrollToBottom('smooth')}
+    className="absolute bottom-20 right-4 w-8 h-8 rounded-full 
+               bg-[var(--bg-code)] border border-[rgba(255,255,255,0.1)]
+               flex items-center justify-center
+               shadow-lg hover:bg-[rgba(255,255,255,0.12)] transition-all
+               animate-in fade-in slide-in-from-bottom-2"
+  >
+    <ArrowDown className="w-4 h-4" />
+  </button>
+)}
+```
+
+### C2：消息时间戳
+
+**现状**：消息的 timestamp 已存储但可能未显示
+**Claude 的做法**：hover 消息时显示时间戳（不是常驻显示，避免干扰）
+
+```typescript
+// 在 AiMessageBubble 中
+const [showTime, setShowTime] = useState(false);
+
+<div onMouseEnter={() => setShowTime(true)} onMouseLeave={() => setShowTime(false)}>
+  {/* 消息内容 */}
+  {showTime && message.timestamp && (
+    <span className="text-xs text-[var(--text-secondary)] opacity-50 mt-1 block">
+      {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+    </span>
+  )}
+</div>
+```
+
+### C3：Token 用量显示
+
+**现状**：tokenUsage 数据已存储在消息中
+**Claude 的做法**：不显示 token（普通用户不关心）
+
+**建议**：在消息底部操作栏的最右侧，用极淡的文字显示（开发者模式才可见，或hover时才显示）：
+
+```typescript
+{message.tokenUsage && (
+  <span className="text-[10px] text-[var(--text-secondary)] opacity-30 ml-auto">
+    {message.tokenUsage.totalTokens.toLocaleString()} tokens
+  </span>
+)}
+```
+
+### C4：移动端键盘适配
+
+**现状**：之前修过 touch event 的 scroll 阻塞问题
+
+**需要确认/改进**：
+
+1. 键盘弹出时输入栏随键盘上移（iOS 用 `visualViewport` API）
+1. 键盘弹出时消息列表缩小高度
+1. 键盘收起时恢复
+
+```typescript
+// 在 agent.tsx 中
+useEffect(() => {
+  if (!window.visualViewport) return;
+  const onResize = () => {
+    const vv = window.visualViewport!;
+    const keyboardHeight = window.innerHeight - vv.height;
+    document.documentElement.style.setProperty('--keyboard-height', `${keyboardHeight}px`);
+  };
+  window.visualViewport.addEventListener('resize', onResize);
+  return () => window.visualViewport?.removeEventListener('resize', onResize);
+}, []);
+```
+
+输入栏的 bottom 值改为 `calc(env(safe-area-inset-bottom) + var(--keyboard-height, 0px))`
+
+### C5：Markdown 长内容折叠
+
+**现状**：所有消息完整显示
+**Claude 的做法**：超长回复（超过 ~2000 字符）自动折叠，显示前部分 + “显示更多”
+
+```typescript
+// 在 AiMessageBubble 中
+const MAX_COLLAPSED_LENGTH = 2000;
+const isLongMessage = message.content.length > MAX_COLLAPSED_LENGTH && !message.isStreaming;
+const [expanded, setExpanded] = useState(!isLongMessage);
+
+const displayContent = expanded ? message.content : message.content.slice(0, MAX_COLLAPSED_LENGTH);
+
+// 渲染
+<AIMessageContent content={displayContent} />
+{isLongMessage && !expanded && (
+  <div className="relative">
+    {/* 底部渐变遮罩 */}
+    <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-[var(--bg-main)] to-transparent" />
+    <button
+      onClick={() => setExpanded(true)}
+      className="relative z-10 w-full py-2 text-sm text-[var(--brand)] hover:underline"
+    >
+      显示更多
+    </button>
+  </div>
+)}
+```
+
+### C6：链接预览增强
+
+**现状**：链接用 `<a>` 标签渲染，有下划线和品牌色
+**改进**：给外部链接加上 ExternalLink 图标
+
+```typescript
+a: ({ href, children }) => (
+  <a href={href} target="_blank" rel="noopener noreferrer" 
+     style={{ color: 'var(--brand-icon)', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+    {children}
+    <ExternalLink style={{ width: 12, height: 12, opacity: 0.6 }} />
+  </a>
+),
+```
+
+-----
+
+## 五、全局样式补充
+
+在 `client/src/index.css` 或全局样式中新增：
+
+```css
+/* 思考过程光条 */
+@keyframes thinking-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+/* Logo 呼吸动画（流式输出指示） */
+@keyframes logo-breathe {
+  0%, 100% { 
+    transform: scale(1); 
+    opacity: 1;
+    filter: drop-shadow(0 0 0px var(--brand));
+  }
+  50% { 
+    transform: scale(1.15); 
+    opacity: 0.85;
+    filter: drop-shadow(0 0 6px var(--brand));
+  }
+}
+
+.logo-breathing {
+  animation: logo-breathe 2s ease-in-out infinite;
+}
+
+/* 消息出现动画 */
+@keyframes message-appear {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.message-enter {
+  animation: message-appear 300ms ease-out;
+}
+
+/* 思考过程光条 */
+.thinking-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(174, 86, 48, 0.15);
+  overflow: hidden;
+  position: relative;
+}
+
+.thinking-bar::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, var(--brand), transparent);
+  animation: thinking-shimmer 2s ease-in-out infinite;
+}
+
+/* 代码块行号 */
+.code-line-numbers {
+  counter-reset: line;
+}
+.code-line-numbers > div::before {
+  counter-increment: line;
+  content: counter(line);
+}
+
+/* 滚动到底部按钮出现动画 */
+@keyframes scroll-btn-appear {
+  from { opacity: 0; transform: translateY(8px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.scroll-bottom-btn {
+  animation: scroll-btn-appear 200ms ease-out;
+}
+
+/* 搜索结果折叠标签 */
+.search-sources-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 150ms;
+}
+.search-sources-tag:hover {
+  background: rgba(255, 255, 255, 0.10);
+}
+```
+
+-----
+
+## 六、ArtifactPanel 增强
+
+**现状**：有 ArtifactPanel 组件，支持长内容检测和展示
+**Claude 的做法**：Artifact 面板从右侧滑入，有代码/预览切换
+
+检查现有 ArtifactPanel 的功能，确保：
+
+1. **面板从右侧滑入**（`translateX(100%) → translateX(0)`），不是弹窗
+1. **顶部标题栏**：标题 + 关闭按钮
+1. **底部操作栏**：复制 / 下载 / 全屏（可选）
+1. **代码预览模式切换**（如果内容是代码）：Tab切换 [代码] [预览]
+1. **代码内容可编辑**（可选增强，不是必须）
+
+如果现有实现和上述不同，按照 Claude 的方式改造。
+
+-----
+
+## 七、改动文件清单
+
+|文件                                  |改动类型|改什么                                  |
+|------------------------------------|----|-------------------------------------|
+|`client/src/index.css`              |新增  |6个CSS动画 + 3个工具类                      |
+|`components/ThinkingAnimation.tsx`  |改造  |渐变光条替代 spinner                       |
+|`components/ai/ThinkingBlock.tsx`   |改造  |折叠/展开 + 实时计时 + 光条                    |
+|`components/ai/AiMessageBubble.tsx` |改造  |流式光标 + 消息动画 + 时间戳hover + 长内容折叠 + 停止按钮|
+|`components/ai/AIMessageContent.tsx`|改造  |代码块行号 + 折叠 + 链接图标                    |
+|`components/ai/AiInputBar.tsx`      |改造  |textarea自动扩展（如果没有的话）                 |
+|`pages/agent.tsx`                   |改造  |滚动到底部按钮 + 停止生成按钮位置 + 键盘适配            |
+
+-----
+
+## 八、验证清单
+
+### A档（必须通过）
+
+- [ ] 思考过程显示渐变光条动画（不是 spinner）
+- [ ] 思考过程可折叠/展开
+- [ ] 思考过程显示实时计时器
+- [ ] 流式输出时 Logo 做呼吸脉冲动画
+- [ ] 输出完成后 Logo 动画停止变为静态
+- [ ] 文字直接流式出现，没有闪烁光标
+- [ ] 消息出现时有淡入动画
+- [ ] 流式输出时，消息列表底部有”停止生成”按钮
+
+### B档
+
+- [ ] 代码块有行号
+- [ ] 超过30行的代码块默认折叠
+- [ ] 用户消息右对齐、暖色背景
+- [ ] AI消息左对齐、无背景
+- [ ] 输入框多行输入时自动变高
+- [ ] 搜索结果以折叠标签展示
+
+### C档
+
+- [ ] 向上滚动后出现”回到底部”按钮
+- [ ] hover消息显示时间戳
+- [ ] 超长回复有”显示更多”折叠
+- [ ] 链接有外链图标
+- [ ] 移动端键盘弹出时输入栏不被遮挡
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读项目根目录的 `task-19-agent-ui-upgrade.md`，按优先级A→B→C执行。
+> 
+> 重要规则：
+> 
+> 1. **不改数据流和SSE逻辑**——只改前端渲染和样式
+> 1. **先改 A 档**（思考动画 + 流式光标 + 停止按钮 + 消息动画），这4个改完的视觉提升最大
+> 1. 代码块改造不要影响已有的语法高亮功能
+> 1. 所有新增CSS动画放在全局样式文件中（不要内联在组件里）
+> 1. 测试时注意移动端——所有改动在手机上也要正常
+> 1. 每改完一个档次就测试一轮，确保没有回归
+> 1. ThinkingBlock 的实时计时器在 `isThinking=false` 后要停止
+> 1. 流式光标只在 `isStreaming=true` 时显示
+> 1. 消息出现动画只对新消息生效，加载历史消息不应该有动画
+> 1. 长内容折叠的”显示更多”在流式输出过程中不触发（只有完整消息才折叠）
