@@ -1,0 +1,231 @@
+# Task: Implement Claude-Style Streaming Response UI — Phase 1: Core Skeleton
+
+## What This Is
+
+We are rebuilding the chat response rendering system to match Claude.ai’s streaming animation experience. This is Phase 1 of 4. Do NOT implement anything beyond what’s listed here.
+
+## Reference
+
+The full specification is in `BUDDY_CLAUDE_STREAMING_UI_SPEC.md` in the project root. Read Sections 1, 3, 4, 6, 7, 8, 10, 17, 18, 19 before starting.
+
+## Deliverables (Phase 1 Only)
+
+### 1. CSS Variables — Global Theme
+
+Add these to the global stylesheet. Do NOT remove existing variables, just add/override:
+
+```css
+:root {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2a2a2a;
+  --bg-tertiary: #333333;
+  --bg-user-message: #3b3b3b;
+  --text-primary: #e8e8e8;
+  --text-secondary: #a0a0a0;
+  --text-tertiary: #6b6b6b;
+  --text-user: #ffffff;
+  --accent-orange: #d4714a;
+  --accent-blue: #7ab5e0;
+  --accent-green: #6bc76b;
+  --border-subtle: #3a3a3a;
+  --border-code: #404040;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-code: "SF Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace;
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-spring: cubic-bezier(0.22, 1.0, 0.36, 1.0);
+}
+```
+
+### 2. User Message Bubble
+
+- Right-aligned in chat flow
+- Background: `--bg-user-message`
+- Color: `--text-user`
+- Border radius: 18px 18px 4px 18px
+- Padding: 12px 16px
+- Max width: 80%
+- Entry animation: slide up 12px + fade in, 350ms, ease-spring
+
+### 3. Thinking Indicator (Starburst Loading)
+
+When the user sends a message and we’re waiting for the first token, show an animated orange starburst icon:
+
+```svg
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <g transform="translate(12, 12)">
+    <line x1="0" y1="-3" x2="0" y2="-10" stroke="#d4714a" stroke-width="2.2" stroke-linecap="round"/>
+    <line x1="2.6" y1="-1.5" x2="8.7" y2="-5" stroke="#d4714a" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
+    <line x1="3" y1="0" x2="10" y2="0" stroke="#d4714a" stroke-width="2.2" stroke-linecap="round"/>
+    <line x1="2.6" y1="1.5" x2="8.7" y2="5" stroke="#d4714a" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
+    <line x1="0" y1="3" x2="0" y2="10" stroke="#d4714a" stroke-width="2.2" stroke-linecap="round"/>
+    <line x1="-2.6" y1="1.5" x2="-8.7" y2="5" stroke="#d4714a" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
+    <line x1="-3" y1="0" x2="-10" y2="0" stroke="#d4714a" stroke-width="2.2" stroke-linecap="round"/>
+    <line x1="-2.6" y1="-1.5" x2="-8.7" y2="-5" stroke="#d4714a" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
+  </g>
+</svg>
+```
+
+Animation: rotate 360° over 3s linear infinite. Each ray pulses opacity 0.4→1.0→0.4 over 1.5s, staggered by 0.15s per ray.
+
+Show this immediately after user sends. Hide it (fade out 200ms) when the first text token arrives.
+
+### 4. Streaming Text Rendering
+
+- Tokens from the SSE stream are appended to the DOM immediately as they arrive
+- No per-token animation — the streaming itself IS the animation
+- Text: color `--text-primary` (#e8e8e8), font-size 15px (16px on mobile), line-height 1.6
+- Paragraph spacing: margin-bottom 12px between paragraphs
+- Spacing between text and process elements: 4px
+
+### 5. Auto-Scroll with User Override
+
+Critical behavior:
+
+- **Default**: Chat scrolls to bottom as new tokens arrive
+- **User scrolls up**: Auto-scroll STOPS immediately. Do not fight the user.
+- **User scrolls back to bottom** (within 50px of bottom edge): Auto-scroll RESUMES
+- **User sends new message**: Force scroll to bottom regardless
+
+Implementation approach:
+
+```typescript
+const isAutoScrolling = useRef(true);
+
+function isNearBottom(): boolean {
+  const el = containerRef.current;
+  if (!el) return true;
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+}
+
+// On scroll event
+function handleScroll() {
+  isAutoScrolling.current = isNearBottom();
+}
+
+// On each new token
+function scrollToBottom() {
+  if (!isAutoScrolling.current) return;
+  containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight, behavior: 'smooth' });
+}
+```
+
+### 6. Action Buttons (Post-Response)
+
+After streaming completes, show 4 icon buttons below the response:
+
+- Copy, Retry, Thumbs Up, Thumbs Down
+- Icon only, no labels, 32x32 tap target, 16x16 icon size
+- Icon color: `--text-tertiary` (#6b6b6b), hover → `--text-secondary`
+- Horizontal row, gap 4px, left-aligned
+- Entry: fade in 300ms, delayed 200ms after stream ends
+
+Button SVG icons (all 16x16, stroke color #6b6b6b):
+
+**Copy**:
+
+```svg
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="5" y="5" width="8" height="8" rx="1.5"/>
+  <path d="M3 11V3.5A1.5 1.5 0 0 1 4.5 2H11"/>
+</svg>
+```
+
+**Retry**:
+
+```svg
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M2 8a6 6 0 0 1 10.3-4.1"/>
+  <polyline points="12,1 12.5,4 9.5,4.2"/>
+  <path d="M14 8a6 6 0 0 1-10.3 4.1"/>
+  <polyline points="4,15 3.5,12 6.5,11.8"/>
+</svg>
+```
+
+**Thumbs Up**:
+
+```svg
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M5 14V7l2-5a1 1 0 0 1 1 1v3h4.5a1.5 1.5 0 0 1 1.4 2.1l-1.5 5A1.5 1.5 0 0 1 11 14H5z"/>
+  <rect x="1" y="7" width="3" height="7" rx="0.5"/>
+</svg>
+```
+
+**Thumbs Down**:
+
+```svg
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M11 2v7l-2 5a1 1 0 0 1-1-1v-3H3.5A1.5 1.5 0 0 1 2.1 7.9l1.5-5A1.5 1.5 0 0 1 5 2h6z"/>
+  <rect x="12" y="2" width="3" height="7" rx="0.5"/>
+</svg>
+```
+
+### 7. Stop / Send Button Toggle
+
+- During streaming: input area shows a Stop button (square icon, filled #e8e8e8)
+- When idle: shows Send button (arrow icon, filled #e8e8e8)
+- Transition: cross-fade 200ms between the two icons
+- Stop button click: calls AbortController.abort() on the SSE connection, streaming freezes at current position, action buttons appear
+
+**Stop icon**:
+
+```svg
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+  <rect x="3" y="3" width="10" height="10" rx="2" fill="#e8e8e8"/>
+</svg>
+```
+
+**Send icon**:
+
+```svg
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+  <path d="M3 13L13.5 8L3 3V6.5L9 8L3 9.5V13Z" fill="#e8e8e8"/>
+</svg>
+```
+
+### 8. SSE AbortController Cleanup
+
+CRITICAL: Every SSE request must use an AbortController. When the component unmounts OR the user stops generation OR a new message is sent, call `.abort()` on the controller. This prevents request leaks. This was a past bug — do not skip this.
+
+```typescript
+const abortRef = useRef<AbortController | null>(null);
+
+function startStream() {
+  abortRef.current?.abort(); // Kill any existing stream
+  abortRef.current = new AbortController();
+  fetch(url, { signal: abortRef.current.signal, ... });
+}
+
+function stopStream() {
+  abortRef.current?.abort();
+  // → trigger action buttons fade-in
+  // → switch stop button back to send button
+}
+
+// On unmount
+useEffect(() => {
+  return () => abortRef.current?.abort();
+}, []);
+```
+
+## DO NOT Implement in This Phase
+
+- Extended Thinking collapse bar
+- Markdown rendering (bold, italic, headers, lists)
+- Code blocks with syntax highlighting
+- Tool call cards
+- Artifact cards
+- Interactive widgets (single select, multi select, rank)
+- Side panel or bottom sheet
+- Citations
+
+## Validation
+
+After implementation, verify:
+
+1. User sends message → starburst appears → text streams → starburst disappears
+1. Auto-scroll follows new text
+1. Scrolling up stops auto-scroll; scrolling back down resumes it
+1. Stop button freezes stream, action buttons appear
+1. Action buttons appear after stream completes
+1. No console errors about aborted fetches (AbortController cleanup working)
+1. On mobile: text size is 16px, no iOS zoom on input focus

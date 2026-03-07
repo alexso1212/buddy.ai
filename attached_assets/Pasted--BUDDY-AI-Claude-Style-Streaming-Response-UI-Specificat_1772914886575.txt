@@ -1,0 +1,1739 @@
+# BUDDY AI — Claude-Style Streaming Response UI Specification
+
+> **Purpose**: Complete implementation spec for Replit Agent to replicate Claude.ai’s streaming response animation system in Buddy AI.
+> **Priority**: This is the core chat experience — every user interaction flows through this system.
+> **Tech Stack**: React/TypeScript, CSS animations, Framer Motion (optional)
+
+-----
+
+## TABLE OF CONTENTS
+
+1. [Response Rendering Pipeline — Timeline](#1-response-rendering-pipeline)
+1. [Component Architecture](#2-component-architecture)
+1. [Color System (Dark Theme)](#3-color-system)
+1. [Typography System](#4-typography-system)
+1. [Icon Reference (SVG Code)](#5-icon-reference)
+1. [Animation Specifications](#6-animation-specifications)
+1. [Component Detail: User Message Bubble](#7-user-message-bubble)
+1. [Component Detail: Thinking Indicator](#8-thinking-indicator)
+1. [Component Detail: Extended Thinking Collapse Bar](#9-extended-thinking-collapse-bar)
+1. [Component Detail: Streaming Text Body](#10-streaming-text-body)
+1. [Component Detail: Code Block](#11-code-block)
+1. [Component Detail: Tool Call Indicator](#12-tool-call-indicator)
+1. [Component Detail: Artifact Card](#13-artifact-card)
+1. [Component Detail: Background Processing Banner](#14-background-processing-banner)
+1. [Component Detail: Citation Tags](#15-citation-tags)
+1. [Component Detail: Interactive Widgets](#16-interactive-widgets)
+1. [Component Detail: Action Buttons](#17-action-buttons)
+1. [Component Detail: Stop Button](#18-stop-button)
+1. [Scroll Behavior](#19-scroll-behavior)
+1. [Orchestration Logic (Critical)](#20-orchestration-logic)
+1. [Mobile Adaptations](#21-mobile-adaptations)
+1. [Implementation Phases](#22-implementation-phases)
+
+-----
+
+## 1. RESPONSE RENDERING PIPELINE
+
+When the user sends a message, the following stages execute **sequentially**:
+
+```
+User taps Send
+    │
+    ▼
+[Phase 0] User message animates into chat flow (0ms)
+    │  - Message bubble slides up from input area
+    │  - Input field clears and collapses to default height
+    │  - Chat auto-scrolls to bottom
+    │
+    ▼
+[Phase 1] Thinking indicator appears (0-2000ms wait)
+    │  - Orange starburst icon with rotation animation
+    │  - No text, just the animated icon
+    │  - This is the "waiting for first token" state
+    │
+    ▼
+[Phase 2] Extended Thinking bar (if model uses thinking)
+    │  - Replaces the thinking indicator
+    │  - Shows collapsible bar with timer icon + summary text
+    │  - Summary text updates in real-time during thinking
+    │  - Bar has "breathing" shimmer animation while active
+    │  - When thinking completes: bar becomes static, chevron appears
+    │
+    ▼
+[Phase 3] Streaming text body
+    │  - Main response text streams token-by-token
+    │  - Classic typewriter effect, left-to-right, top-to-bottom
+    │  - Page auto-scrolls to follow new content
+    │
+    ├──► [Phase 4a] Inline tool call card (if model calls a tool)
+    │    - Appears at the exact position in the token stream
+    │    - Shows tool name + loading spinner
+    │    - Collapses to result summary when complete
+    │    - Text streaming PAUSES during tool execution
+    │    - Text streaming RESUMES after tool returns
+    │
+    ├──► [Phase 4b] Inline artifact card (if model creates artifact)
+    │    - Appears at the exact position in the token stream
+    │    - Shows file icon + artifact title
+    │    - If large: shows "responding in background" banner
+    │    - Artifact renders in side panel (desktop) or bottom sheet (mobile)
+    │    - Text streaming continues (non-blocking)
+    │
+    ├──► [Phase 4c] Inline code block (if model writes code)
+    │    - Code container border renders first
+    │    - Code text streams inside the container
+    │    - Syntax highlighting applies in real-time
+    │    - "Copy" button fades in when block completes
+    │
+    ├──► [Phase 4d] Interactive widget (if model sends choices)
+    │    - Appears at end of response
+    │    - Slides up from below with spring animation
+    │    - Shows single-select / multi-select / rank options
+    │
+    ▼
+[Phase 5] Response complete
+    │  - Streaming stops
+    │  - Action buttons fade in below response (copy, retry, thumbs up/down)
+    │  - Stop button in input area reverts to Send button
+    │  - Any pending artifacts finish rendering
+    │
+    ▼
+[IDLE] Waiting for next user input
+```
+
+-----
+
+## 2. COMPONENT ARCHITECTURE
+
+```
+<ChatContainer>
+  <MessageList>                          // Virtual scroll container
+    <UserMessage />                      // User's message bubble
+    <AssistantResponse>                  // One response = one container
+      <ThinkingIndicator />             // Phase 1: spinning starburst
+      <ExtendedThinkingBar />           // Phase 2: collapsible thinking summary
+      <StreamingTextBlock>              // Phase 3: main text
+        <TextToken />                   // Individual streaming tokens
+        <ToolCallCard />                // Phase 4a: inline tool call
+        <ArtifactCard />                // Phase 4b: inline artifact
+        <CodeBlock />                   // Phase 4c: inline code
+        <CitationTag />                 // Phase 4d: inline citation superscript
+      </StreamingTextBlock>
+      <InteractiveWidget />             // End-of-response choices
+      <ActionButtons />                 // Post-response actions
+    </AssistantResponse>
+  </MessageList>
+  <InputArea>
+    <StopButton />                      // During streaming
+    <SendButton />                      // When idle
+  </InputArea>
+</ChatContainer>
+```
+
+-----
+
+## 3. COLOR SYSTEM
+
+### Spacing Philosophy (Critical)
+
+> **Process elements are compact, not blocky.**
+> Thinking bars, tool cards, artifact cards, and background banners are “inline” elements embedded in the text flow. They should feel like part of the text stream, NOT like separate card sections with large gaps. Use tight vertical margins (4-6px) between process elements and surrounding text. Only the main content paragraphs and code blocks get slightly larger spacing (8-12px). The overall feel should be a continuous, dense conversation — not a dashboard of spaced-out cards.
+
+All colors are for **dark theme** (Claude’s default dark mode).
+
+```css
+:root {
+  /* ── Background layers ── */
+  --bg-primary:         #1a1a1a;    /* Main chat background */
+  --bg-secondary:       #2a2a2a;    /* Cards, code blocks, collapse bars */
+  --bg-tertiary:        #333333;    /* Hover states on cards */
+  --bg-user-message:    #3b3b3b;    /* User message bubble */
+  --bg-input:           #2a2a2a;    /* Input field background */
+  --bg-overlay:         rgba(0, 0, 0, 0.5);  /* Modal/sheet backdrop */
+
+  /* ── Text colors ── */
+  --text-primary:       #e8e8e8;    /* Main response text — warm off-white */
+  --text-secondary:     #a0a0a0;    /* Metadata, timestamps, tool labels */
+  --text-tertiary:      #6b6b6b;    /* Placeholder text, disabled states */
+  --text-user:          #ffffff;    /* User message text — pure white */
+  --text-code:          #e8e8e8;    /* Code text inside code blocks */
+
+  /* ── Brand / Accent ── */
+  --accent-orange:      #d4714a;    /* Claude starburst icon, loading states */
+  --accent-orange-dim:  #a0553a;    /* Starburst icon dimmed rays */
+  --accent-blue:        #7ab5e0;    /* Links, interactive elements */
+  --accent-blue-hover:  #9ccaf0;    /* Link hover state */
+  --accent-green:       #6bc76b;    /* Success states, completed tool calls */
+
+  /* ── Borders ── */
+  --border-subtle:      #3a3a3a;    /* Card borders, dividers */
+  --border-code:        #404040;    /* Code block borders */
+
+  /* ── Special ── */
+  --thinking-shimmer:   linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.04) 50%, transparent 100%);
+  --glass-bg:           rgba(42, 42, 42, 0.85);
+  --glass-blur:         12px;       /* backdrop-filter: blur(12px) */
+}
+```
+
+**Light theme overrides** (for future):
+
+```css
+[data-theme="light"] {
+  --bg-primary:         #ffffff;
+  --bg-secondary:       #f5f5f5;
+  --bg-user-message:    #e9e9e9;
+  --text-primary:       #1a1a1a;
+  --text-secondary:     #6b6b6b;
+  --border-subtle:      #e0e0e0;
+}
+```
+
+-----
+
+## 4. TYPOGRAPHY SYSTEM
+
+```css
+:root {
+  /* Font family — matches Claude's system font stack */
+  --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-code:    "SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  /* Font sizes */
+  --text-xs:      12px;    /* Timestamps, citation numbers */
+  --text-sm:      13px;    /* Tool labels, metadata */
+  --text-base:    15px;    /* Main body text (mobile: 16px to prevent iOS zoom) */
+  --text-lg:      16px;    /* Extended thinking summary */
+  --text-xl:      18px;    /* Section headers in response */
+  --text-code:    13px;    /* Code block content */
+
+  /* Line heights */
+  --leading-tight:   1.3;
+  --leading-normal:  1.6;   /* Body text — generous for readability */
+  --leading-code:    1.5;
+
+  /* Font weights */
+  --weight-normal:  400;
+  --weight-medium:  500;
+  --weight-bold:    600;    /* Bold text in responses, headers */
+}
+```
+
+**Text rendering rules**:
+
+- Body text: `--text-base`, `--leading-normal`, `--weight-normal`, color `--text-primary`
+- Bold text: same size, `--weight-bold`, same color
+- Italic text: same size, font-style italic, same color
+- Inline code: `--font-code`, `--text-code` size, background `--bg-secondary`, border-radius 4px, padding 2px 6px
+- Headers in response (## / ###): `--text-xl`, `--weight-bold`, margin-top 24px, margin-bottom 8px
+
+-----
+
+## 5. ICON REFERENCE
+
+All icons should be rendered as **inline SVG** components. Below is the exact SVG code for each icon used in the streaming UI.
+
+### 5.1 Claude Starburst (Loading/Thinking)
+
+This is Anthropic’s brand mark — an orange starburst with ~12 rays radiating from center. Used during “waiting for response” state.
+
+```svg
+<!-- Claude Starburst — 24x24, animated rotation -->
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <!-- 12 rays radiating from center, alternating thickness -->
+  <!-- Each ray is a rounded line from near-center to edge -->
+  <g transform="translate(12, 12)">
+    <line x1="0" y1="-3"  x2="0"    y2="-10"  stroke="#d4714a" stroke-width="2.2" stroke-linecap="round" opacity="1.0"/>
+    <line x1="2.6" y1="-1.5" x2="8.7" y2="-5"   stroke="#d4714a" stroke-width="2.0" stroke-linecap="round" opacity="0.85"/>
+    <line x1="3" y1="0"   x2="10"   y2="0"    stroke="#d4714a" stroke-width="2.2" stroke-linecap="round" opacity="1.0"/>
+    <line x1="2.6" y1="1.5" x2="8.7" y2="5"    stroke="#d4714a" stroke-width="2.0" stroke-linecap="round" opacity="0.85"/>
+    <line x1="0" y1="3"   x2="0"    y2="10"   stroke="#d4714a" stroke-width="2.2" stroke-linecap="round" opacity="1.0"/>
+    <line x1="-2.6" y1="1.5" x2="-8.7" y2="5"  stroke="#d4714a" stroke-width="2.0" stroke-linecap="round" opacity="0.85"/>
+    <line x1="-3" y1="0"  x2="-10"  y2="0"    stroke="#d4714a" stroke-width="2.2" stroke-linecap="round" opacity="1.0"/>
+    <line x1="-2.6" y1="-1.5" x2="-8.7" y2="-5" stroke="#d4714a" stroke-width="2.0" stroke-linecap="round" opacity="0.85"/>
+  </g>
+</svg>
+```
+
+**Animation**: Slow continuous rotation, 3 seconds per full turn, ease-in-out. Additionally, each ray has a sequential opacity pulse (0.4 → 1.0 → 0.4) creating a “sparkle” effect.
+
+```css
+@keyframes starburst-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes starburst-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1.0; }
+}
+
+.starburst-icon {
+  animation: starburst-rotate 3s linear infinite;
+}
+
+.starburst-icon line:nth-child(1)  { animation: starburst-pulse 1.5s ease-in-out 0.0s infinite; }
+.starburst-icon line:nth-child(2)  { animation: starburst-pulse 1.5s ease-in-out 0.15s infinite; }
+.starburst-icon line:nth-child(3)  { animation: starburst-pulse 1.5s ease-in-out 0.3s infinite; }
+/* ... stagger each ray by 0.15s */
+```
+
+### 5.2 Thinking Timer Icon (Extended Thinking Bar)
+
+A simple clock/timer outline icon. Displayed on the left side of the Extended Thinking collapse bar.
+
+```svg
+<!-- Timer Icon — 16x16 -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#a0a0a0" stroke-width="1.5" stroke-linecap="round">
+  <circle cx="8" cy="8.5" r="5.5"/>
+  <line x1="8" y1="5.5" x2="8" y2="8.5"/>
+  <line x1="8" y1="8.5" x2="10" y2="10"/>
+  <line x1="6.5" y1="2" x2="9.5" y2="2"/>  <!-- top bar -->
+</svg>
+```
+
+Color: `--text-secondary` (#a0a0a0)
+
+### 5.3 Chevron Right (Expand Indicator)
+
+Used at the right edge of the Extended Thinking bar to indicate “tap to expand”.
+
+```svg
+<!-- Chevron Right — 12x12 -->
+<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#a0a0a0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="4,2 8,6 4,10"/>
+</svg>
+```
+
+**When expanded**: rotates 90° clockwise (pointing down).
+
+### 5.4 Paperclip / Link Icon (Artifact Card)
+
+Used on the left side of the Artifact creation card.
+
+```svg
+<!-- Link/Artifact Icon — 16x16 -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#7ab5e0" stroke-width="1.5" stroke-linecap="round">
+  <path d="M6.5 9.5l3-3a2.12 2.12 0 0 0-3-3l-3 3a2.12 2.12 0 0 0 3 3z"/>
+  <path d="M9.5 6.5l-3 3a2.12 2.12 0 0 0 3 3l3-3a2.12 2.12 0 0 0-3-3z"/>
+</svg>
+```
+
+Color: `--accent-blue` (#7ab5e0)
+
+### 5.5 Search / Globe Icon (Web Search Tool Call)
+
+```svg
+<!-- Globe/Search Icon — 16x16 -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#a0a0a0" stroke-width="1.5" stroke-linecap="round">
+  <circle cx="7" cy="7" r="5"/>
+  <line x1="10.5" y1="10.5" x2="14" y2="14"/>
+</svg>
+```
+
+### 5.6 Code Execution Icon (Code Tool Call)
+
+```svg
+<!-- Terminal/Code Icon — 16x16 -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#a0a0a0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="4,4 8,8 4,12"/>      <!-- > prompt -->
+  <line x1="9" y1="12" x2="13" y2="12"/> <!-- _ cursor -->
+</svg>
+```
+
+### 5.7 Copy Icon (Code Block, Action Button)
+
+```svg
+<!-- Copy Icon — 16x16 -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#a0a0a0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="5" y="5" width="8" height="8" rx="1.5"/>
+  <path d="M3 11V3.5A1.5 1.5 0 0 1 4.5 2H11"/>
+</svg>
+```
+
+### 5.8 Retry Icon (Action Button)
+
+```svg
+<!-- Retry/Refresh Icon — 16x16 -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#a0a0a0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M2 8a6 6 0 0 1 10.3-4.1"/>
+  <polyline points="12,1 12.5,4 9.5,4.2"/>
+  <path d="M14 8a6 6 0 0 1-10.3 4.1"/>
+  <polyline points="4,15 3.5,12 6.5,11.8"/>
+</svg>
+```
+
+### 5.9 Thumbs Up / Thumbs Down (Action Buttons)
+
+```svg
+<!-- Thumbs Up — 16x16 -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#a0a0a0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M5 14V7l2-5a1 1 0 0 1 1 1v3h4.5a1.5 1.5 0 0 1 1.4 2.1l-1.5 5A1.5 1.5 0 0 1 11 14H5z"/>
+  <rect x="1" y="7" width="3" height="7" rx="0.5"/>
+</svg>
+
+<!-- Thumbs Down — 16x16 (flip vertically) -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#a0a0a0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" transform="scale(1,-1) translate(0,-16)">
+  <path d="M5 14V7l2-5a1 1 0 0 1 1 1v3h4.5a1.5 1.5 0 0 1 1.4 2.1l-1.5 5A1.5 1.5 0 0 1 11 14H5z"/>
+  <rect x="1" y="7" width="3" height="7" rx="0.5"/>
+</svg>
+```
+
+### 5.10 Stop Square (Stop Generation Button)
+
+```svg
+<!-- Stop Icon — 16x16 -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+  <rect x="3" y="3" width="10" height="10" rx="2" fill="#e8e8e8"/>
+</svg>
+```
+
+### 5.11 Send Arrow (Send Button)
+
+```svg
+<!-- Send Arrow — 16x16 -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+  <path d="M3 13L13.5 8L3 3V6.5L9 8L3 9.5V13Z" fill="#e8e8e8"/>
+</svg>
+```
+
+### 5.12 Spinner (Generic Loading)
+
+Used in tool call cards while tool is executing.
+
+```svg
+<!-- Spinner — 16x16, animated -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+  <circle cx="8" cy="8" r="6" stroke="#3a3a3a" stroke-width="2"/>
+  <path d="M8 2a6 6 0 0 1 6 6" stroke="#a0a0a0" stroke-width="2" stroke-linecap="round"/>
+</svg>
+```
+
+```css
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spinner { animation: spin 0.8s linear infinite; }
+```
+
+### 5.13 Check Circle (Tool Complete)
+
+```svg
+<!-- Check Circle — 16x16 -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#6bc76b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="8" cy="8" r="6"/>
+  <polyline points="5.5,8 7.5,10 11,6"/>
+</svg>
+```
+
+### 5.14 File Type Icons (Artifact Types)
+
+```svg
+<!-- Document Icon (for .md, .txt, general docs) — 16x16 -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#7ab5e0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4 1.5h5.5L13 5v9a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 14V3A1.5 1.5 0 0 1 4.5 1.5z"/>
+  <polyline points="9.5,1.5 9.5,5 13,5"/>
+  <line x1="5.5" y1="8" x2="10.5" y2="8"/>
+  <line x1="5.5" y1="10.5" x2="10.5" y2="10.5"/>
+</svg>
+
+<!-- Code File Icon (for .jsx, .py, .ts) — 16x16 -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#7ab5e0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4 1.5h5.5L13 5v9a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 14V3A1.5 1.5 0 0 1 4.5 1.5z"/>
+  <polyline points="9.5,1.5 9.5,5 13,5"/>
+  <polyline points="6,9 4.5,10.5 6,12"/>   <!-- < -->
+  <polyline points="10,9 11.5,10.5 10,12"/> <!-- > -->
+</svg>
+
+<!-- Chart/Analysis Icon (for data artifacts) — 16x16 -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#7ab5e0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="2" y="2" width="12" height="12" rx="1.5"/>
+  <polyline points="4,11 7,7 9.5,9 12,5"/>
+</svg>
+```
+
+-----
+
+## 6. ANIMATION SPECIFICATIONS
+
+### 6.1 Global Easing Functions
+
+```css
+:root {
+  --ease-out-quart:    cubic-bezier(0.25, 1, 0.5, 1);      /* Primary exit easing */
+  --ease-out-back:     cubic-bezier(0.34, 1.56, 0.64, 1);   /* Springy overshoot */
+  --ease-in-out-sine:  cubic-bezier(0.37, 0, 0.63, 1);      /* Smooth breathing */
+  --ease-spring:       cubic-bezier(0.22, 1.0, 0.36, 1.0);  /* Slide-in spring */
+}
+```
+
+### 6.2 Fade-In (Used everywhere)
+
+```css
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.fade-in {
+  animation: fadeIn 300ms var(--ease-out-quart) forwards;
+}
+```
+
+### 6.3 Slide-Up + Fade (User message, widgets)
+
+```css
+@keyframes slideUpFade {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.slide-up {
+  animation: slideUpFade 350ms var(--ease-spring) forwards;
+}
+```
+
+### 6.4 Thinking Shimmer (Extended Thinking bar while active)
+
+```css
+@keyframes shimmer {
+  from { background-position: -200% center; }
+  to   { background-position: 200% center; }
+}
+
+.thinking-shimmer {
+  background-image: var(--thinking-shimmer);
+  background-size: 200% 100%;
+  animation: shimmer 2s var(--ease-in-out-sine) infinite;
+}
+```
+
+### 6.5 Expand/Collapse (Thinking bar, tool results)
+
+```css
+@keyframes expandDown {
+  from {
+    max-height: 0;
+    opacity: 0;
+  }
+  to {
+    max-height: 500px; /* large enough to contain content */
+    opacity: 1;
+  }
+}
+
+.expand-enter {
+  overflow: hidden;
+  animation: expandDown 300ms var(--ease-out-quart) forwards;
+}
+```
+
+### 6.6 Bottom Sheet Slide (Mobile artifact panel)
+
+```css
+@keyframes sheetSlideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0.8;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.bottom-sheet-enter {
+  animation: sheetSlideUp 400ms var(--ease-spring) forwards;
+}
+```
+
+### 6.7 Side Panel Slide (Desktop artifact panel)
+
+```css
+@keyframes panelSlideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0.8;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.side-panel-enter {
+  animation: panelSlideIn 350ms var(--ease-out-quart) forwards;
+}
+```
+
+-----
+
+## 7. USER MESSAGE BUBBLE
+
+**Layout**:
+
+```
+┌──────────────────────────────────────────────┐
+│                                              │
+│                          ┌─────────────────┐ │
+│                          │  User's message  │ │
+│                          │  text goes here  │ │
+│                          └─────────────────┘ │
+│                                              │
+└──────────────────────────────────────────────┘
+```
+
+- Alignment: **right-aligned** in the chat flow
+- Background: `--bg-user-message` (#3b3b3b)
+- Border radius: 18px (top-left, top-right, bottom-left), 4px (bottom-right)
+- Padding: 12px 16px
+- Max width: 80% of chat container
+- Text: `--text-user`, `--text-base`, `--weight-normal`
+- Entry animation: `slideUpFade` 350ms
+
+```css
+.user-message {
+  align-self: flex-end;
+  background: var(--bg-user-message);
+  color: var(--text-user);
+  border-radius: 18px 18px 4px 18px;
+  padding: 12px 16px;
+  max-width: 80%;
+  animation: slideUpFade 350ms var(--ease-spring) forwards;
+}
+```
+
+-----
+
+## 8. THINKING INDICATOR (Phase 1)
+
+This appears immediately after the user sends a message, before any tokens arrive.
+
+**Layout**:
+
+```
+[🌟]
+```
+
+Just the starburst icon, 24x24, with rotation + pulse animation. Left-aligned in the assistant response area.
+
+```css
+.thinking-indicator {
+  display: flex;
+  align-items: center;
+  padding: 4px 0;
+  animation: fadeIn 300ms ease forwards;
+}
+
+.thinking-indicator svg {
+  animation: starburst-rotate 3s linear infinite;
+}
+```
+
+**Behavior**: Appears within ~100ms of user sending. Disappears (fades out) when first content token arrives or Extended Thinking begins.
+
+-----
+
+## 9. EXTENDED THINKING COLLAPSE BAR (Phase 2)
+
+**Layout**:
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  ⏱  分解了多智能体协作系统的架构与可行性。              ›  │
+└────────────────────────────────────────────────────────────┘
+```
+
+- Full width of the response area
+- Background: `--bg-secondary` (#2a2a2a)
+- Border radius: 12px
+- Padding: 8px 12px
+- Margin: 4px 0
+- Left icon: Timer icon, 16x16, color `--text-secondary`
+- Text: `--text-secondary` (#a0a0a0), `--text-sm` (13px), `--weight-medium`
+- Right icon: Chevron right, 12x12, color `--text-tertiary`
+- Gap between icon and text: 8px
+
+**States**:
+
+|State                   |Visual                                                                                                                                                                                            |
+|------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|**Thinking (active)**   |Shimmer animation on background. Text updates in real-time. No chevron yet.                                                                                                                       |
+|**Complete (collapsed)**|Static background. Final summary text. Chevron › visible.                                                                                                                                         |
+|**Complete (expanded)** |Chevron rotated 90° ↓. Below the bar, full thinking text is revealed with `expandDown` animation. Expanded content has `--bg-secondary` background, padding 16px, max-height with overflow scroll.|
+
+```css
+.thinking-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 8px 12px;
+  margin: 4px 0;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.thinking-bar:hover {
+  background: var(--bg-tertiary);
+}
+
+.thinking-bar.active {
+  /* Shimmer overlay while thinking */
+  position: relative;
+  overflow: hidden;
+}
+
+.thinking-bar.active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--thinking-shimmer);
+  background-size: 200% 100%;
+  animation: shimmer 2s var(--ease-in-out-sine) infinite;
+  pointer-events: none;
+}
+
+.thinking-bar .chevron {
+  margin-left: auto;
+  transition: transform 200ms ease;
+}
+
+.thinking-bar.expanded .chevron {
+  transform: rotate(90deg);
+}
+```
+
+-----
+
+## 10. STREAMING TEXT BODY (Phase 3)
+
+**Token-by-token rendering**:
+
+- Each token from the SSE stream is appended to the DOM immediately
+- No per-token animation (the streaming itself IS the animation)
+- Text simply appears at the cursor position, like someone typing
+- Word wrapping and layout reflow happen naturally
+
+**Cursor behavior** (optional, Claude doesn’t show a visible cursor but Buddy can):
+
+- If showing a cursor: a blinking vertical bar after the last token
+- Blink rate: 530ms on, 530ms off
+- Cursor disappears when streaming completes
+
+**Paragraph spacing**:
+
+- Between paragraphs: margin-bottom 12px
+- Between a paragraph and a following process element (tool/artifact/thinking): margin-bottom 4px
+- Between a process element and following text: margin-top 4px
+- Between list items: margin-bottom 4px
+- Between a paragraph and a following code block: margin-bottom 8px
+
+**Markdown rendering** (apply in real-time as tokens arrive):
+
+- `**bold**` → `<strong>` with `--weight-bold`
+- `*italic*` → `<em>`
+- ``inline code`` → `<code>` with `--bg-secondary` background, 4px radius, 2px 6px padding
+- `[link](url)` → `<a>` with color `--accent-blue`, underline on hover
+- `# Heading` → rendered as heading with `--text-xl`, `--weight-bold`, 24px top margin
+- Lists → proper `<ul>/<ol>` with disc/decimal markers
+
+```css
+.streaming-text {
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  font-weight: var(--weight-normal);
+}
+
+.streaming-text strong {
+  font-weight: var(--weight-bold);
+}
+
+.streaming-text code {
+  font-family: var(--font-code);
+  font-size: var(--text-code);
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.streaming-text a {
+  color: var(--accent-blue);
+  text-decoration: none;
+}
+
+.streaming-text a:hover {
+  color: var(--accent-blue-hover);
+  text-decoration: underline;
+}
+```
+
+-----
+
+## 11. CODE BLOCK (Phase 4c)
+
+**Layout**:
+
+```
+┌─ language ──────────────────────────── [Copy] ─┐
+│                                                 │
+│  const response = await fetch(url);             │
+│  const data = await response.json();            │
+│  console.log(data);                             │
+│                                                 │
+└─────────────────────────────────────────────────┘
+```
+
+- Background: `--bg-secondary` (#2a2a2a), or slightly darker `#1e1e1e`
+- Border: 1px solid `--border-code` (#404040)
+- Border radius: 8px
+- Header bar: language name left-aligned, Copy button right-aligned
+- Header background: slightly lighter or same as block
+- Code text: `--font-code`, `--text-code` (13px), `--leading-code` (1.5)
+- Padding: 16px (code area), 8px 12px (header bar)
+- Margin: 8px 0 (above and below)
+
+**Streaming behavior**:
+
+1. When the model starts outputting a code fence (```), the container border + header renders immediately
+1. Code text streams inside the container, one token at a time
+1. Syntax highlighting applies progressively (re-highlights on each new token or batched every ~200ms for performance)
+1. When the closing fence (```) arrives, the “Copy” button fades in (300ms fadeIn)
+
+```css
+.code-block {
+  background: #1e1e1e;
+  border: 1px solid var(--border-code);
+  border-radius: 8px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+
+.code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-code);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.code-block-header .copy-btn {
+  opacity: 0;
+  transition: opacity 300ms ease;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.code-block-header .copy-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.code-block.complete .copy-btn {
+  opacity: 1;
+}
+
+.code-block pre {
+  padding: 16px;
+  margin: 0;
+  overflow-x: auto;
+  font-family: var(--font-code);
+  font-size: var(--text-code);
+  line-height: var(--leading-code);
+  color: var(--text-code);
+}
+```
+
+-----
+
+## 12. TOOL CALL INDICATOR (Phase 4a)
+
+**Layout (loading state)**:
+
+```
+┌──────────────────────────────────────────┐
+│  🔍 ◌  Searching the web...             │
+└──────────────────────────────────────────┘
+```
+
+**Layout (complete state, collapsed)**:
+
+```
+┌──────────────────────────────────────────┐
+│  🔍 ✓  Searched 3 sources           ›   │
+└──────────────────────────────────────────┘
+```
+
+**Layout (complete state, expanded)**:
+
+```
+┌──────────────────────────────────────────┐
+│  🔍 ✓  Searched 3 sources           ▼   │
+├──────────────────────────────────────────┤
+│  1. source-one.com — Title of result     │
+│  2. source-two.org — Title of result     │
+│  3. source-three.net — Title of result   │
+└──────────────────────────────────────────┘
+```
+
+- Background: `--bg-secondary`
+- Border radius: 10px
+- Padding: 8px 12px
+- Left icon: Tool-specific icon (search, code, etc.), 16x16
+- Spinner: 16x16 spinning circle (during loading)
+- Check: green check circle (when complete)
+- Text: `--text-secondary`, `--text-sm`
+- Chevron: right side, same as thinking bar
+- Margin: 4px 0
+
+**Animation sequence**:
+
+1. Card slides in with `slideUpFade` (200ms)
+1. Spinner rotates continuously
+1. On completion: spinner cross-fades to green check (200ms), text updates
+1. Chevron appears with fadeIn (200ms)
+
+```css
+.tool-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin: 4px 0;
+  cursor: pointer;
+  animation: slideUpFade 200ms var(--ease-spring) forwards;
+}
+
+.tool-card .status-icon {
+  transition: all 200ms ease;
+}
+
+.tool-card .result-content {
+  overflow: hidden;
+  animation: expandDown 300ms var(--ease-out-quart) forwards;
+}
+```
+
+-----
+
+## 13. ARTIFACT CARD (Phase 4b)
+
+**Layout** (matches Claude.ai exactly):
+
+```
+┌──────────────────────────────────────────────────────┐
+│  ┌───────────┐                                       │
+│  │           │  BUDDY CLAUDE STREAMING UI SPEC       │
+│  │   [icon]  │  File · MD                            │
+│  │           │                                       │
+│  └───────────┘                                       │
+└──────────────────────────────────────────────────────┘
+```
+
+The card has TWO distinct zones:
+
+1. **Left thumbnail area**: A square container (~56x56px) with rounded corners, slightly elevated background, and a thin border. The file-type icon is centered inside.
+1. **Right text area**: Title on top (larger, bold), subtitle below (smaller, dimmed) showing “File · {TYPE}” or “Code · {LANG}”.
+
+### Card Container
+
+- Background: `--bg-secondary` (#2a2a2a)
+- Border: 1px solid `--border-subtle` (#3a3a3a)
+- Border radius: 16px
+- Padding: 10px
+- Display: flex, align-items: center, gap: 12px
+- Full width of the response column
+- Margin: 6px 0
+- Cursor: pointer
+
+### Left Thumbnail Square
+
+- Width: 56px, Height: 56px (fixed, does not shrink)
+- Background: `--bg-tertiary` (#333333) — slightly lighter than card
+- Border: 1px solid `--border-subtle` (#3a3a3a)
+- Border radius: 10px
+- Display: flex, align-items: center, justify-content: center
+- Icon inside: 24x24, white/light gray stroke (#e8e8e8)
+
+### Right Text Area
+
+- Title: `--text-primary` (#e8e8e8), font-size 15px, `--weight-medium` (500), line-clamp 2
+- Subtitle: `--text-tertiary` (#6b6b6b), font-size 13px, `--weight-normal` (400)
+- Gap between title and subtitle: 4px
+
+### File Type Icon Mapping
+
+|File Type|Subtitle      |Icon                           |
+|---------|--------------|-------------------------------|
+|.md      |File · MD     |Document with wavy text lines  |
+|.txt     |File · TXT    |Document with wavy text lines  |
+|.html    |Code · HTML   |Square with `</>` code brackets|
+|.jsx     |Code · JSX    |Square with `</>` code brackets|
+|.tsx     |Code · TSX    |Square with `</>` code brackets|
+|.py      |Code · Python |Square with `</>` code brackets|
+|.ts      |Code · TS     |Square with `</>` code brackets|
+|.css     |Code · CSS    |Square with `</>` code brackets|
+|.svg     |Code · SVG    |Square with `</>` code brackets|
+|.mermaid |Code · Mermaid|Square with `</>` code brackets|
+|.pdf     |File · PDF    |Document icon                  |
+|other    |File · {EXT}  |Generic document icon          |
+
+### Icon SVGs for Thumbnail
+
+**Document / Text file icon (for .md, .txt, .pdf, generic files)**:
+
+```svg
+<!-- Document with wavy text lines — 24x24, stroke white -->
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#e8e8e8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Page shape with folded corner -->
+  <path d="M6 3h8l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/>
+  <polyline points="14,3 14,8 19,8"/>
+  <!-- Wavy text lines inside the document -->
+  <path d="M8 13c1-1 2 1 3 0s2 1 3 0" fill="none"/>
+  <path d="M8 16.5c1-1 2 1 3 0s2 1 3 0" fill="none"/>
+</svg>
+```
+
+**Code file icon (for .html, .jsx, .tsx, .py, .ts, .css, .svg)**:
+
+```svg
+<!-- Code brackets </> on dark rounded square — 24x24 -->
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <!-- Dark rounded square background -->
+  <rect x="2" y="2" width="20" height="20" rx="4" fill="#1a1a1a" stroke="#3a3a3a" stroke-width="1"/>
+  <!-- </> code brackets -->
+  <polyline points="9,8 5.5,12 9,16" fill="none" stroke="#e8e8e8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="15,8 18.5,12 15,16" fill="none" stroke="#e8e8e8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="13" y1="7" x2="11" y2="17" stroke="#e8e8e8" stroke-width="1.5" stroke-linecap="round"/>
+</svg>
+```
+
+### Animation
+
+Appears with `slideUpFade` 250ms when the model outputs the artifact creation token.
+
+### Tap behavior
+
+- Desktop: Opens side panel from right with `panelSlideIn`
+- Mobile: Opens bottom sheet with `sheetSlideUp`
+
+### CSS
+
+```css
+.artifact-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 10px;
+  margin: 6px 0;
+  cursor: pointer;
+  animation: slideUpFade 250ms var(--ease-spring) forwards;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.artifact-card:hover {
+  background: var(--bg-tertiary);
+  border-color: #555;
+}
+
+.artifact-card .thumbnail {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.artifact-card .thumbnail svg {
+  width: 24px;
+  height: 24px;
+}
+
+.artifact-card .text-area {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0; /* allow text truncation */
+}
+
+.artifact-card .title {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: var(--weight-medium);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.artifact-card .subtitle {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  font-weight: var(--weight-normal);
+}
+```
+
+### React Component Structure
+
+```tsx
+function ArtifactCard({ title, fileType, onClick }: ArtifactCardProps) {
+  const isCode = ['html','jsx','tsx','py','ts','css','svg','mermaid'].includes(fileType);
+  const subtitlePrefix = isCode ? 'Code' : 'File';
+  const ext = fileType.toUpperCase();
+
+  return (
+    <div className="artifact-card" onClick={onClick}>
+      <div className="thumbnail">
+        {isCode ? <CodeFileIcon /> : <DocumentFileIcon />}
+      </div>
+      <div className="text-area">
+        <div className="title">{title}</div>
+        <div className="subtitle">{subtitlePrefix} · {ext}</div>
+      </div>
+    </div>
+  );
+}
+```
+
+-----
+
+## 14. BACKGROUND PROCESSING BANNER (Phase 4b continued)
+
+When an artifact is large and being generated in the background:
+
+**Layout**:
+
+```
+┌──────────────────────────────────────────────────┐
+│  🌟  Claude is responding in the background.     │
+│      Once it's complete, you'll see it here.     │
+└──────────────────────────────────────────────────┘
+```
+
+- Left icon: Claude starburst (24x24) with rotation animation
+- Text: `--text-secondary`, `--text-sm`
+- Background: transparent or very subtle `--bg-secondary`
+- Padding: 6px 0
+- The starburst icon uses the same animation as the Phase 1 thinking indicator
+
+**Behavior**: This banner replaces itself with the completed artifact card when generation finishes.
+
+```css
+.background-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+  animation: fadeIn 300ms ease forwards;
+}
+
+.background-banner .text {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+```
+
+-----
+
+## 15. CITATION TAGS (Phase 4d)
+
+When Claude cites web search results, citation numbers appear as superscript clickable badges.
+
+**Inline display**: `The study found significant results¹ in all categories²`
+
+- Superscript number
+- Color: `--accent-blue`
+- Font size: `--text-xs` (12px)
+- Cursor: pointer
+- On hover: underline
+
+**Tap/click behavior**: Expands a small tooltip/popover below showing the source title + URL.
+
+**Popover**:
+
+- Background: `--bg-secondary`
+- Border: 1px solid `--border-subtle`
+- Border radius: 8px
+- Padding: 8px 12px
+- Shadow: `0 4px 12px rgba(0,0,0,0.3)`
+- Source title: `--text-primary`, `--text-sm`
+- URL: `--accent-blue`, `--text-xs`, truncated with ellipsis
+- Entry animation: `fadeIn` 150ms + scale from 0.95 to 1.0
+
+```css
+.citation-num {
+  color: var(--accent-blue);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  vertical-align: super;
+  font-weight: var(--weight-medium);
+  padding: 0 2px;
+}
+
+.citation-num:hover {
+  text-decoration: underline;
+}
+
+.citation-popover {
+  position: absolute;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 8px 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  animation: fadeIn 150ms ease forwards;
+  transform-origin: top left;
+  z-index: 100;
+  max-width: 300px;
+}
+```
+
+-----
+
+## 16. INTERACTIVE WIDGETS (End of Response)
+
+These appear at the bottom of a response when Claude asks the user to make a selection.
+
+### 16.1 Single Select
+
+```
+┌─────────────────────────────────────────┐
+│  Which approach do you prefer?          │
+│                                         │
+│  ┌───────────────────────────────────┐  │
+│  │  ○  Option A — Description       │  │
+│  └───────────────────────────────────┘  │
+│  ┌───────────────────────────────────┐  │
+│  │  ○  Option B — Description       │  │
+│  └───────────────────────────────────┘  │
+│  ┌───────────────────────────────────┐  │
+│  │  ○  Option C — Description       │  │
+│  └───────────────────────────────────┘  │
+└─────────────────────────────────────────┘
+```
+
+### 16.2 Multi Select
+
+Same layout but with checkboxes (☐) instead of radio buttons (○).
+
+### 16.3 Rank / Priority
+
+Draggable items with grip handles (⠿) on the left.
+
+**Common styling**:
+
+- Container: no background (transparent), full width
+- Each option: `--bg-secondary` background, 1px `--border-subtle`, border-radius 10px, padding 12px 14px
+- Gap between options: 8px
+- Entry animation: `slideUpFade` with **staggered delay** (each option +80ms delay)
+- On selection: selected option gets `--accent-blue` border, background shifts slightly
+
+```css
+.widget-option {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: all 200ms ease;
+  animation: slideUpFade 300ms var(--ease-spring) backwards;
+}
+
+.widget-option:nth-child(1) { animation-delay: 0ms; }
+.widget-option:nth-child(2) { animation-delay: 80ms; }
+.widget-option:nth-child(3) { animation-delay: 160ms; }
+.widget-option:nth-child(4) { animation-delay: 240ms; }
+
+.widget-option:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--accent-blue);
+}
+
+.widget-option.selected {
+  border-color: var(--accent-blue);
+  background: rgba(122, 181, 224, 0.08);
+}
+```
+
+**Post-selection behavior**: After user selects, the widget collapses into a compact summary (e.g., “Selected: Option B”) with a fadeIn transition, and the selection is sent as the user’s next message.
+
+-----
+
+## 17. ACTION BUTTONS (Phase 5)
+
+Appear below the response after streaming completes.
+
+**Layout**:
+
+```
+[📋 Copy]  [🔄 Retry]  [👍]  [👎]
+```
+
+- Alignment: left-aligned, horizontal row
+- Gap: 4px between buttons
+- Each button: icon only (no text labels by default), 32x32 tap target
+- Icon size: 16x16
+- Icon color: `--text-tertiary` (#6b6b6b)
+- Hover: icon color → `--text-secondary`, background → `--bg-tertiary`, radius 6px
+- Entry animation: `fadeIn` 300ms, after a 200ms delay from stream completion
+
+```css
+.action-buttons {
+  display: flex;
+  gap: 4px;
+  padding: 8px 0;
+  opacity: 0;
+  animation: fadeIn 300ms ease 200ms forwards;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  transition: all 150ms ease;
+}
+
+.action-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.action-btn.active {
+  color: var(--accent-blue);
+}
+```
+
+-----
+
+## 18. STOP BUTTON (During Streaming)
+
+During streaming, the send button in the input area transforms into a stop button.
+
+**Transition**: Send arrow icon cross-fades to stop square icon (200ms). Button background may change to indicate active state.
+
+**Tap behavior**: Immediately aborts the SSE stream (triggers AbortController.abort()). Streaming text freezes at current position. Action buttons appear. Stop button fades back to send button.
+
+```css
+.input-send-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  transition: all 200ms ease;
+}
+
+.input-send-btn.idle {
+  background: var(--text-primary);
+}
+
+.input-send-btn.streaming {
+  background: var(--bg-tertiary);
+}
+
+.input-send-btn svg {
+  transition: opacity 200ms ease;
+}
+```
+
+-----
+
+## 19. SCROLL BEHAVIOR
+
+This is critical for a good streaming experience.
+
+### Rules:
+
+1. **Auto-scroll ON by default**: When new tokens arrive, the chat container scrolls to keep the latest content visible.
+1. **User scroll interrupts auto-scroll**: If the user scrolls up manually (even a small amount), auto-scroll STOPS. The user is now in “browsing mode.”
+1. **Re-engage auto-scroll**: Auto-scroll resumes ONLY when the user scrolls back to the bottom (within ~50px of the bottom edge).
+1. **Smooth scroll**: Use `scrollTo({ behavior: 'smooth' })` for auto-scroll, but throttle to ~60fps to avoid jank.
+1. **New message jump**: When user sends a new message, always force-scroll to bottom regardless of current position.
+
+### Implementation:
+
+```typescript
+const chatContainerRef = useRef<HTMLDivElement>(null);
+const isAutoScrolling = useRef(true);
+
+// Check if user is near bottom
+function isNearBottom(): boolean {
+  const el = chatContainerRef.current;
+  if (!el) return true;
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+}
+
+// On user scroll
+function handleScroll() {
+  isAutoScrolling.current = isNearBottom();
+}
+
+// Called on each new token
+function scrollToBottom() {
+  if (!isAutoScrolling.current) return;
+  const el = chatContainerRef.current;
+  if (el) {
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior: 'smooth'
+    });
+  }
+}
+
+// On user sends message — always scroll
+function onUserSend() {
+  isAutoScrolling.current = true;
+  scrollToBottom();
+}
+```
+
+-----
+
+## 20. ORCHESTRATION LOGIC (Critical)
+
+This is the most important section. It defines HOW the streaming tokens map to UI components.
+
+### SSE Event Types
+
+The server sends events in this format (adapt to your actual API response structure):
+
+```typescript
+interface StreamEvent {
+  type: 'thinking' | 'thinking_done' | 'text' | 'tool_use' | 'tool_result' | 'artifact_start' | 'artifact_content' | 'artifact_end' | 'widget' | 'done';
+  content?: string;
+  tool_name?: string;
+  tool_id?: string;
+  artifact_id?: string;
+  artifact_title?: string;
+  artifact_type?: string;
+  widget_data?: WidgetConfig;
+}
+```
+
+### State Machine
+
+```typescript
+type StreamPhase =
+  | 'idle'            // No active stream
+  | 'waiting'         // Phase 1: Sent request, waiting for first event
+  | 'thinking'        // Phase 2: Extended thinking in progress
+  | 'streaming'       // Phase 3: Text is flowing
+  | 'tool_executing'  // Phase 4a: Tool call in progress
+  | 'complete';       // Phase 5: Stream finished
+
+interface ResponseState {
+  phase: StreamPhase;
+  thinkingText: string;         // Accumulated thinking summary
+  thinkingComplete: boolean;
+  bodyTokens: ReactNode[];      // Ordered list of rendered elements
+  activeToolCalls: Map<string, ToolCallState>;
+  artifacts: Map<string, ArtifactState>;
+  widget: WidgetConfig | null;
+  isStreaming: boolean;
+}
+```
+
+### Event Handler (Pseudocode)
+
+```typescript
+function handleStreamEvent(event: StreamEvent, state: ResponseState) {
+  switch (event.type) {
+
+    case 'thinking':
+      // Phase 2: Update thinking bar text
+      state.phase = 'thinking';
+      state.thinkingText += event.content;
+      // UI: Show/update ExtendedThinkingBar with shimmer
+      break;
+
+    case 'thinking_done':
+      // Thinking complete, prepare for text
+      state.thinkingComplete = true;
+      // UI: Remove shimmer from thinking bar, show chevron
+      break;
+
+    case 'text':
+      // Phase 3: Append text token to body
+      state.phase = 'streaming';
+      state.bodyTokens.push(<TextToken text={event.content} />);
+      // UI: Token appears at cursor position, trigger auto-scroll
+      break;
+
+    case 'tool_use':
+      // Phase 4a: Insert tool card at current position in body
+      state.phase = 'tool_executing';
+      state.activeToolCalls.set(event.tool_id, {
+        name: event.tool_name,
+        status: 'loading'
+      });
+      state.bodyTokens.push(<ToolCallCard id={event.tool_id} />);
+      // UI: Tool card appears with slideUpFade + spinner
+      // Text streaming PAUSES
+      break;
+
+    case 'tool_result':
+      // Tool finished, update its card
+      state.activeToolCalls.get(event.tool_id).status = 'complete';
+      state.activeToolCalls.get(event.tool_id).result = event.content;
+      state.phase = 'streaming';
+      // UI: Spinner → green check, text streaming RESUMES
+      break;
+
+    case 'artifact_start':
+      // Phase 4b: Insert artifact card at current position
+      state.artifacts.set(event.artifact_id, {
+        title: event.artifact_title,
+        type: event.artifact_type,
+        status: 'generating',
+        content: ''
+      });
+      state.bodyTokens.push(<ArtifactCard id={event.artifact_id} />);
+      // UI: Artifact card appears with slideUpFade
+      // If large: show BackgroundProcessingBanner
+      // Text streaming CONTINUES (non-blocking)
+      break;
+
+    case 'artifact_content':
+      // Artifact content streaming (goes to side panel, not main chat)
+      state.artifacts.get(event.artifact_id).content += event.content;
+      // UI: Content renders in artifact panel
+      break;
+
+    case 'artifact_end':
+      state.artifacts.get(event.artifact_id).status = 'complete';
+      // UI: Remove background banner, artifact card becomes fully interactive
+      break;
+
+    case 'widget':
+      // End-of-response interactive widget
+      state.widget = event.widget_data;
+      // UI: Widget slides up with staggered animation
+      break;
+
+    case 'done':
+      // Phase 5: Stream complete
+      state.phase = 'complete';
+      state.isStreaming = false;
+      // UI: Action buttons fade in after 200ms delay
+      // UI: Stop button → Send button
+      break;
+  }
+}
+```
+
+### KEY ORDERING RULE
+
+> **The order of elements in `bodyTokens[]` array is SACRED.**
+> Every token, tool card, artifact card, and code block is pushed in the exact order the model outputs them.
+> The UI renders this array top-to-bottom.
+> NEVER reorder, group, or defer elements to the end.
+
+This means if the model outputs:
+
+```
+"Here's what I found: " → [tool_use: web_search] → [tool_result] → "The results show..."
+```
+
+The user sees:
+
+```
+Here's what I found:
+┌─ 🔍 Searched the web... ──────────┐
+└────────────────────────────────────┘
+The results show...
+```
+
+NOT:
+
+```
+Here's what I found: The results show...
+┌─ 🔍 Searched the web... ──────────┐   ← WRONG: pushed to end
+└────────────────────────────────────┘
+```
+
+-----
+
+## 21. MOBILE ADAPTATIONS
+
+### Touch-specific adjustments
+
+|Feature            |Desktop                      |Mobile                                 |
+|-------------------|-----------------------------|---------------------------------------|
+|Artifact panel     |Side panel, right, 50% width |Bottom sheet, 90% height               |
+|Code block         |Horizontal scroll on overflow|Same, but larger scroll targets        |
+|Action buttons     |Hover reveals labels         |Always icon-only                       |
+|Interactive widgets|Same                         |Larger tap targets (min 44px)          |
+|Font size          |`--text-base: 15px`          |`--text-base: 16px` (prevents iOS zoom)|
+
+### Bottom Sheet Specifications
+
+```css
+.bottom-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-overlay);
+  z-index: 1000;
+  animation: fadeIn 200ms ease;
+}
+
+.bottom-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 90vh;
+  background: var(--bg-primary);
+  border-radius: 16px 16px 0 0;
+  animation: sheetSlideUp 400ms var(--ease-spring) forwards;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.bottom-sheet-handle {
+  width: 36px;
+  height: 4px;
+  background: var(--border-subtle);
+  border-radius: 2px;
+  margin: 8px auto;
+}
+```
+
+### CRITICAL: Mobile scroll prevention
+
+> **Do NOT add `touch-action: none` or `touchmove` `preventDefault()` on the document.**
+> This blocks ALL scrolling. Only apply these to specific drag-handle elements.
+> This was a past bug in Buddy — documented in task-01-stream-abort-fix.md.
+
+-----
+
+## 22. IMPLEMENTATION PHASES
+
+### Phase 1: Core Streaming (Do First)
+
+- [ ] SSE connection with AbortController cleanup
+- [ ] Token-by-token text rendering
+- [ ] Auto-scroll with user-interrupt detection
+- [ ] Thinking indicator (starburst with rotation)
+- [ ] Stop button ↔ Send button toggle
+- [ ] Action buttons (copy, retry, thumbs up/down) fade-in on complete
+
+### Phase 2: Rich Content
+
+- [ ] Extended Thinking collapse bar with shimmer
+- [ ] Code blocks with progressive syntax highlighting
+- [ ] Inline tool call cards (loading → complete states)
+- [ ] Markdown rendering (bold, italic, inline code, links, headers, lists)
+
+### Phase 3: Artifacts & Panels
+
+- [ ] Artifact card inline in chat
+- [ ] Side panel (desktop) with slide-in animation
+- [ ] Bottom sheet (mobile) with drag handle
+- [ ] Background processing banner
+- [ ] Artifact content streaming in panel
+
+### Phase 4: Interactive Widgets
+
+- [ ] Single select widget
+- [ ] Multi select widget
+- [ ] Rank/priority widget with drag-and-drop
+- [ ] Post-selection collapse animation
+
+### Phase 5: Polish
+
+- [ ] Citation superscripts with popover
+- [ ] All hover/active state transitions
+- [ ] Keyboard shortcuts (Enter to send, Esc to stop)
+- [ ] Error states (network failure, timeout)
+- [ ] Retry with exponential backoff
+
+-----
+
+## APPENDIX: CSS Variables Quick Copy
+
+```css
+/* Copy this entire block into your global styles */
+
+:root {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2a2a2a;
+  --bg-tertiary: #333333;
+  --bg-user-message: #3b3b3b;
+  --bg-input: #2a2a2a;
+  --bg-overlay: rgba(0, 0, 0, 0.5);
+  --text-primary: #e8e8e8;
+  --text-secondary: #a0a0a0;
+  --text-tertiary: #6b6b6b;
+  --text-user: #ffffff;
+  --text-code: #e8e8e8;
+  --accent-orange: #d4714a;
+  --accent-orange-dim: #a0553a;
+  --accent-blue: #7ab5e0;
+  --accent-blue-hover: #9ccaf0;
+  --accent-green: #6bc76b;
+  --border-subtle: #3a3a3a;
+  --border-code: #404040;
+  --glass-bg: rgba(42, 42, 42, 0.85);
+  --glass-blur: 12px;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-code: "SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-code-size: 13px;
+  --leading-tight: 1.3;
+  --leading-normal: 1.6;
+  --leading-code: 1.5;
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-bold: 600;
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-in-out-sine: cubic-bezier(0.37, 0, 0.63, 1);
+  --ease-spring: cubic-bezier(0.22, 1.0, 0.36, 1.0);
+}
+```
+
+-----
+
+*End of specification. Total implementation estimate: ~3-5 days for Phase 1-2, additional 2-3 days for Phase 3-5.*
