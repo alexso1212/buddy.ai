@@ -31,9 +31,9 @@ async function loadProviders(): Promise<AiProvider[]> {
 
 function getHardcodedFallbackProviders(): AiProvider[] {
   return [
-    { id: -1, name: 'Claude Simple', type: 'proxy', baseUrl: 'https://vip.aipro.love/v1', apiKeyEnvVar: 'CLAUDE_SIMPLE_API_KEY', models: ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001'], timeout: 90000, priority: 0, isActive: true, createdAt: new Date(), updatedAt: new Date() },
+    { id: -1, name: 'Claude Simple', type: 'proxy', baseUrl: 'https://vip.aipro.love/v1', apiKeyEnvVar: 'CLAUDE_SIMPLE_API_KEY', models: ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-haiku-4-5'], timeout: 90000, priority: 0, isActive: true, createdAt: new Date(), updatedAt: new Date() },
     { id: -2, name: 'Claude Complex', type: 'proxy', baseUrl: 'https://vip.aipro.love/v1', apiKeyEnvVar: 'CLAUDE_COMPLEX_API_KEY', models: ['claude-opus-4-6'], timeout: 180000, priority: 1, isActive: true, createdAt: new Date(), updatedAt: new Date() },
-    { id: -3, name: 'OpenRouter', type: 'direct', baseUrl: process.env.AI_BASE_URL || '', apiKeyEnvVar: 'AI_API_KEY', models: ['gpt-4o', 'deepseek-chat'], timeout: 30000, priority: 2, isActive: true, createdAt: new Date(), updatedAt: new Date() },
+    { id: -3, name: 'OpenRouter', type: 'direct', baseUrl: process.env.AI_BASE_URL || '', apiKeyEnvVar: 'AI_API_KEY', models: ['gpt-4o', 'gpt-5.4', 'gpt-5.4-pro', 'gpt-5.2', 'deepseek-chat'], timeout: 30000, priority: 2, isActive: true, createdAt: new Date(), updatedAt: new Date() },
   ];
 }
 
@@ -60,9 +60,27 @@ async function loadModelProviders(): Promise<AiModelProvider[]> {
   }
 }
 
+const MODEL_ALIAS_MAP: Record<string, string> = {
+  'claude-haiku-4-5': 'claude-haiku-4-5-20251001',
+  'gpt-5.4': 'gpt-4o',
+  'gpt-5.4-pro': 'gpt-4o',
+  'gpt-5.2': 'gpt-4o',
+};
+
+const REVERSE_MODEL_ALIASES: Record<string, string[]> = {};
+for (const [alias, canonical] of Object.entries(MODEL_ALIAS_MAP)) {
+  if (!REVERSE_MODEL_ALIASES[canonical]) REVERSE_MODEL_ALIASES[canonical] = [];
+  REVERSE_MODEL_ALIASES[canonical].push(alias);
+}
+
+function resolveModelId(model: string): string {
+  return MODEL_ALIAS_MAP[model] || model;
+}
+
 function getDefaultBaseUrl(modelId: string): string {
-  if (modelId.startsWith('claude')) return 'https://vip.aipro.love/v1';
-  if (modelId === 'deepseek-chat') return 'https://openrouter.ai/api/v1';
+  const resolved = resolveModelId(modelId);
+  if (resolved.startsWith('claude')) return 'https://vip.aipro.love/v1';
+  if (resolved === 'deepseek-chat') return 'https://openrouter.ai/api/v1';
   return 'https://api.openai.com/v1';
 }
 
@@ -106,8 +124,9 @@ function getClientForProvider(provider: AiProvider): OpenAI | null {
 }
 
 async function getProvidersForModel(model: string): Promise<{ provider: { name: string; id: number }; client: OpenAI }[]> {
+  const resolved = resolveModelId(model);
   const modelProviders = await loadModelProviders();
-  const modelSpecific = modelProviders.filter(mp => mp.modelId === model && mp.isActive);
+  const modelSpecific = modelProviders.filter(mp => (mp.modelId === model || mp.modelId === resolved) && mp.isActive);
 
   if (modelSpecific.length > 0) {
     const result: { provider: { name: string; id: number }; client: OpenAI }[] = [];
@@ -122,7 +141,7 @@ async function getProvidersForModel(model: string): Promise<{ provider: { name: 
   const result: { provider: { name: string; id: number }; client: OpenAI }[] = [];
   for (const p of providers) {
     if (!p.isActive) continue;
-    if (!p.models.includes(model)) continue;
+    if (!p.models.includes(model) && !p.models.includes(resolved)) continue;
     const client = getClientForProvider(p);
     if (client) result.push({ provider: { name: p.name, id: p.id }, client });
   }
@@ -221,7 +240,11 @@ const USER_MODEL_MAX_TOKENS: Record<string, number> = {
   'claude-opus-4-6': 64000,
   'claude-sonnet-4-6': 8192,
   'claude-haiku-4-5-20251001': 2048,
+  'claude-haiku-4-5': 2048,
   'gpt-4o': 16384,
+  'gpt-5.4': 16384,
+  'gpt-5.4-pro': 32768,
+  'gpt-5.2': 16384,
   'deepseek-chat': 8192,
 };
 
@@ -1087,8 +1110,12 @@ ${decisionLines.join('\n')}`;
 
   const modelStyleHints: Record<string, string> = {
     'claude-haiku-4-5-20251001': '回复尽量简短直接，不需要解释推理过程。',
+    'claude-haiku-4-5': '回复尽量简短直接，不需要解释推理过程。',
     'claude-sonnet-4-6': '回复清晰有条理，适当解释但避免冗长。使用自然段落。',
     'claude-opus-4-6': '可以进行深入分析，提供多角度思考，但保持条理清晰。',
+    'gpt-5.4': '回复清晰有条理，适当解释但避免冗长。',
+    'gpt-5.4-pro': '可以进行深入分析，提供详细推理过程。',
+    'gpt-5.2': '回复清晰简练，注重效率。',
   };
   const styleHint = modelStyleHints[context.model || 'claude-sonnet-4-6'];
   if (styleHint) {
@@ -1233,12 +1260,13 @@ export async function chat(
   const taskCategory = await classifyTask(message);
   const config = getConfigForTask(taskCategory, context.model, context.extendedThinking);
   const modelName = config.model;
+  const apiModelName = resolveModelId(modelName);
   const aiClient = await getClientForModel(modelName);
 
   const optimizedHistory = await buildOptimizedContext(conversationHistory, taskCategory);
 
   const requestParams: any = {
-    model: modelName,
+    model: apiModelName,
     max_tokens: config.max_tokens,
     temperature: config.temperature,
     messages: [
@@ -1251,7 +1279,7 @@ export async function chat(
     ],
   };
 
-  const isClaudeModel = modelName.startsWith('claude-');
+  const isClaudeModel = apiModelName.startsWith('claude-');
   if (config.thinking.type === 'enabled' && isClaudeModel) {
     requestParams.extra_body = {
       thinking: {
@@ -1503,8 +1531,9 @@ export async function* chatStream(
     userContent = contentParts;
   }
 
+  const apiModelName = resolveModelId(modelName);
   const requestParams: any = {
-    model: modelName,
+    model: apiModelName,
     max_tokens: config.max_tokens,
     temperature: config.temperature,
     stream: true,
@@ -1518,7 +1547,7 @@ export async function* chatStream(
     ],
   };
 
-  const isClaudeModel = modelName.startsWith('claude-');
+  const isClaudeModel = apiModelName.startsWith('claude-');
 
   if (!isClaudeModel) {
     requestParams.stream_options = { include_usage: true };

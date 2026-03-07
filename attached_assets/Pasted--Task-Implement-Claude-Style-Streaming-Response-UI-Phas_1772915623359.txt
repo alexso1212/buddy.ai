@@ -1,0 +1,233 @@
+# Task: Implement Claude-Style Streaming Response UI — Phase 2: Rich Content
+
+## Prerequisites
+
+Phase 1 (task-01-streaming-core.md) must be fully working before starting this phase.
+
+## Reference
+
+Full specification: `BUDDY_CLAUDE_STREAMING_UI_SPEC.md`, Sections 9, 11, 12.
+
+## Deliverables (Phase 2 Only)
+
+### 1. Extended Thinking Collapse Bar
+
+When the AI model enters “extended thinking” mode, show a collapsible bar above the response text.
+
+**Layout**:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  ⏱  分解了多智能体协作系统的架构与可行性。           ›  │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Specs**:
+
+- Full width of response area
+- Background: #2a2a2a
+- Border radius: 12px
+- Padding: 8px 12px
+- Margin: 4px 0 (TIGHT — this sits between text, not as a separate block)
+
+**Left icon** (timer, 16x16):
+
+```svg
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#a0a0a0" stroke-width="1.5" stroke-linecap="round">
+  <circle cx="8" cy="8.5" r="5.5"/>
+  <line x1="8" y1="5.5" x2="8" y2="8.5"/>
+  <line x1="8" y1="8.5" x2="10" y2="10"/>
+  <line x1="6.5" y1="2" x2="9.5" y2="2"/>
+</svg>
+```
+
+**Right icon** (chevron, 12x12):
+
+```svg
+<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#6b6b6b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="4,2 8,6 4,10"/>
+</svg>
+```
+
+**Text**: color #a0a0a0, font-size 13px, font-weight 500.
+
+**Two states**:
+
+|State                   |Behavior                                                                                   |
+|------------------------|-------------------------------------------------------------------------------------------|
+|**Active (thinking)**   |Shimmer animation on background. Summary text updates in real-time. No chevron.            |
+|**Complete (collapsed)**|Shimmer stops. Final text. Chevron ›appears. Tap to expand.                                |
+|**Complete (expanded)** |Chevron rotates 90° ↓. Full thinking text revealed below with slide-down animation (300ms).|
+
+**Shimmer animation** (while thinking):
+
+```css
+@keyframes shimmer {
+  from { background-position: -200% center; }
+  to   { background-position: 200% center; }
+}
+
+/* Apply as ::after pseudo-element overlay */
+.thinking-bar.active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.04) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+  pointer-events: none;
+}
+```
+
+**Expanded content area**: background #2a2a2a, padding 12px, border-radius 0 0 12px 12px, max-height 300px, overflow-y auto, font-size 13px, color #a0a0a0.
+
+### 2. Markdown Rendering in Streaming Text
+
+Apply markdown formatting in real-time as tokens stream in:
+
+|Markdown            |Rendered As                                                                                            |
+|--------------------|-------------------------------------------------------------------------------------------------------|
+|`**bold**`          |`<strong>`, font-weight 600                                                                            |
+|`*italic*`          |`<em>`, font-style italic                                                                              |
+|``inline code``     |`<code>`, font-family monospace, background #2a2a2a, border-radius 4px, padding 2px 6px, font-size 13px|
+|`[text](url)`       |`<a>`, color #7ab5e0, no underline, underline on hover                                                 |
+|`## Heading`        |font-size 18px, font-weight 600, margin-top 20px, margin-bottom 6px                                    |
+|`- item` or `* item`|`<ul><li>`, standard disc marker                                                                       |
+|`1. item`           |`<ol><li>`, decimal marker                                                                             |
+
+Use a streaming-compatible markdown parser (e.g. `marked` with streaming mode, or custom incremental parser). The key requirement: partial markdown (e.g. `**bol` before the closing `**`) should NOT flash raw asterisks to the user. Either buffer the incomplete token or render it as plain text until the closing marker arrives.
+
+### 3. Code Blocks
+
+When the model outputs a code fence (`````), render a styled code container:
+
+**Layout**:
+
+```
+┌─ typescript ─────────────────────── [Copy] ─┐
+│                                              │
+│  const x = await fetch(url);                 │
+│  const data = await x.json();                │
+│                                              │
+└──────────────────────────────────────────────┘
+```
+
+**Specs**:
+
+- Background: #1e1e1e
+- Border: 1px solid #404040
+- Border radius: 8px
+- Margin: 8px 0 (compact)
+- Header: language label left, Copy button right, separated by 1px border-bottom #404040, padding 8px 12px, font-size 12px, color #a0a0a0
+- Code area: padding 16px, font-family monospace, font-size 13px, line-height 1.5, color #e8e8e8, overflow-x auto
+
+**Streaming behavior**:
+
+1. When opening ````` detected → render empty container with header immediately
+1. Code text streams inside the container token by token
+1. Apply syntax highlighting progressively (use highlight.js or Prism, re-highlight every ~200ms for performance)
+1. When closing ````` detected → Copy button fades in (300ms)
+
+**Copy button** (hidden during streaming, visible after):
+
+```svg
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#a0a0a0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="5" y="5" width="8" height="8" rx="1.5"/>
+  <path d="M3 11V3.5A1.5 1.5 0 0 1 4.5 2H11"/>
+</svg>
+```
+
+- On click: copy code content to clipboard, icon briefly changes to a checkmark for 1.5s then reverts
+
+### 4. Tool Call Cards (Inline)
+
+When the model invokes a tool (web search, code execution, etc.), show an inline indicator card at that position in the text stream.
+
+**Layout (loading)**:
+
+```
+┌──────────────────────────────────────┐
+│  🔍  ◌  Searching the web...        │
+└──────────────────────────────────────┘
+```
+
+**Layout (complete)**:
+
+```
+┌──────────────────────────────────────┐
+│  🔍  ✓  Searched 3 sources      ›   │
+└──────────────────────────────────────┘
+```
+
+**Specs**:
+
+- Background: #2a2a2a
+- Border radius: 10px
+- Padding: 8px 12px
+- Margin: 4px 0 (TIGHT, same line rhythm as text)
+- Icon + status + text in a row, gap 8px
+
+**Left icon** depends on tool type:
+
+**Web Search** (16x16):
+
+```svg
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#a0a0a0" stroke-width="1.5" stroke-linecap="round">
+  <circle cx="7" cy="7" r="5"/>
+  <line x1="10.5" y1="10.5" x2="14" y2="14"/>
+</svg>
+```
+
+**Code Execution** (16x16):
+
+```svg
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#a0a0a0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="4,4 8,8 4,12"/>
+  <line x1="9" y1="12" x2="13" y2="12"/>
+</svg>
+```
+
+**Status icon**:
+
+- Loading: spinner (16x16 circle, 0.8s rotation)
+
+```svg
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+  <circle cx="8" cy="8" r="6" stroke="#3a3a3a" stroke-width="2"/>
+  <path d="M8 2a6 6 0 0 1 6 6" stroke="#a0a0a0" stroke-width="2" stroke-linecap="round"/>
+</svg>
+```
+
+- Complete: green check (cross-fade 200ms from spinner)
+
+```svg
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#6bc76b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="8" cy="8" r="6"/>
+  <polyline points="5.5,8 7.5,10 11,6"/>
+</svg>
+```
+
+**Text**: color #a0a0a0, font-size 13px.
+**Chevron**: appears on complete, right-aligned. Tap expands to show result details (same expand animation as thinking bar).
+
+**CRITICAL**: Tool cards appear INLINE in the token stream at the exact position the model outputs them. Text before the tool card is above it, text after is below it. Never push tool cards to the end.
+
+## DO NOT Implement in This Phase
+
+- Artifact cards with thumbnail
+- Side panel / bottom sheet
+- Interactive widgets
+- Citations
+- Background processing banner
+
+## Validation
+
+After implementation, verify:
+
+1. Extended Thinking bar appears with shimmer, text updates, then becomes collapsible
+1. Tapping the thinking bar expands/collapses full thinking text
+1. Bold, italic, inline code, links, headers, lists all render correctly during streaming
+1. No raw markdown symbols flash to the user (buffered properly)
+1. Code blocks stream with syntax highlighting, Copy button appears after block closes
+1. Tool call cards appear inline with spinner → green check transition
+1. All process elements have TIGHT spacing (4px margin), not floating with big gaps

@@ -73,10 +73,30 @@ interface ChatModelEntry {
 const SYSTEM_MODELS = [
   { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", desc: "日常任务首选" },
   { id: "claude-opus-4-6", label: "Claude Opus 4.6", desc: "深度分析模式" },
-  { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5", desc: "快速响应" },
-  { id: "gpt-4o", label: "GPT-4o", desc: "OpenAI 多模态" },
-  { id: "deepseek-chat", label: "DeepSeek V3", desc: "高性价比" },
+  { id: "claude-haiku-4-5", label: "Claude Haiku 4.5", desc: "快速响应" },
+  { id: "gpt-5.4", label: "GPT-5.4", desc: "OpenAI 最新旗舰" },
+  { id: "gpt-5.4-pro", label: "GPT-5.4 Pro", desc: "专业级深度推理" },
+  { id: "gpt-5.2", label: "GPT-5.2", desc: "OpenAI 高级推理" },
+  { id: "deepseek-chat", label: "DeepSeek V3.2", desc: "高性价比" },
 ];
+
+const PROVIDER_TO_DISPLAY_MAP: Record<string, string> = {
+  "claude-haiku-4-5-20251001": "claude-haiku-4-5",
+  "gpt-4o": "gpt-5.4",
+};
+
+const DISPLAY_TO_PROVIDER_MAP: Record<string, string> = {
+  "claude-haiku-4-5": "claude-haiku-4-5-20251001",
+  "gpt-5.4": "gpt-4o",
+  "gpt-5.4-pro": "gpt-4o",
+  "gpt-5.2": "gpt-4o",
+};
+
+const SHARED_PROVIDER_MODELS = ["gpt-5.4", "gpt-5.4-pro", "gpt-5.2"];
+
+function resolveDisplayModelId(providerModelId: string): string {
+  return PROVIDER_TO_DISPLAY_MAP[providerModelId] || providerModelId;
+}
 
 const emptyForm: ProviderFormData = {
   providerName: "",
@@ -677,7 +697,13 @@ function ChatModelVisibilityPanel({
     }
   }, [chatModelsData]);
 
-  const configuredModelIds = [...new Set(allProviders.filter(p => p.isActive && p.keyConfigured).map(p => p.modelId))];
+  const rawConfiguredIds = [...new Set(allProviders.filter(p => p.isActive && p.keyConfigured).map(p => resolveDisplayModelId(p.modelId)))];
+  const expandedIds = new Set(rawConfiguredIds);
+  for (const id of rawConfiguredIds) {
+    const shared = SHARED_PROVIDER_MODELS.filter(sm => DISPLAY_TO_PROVIDER_MAP[sm] === DISPLAY_TO_PROVIDER_MAP[id]);
+    shared.forEach(s => expandedIds.add(s));
+  }
+  const configuredModelIds = [...expandedIds];
 
   const availableModels = configuredModelIds.filter(
     id => !visibleModels.some(v => v.id === id)
@@ -1005,7 +1031,12 @@ function ModelGroup({
               {model.id}
             </span>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-0.5">{model.desc}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            {model.desc}
+            {DISPLAY_TO_PROVIDER_MAP[model.id] && (
+              <span className="ml-1 opacity-60">(API: {DISPLAY_TO_PROVIDER_MAP[model.id]})</span>
+            )}
+          </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {providers.length > 0 ? (
@@ -1205,14 +1236,16 @@ export default function AdminAI() {
 
   const allModelProviders: ModelProvider[] = modelProvidersData?.data || [];
 
-  const getProvidersForModel = (modelId: string) =>
-    allModelProviders
-      .filter((p) => p.modelId === modelId)
+  const getProvidersForModel = (modelId: string) => {
+    const canonicalId = DISPLAY_TO_PROVIDER_MAP[modelId];
+    return allModelProviders
+      .filter((p) => p.modelId === modelId || resolveDisplayModelId(p.modelId) === modelId || (canonicalId && p.modelId === canonicalId))
       .sort((a, b) => a.priority - b.priority);
+  };
 
   const allModelIds = [...new Set([
     ...SYSTEM_MODELS.map(m => m.id),
-    ...allModelProviders.map(p => p.modelId),
+    ...allModelProviders.map(p => resolveDisplayModelId(p.modelId)),
   ])];
 
   const allModelsForDisplay = allModelIds.map(id => {

@@ -3218,6 +3218,8 @@ Return ONLY the JSON object, no other text.`;
       { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', desc: '日常任务首选' },
       { id: 'claude-opus-4-6', label: 'Opus 4.6', desc: '深度分析模式' },
       { id: 'claude-haiku-4-5', label: 'Haiku 4.5', desc: '快速响应' },
+      { id: 'gpt-5.4', label: 'GPT-5.4', desc: 'OpenAI 最新旗舰' },
+      { id: 'deepseek-chat', label: 'DeepSeek V3.2', desc: '高性价比' },
     ];
     try {
       const val = await storage.getSystemConfig('chat_visible_models');
