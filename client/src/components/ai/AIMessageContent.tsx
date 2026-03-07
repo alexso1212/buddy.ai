@@ -15,7 +15,7 @@ import yaml from 'highlight.js/lib/languages/yaml';
 import go from 'highlight.js/lib/languages/go';
 import java from 'highlight.js/lib/languages/java';
 import rust from 'highlight.js/lib/languages/rust';
-import { Copy, Check, Share2 } from 'lucide-react';
+import { Copy, Check, Share2, ExternalLink, ChevronDown } from 'lucide-react';
 
 hljs.registerLanguage('javascript', javascript);
 hljs.registerLanguage('js', javascript);
@@ -105,16 +105,22 @@ async function shareText(text: string) {
 }
 
 function CodeBlock({ language, code }: { language: string; code: string }) {
+  const lines = useMemo(() => code.split('\n'), [code]);
+  const lineCount = lines.length;
+  const [collapsed, setCollapsed] = useState(lineCount > 30);
+  const displayCode = collapsed ? lines.slice(0, 15).join('\n') : code;
+  const displayLines = collapsed ? lines.slice(0, 15) : lines;
+
   const highlighted = useMemo(() => {
     try {
       if (language && language !== 'code' && hljs.getLanguage(language)) {
-        return hljs.highlight(code, { language }).value;
+        return hljs.highlight(displayCode, { language }).value;
       }
-      const auto = hljs.highlightAuto(code);
+      const auto = hljs.highlightAuto(displayCode);
       if (auto.relevance > 5) return auto.value;
     } catch {}
     return null;
-  }, [code, language]);
+  }, [displayCode, language]);
 
   return (
     <div style={{
@@ -130,7 +136,10 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
         justifyContent: 'space-between',
         alignItems: 'center',
       }}>
-        <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-sans)' }}>{language}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-sans)' }}>{language}</span>
+          <span style={{ fontSize: 11, color: 'var(--text-secondary)', opacity: 0.5, fontFamily: 'var(--font-sans)' }}>{lineCount} lines</span>
+        </div>
         <div style={{ display: 'flex', gap: 2 }}>
           <ActionButton
             onClick={() => copyText(code)}
@@ -150,34 +159,84 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
           />
         </div>
       </div>
-      <pre style={{
-        padding: '14px 16px',
-        margin: 0,
+      <div style={{
         overflowX: 'auto',
-        overflowY: 'auto',
-        maxHeight: 400,
+        overflowY: collapsed ? 'hidden' : 'auto',
+        maxHeight: collapsed ? 'none' : 400,
         WebkitOverflowScrolling: 'touch',
         touchAction: 'pan-x pan-y',
       }}>
-        {highlighted ? (
-          <code
-            className="hljs"
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 13.5,
-              lineHeight: 1.55,
-            }}
-            dangerouslySetInnerHTML={{ __html: highlighted }}
-          />
-        ) : (
-          <code style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 13.5,
-            lineHeight: 1.55,
-            color: 'var(--text-primary)',
-          }}>{code}</code>
-        )}
-      </pre>
+        <div style={{ display: 'flex', minWidth: 'min-content' }}>
+          <div style={{
+            padding: '14px 0',
+            paddingLeft: 12,
+            paddingRight: 8,
+            borderRight: '1px solid rgba(255,255,255,0.06)',
+            userSelect: 'none',
+            textAlign: 'right',
+            minWidth: 36,
+            flexShrink: 0,
+            position: 'sticky',
+            left: 0,
+            background: 'var(--bg-code)',
+            zIndex: 1,
+          }}>
+            {displayLines.map((_, i) => (
+              <div key={i} style={{ fontSize: 12, lineHeight: '1.55em', color: 'rgba(255,255,255,0.2)', fontFamily: 'var(--font-mono)' }}>
+                {i + 1}
+              </div>
+            ))}
+          </div>
+          <pre style={{
+            padding: '14px 16px',
+            margin: 0,
+            flex: 1,
+          }}>
+            {highlighted ? (
+              <code
+                className="hljs"
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 13.5,
+                  lineHeight: 1.55,
+                }}
+                dangerouslySetInnerHTML={{ __html: highlighted }}
+              />
+            ) : (
+              <code style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 13.5,
+                lineHeight: 1.55,
+                color: 'var(--text-primary)',
+              }}>{displayCode}</code>
+            )}
+          </pre>
+        </div>
+      </div>
+      {lineCount > 30 && (
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          style={{
+            width: '100%',
+            padding: '8px',
+            textAlign: 'center',
+            fontSize: 12,
+            color: 'var(--brand)',
+            background: 'rgba(174,86,48,0.08)',
+            border: 'none',
+            cursor: 'pointer',
+            fontFamily: 'var(--font-sans)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 4,
+          }}
+          data-testid="btn-toggle-code-collapse"
+        >
+          <ChevronDown style={{ width: 14, height: 14, transform: collapsed ? 'rotate(0)' : 'rotate(180deg)', transition: 'transform 200ms' }} />
+          {collapsed ? `展开剩余 ${lineCount - 15} 行` : '收起'}
+        </button>
+      )}
     </div>
   );
 }
@@ -351,7 +410,10 @@ export default function AIMessageContent({ content }: AIMessageContentProps) {
             <li style={{ marginBottom: 8, color: 'var(--text-primary)' }}>{children}</li>
           ),
           a: ({ children, href }) => (
-            <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--brand-icon)', textDecoration: 'underline' }}>{children}</a>
+            <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--brand-icon)', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              {children}
+              <ExternalLink style={{ width: 12, height: 12, opacity: 0.6, flexShrink: 0 }} />
+            </a>
           ),
           blockquote: ({ children }) => (
             <blockquote style={{

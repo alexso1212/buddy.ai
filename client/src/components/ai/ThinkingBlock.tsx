@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { ChevronDown, ChevronRight, Brain, Copy, Check } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -61,30 +61,11 @@ export default function ThinkingBlock({ content, isStreaming, duration }: Thinki
     return finalElapsedRef.current || elapsedSeconds;
   };
 
-  const formatCharCount = (text: string) => {
-    const len = text.length;
-    if (len >= 1000) return `${(len / 1000).toFixed(1)}k chars`;
-    return `${len} chars`;
-  };
-
   const handleCopy = () => {
     navigator.clipboard.writeText(content).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }).catch(() => {});
-  };
-
-  const renderLabel = () => {
-    if (isStreaming) {
-      return elapsedSeconds > 0
-        ? `Thinking for ${elapsedSeconds}s...`
-        : "Thinking...";
-    }
-    const secs = getFinishedDurationSeconds();
-    if (secs > 0) {
-      return `Thought for ${secs} second${secs !== 1 ? 's' : ''}`;
-    }
-    return "Thought process";
   };
 
   return (
@@ -93,6 +74,8 @@ export default function ThinkingBlock({ content, isStreaming, duration }: Thinki
       style={{ animation: 'messageAppear 200ms ease-out' }}
       data-testid="thinking-block"
     >
+      {isStreaming && <div className="thinking-bar mb-2" />}
+
       <div className="flex items-center gap-1">
         <button
           onClick={() => setExpanded(!expanded)}
@@ -107,23 +90,25 @@ export default function ThinkingBlock({ content, isStreaming, duration }: Thinki
           }}
           data-testid="thinking-block-toggle"
         >
-          <Brain
-            size={14}
-            className={cn(
-              "transition-colors",
-              isStreaming ? "text-brand animate-pulse" : "text-[var(--text-secondary)]"
-            )}
-          />
-          <span style={{ fontWeight: 500 }} data-testid="thinking-block-label">{renderLabel()}</span>
-          {content && !isStreaming && (
-            <span style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>
-              {formatCharCount(content)}
-            </span>
-          )}
           {expanded ? (
             <ChevronDown size={12} className="text-[var(--text-tertiary)]" />
           ) : (
             <ChevronRight size={12} className="text-[var(--text-tertiary)]" />
+          )}
+          <span style={{ fontWeight: 500 }} data-testid="thinking-block-label">
+            {isStreaming
+              ? (elapsedSeconds > 0 ? `思考中...` : "思考中...")
+              : `思考了 ${getFinishedDurationSeconds()} 秒`}
+          </span>
+          {isStreaming && elapsedSeconds > 0 && (
+            <span className="text-xs tabular-nums" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>
+              {elapsedSeconds}s
+            </span>
+          )}
+          {content && !isStreaming && (
+            <span style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>
+              {content.length >= 1000 ? `${(content.length / 1000).toFixed(1)}k chars` : `${content.length} chars`}
+            </span>
           )}
         </button>
         {expanded && !isStreaming && content && (
@@ -141,14 +126,14 @@ export default function ThinkingBlock({ content, isStreaming, duration }: Thinki
         style={{
           overflow: 'hidden',
           transition: 'max-height 300ms ease, opacity 200ms ease',
-          maxHeight: expanded ? 200 : 0,
+          maxHeight: expanded ? 300 : 0,
           opacity: expanded ? 1 : 0,
         }}
       >
         <div
           ref={contentRef}
           style={{
-            maxHeight: 200,
+            maxHeight: 300,
             overflowY: 'auto',
             marginTop: 4,
             padding: '8px 12px',

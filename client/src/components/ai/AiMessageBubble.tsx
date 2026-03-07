@@ -788,7 +788,7 @@ export default function AiMessageBubble({
               autoFocus
               style={{
                 width: '100%',
-                background: '#000000',
+                background: 'rgba(174,86,48,0.12)',
                 borderRadius: 18,
                 padding: '10px 14px',
                 fontFamily: 'var(--font-sans)',
@@ -851,8 +851,8 @@ export default function AiMessageBubble({
         <div
           style={{
             maxWidth: '82%',
-            background: '#000000',
-            borderRadius: 18,
+            background: 'rgba(174,86,48,0.12)',
+            borderRadius: '18px 18px 4px 18px',
             padding: '10px 14px',
             fontFamily: 'var(--font-sans)',
             fontSize: 16,
@@ -985,6 +985,17 @@ export default function AiMessageBubble({
   }
 
   const showArtifactButton = !message.isStreaming && isLongContent(message.content);
+  const MAX_COLLAPSED_LENGTH = 2000;
+  const isLongMessage = message.content.length > MAX_COLLAPSED_LENGTH && !message.isStreaming;
+  const [contentExpanded, setContentExpanded] = useState(true);
+
+  useEffect(() => {
+    if (!message.isStreaming && message.content.length > MAX_COLLAPSED_LENGTH) {
+      setContentExpanded(false);
+    }
+  }, [message.isStreaming]);
+
+  const displayContent = contentExpanded ? message.content : message.content.slice(0, MAX_COLLAPSED_LENGTH);
 
   return (
     <div
@@ -1030,8 +1041,39 @@ export default function AiMessageBubble({
           </div>
         )}
         <div className={message.isStreaming ? 'streaming-cursor' : ''}>
-          <AIMessageContent content={message.content} />
+          <AIMessageContent content={displayContent} />
         </div>
+        {isLongMessage && !contentExpanded && (
+          <div style={{ position: 'relative' }}>
+            <div style={{
+              position: 'absolute',
+              bottom: '100%',
+              left: 0,
+              right: 0,
+              height: 60,
+              background: 'linear-gradient(to top, var(--bg-primary), transparent)',
+              pointerEvents: 'none',
+            }} />
+            <button
+              onClick={() => setContentExpanded(true)}
+              style={{
+                width: '100%',
+                padding: '8px 0',
+                textAlign: 'center',
+                fontSize: 13,
+                color: 'var(--brand)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-sans)',
+                fontWeight: 500,
+              }}
+              data-testid="btn-show-more"
+            >
+              显示更多
+            </button>
+          </div>
+        )}
         {showArtifactButton && (
           <button
             onClick={() => setArtifactOpen(true)}

@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
 import type { Attachment } from "@/components/ai/AiInputBar";
-import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Pencil, X, Check, ListFilter, ChevronRight, Search, Star, FolderOpen, ArrowDown, AlertCircle, Clock } from "lucide-react";
+import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Pencil, X, Check, ListFilter, ChevronRight, Search, Star, FolderOpen, ArrowDown, AlertCircle, Clock, Square } from "lucide-react";
 import InteractiveInputWidget, { formatAnswersForDisplay, formatAnswersForAI, type InteractiveQuestion } from "@/components/ai/InteractiveInputWidget";
 import { Button } from "@/components/ui/button";
 import AgentLogo from "@/components/AgentLogo";
@@ -2215,7 +2215,33 @@ export default function Agent() {
         </div>
       )}
 
-      {showScrollBtn && messages.length > 0 && (
+      {messages.some(m => m.isStreaming) && (
+        <div className="absolute z-30 flex justify-center" style={{ bottom: 'calc(170px + 3.33vh)', left: 0, right: 0, pointerEvents: 'none' }}>
+          <button
+            onClick={handleStop}
+            className="flex items-center gap-2 transition-all hover:scale-105"
+            style={{
+              padding: '6px 16px',
+              borderRadius: 999,
+              background: 'rgba(255,255,255,0.08)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              color: 'var(--text-secondary)',
+              fontSize: 13,
+              fontFamily: 'var(--font-sans)',
+              pointerEvents: 'auto',
+              cursor: 'pointer',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+            }}
+            data-testid="btn-stop-streaming"
+          >
+            <Square className="w-3 h-3 fill-current" />
+            停止生成
+          </button>
+        </div>
+      )}
+
+      {showScrollBtn && messages.length > 0 && !messages.some(m => m.isStreaming) && (
         <div className="absolute z-30 flex justify-center" style={{ bottom: 'calc(160px + 3.33vh)', left: 0, right: 0, pointerEvents: 'none' }}>
           <button
             onClick={() => scrollToBottom(true)}

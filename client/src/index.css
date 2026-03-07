@@ -597,8 +597,32 @@ html, body {
 }
 
 @keyframes blink-cursor {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+@keyframes thinking-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.thinking-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(174, 86, 48, 0.15);
+  overflow: hidden;
+  position: relative;
+}
+
+.thinking-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, var(--brand), transparent);
+  animation: thinking-shimmer 2s ease-in-out infinite;
 }
 
 .ai-table-zebra tbody tr:nth-child(even) {
@@ -606,9 +630,9 @@ html, body {
 }
 
 .streaming-cursor::after {
-  content: '▌';
-  animation: blink-cursor 0.8s ease-in-out infinite;
-  color: var(--text-primary);
+  content: '▎';
+  color: var(--brand);
+  animation: blink-cursor 1s step-end infinite;
   font-weight: 300;
   margin-left: 1px;
 }
