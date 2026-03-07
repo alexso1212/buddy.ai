@@ -214,6 +214,57 @@ function ProviderFormDialog({
   );
 }
 
+const API_PROVIDERS = [
+  {
+    id: 'anthropic',
+    name: 'Anthropic (Claude)',
+    baseUrl: 'https://api.anthropic.com/v1',
+    models: [
+      { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+      { id: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
+      { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+    ],
+  },
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    models: [
+      { id: 'gpt-4o', label: 'GPT-4o' },
+      { id: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+      { id: 'o1', label: 'o1' },
+      { id: 'o3-mini', label: 'o3-mini' },
+    ],
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    models: [
+      { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+      { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },
+      { id: 'openai/gpt-4o', label: 'GPT-4o' },
+      { id: 'deepseek/deepseek-chat', label: 'DeepSeek V3' },
+      { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    ],
+  },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com/v1',
+    models: [
+      { id: 'deepseek-chat', label: 'DeepSeek V3' },
+      { id: 'deepseek-reasoner', label: 'DeepSeek R1' },
+    ],
+  },
+  {
+    id: 'custom',
+    name: '自定义 / 代理服务',
+    baseUrl: '',
+    models: [],
+  },
+];
+
 function BatchAddDialog({
   onClose,
   onCreated,
@@ -222,6 +273,8 @@ function BatchAddDialog({
   onCreated: () => void;
 }) {
   const { toast } = useToast();
+  const [step, setStep] = useState<'provider' | 'config'>('provider');
+  const [selectedProvider, setSelectedProvider] = useState<typeof API_PROVIDERS[number] | null>(null);
   const [form, setForm] = useState({
     providerName: "",
     baseUrl: "",
@@ -229,11 +282,34 @@ function BatchAddDialog({
     apiKeyEnvVar: "",
     timeout: 90000,
   });
+  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+
   const [probing, setProbing] = useState(false);
   const [probedModels, setProbedModels] = useState<{ id: string; name: string }[] | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
-  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
-  const [saving, setSaving] = useState(false);
+
+  const selectProvider = (p: typeof API_PROVIDERS[number]) => {
+    setSelectedProvider(p);
+    setForm(f => ({
+      ...f,
+      providerName: p.id === 'custom' ? '' : p.name,
+      baseUrl: p.baseUrl,
+    }));
+    setSelectedModels(new Set(p.models.map(m => m.id)));
+    setProbedModels(null);
+    setProbeError(null);
+    setStep('config');
+  };
+
+  const toggleModel = (id: string) => {
+    setSelectedModels(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const handleProbe = async () => {
     if (!form.baseUrl) {
@@ -241,7 +317,7 @@ function BatchAddDialog({
       return;
     }
     if (!form.apiKey && !form.apiKeyEnvVar) {
-      toast({ title: "请输入 API Key 或环境变量名", variant: "destructive" });
+      toast({ title: "请先填写 API Key", variant: "destructive" });
       return;
     }
     setProbing(true);
@@ -266,15 +342,6 @@ function BatchAddDialog({
       setProbeError(e.message);
     }
     setProbing(false);
-  };
-
-  const toggleModel = (id: string) => {
-    setSelectedModels(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
   };
 
   const handleSave = async () => {
@@ -312,14 +379,23 @@ function BatchAddDialog({
     setSaving(false);
   };
 
+  const isCustom = selectedProvider?.id === 'custom';
+  const displayModels = probedModels
+    ? probedModels.map(m => ({ id: m.id, label: m.name || m.id }))
+    : selectedProvider?.models || [];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" data-testid="dialog-batch-add">
       <div className="bg-card border border-border rounded-xl p-6 w-full max-w-xl mx-4 shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h3 className="text-base font-semibold text-foreground">添加 API 端点</h3>
+            <h3 className="text-base font-semibold text-foreground">
+              {step === 'provider' ? '选择 API 提供商' : '配置 API 端点'}
+            </h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              输入 API 信息后探测可用模型，一次为多个模型创建端点
+              {step === 'provider'
+                ? '选择你使用的 AI 服务提供商'
+                : `${selectedProvider?.name} — 填写 API Key 并选择模型`}
             </p>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground" data-testid="button-close-batch">
@@ -327,165 +403,200 @@ function BatchAddDialog({
           </button>
         </div>
 
-        <div className="space-y-4">
-          <div>
-            <label className="text-xs text-muted-foreground block mb-1">端点名称</label>
-            <input
-              className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              value={form.providerName}
-              onChange={(e) => setForm({ ...form, providerName: e.target.value })}
-              placeholder="例如: 官方 API、代理服务 A"
-              data-testid="input-batch-name"
-            />
+        {step === 'provider' && (
+          <div className="grid grid-cols-1 gap-2" data-testid="panel-provider-select">
+            {API_PROVIDERS.map(p => (
+              <button
+                key={p.id}
+                onClick={() => selectProvider(p)}
+                className="flex items-center gap-3 px-4 py-3 border border-border rounded-lg hover:bg-muted/50 hover:border-primary/30 transition-colors text-left"
+                data-testid={`btn-provider-${p.id}`}
+              >
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                  <Server className="w-4 h-4 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium text-foreground block">{p.name}</span>
+                  {p.models.length > 0 ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      {p.models.map(m => m.label).join(', ')}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground">手动输入 Base URL，自动探测模型</span>
+                  )}
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+              </button>
+            ))}
           </div>
+        )}
 
-          <div>
-            <label className="text-xs text-muted-foreground block mb-1">
-              Base URL <span className="text-destructive">*</span>
-            </label>
-            <input
-              className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-              value={form.baseUrl}
-              onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
-              placeholder="https://api.example.com/v1"
-              data-testid="input-batch-baseurl"
-            />
-          </div>
+        {step === 'config' && (
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">端点名称</label>
+              <input
+                className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                value={form.providerName}
+                onChange={(e) => setForm({ ...form, providerName: e.target.value })}
+                placeholder="例如: 官方 API、代理服务 A"
+                data-testid="input-batch-name"
+              />
+            </div>
 
-          <div>
-            <label className="text-xs text-muted-foreground block mb-1">
-              API Key
-            </label>
-            <input
-              type="password"
-              className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-              value={form.apiKey}
-              onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
-              placeholder="sk-..."
-              data-testid="input-batch-apikey"
-            />
-            {!form.apiKey && (
-              <div className="mt-2">
+            {isCustom && (
+              <div>
                 <label className="text-xs text-muted-foreground block mb-1">
-                  或使用环境变量名
+                  Base URL <span className="text-destructive">*</span>
                 </label>
                 <input
                   className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-                  value={form.apiKeyEnvVar}
-                  onChange={(e) => setForm({ ...form, apiKeyEnvVar: e.target.value })}
-                  placeholder="CLAUDE_SIMPLE_API_KEY"
-                  data-testid="input-batch-envvar"
+                  value={form.baseUrl}
+                  onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
+                  placeholder="https://your-proxy.example.com/v1"
+                  data-testid="input-batch-baseurl"
                 />
               </div>
             )}
-          </div>
 
-          <div>
-            <label className="text-xs text-muted-foreground block mb-1">超时 (ms)</label>
-            <input
-              type="number"
-              className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              value={form.timeout}
-              onChange={(e) => setForm({ ...form, timeout: parseInt(e.target.value) || 90000 })}
-              data-testid="input-batch-timeout"
-            />
-          </div>
+            {!isCustom && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border border-border rounded-lg">
+                <span className="text-xs text-muted-foreground">API 地址:</span>
+                <span className="text-xs font-mono text-foreground">{form.baseUrl}</span>
+              </div>
+            )}
 
-          <div>
-            <button
-              onClick={handleProbe}
-              disabled={probing || (!form.baseUrl) || (!form.apiKey && !form.apiKeyEnvVar)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm bg-primary/10 text-primary border border-primary/20 rounded-lg hover:bg-primary/20 transition-colors disabled:opacity-50"
-              data-testid="button-probe-models"
-            >
-              {probing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Search className="w-4 h-4" />
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">API Key</label>
+              <input
+                type="password"
+                className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                value={form.apiKey}
+                onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
+                placeholder="sk-..."
+                data-testid="input-batch-apikey"
+              />
+              {!form.apiKey && (
+                <div className="mt-2">
+                  <label className="text-xs text-muted-foreground block mb-1">
+                    或使用环境变量名
+                  </label>
+                  <input
+                    className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                    value={form.apiKeyEnvVar}
+                    onChange={(e) => setForm({ ...form, apiKeyEnvVar: e.target.value })}
+                    placeholder="CLAUDE_SIMPLE_API_KEY"
+                    data-testid="input-batch-envvar"
+                  />
+                </div>
               )}
-              {probing ? "正在探测..." : "探测可用模型"}
-            </button>
-            {(!form.baseUrl || (!form.apiKey && !form.apiKeyEnvVar)) && (
-              <p className="text-[11px] text-muted-foreground mt-1.5 text-center">
-                {!form.baseUrl && !form.apiKey && !form.apiKeyEnvVar
-                  ? "请先填写 Base URL 和 API Key"
-                  : !form.baseUrl
-                  ? "请先填写 Base URL"
-                  : "请先填写 API Key 或环境变量名"}
+            </div>
+
+            {isCustom && form.baseUrl && (
+              <button
+                onClick={handleProbe}
+                disabled={probing || (!form.apiKey && !form.apiKeyEnvVar)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm bg-primary/10 text-primary border border-primary/20 rounded-lg hover:bg-primary/20 transition-colors disabled:opacity-50"
+                data-testid="button-probe-models"
+              >
+                {probing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                {probing ? "正在探测..." : "探测可用模型"}
+              </button>
+            )}
+
+            {probeError && (
+              <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg" data-testid="text-probe-error">
+                <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                <p className="text-xs text-destructive">{probeError}</p>
+              </div>
+            )}
+
+            {displayModels.length > 0 && (
+              <div className="border border-border rounded-lg overflow-hidden" data-testid="panel-model-select">
+                <div className="px-3 py-2 bg-muted/50 border-b border-border flex items-center justify-between">
+                  <span className="text-xs font-medium text-foreground">
+                    选择要添加的模型 ({selectedModels.size}/{displayModels.length})
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => setSelectedModels(new Set(displayModels.map(m => m.id)))}
+                      className="text-[10px] px-2 py-0.5 text-primary hover:bg-primary/10 rounded"
+                      data-testid="button-select-all"
+                    >
+                      全选
+                    </button>
+                    <button
+                      onClick={() => setSelectedModels(new Set())}
+                      className="text-[10px] px-2 py-0.5 text-muted-foreground hover:bg-muted rounded"
+                      data-testid="button-deselect-all"
+                    >
+                      取消全选
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-[200px] overflow-y-auto p-1">
+                  {displayModels.map((m) => (
+                    <label
+                      key={m.id}
+                      className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-muted/30 cursor-pointer"
+                      data-testid={`model-check-${m.id}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedModels.has(m.id)}
+                        onChange={() => toggleModel(m.id)}
+                        className="rounded border-border text-primary focus:ring-primary"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm text-foreground block">{m.label}</span>
+                        <span className="text-[10px] text-muted-foreground font-mono">{m.id}</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {isCustom && !probedModels && !form.baseUrl && (
+              <p className="text-xs text-muted-foreground text-center py-2">
+                请填写 Base URL 后点击"探测可用模型"
               </p>
             )}
           </div>
+        )}
 
-          {probeError && (
-            <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg" data-testid="text-probe-error">
-              <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-              <p className="text-xs text-destructive">{probeError}</p>
-            </div>
-          )}
-
-          {probedModels && (
-            <div className="border border-border rounded-lg overflow-hidden" data-testid="panel-probed-models">
-              <div className="px-3 py-2 bg-muted/50 border-b border-border flex items-center justify-between">
-                <span className="text-xs font-medium text-foreground">
-                  发现 {probedModels.length} 个模型，已选 {selectedModels.size} 个
-                </span>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => setSelectedModels(new Set(probedModels.map(m => m.id)))}
-                    className="text-[10px] px-2 py-0.5 text-primary hover:bg-primary/10 rounded"
-                    data-testid="button-select-all"
-                  >
-                    全选
-                  </button>
-                  <button
-                    onClick={() => setSelectedModels(new Set())}
-                    className="text-[10px] px-2 py-0.5 text-muted-foreground hover:bg-muted rounded"
-                    data-testid="button-deselect-all"
-                  >
-                    取消全选
-                  </button>
-                </div>
-              </div>
-              <div className="max-h-[240px] overflow-y-auto p-1">
-                {probedModels.map((m) => (
-                  <label
-                    key={m.id}
-                    className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-muted/30 cursor-pointer"
-                    data-testid={`probe-model-${m.id}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedModels.has(m.id)}
-                      onChange={() => toggleModel(m.id)}
-                      className="rounded border-border text-primary focus:ring-primary"
-                    />
-                    <span className="text-sm font-mono text-foreground truncate">{m.id}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="flex justify-end gap-2 mt-6">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground rounded-lg transition-colors"
-            data-testid="button-cancel-batch"
-          >
-            取消
-          </button>
-          {probedModels && (
+        <div className="flex justify-between gap-2 mt-6">
+          {step === 'config' ? (
             <button
-              onClick={handleSave}
-              disabled={saving || selectedModels.size === 0 || !form.providerName}
-              className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-              data-testid="button-save-batch"
+              onClick={() => { setStep('provider'); setSelectedProvider(null); setProbedModels(null); setProbeError(null); }}
+              className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground rounded-lg transition-colors"
+              data-testid="button-back-provider"
             >
-              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              创建 {selectedModels.size} 个端点
+              返回
             </button>
+          ) : (
+            <div />
           )}
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground rounded-lg transition-colors"
+              data-testid="button-cancel-batch"
+            >
+              取消
+            </button>
+            {step === 'config' && displayModels.length > 0 && (
+              <button
+                onClick={handleSave}
+                disabled={saving || selectedModels.size === 0 || !form.providerName || (!form.apiKey && !form.apiKeyEnvVar)}
+                className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                data-testid="button-save-batch"
+              >
+                {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                添加 {selectedModels.size} 个端点
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
