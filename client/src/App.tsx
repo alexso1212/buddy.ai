@@ -830,7 +830,7 @@ function Sidebar({
             </div>
           </CollapsibleContent>
 
-          <div style={{ height: 'calc(56px + env(safe-area-inset-bottom, 0px))' }} />
+          <div style={{ height: 'calc(16px + env(safe-area-inset-bottom, 0px))' }} />
 
           <div
             style={{
@@ -838,8 +838,8 @@ function Sidebar({
               bottom: 0,
               left: 0,
               right: 0,
-              padding: '12px 16px',
-              paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
+              padding: '8px 16px',
+              paddingBottom: 'calc(8px + env(safe-area-inset-bottom, 0px))',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
