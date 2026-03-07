@@ -809,7 +809,7 @@ function Sidebar({
                       </>
                     )}
                     {!q && (starredConvs.length + recentConvs.length) > 0 && (
-                      <div style={{ padding: '16px 28px 8px' }}>
+                      <div style={{ padding: '12px 28px 4px' }}>
                         <Link
                           href="/chats"
                           onClick={() => {
@@ -830,7 +830,7 @@ function Sidebar({
             </div>
           </CollapsibleContent>
 
-          <div style={{ height: 'calc(60px + env(safe-area-inset-bottom, 0px))' }} />
+          <div style={{ height: 'calc(48px + env(safe-area-inset-bottom, 0px))' }} />
 
           <div
             style={{
