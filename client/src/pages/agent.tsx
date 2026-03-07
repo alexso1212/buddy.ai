@@ -2255,7 +2255,7 @@ export default function Agent() {
 
             <ThreadPrimitive.ScrollToBottom asChild>
               <button
-                className="absolute z-30 flex items-center justify-center hover:scale-105 transition-transform"
+                className="absolute z-30 flex items-center justify-center hover:scale-105 transition-transform disabled:hidden"
                 style={{
                   bottom: 'calc(160px + 3.33vh)',
                   left: '50%',
