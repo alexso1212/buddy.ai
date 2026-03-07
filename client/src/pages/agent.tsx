@@ -610,7 +610,9 @@ function ConversationListView({
       return;
     }
     setSearching(true);
-    fetch(`/api/conversations/search?q=${encodeURIComponent(debouncedQuery.trim())}`)
+    const searchToken = localStorage.getItem('buddy_token');
+    const searchHeaders: Record<string, string> = searchToken ? { Authorization: `Bearer ${searchToken}` } : {};
+    fetch(`/api/conversations/search?q=${encodeURIComponent(debouncedQuery.trim())}`, { headers: searchHeaders, credentials: 'include' })
       .then(r => r.json())
       .then(json => setSearchResults(json.data || []))
       .catch(() => setSearchResults([]))
@@ -1016,8 +1018,10 @@ export default function Agent() {
 
   const loadConversationMessages = useCallback(async (convIdToLoad: number) => {
     setMessagesLoading(true);
+    const token = localStorage.getItem('buddy_token');
+    const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
     try {
-      const convRes = await fetch(`/api/conversations/${convIdToLoad}`);
+      const convRes = await fetch(`/api/conversations/${convIdToLoad}`, { headers: authHeaders, credentials: 'include' });
       const convJson = await convRes.json();
       if (convJson.data?.systemPrompt) {
         setActiveConvSystemPrompt(convJson.data.systemPrompt);
@@ -1028,7 +1032,7 @@ export default function Agent() {
         setConvTitle(convJson.data.title);
       }
 
-      const res = await fetch(`/api/conversations/${convIdToLoad}/messages`);
+      const res = await fetch(`/api/conversations/${convIdToLoad}/messages`, { headers: authHeaders, credentials: 'include' });
       const json = await res.json();
       const dbMessages: any[] = json.data || [];
 
