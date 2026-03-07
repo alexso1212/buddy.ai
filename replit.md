@@ -47,6 +47,16 @@ The application is built with an Express.js backend, a React (TypeScript) fronte
 - **Chat Model Visibility Config:** `system_config` table (key-value store with JSON values) stores `chat_visible_models` — an ordered list of `{id, label, desc}` entries controlling which models appear in the chat selector. Admin panel provides drag-and-drop reordering, inline label/desc editing, and add/remove from configured models. `GET /api/ai/available-models` (auth required) returns the visible list with fallback to defaults.
 - **Dual-tier access control:** Super admins see all system-wide data (overview, all users, all orgs, AI workforce analysis, API endpoint management). Organization owners can also access the admin dashboard but only see org-scoped data (AI usage stats, hourly trends, security audit logs, KB health for their own organization). Backend enforces per-route authorization via `requireSuperAdmin` guard and org-scoped SQL filtering.
 
+**Claude-Style Streaming UI (Phase 1 — Core Skeleton):**
+- CSS design tokens: `--bg-user-message`, `--accent-orange`, `--accent-blue`, `--accent-green`, `--bg-secondary`, `--bg-tertiary`, `--text-tertiary`, `--border-code`, `--ease-spring`, `--ease-out-quart` added to `:root` in `index.css`.
+- Keyframe animations: `slideUpFade`, `streamFadeIn`, `starburstSpin`, `starburstRayPulse`, `actionButtonsFadeIn` in `index.css`.
+- `StarburstIndicator` component (`client/src/components/ai/StarburstIndicator.tsx`): Orange 8-ray rotating SVG with staggered pulse animation, replaces `ThinkingAnimation` as loading indicator while waiting for first token.
+- User message bubbles restyled: `--bg-user-message` background, `--text-user` color, 15px font, `slideUpFade 350ms` entry animation.
+- Action buttons (copy, retry, thumbs up/down) restyled: 32x32 tap target, 16x16 icons, `--text-tertiary` color with hover to `--text-secondary`, fade-in 300ms delayed 200ms after stream completes.
+- Send/Stop button unified: single 36x36 circular button, cross-fades between send arrow (dark fill) and stop square (light fill) via `transition: all 200ms ease`.
+- Auto-scroll improved: `isAutoScrolling` ref with 50px threshold, stops on user scroll up, resumes when near bottom, force-scrolls on send.
+- Phases 2-5 (thinking bar, code blocks, markdown, artifacts, widgets, citations, polish) are NOT yet implemented.
+
 **iOS App (Capacitor):** The project is configured for iOS packaging via Capacitor, loading the web application from a deployed domain.
 
 ## External Dependencies

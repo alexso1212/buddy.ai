@@ -879,51 +879,36 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
               )}
             </div>
 
-            {loading ? (
-              <button
-                onClick={onStop}
-                style={{
-                  width: 34,
-                  height: 34,
-                  background: '#ECECEC',
-                  borderRadius: '50%',
-                  border: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  transition: 'opacity 150ms, transform 100ms',
-                }}
-                onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.95)'; }}
-                onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
-                data-testid="ai-stop"
-              >
-                <Square className="w-3 h-3 text-[#1A1918]" strokeWidth={3} fill="#1A1918" />
-              </button>
-            ) : (
-              <button
-                onClick={handleSend}
-                disabled={isEmpty}
-                style={{
-                  width: 34,
-                  height: 34,
-                  background: 'var(--brand)',
-                  borderRadius: '50%',
-                  border: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: isEmpty ? 'default' : 'pointer',
-                  opacity: isEmpty ? 0.35 : 1,
-                  transition: 'opacity 150ms, transform 100ms',
-                }}
-                onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.95)'; }}
-                onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
-                data-testid="ai-send"
-              >
-                <ArrowUp className="w-4 h-4 text-white" strokeWidth={2.5} />
-              </button>
-            )}
+            <button
+              onClick={loading ? onStop : handleSend}
+              disabled={!loading && isEmpty}
+              style={{
+                width: 36,
+                height: 36,
+                background: loading ? 'var(--bg-tertiary)' : 'var(--text-primary)',
+                borderRadius: '50%',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: (!loading && isEmpty) ? 'default' : 'pointer',
+                opacity: (!loading && isEmpty) ? 0.35 : 1,
+                transition: 'all 200ms ease',
+              }}
+              onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.95)'; }}
+              onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+              data-testid={loading ? "ai-stop" : "ai-send"}
+            >
+              {loading ? (
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ transition: 'opacity 200ms ease' }}>
+                  <rect x="3" y="3" width="10" height="10" rx="2" fill="#e8e8e8" />
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ transition: 'opacity 200ms ease' }}>
+                  <path d="M3 13L13.5 8L3 3V6.5L9 8L3 9.5V13Z" fill="#1a1a1a" />
+                </svg>
+              )}
+            </button>
           </div>
           </div>
         </div>

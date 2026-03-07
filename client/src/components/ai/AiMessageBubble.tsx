@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { Check, Copy, Share2, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink, FileText, RefreshCw, PanelRightOpen, Loader2, Search, Terminal, AlertTriangle, WifiOff, Clock, MessageSquarePlus, Scissors, ServerCrash, PlayCircle, AlertCircle } from "lucide-react";
+import { Check, Copy, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink, FileText, RefreshCw, PanelRightOpen, Loader2, Search, Terminal, AlertTriangle, WifiOff, Clock, MessageSquarePlus, Scissors, ServerCrash, PlayCircle, AlertCircle } from "lucide-react";
 import AiConfirmCard from "./AiConfirmCard";
 import AiGuidedCreation from "./AiGuidedCreation";
 import AIMessageContent from "./AIMessageContent";
@@ -123,14 +123,6 @@ function AiReplyActions({ content, onRegenerate, isLastAssistant }: { content: s
     });
   }, [content]);
 
-  const handleShare = useCallback(() => {
-    if (navigator.share) {
-      navigator.share({ text: content }).catch(() => {});
-    } else {
-      navigator.clipboard.writeText(content);
-    }
-  }, [content]);
-
   const handleDislike = useCallback(() => {
     if (liked === false) {
       setLiked(null);
@@ -148,61 +140,61 @@ function AiReplyActions({ content, onRegenerate, isLastAssistant }: { content: s
   }, []);
 
   return (
-    <div className="mt-2 ml-0.5" data-testid="ai-reply-actions">
+    <div className="mt-2 ml-0.5 action-buttons-appear" data-testid="ai-reply-actions">
       <div className="flex items-center gap-1">
         <button
           onClick={handleCopy}
-          className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+          className="flex items-center justify-center rounded-md transition-all duration-150"
+          style={{ width: 32, height: 32, color: 'var(--text-tertiary)', background: 'transparent', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'var(--bg-tertiary)'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.background = 'transparent'; }}
           title={copied ? "已复制" : "复制"}
-          data-testid="btn-copy-reply"
+          data-testid="action-btn-copy"
         >
-          {copied ? <Check className="w-3.5 h-3.5" strokeWidth={1.5} /> : <Copy className="w-3.5 h-3.5" strokeWidth={1.5} />}
+          {copied ? <Check className="w-4 h-4" strokeWidth={1.5} /> : <Copy className="w-4 h-4" strokeWidth={1.5} />}
         </button>
         {isLastAssistant && onRegenerate && (
           <button
             onClick={onRegenerate}
-            className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+            className="flex items-center justify-center rounded-md transition-all duration-150"
+            style={{ width: 32, height: 32, color: 'var(--text-tertiary)', background: 'transparent', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'var(--bg-tertiary)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.background = 'transparent'; }}
             title="重新生成"
-            data-testid="btn-regenerate"
+            data-testid="action-btn-retry"
           >
-            <RotateCcw className="w-3.5 h-3.5" strokeWidth={1.5} />
+            <RotateCcw className="w-4 h-4" strokeWidth={1.5} />
           </button>
         )}
         <button
-          onClick={handleShare}
-          className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
-          title="分享"
-          data-testid="btn-share-reply"
-        >
-          <Share2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-        </button>
-        <button
           onClick={() => setLiked(liked === true ? null : true)}
-          className={cn(
-            "flex items-center justify-center w-7 h-7 rounded-md transition-colors",
-            liked === true
-              ? "text-[var(--text-primary)]"
-              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5"
-          )}
-          style={liked === true ? { background: 'rgba(174,86,48,0.15)', color: 'var(--brand)' } : undefined}
+          className="flex items-center justify-center rounded-md transition-all duration-150"
+          style={{
+            width: 32, height: 32, border: 'none', borderRadius: 6, cursor: 'pointer',
+            color: liked === true ? 'var(--accent-blue)' : 'var(--text-tertiary)',
+            background: liked === true ? 'rgba(122,181,224,0.08)' : 'transparent',
+          }}
+          onMouseEnter={e => { if (liked !== true) { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'var(--bg-tertiary)'; } }}
+          onMouseLeave={e => { if (liked !== true) { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.background = 'transparent'; } }}
           title="有帮助"
-          data-testid="btn-like-reply"
+          data-testid="action-btn-thumbsup"
         >
-          <ThumbsUp className="w-3.5 h-3.5" strokeWidth={1.5} />
+          <ThumbsUp className="w-4 h-4" strokeWidth={1.5} />
         </button>
         <button
           onClick={handleDislike}
-          className={cn(
-            "flex items-center justify-center w-7 h-7 rounded-md transition-colors",
-            liked === false
-              ? "text-red-400"
-              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5"
-          )}
-          style={liked === false ? { background: 'rgba(248,113,113,0.1)' } : undefined}
+          className="flex items-center justify-center rounded-md transition-all duration-150"
+          style={{
+            width: 32, height: 32, border: 'none', borderRadius: 6, cursor: 'pointer',
+            color: liked === false ? '#ef4444' : 'var(--text-tertiary)',
+            background: liked === false ? 'rgba(248,113,113,0.1)' : 'transparent',
+          }}
+          onMouseEnter={e => { if (liked !== false) { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'var(--bg-tertiary)'; } }}
+          onMouseLeave={e => { if (liked !== false) { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.background = 'transparent'; } }}
           title="不太好"
-          data-testid="btn-dislike-reply"
+          data-testid="action-btn-thumbsdown"
         >
-          <ThumbsDown className="w-3.5 h-3.5" strokeWidth={1.5} />
+          <ThumbsDown className="w-4 h-4" strokeWidth={1.5} />
         </button>
       </div>
       {showFeedback && (
@@ -784,13 +776,13 @@ export default function AiMessageBubble({
               autoFocus
               style={{
                 width: '100%',
-                background: 'rgba(0,0,0,0.75)',
+                background: 'var(--bg-user-message)',
                 borderRadius: 18,
-                padding: '10px 14px',
-                fontFamily: 'var(--font-sans)',
-                fontSize: 16,
-                lineHeight: 1.5,
-                color: 'var(--text-primary)',
+                padding: '12px 16px',
+                fontFamily: 'var(--font-body)',
+                fontSize: 15,
+                lineHeight: 1.6,
+                color: 'var(--text-user)',
                 border: '1px solid var(--brand)',
                 outline: 'none',
                 resize: 'none',
@@ -846,15 +838,16 @@ export default function AiMessageBubble({
         )}
         <div
           style={{
-            maxWidth: '82%',
-            background: 'rgba(0,0,0,0.75)',
+            maxWidth: '80%',
+            background: 'var(--bg-user-message)',
             borderRadius: '18px 18px 4px 18px',
-            padding: '10px 14px',
-            fontFamily: 'var(--font-sans)',
-            fontSize: 16,
-            lineHeight: 1.5,
-            color: 'var(--text-primary)',
+            padding: '12px 16px',
+            fontFamily: 'var(--font-body)',
+            fontSize: 15,
+            lineHeight: 1.6,
+            color: 'var(--text-user)',
             wordBreak: 'break-word',
+            animation: 'slideUpFade 350ms var(--ease-spring)',
           }}
           className="whitespace-pre-wrap"
           data-testid={`user-bubble-${message.id}`}

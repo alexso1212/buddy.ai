@@ -11,6 +11,7 @@ import InteractiveInputWidget, { formatAnswersForDisplay, formatAnswersForAI, ty
 import { Button } from "@/components/ui/button";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
+import StarburstIndicator from "@/components/ai/StarburstIndicator";
 import { useAuth } from "@/lib/auth";
 import { setStreamState, clearStreamState, getStreamState, takeoverStream, isBackgroundStreamActive } from "@/stores/chatStreamStore";
 import { BuddyRuntimeProvider, type BuddyCallbacks } from "@/components/ai/BuddyRuntime";
@@ -1116,10 +1117,12 @@ export default function Agent() {
     loadConversationMessages(activeConvId);
   }, [activeConvId]);
 
+  const isAutoScrolling = useRef(true);
+
   const isNearBottom = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return true;
-    return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 50;
   }, []);
 
   const scrollToBottom = useCallback((smooth = true) => {
@@ -1129,14 +1132,16 @@ export default function Agent() {
   }, []);
 
   const handleScrollEvent = useCallback(() => {
-    setShowScrollBtn(!isNearBottom());
+    const nearBottom = isNearBottom();
+    isAutoScrolling.current = nearBottom;
+    setShowScrollBtn(!nearBottom);
   }, [isNearBottom]);
 
   useEffect(() => {
-    if (isNearBottom()) {
+    if (isAutoScrolling.current) {
       scrollToBottom(false);
     }
-  }, [messages, loading, scrollToBottom, isNearBottom]);
+  }, [messages, loading, scrollToBottom]);
 
   const saveMessageToDB = useCallback(async (conversationId: number, msg: Message) => {
     try {
@@ -1262,6 +1267,7 @@ export default function Agent() {
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, userMsg]);
+      isAutoScrolling.current = true;
       setLoading(true);
       isStreamingRef.current = true;
       streamConvIdRef.current = convId;
@@ -2291,7 +2297,7 @@ export default function Agent() {
                 />
                 {loading && !messages.some(m => m.isStreaming) && (
                   <div className="flex justify-start px-3 mb-6" data-testid="ai-loading">
-                    <ThinkingAnimation size={36} />
+                    <StarburstIndicator visible={true} />
                   </div>
                 )}
               </div>

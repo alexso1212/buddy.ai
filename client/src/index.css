@@ -112,6 +112,8 @@ html, body {
   --font-serif: Georgia, 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
   --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', sans-serif;
   --font-mono: 'SF Mono', 'Fira Code', Menlo, Consolas, monospace;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-code: "SF Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace;
 
   /* ===== Dark Mode 自定义变量（默认模式） ===== */
   --bg-primary: #1A1918;
@@ -120,19 +122,31 @@ html, body {
   --bg-bubble: #2A2928;
   --bg-code: #141413;
   --bg-code-header: #1E1D1B;
+  --bg-secondary: #2a2a2a;
+  --bg-tertiary: #333333;
+  --bg-user-message: #3b3b3b;
+  --bg-overlay: rgba(0, 0, 0, 0.5);
   --text-primary: #ECECEC;
   --text-secondary: #9A9893;
   --text-placeholder: #7A7874;
   --text-bright: #FFFFFF;
+  --text-user: #ffffff;
+  --text-tertiary: #6b6b6b;
   --border-subtle: rgba(255, 255, 255, 0.06);
   --border-medium: rgba(255, 255, 255, 0.12);
+  --border-code: #404040;
   --overlay: rgba(0, 0, 0, 0.4);
   --brand: #AE5630;
   --brand-hover: #C4633A;
   --brand-icon: #C4703F;
+  --accent-orange: #d4714a;
+  --accent-blue: #7ab5e0;
+  --accent-green: #6bc76b;
   --sidebar-active: rgba(255, 255, 255, 0.08);
   --sidebar-hover: rgba(255, 255, 255, 0.04);
   --section-title: #C4703F;
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-spring: cubic-bezier(0.22, 1.0, 0.36, 1.0);
 
   /* ===== shadcn/ui Dark HSL 变量（默认模式） ===== */
   --button-outline: rgba(255,255,255, .10);
@@ -694,4 +708,40 @@ html, body {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+@keyframes slideUpFade {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes streamFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes starburstSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes starburstRayPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@keyframes actionButtonsFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.action-buttons-appear {
+  opacity: 0;
+  animation: actionButtonsFadeIn 300ms ease 200ms forwards;
 }
