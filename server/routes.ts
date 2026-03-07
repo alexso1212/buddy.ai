@@ -3217,7 +3217,7 @@ Return ONLY the JSON object, no other text.`;
     const DEFAULT_CHAT_MODELS = [
       { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', desc: '日常任务首选' },
       { id: 'claude-opus-4-6', label: 'Opus 4.6', desc: '深度分析模式' },
-      { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', desc: '快速响应' },
+      { id: 'claude-haiku-4-5', label: 'Haiku 4.5', desc: '快速响应' },
     ];
     try {
       const val = await storage.getSystemConfig('chat_visible_models');

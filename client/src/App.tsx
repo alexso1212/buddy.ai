@@ -1597,7 +1597,7 @@ function Router() {
 const FALLBACK_MODELS = [
   { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', desc: 'Most efficient for everyday tasks' },
   { id: 'claude-opus-4-6', label: 'Opus 4.6', desc: 'Deep mode · Higher token cost' },
-  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', desc: 'Fastest for quick answers' },
+  { id: 'claude-haiku-4-5', label: 'Haiku 4.5', desc: 'Fastest for quick answers' },
 ];
 
 function ModelSelector() {

@@ -222,7 +222,8 @@ const API_PROVIDERS = [
     models: [
       { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
       { id: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
-      { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+      { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+      { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
     ],
   },
   {
@@ -230,10 +231,12 @@ const API_PROVIDERS = [
     name: 'OpenAI',
     baseUrl: 'https://api.openai.com/v1',
     models: [
-      { id: 'gpt-4o', label: 'GPT-4o' },
-      { id: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-      { id: 'o1', label: 'o1' },
-      { id: 'o3-mini', label: 'o3-mini' },
+      { id: 'gpt-5.4', label: 'GPT-5.4' },
+      { id: 'gpt-5.4-pro', label: 'GPT-5.4 Pro' },
+      { id: 'gpt-5.2', label: 'GPT-5.2' },
+      { id: 'gpt-5.2-pro', label: 'GPT-5.2 Pro' },
+      { id: 'gpt-5.1', label: 'GPT-5.1' },
+      { id: 'gpt-4o', label: 'GPT-4o (Legacy)' },
     ],
   },
   {
@@ -241,11 +244,14 @@ const API_PROVIDERS = [
     name: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
     models: [
-      { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-      { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },
-      { id: 'openai/gpt-4o', label: 'GPT-4o' },
-      { id: 'deepseek/deepseek-chat', label: 'DeepSeek V3' },
-      { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+      { id: 'anthropic/claude-sonnet-4.6', label: 'Claude Sonnet 4.6' },
+      { id: 'anthropic/claude-opus-4.6', label: 'Claude Opus 4.6' },
+      { id: 'anthropic/claude-haiku-4.5', label: 'Claude Haiku 4.5' },
+      { id: 'openai/gpt-5.4', label: 'GPT-5.4' },
+      { id: 'openai/gpt-5.4-pro', label: 'GPT-5.4 Pro' },
+      { id: 'google/gemini-3-flash-preview', label: 'Gemini 3 Flash' },
+      { id: 'google/gemini-2.5-pro-preview', label: 'Gemini 2.5 Pro' },
+      { id: 'deepseek/deepseek-v3.2', label: 'DeepSeek V3.2' },
     ],
   },
   {
@@ -253,8 +259,8 @@ const API_PROVIDERS = [
     name: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com/v1',
     models: [
-      { id: 'deepseek-chat', label: 'DeepSeek V3' },
-      { id: 'deepseek-reasoner', label: 'DeepSeek R1' },
+      { id: 'deepseek-chat', label: 'DeepSeek V3.2 (Chat)' },
+      { id: 'deepseek-reasoner', label: 'DeepSeek V3.2 (Reasoner)' },
     ],
   },
   {
