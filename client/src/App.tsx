@@ -812,10 +812,10 @@ function Sidebar({
                       <div style={{ padding: '6px 16px 2px', margin: '0 8px 0 12px' }}>
                         <Link
                           href="/chats"
-                          onClick={() => {
-                            if (window.innerWidth < 768) {
-                              setSidebarOpen(false);
-                            }
+                          onClick={(e: React.MouseEvent) => {
+                            e.preventDefault();
+                            navigate('/chats');
+                            onClose();
                           }}
                           style={{ fontSize: 13, color: '#7A7874', cursor: 'pointer', textDecoration: 'none' }}
                           data-testid="link-view-all-chats"
