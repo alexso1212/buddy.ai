@@ -5,32 +5,96 @@ import { SYSTEM_PROMPT } from './prompts';
 import { ACTION_SCHEMAS } from './actionSchemas';
 import { storage } from '../../storage';
 import { CODE_TOOLS, executeCodeTool } from './codeTools';
+import type { AiProvider } from '@shared/schema';
 
-const openrouterClient = new OpenAI({
-  baseURL: process.env.AI_BASE_URL,
-  apiKey: process.env.AI_API_KEY,
-  timeout: 30000,
-});
+let cachedProviders: AiProvider[] | null = null;
+let providersCacheTime = 0;
+const PROVIDER_CACHE_TTL = 60000;
+const clientCache = new Map<string, OpenAI>();
 
-const claudeComplexClient = new OpenAI({
-  baseURL: 'https://vip.aipro.love/v1',
-  apiKey: process.env.CLAUDE_COMPLEX_API_KEY,
-  timeout: 180000,
-});
+async function loadProviders(): Promise<AiProvider[]> {
+  const now = Date.now();
+  if (cachedProviders && now - providersCacheTime < PROVIDER_CACHE_TTL) {
+    return cachedProviders;
+  }
+  try {
+    cachedProviders = await storage.getAiProviders();
+    providersCacheTime = now;
+    return cachedProviders;
+  } catch (e) {
+    if (cachedProviders) return cachedProviders;
+    return getHardcodedFallbackProviders();
+  }
+}
 
-const claudeSimpleClient = new OpenAI({
-  baseURL: 'https://vip.aipro.love/v1',
-  apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
-  timeout: 90000,
-});
+function getHardcodedFallbackProviders(): AiProvider[] {
+  return [
+    { id: -1, name: 'Claude Simple', type: 'proxy', baseUrl: 'https://vip.aipro.love/v1', apiKeyEnvVar: 'CLAUDE_SIMPLE_API_KEY', models: ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001'], timeout: 90000, priority: 0, isActive: true, createdAt: new Date(), updatedAt: new Date() },
+    { id: -2, name: 'Claude Complex', type: 'proxy', baseUrl: 'https://vip.aipro.love/v1', apiKeyEnvVar: 'CLAUDE_COMPLEX_API_KEY', models: ['claude-opus-4-6'], timeout: 180000, priority: 1, isActive: true, createdAt: new Date(), updatedAt: new Date() },
+    { id: -3, name: 'OpenRouter', type: 'direct', baseUrl: process.env.AI_BASE_URL || '', apiKeyEnvVar: 'AI_API_KEY', models: ['gpt-4o', 'deepseek-chat'], timeout: 30000, priority: 2, isActive: true, createdAt: new Date(), updatedAt: new Date() },
+  ];
+}
 
-const COMPLEX_MODELS = ['claude-opus-4-6'];
-const SIMPLE_MODELS = ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001'];
+export function invalidateProviderCache() {
+  cachedProviders = null;
+  providersCacheTime = 0;
+  clientCache.clear();
+}
 
-function getClientForModel(model: string): OpenAI {
-  if (COMPLEX_MODELS.includes(model)) return claudeComplexClient;
-  if (SIMPLE_MODELS.includes(model)) return claudeSimpleClient;
-  return openrouterClient;
+function getClientForProvider(provider: AiProvider): OpenAI | null {
+  const apiKey = process.env[provider.apiKeyEnvVar];
+  if (!apiKey) return null;
+  const cacheKey = `${provider.id}_${provider.baseUrl}_${provider.apiKeyEnvVar}`;
+  let client = clientCache.get(cacheKey);
+  if (!client) {
+    client = new OpenAI({
+      baseURL: provider.baseUrl,
+      apiKey,
+      timeout: provider.timeout,
+    });
+    clientCache.set(cacheKey, client);
+  }
+  return client;
+}
+
+async function getProvidersForModel(model: string): Promise<{ provider: AiProvider; client: OpenAI }[]> {
+  const providers = await loadProviders();
+  const result: { provider: AiProvider; client: OpenAI }[] = [];
+  for (const p of providers) {
+    if (!p.isActive) continue;
+    if (!p.models.includes(model)) continue;
+    const client = getClientForProvider(p);
+    if (client) result.push({ provider: p, client });
+  }
+  return result;
+}
+
+async function getClientForModel(model: string): Promise<OpenAI> {
+  const entries = await getProvidersForModel(model);
+  if (entries.length > 0) return entries[0].client;
+  const apiKey = process.env.CLAUDE_SIMPLE_API_KEY || process.env.CLAUDE_COMPLEX_API_KEY || process.env.AI_API_KEY;
+  return new OpenAI({ baseURL: 'https://vip.aipro.love/v1', apiKey: apiKey || '', timeout: 90000 });
+}
+
+async function callWithFallback<T>(
+  model: string,
+  callFn: (client: OpenAI, providerName: string) => Promise<T>,
+): Promise<T> {
+  const entries = await getProvidersForModel(model);
+  if (entries.length === 0) {
+    const fallbackClient = await getClientForModel(model);
+    return callFn(fallbackClient, 'fallback');
+  }
+  let lastError: Error | null = null;
+  for (const { provider, client } of entries) {
+    try {
+      return await callFn(client, provider.name);
+    } catch (err: any) {
+      lastError = err;
+      console.error(`[AI Fallback] Provider "${provider.name}" failed for model ${model}: ${err.message}`);
+    }
+  }
+  throw lastError || new Error(`All providers failed for model ${model}`);
 }
 
 type TaskCategory = 'title_generation' | 'auto_judgment' | 'quick_reply' | 'general_chat' | 'code_generation' | 'complex_analysis' | 'document_processing' | 'knowledge_qa';
@@ -160,7 +224,7 @@ async function classifyTask(userMessage: string, hasAttachments?: boolean): Prom
   }
 
   try {
-    const client = getClientForModel('claude-haiku-4-5-20251001');
+    const client = await getClientForModel('claude-haiku-4-5-20251001');
     const response = await client.chat.completions.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 30,
@@ -220,7 +284,7 @@ async function buildOptimizedContext(
       .map(m => `${m.role}: ${typeof m.content === 'string' ? m.content.slice(0, 200) : '[附件内容]'}`)
       .join('\n');
 
-    const client = getClientForModel('claude-haiku-4-5-20251001');
+    const client = await getClientForModel('claude-haiku-4-5-20251001');
     const response = await client.chat.completions.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 500,
@@ -1047,7 +1111,7 @@ export async function chat(
   const taskCategory = await classifyTask(message);
   const config = getConfigForTask(taskCategory, context.model, context.extendedThinking);
   const modelName = config.model;
-  const aiClient = getClientForModel(modelName);
+  const aiClient = await getClientForModel(modelName);
 
   const optimizedHistory = await buildOptimizedContext(conversationHistory, taskCategory);
 
@@ -1276,7 +1340,7 @@ export async function* chatStream(
     }
   }
 
-  const aiClient = getClientForModel(modelName);
+  const aiClient = await getClientForModel(modelName);
 
   const optimizedHistory = await buildOptimizedContext(conversationHistory, taskCategory);
 
@@ -1390,7 +1454,7 @@ export async function generateProjectTasks(
   context: { currentUserId: number; currentUserName: string }
 ): Promise<{ tasks: { title: string; description?: string; priority: string; type: string }[]; tokenUsage?: ChatResponse['tokenUsage'] }> {
   const genModel = 'claude-sonnet-4-6';
-  const genClient = getClientForModel(genModel);
+  const genClient = await getClientForModel(genModel);
   const response = await genClient.chat.completions.create({
     model: genModel,
     max_tokens: 2048,
@@ -1453,7 +1517,7 @@ export async function extractMemories(
   if (conversationMessages.length < 2) return;
 
   const model = 'claude-haiku-4-5-20251001';
-  const client = getClientForModel(model);
+  const client = await getClientForModel(model);
 
   const conversationText = conversationMessages
     .map(m => `${m.role}: ${m.content}`)
@@ -1519,7 +1583,7 @@ export async function generateConversationTitle(
   userMessage: string,
   assistantReply: string
 ): Promise<string> {
-  const client = claudeSimpleClient;
+  const client = await getClientForModel('claude-haiku-4-5-20251001');
   const truncatedUser = userMessage.slice(0, 500);
   const truncatedAssistant = assistantReply.slice(0, 500);
 

@@ -3033,12 +3033,8 @@ When choosing assigneeId:
         return res.json({ data: [] });
       }
 
-      const OpenAI = (await import('openai')).default;
-      const claudeSimpleClient = new OpenAI({
-        baseURL: 'https://vip.aipro.love/v1',
-        apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
-        timeout: 90000,
-      });
+      const { getAiClient } = await import('./services/ai/clientHelper');
+      const claudeSimpleClient = await getAiClient('claude-haiku-4-5-20251001');
 
       const taskListStr = otherTasks.map(t =>
         `- ID: ${t.id}, Title: "${t.title}", Status: ${t.status}, Description: "${t.description || 'N/A'}"`
@@ -3160,14 +3156,10 @@ Please evaluate and return a JSON object with:
 
 Return ONLY the JSON object, no other text.`;
 
-      const OpenAI = (await import('openai')).default;
-      const claudeSimpleClient = new OpenAI({
-        baseURL: 'https://vip.aipro.love/v1',
-        apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
-        timeout: 90000,
-      });
+      const { getAiClient } = await import('./services/ai/clientHelper');
+      const reviewClient = await getAiClient('claude-haiku-4-5-20251001');
 
-      const completion = await claudeSimpleClient.chat.completions.create({
+      const completion = await reviewClient.chat.completions.create({
         model: 'claude-haiku-4-5-20251001',
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 2000,

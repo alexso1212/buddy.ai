@@ -1,6 +1,28 @@
 import { Router } from 'express';
 import { sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { db, storage } from '../storage';
+import { invalidateProviderCache } from '../services/ai/index';
+
+const providerCreateSchema = z.object({
+  name: z.string().min(1),
+  type: z.enum(['proxy', 'direct']).default('direct'),
+  baseUrl: z.string().url(),
+  apiKeyEnvVar: z.string().min(1),
+  models: z.array(z.string().min(1)).min(1),
+  timeout: z.number().int().positive().default(90000),
+  isActive: z.boolean().default(true),
+});
+
+const providerUpdateSchema = z.object({
+  name: z.string().min(1).optional(),
+  type: z.enum(['proxy', 'direct']).optional(),
+  baseUrl: z.string().url().optional(),
+  apiKeyEnvVar: z.string().min(1).optional(),
+  models: z.array(z.string().min(1)).min(1).optional(),
+  timeout: z.number().int().positive().optional(),
+  isActive: z.boolean().optional(),
+});
 
 const adminRouter = Router();
 
@@ -165,51 +187,128 @@ adminRouter.get("/ai/hourly", async (_req, res) => {
 
 adminRouter.get("/ai/config", async (_req, res) => {
   try {
-    const config = {
-      providers: [
-        {
-          id: 'claude_simple',
-          label: 'Claude Simple (Haiku/Sonnet)',
-          type: 'proxy' as const,
-          baseUrl: process.env.CLAUDE_SIMPLE_BASE_URL || 'https://vip.aipro.love/v1',
-          keyConfigured: !!process.env.CLAUDE_SIMPLE_API_KEY,
-          keyEnvVar: 'CLAUDE_SIMPLE_API_KEY',
-          models: ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001'],
-          timeout: 90000,
-        },
-        {
-          id: 'claude_complex',
-          label: 'Claude Complex (Opus)',
-          type: 'proxy' as const,
-          baseUrl: process.env.CLAUDE_COMPLEX_BASE_URL || 'https://vip.aipro.love/v1',
-          keyConfigured: !!process.env.CLAUDE_COMPLEX_API_KEY,
-          keyEnvVar: 'CLAUDE_COMPLEX_API_KEY',
-          models: ['claude-opus-4-6'],
-          timeout: 180000,
-        },
-        {
-          id: 'openrouter',
-          label: 'OpenRouter (Fallback)',
-          type: 'direct' as const,
-          baseUrl: process.env.AI_BASE_URL || '',
-          keyConfigured: !!process.env.AI_API_KEY,
-          keyEnvVar: 'AI_API_KEY',
-          models: ['gpt-4o', 'deepseek-v3'],
-          timeout: 30000,
-        },
-      ],
-      taskRouting: {
-        quick_reply: { model: 'claude-haiku-4-5-20251001', provider: 'claude_simple' },
-        title_generation: { model: 'claude-haiku-4-5-20251001', provider: 'claude_simple' },
-        auto_judgment: { model: 'claude-haiku-4-5-20251001', provider: 'claude_simple' },
-        general_chat: { model: 'claude-sonnet-4-6', provider: 'claude_simple' },
-        code_generation: { model: 'claude-sonnet-4-6', provider: 'claude_simple' },
-        complex_analysis: { model: 'claude-sonnet-4-6', provider: 'claude_simple' },
-        document_processing: { model: 'claude-sonnet-4-6', provider: 'claude_simple' },
-        knowledge_qa: { model: 'claude-sonnet-4-6', provider: 'claude_simple' },
-      },
+    const providers = await storage.getAiProviders();
+    const enriched = providers.map(p => ({
+      ...p,
+      keyConfigured: !!process.env[p.apiKeyEnvVar],
+    }));
+    const taskRouting = {
+      quick_reply: { model: 'claude-haiku-4-5-20251001' },
+      title_generation: { model: 'claude-haiku-4-5-20251001' },
+      auto_judgment: { model: 'claude-haiku-4-5-20251001' },
+      general_chat: { model: 'claude-sonnet-4-6' },
+      code_generation: { model: 'claude-sonnet-4-6' },
+      complex_analysis: { model: 'claude-sonnet-4-6' },
+      document_processing: { model: 'claude-sonnet-4-6' },
+      knowledge_qa: { model: 'claude-sonnet-4-6' },
     };
-    res.json({ data: config });
+    res.json({ data: { providers: enriched, taskRouting } });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.get("/ai/providers", async (_req, res) => {
+  try {
+    const providers = await storage.getAiProviders();
+    const enriched = providers.map(p => ({
+      ...p,
+      keyConfigured: !!process.env[p.apiKeyEnvVar],
+    }));
+    res.json({ data: enriched });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.post("/ai/providers", async (req, res) => {
+  try {
+    const parsed = providerCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+    }
+    const existing = await storage.getAiProviders();
+    const maxPriority = existing.length > 0 ? Math.max(...existing.map(p => p.priority)) + 1 : 0;
+    const provider = await storage.createAiProvider({
+      ...parsed.data,
+      priority: maxPriority,
+    });
+    invalidateProviderCache();
+    res.json({ data: { ...provider, keyConfigured: !!process.env[provider.apiKeyEnvVar] } });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.patch("/ai/providers/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const existing = await storage.getAiProvider(id);
+    if (!existing) return res.status(404).json({ error: 'Provider not found' });
+    const parsed = providerUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+    }
+    const provider = await storage.updateAiProvider(id, parsed.data);
+    invalidateProviderCache();
+    res.json({ data: { ...provider, keyConfigured: !!process.env[provider.apiKeyEnvVar] } });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.delete("/ai/providers/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const existing = await storage.getAiProvider(id);
+    if (!existing) return res.status(404).json({ error: 'Provider not found' });
+    await storage.deleteAiProvider(id);
+    invalidateProviderCache();
+    res.json({ data: { success: true } });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.put("/ai/providers/reorder", async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array required' });
+    }
+    await storage.reorderAiProviders(ids);
+    invalidateProviderCache();
+    const providers = await storage.getAiProviders();
+    res.json({ data: providers.map(p => ({ ...p, keyConfigured: !!process.env[p.apiKeyEnvVar] })) });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.post("/ai/providers/:id/test", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const provider = await storage.getAiProvider(id);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+    const apiKey = process.env[provider.apiKeyEnvVar];
+    if (!apiKey) {
+      return res.json({ data: { success: false, error: `环境变量 ${provider.apiKeyEnvVar} 未配置` } });
+    }
+    const OpenAI = (await import('openai')).default;
+    const client = new OpenAI({ baseURL: provider.baseUrl, apiKey, timeout: 15000 });
+    const startTime = Date.now();
+    try {
+      await client.chat.completions.create({
+        model: provider.models[0],
+        messages: [{ role: 'user', content: 'Hi' }],
+        max_tokens: 5,
+      });
+      const latency = Date.now() - startTime;
+      res.json({ data: { success: true, latency, model: provider.models[0] } });
+    } catch (apiErr: any) {
+      const latency = Date.now() - startTime;
+      res.json({ data: { success: false, error: apiErr.message, latency } });
+    }
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }

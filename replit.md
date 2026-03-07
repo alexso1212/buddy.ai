@@ -65,6 +65,9 @@ A 25-table PostgreSQL database schema manages entities such as `organizations`, 
 **AI Smart Routing Architecture:**
 The AI subsystem uses intelligent task classification (e.g., `quick_reply`, `general_chat`, `code_generation`, `complex_analysis`) to dynamically select AI models, `max_tokens`, `temperature`, and enable Extended Thinking based on the user's message. Context optimization includes trimming conversation history and summarizing older messages.
 
+**Dynamic AI Provider Management:**
+API providers are stored in the `ai_providers` DB table with priority ordering. The AI service (`server/services/ai/index.ts`) dynamically loads providers from DB with 60s TTL cache. `getClientForModel(model)` returns the highest-priority active provider's OpenAI client for a given model. `callWithFallback(model, callFn)` tries providers in priority order, falling back to the next on failure. Admin CRUD endpoints (`GET/POST/PATCH/DELETE /api/admin/ai/providers`, `PUT /api/admin/ai/providers/reorder`, `POST /api/admin/ai/providers/:id/test`) with Zod validation. `invalidateProviderCache()` is called on all mutations. Seed migration auto-populates 3 default providers (Claude Simple, Claude Complex, OpenRouter) on first startup. Admin UI (`AdminAI.tsx`) features drag-and-drop reordering, add/edit/delete forms, active toggle, and connection testing. Helper: `server/services/ai/clientHelper.ts` provides `getAiClient(model)` for use outside the main AI service.
+
 **iOS App (Capacitor):**
 The project is configured for iOS App packaging via Capacitor, loading the live website from a deployed `.replit.app` domain.
 

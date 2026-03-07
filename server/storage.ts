@@ -72,6 +72,9 @@ import {
   kbDocuments,
   kbChunks,
   briefings,
+  aiProviders,
+  type AiProvider,
+  type InsertAiProvider,
 } from "@shared/schema";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -1125,6 +1128,42 @@ export class DatabaseStorage {
       .from(tasks)
       .where(eq(tasks.memberProfileId, profileId));
     return result[0]?.count ?? 0;
+  }
+
+  async getAiProviders(): Promise<AiProvider[]> {
+    return db.select().from(aiProviders).orderBy(aiProviders.priority);
+  }
+
+  async getAiProvider(id: number): Promise<AiProvider | undefined> {
+    const [provider] = await db.select().from(aiProviders).where(eq(aiProviders.id, id));
+    return provider;
+  }
+
+  async createAiProvider(data: InsertAiProvider): Promise<AiProvider> {
+    const [provider] = await db.insert(aiProviders).values(data).returning();
+    return provider;
+  }
+
+  async updateAiProvider(id: number, data: Partial<InsertAiProvider>): Promise<AiProvider> {
+    const [provider] = await db.update(aiProviders)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(aiProviders.id, id))
+      .returning();
+    return provider;
+  }
+
+  async deleteAiProvider(id: number): Promise<void> {
+    await db.delete(aiProviders).where(eq(aiProviders.id, id));
+  }
+
+  async reorderAiProviders(ids: number[]): Promise<void> {
+    await db.transaction(async (tx) => {
+      for (let i = 0; i < ids.length; i++) {
+        await tx.update(aiProviders)
+          .set({ priority: i, updatedAt: new Date() })
+          .where(eq(aiProviders.id, ids[i]));
+      }
+    });
   }
 }
 

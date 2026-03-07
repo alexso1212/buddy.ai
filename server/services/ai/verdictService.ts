@@ -1,18 +1,32 @@
 import OpenAI from 'openai';
 import { storage } from '../../storage';
+import type { AiProvider } from '@shared/schema';
 
-const claudeSimpleClient = new OpenAI({
-  baseURL: 'https://vip.aipro.love/v1',
-  apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
-  timeout: 30000,
-});
+let _cachedProviders: AiProvider[] | null = null;
+let _cacheTime = 0;
 
-const openrouterClient = new OpenAI({
-  baseURL: process.env.AI_BASE_URL,
-  apiKey: process.env.AI_API_KEY,
-});
-
-const client = process.env.CLAUDE_SIMPLE_API_KEY ? claudeSimpleClient : openrouterClient;
+async function getVerdictClient(): Promise<OpenAI> {
+  const now = Date.now();
+  if (!_cachedProviders || now - _cacheTime > 60000) {
+    try {
+      _cachedProviders = await storage.getAiProviders();
+      _cacheTime = now;
+    } catch {
+      if (!_cachedProviders) {
+        const apiKey = process.env.CLAUDE_SIMPLE_API_KEY || process.env.AI_API_KEY || '';
+        return new OpenAI({ baseURL: 'https://vip.aipro.love/v1', apiKey, timeout: 30000 });
+      }
+    }
+  }
+  const model = 'claude-haiku-4-5-20251001';
+  for (const p of _cachedProviders!) {
+    if (!p.isActive || !p.models.includes(model)) continue;
+    const key = process.env[p.apiKeyEnvVar];
+    if (key) return new OpenAI({ baseURL: p.baseUrl, apiKey: key, timeout: p.timeout });
+  }
+  const apiKey = process.env.CLAUDE_SIMPLE_API_KEY || process.env.AI_API_KEY || '';
+  return new OpenAI({ baseURL: 'https://vip.aipro.love/v1', apiKey, timeout: 30000 });
+}
 
 const VERDICT_SYSTEM_PROMPT = `你是一个企业权责判定专家。你的职责是客观、公正地判断一个任务分配给某个员工是否合理。
 
@@ -272,6 +286,7 @@ export async function judgeTaskAssignment(
   const prompt = buildVerdictPrompt(task, targetUser, allUsers);
   
   const modelName = 'claude-sonnet-4-6';
+  const client = await getVerdictClient();
   const response = await client.chat.completions.create({
     model: modelName,
     max_tokens: 2048,

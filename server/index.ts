@@ -4,6 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { orgIsolation } from "./middleware/orgIsolation";
 import { migrateOnboarding } from "./migrations/onboardingMigration";
+import { seedAiProviders } from "./migrations/seedAiProviders";
 
 const app = express();
 const httpServer = createServer(app);
@@ -67,6 +68,12 @@ app.use((req, res, next) => {
     await migrateOnboarding();
   } catch (err) {
     console.error("Migration: onboarding migration failed:", err);
+  }
+
+  try {
+    await seedAiProviders();
+  } catch (err) {
+    console.error("Migration: ai_providers seed failed:", err);
   }
 
   await registerRoutes(httpServer, app);
