@@ -104,41 +104,52 @@ export default function InteractiveInputWidget({
   const totalPages = questions.length;
   const currentQ = questions[currentPage];
 
-  const [spotPos, setSpotPos] = useState<{ x: number; y: number } | null>(null);
-  const [spotVisible, setSpotVisible] = useState(false);
-  const spotFadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  const spotRef = useRef<HTMLDivElement>(null);
+  const spotFadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rafId = useRef<number>(0);
+  const spotActive = useRef(false);
 
   useEffect(() => {
     return () => {
       if (spotFadeTimer.current) clearTimeout(spotFadeTimer.current);
       if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
+      if (rafId.current) cancelAnimationFrame(rafId.current);
     };
   }, []);
 
-  const updateSpot = useCallback((clientX: number, clientY: number) => {
-    const el = cardRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    setSpotPos({
-      x: clientX - rect.left,
-      y: clientY - rect.top,
+  const handleCardPointerDown = useCallback((e: React.PointerEvent) => {
+    const spot = spotRef.current;
+    const card = cardRef.current;
+    if (!spot || !card) return;
+    spotActive.current = true;
+    if (spotFadeTimer.current) clearTimeout(spotFadeTimer.current);
+    const rect = card.getBoundingClientRect();
+    spot.style.opacity = "1";
+    spot.style.transform = `translate3d(${e.clientX - rect.left - 300}px, ${e.clientY - rect.top - 300}px, 0)`;
+    if (navigator.vibrate) navigator.vibrate(8);
+  }, []);
+
+  const handleCardPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!spotActive.current) return;
+    const cx = e.clientX;
+    const cy = e.clientY;
+    if (rafId.current) cancelAnimationFrame(rafId.current);
+    rafId.current = requestAnimationFrame(() => {
+      const spot = spotRef.current;
+      const card = cardRef.current;
+      if (!spot || !card) return;
+      const rect = card.getBoundingClientRect();
+      spot.style.transform = `translate3d(${cx - rect.left - 300}px, ${cy - rect.top - 300}px, 0)`;
     });
   }, []);
 
-  const handleCardPointerDown = useCallback((e: React.PointerEvent) => {
-    setSpotVisible(true);
-    if (spotFadeTimer.current) clearTimeout(spotFadeTimer.current);
-    updateSpot(e.clientX, e.clientY);
-    if (navigator.vibrate) navigator.vibrate(8);
-  }, [updateSpot]);
-
-  const handleCardPointerMove = useCallback((e: React.PointerEvent) => {
-    if (spotVisible) updateSpot(e.clientX, e.clientY);
-  }, [spotVisible, updateSpot]);
-
   const handleCardPointerUp = useCallback(() => {
-    spotFadeTimer.current = setTimeout(() => setSpotVisible(false), 300);
+    spotActive.current = false;
+    spotFadeTimer.current = setTimeout(() => {
+      const spot = spotRef.current;
+      if (spot) spot.style.opacity = "0";
+    }, 300);
   }, []);
 
   const goToPage = useCallback((newPage: number) => {
@@ -296,12 +307,10 @@ export default function InteractiveInputWidget({
               gap: 10,
               padding: "10px 16px",
               borderRadius: 24,
-              background: "rgba(31, 30, 27, 0.95)",
-              backdropFilter: "blur(20px)",
-              WebkitBackdropFilter: "blur(20px)",
+              background: "#1f1e1b",
               border: "1px solid rgba(255,255,255,0.1)",
               cursor: "pointer",
-              transition: "all 150ms ease",
+              transition: "transform 150ms ease",
               boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
             }}
             onMouseDown={e => (e.currentTarget.style.transform = "scale(0.98)")}
@@ -336,9 +345,7 @@ export default function InteractiveInputWidget({
               width: 40,
               height: 40,
               borderRadius: "50%",
-              background: "rgba(31, 30, 27, 0.95)",
-              backdropFilter: "blur(20px)",
-              WebkitBackdropFilter: "blur(20px)",
+              background: "#1f1e1b",
               border: "1px solid rgba(255,255,255,0.1)",
               cursor: "pointer",
               display: "flex",
@@ -378,9 +385,7 @@ export default function InteractiveInputWidget({
       <div
         ref={cardRef}
         style={{
-          background: "rgba(31, 30, 27, 0.95)",
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
+          background: "#1f1e1b",
           borderRadius: 16,
           border: "1px solid rgba(255,255,255,0.08)",
           overflow: "hidden",
@@ -389,6 +394,8 @@ export default function InteractiveInputWidget({
           margin: "0 auto",
           boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
           pointerEvents: "auto",
+          willChange: "transform",
+          transform: "translateZ(0)",
         }}
         onPointerDown={handleCardPointerDown}
         onPointerMove={handleCardPointerMove}
@@ -396,24 +403,22 @@ export default function InteractiveInputWidget({
         onPointerLeave={handleCardPointerUp}
         onPointerCancel={handleCardPointerUp}
       >
-        {spotPos && (
-          <div
-            style={{
-              position: "absolute",
-              width: 600,
-              height: 600,
-              borderRadius: "50%",
-              background: "radial-gradient(circle at center, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.05) 10%, rgba(255,255,255,0.035) 20%, rgba(255,255,255,0.02) 35%, rgba(255,255,255,0.01) 50%, rgba(255,255,255,0.004) 65%, rgba(255,255,255,0.001) 80%, rgba(255,255,255,0) 100%)",
-              pointerEvents: "none",
-              transform: "translate(-50%, -50%)",
-              left: spotPos.x,
-              top: spotPos.y,
-              opacity: spotVisible ? 1 : 0,
-              transition: "opacity 300ms ease-out",
-              zIndex: 1,
-            }}
-          />
-        )}
+        <div
+          ref={spotRef}
+          style={{
+            position: "absolute",
+            width: 600,
+            height: 600,
+            borderRadius: "50%",
+            background: "radial-gradient(circle at center, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.05) 10%, rgba(255,255,255,0.035) 20%, rgba(255,255,255,0.02) 35%, rgba(255,255,255,0.01) 50%, rgba(255,255,255,0.004) 65%, rgba(255,255,255,0.001) 80%, rgba(255,255,255,0) 100%)",
+            pointerEvents: "none",
+            opacity: 0,
+            transform: "translate3d(-300px, -300px, 0)",
+            willChange: "transform, opacity",
+            transition: "opacity 300ms ease-out",
+            zIndex: 1,
+          }}
+        />
 
         <div
           style={{

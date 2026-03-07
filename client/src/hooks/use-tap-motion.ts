@@ -138,12 +138,12 @@ export function getElasticDeformProps(options?: ElasticDeformOptions) {
   let origBg = '';
   let origBorder = '';
   let origBoxShadow = '';
+  let pendingRaf = 0;
 
   const applyDeform = (el: HTMLElement, clientX: number, clientY: number) => {
     const { scaleX, scaleY, tx, ty, norm, glowX, glowY } = computeDeform(el, clientX, clientY, maxStretch, maxTranslate, baseScale);
 
-    el.style.transition = 'transform 16ms linear, background 30ms ease, border-color 30ms ease, box-shadow 30ms ease';
-    el.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scaleX(${scaleX.toFixed(4)}) scaleY(${scaleY.toFixed(4)})`;
+    el.style.transform = `translate3d(${tx.toFixed(1)}px, ${ty.toFixed(1)}px, 0) scaleX(${scaleX.toFixed(4)}) scaleY(${scaleY.toFixed(4)})`;
 
     const glowIntensity = 0.2 + norm * glowStrength;
     const spreadPx = glowSpread + norm * glowSpread * 0.6;
@@ -164,7 +164,7 @@ export function getElasticDeformProps(options?: ElasticDeformOptions) {
     origBg = el.style.background || '';
     origBorder = el.style.borderColor || '';
     origBoxShadow = el.style.boxShadow || '';
-    el.style.willChange = 'transform, background, box-shadow';
+    el.style.willChange = 'transform, box-shadow';
 
     applyDeform(el, clientX, clientY);
 
@@ -174,18 +174,29 @@ export function getElasticDeformProps(options?: ElasticDeformOptions) {
 
     moveHandler = (e: PointerEvent) => {
       if (!pressed || !currentEl) return;
-      applyDeform(currentEl, e.clientX, e.clientY);
+      const cx = e.clientX;
+      const cy = e.clientY;
+      if (pendingRaf) cancelAnimationFrame(pendingRaf);
+      pendingRaf = requestAnimationFrame(() => {
+        if (!pressed || !currentEl) return;
+        applyDeform(currentEl, cx, cy);
+        pendingRaf = 0;
+      });
     };
-    window.addEventListener('pointermove', moveHandler);
+    window.addEventListener('pointermove', moveHandler, { passive: true });
   };
 
   const release = (el: HTMLElement) => {
     if (!pressed) return;
     pressed = false;
     currentEl = null;
+    if (pendingRaf) {
+      cancelAnimationFrame(pendingRaf);
+      pendingRaf = 0;
+    }
 
     el.style.transition = `transform ${duration * 2.5}ms cubic-bezier(0.34,1.56,0.64,1), background ${duration * 1.5}ms ease, border-color ${duration * 1.5}ms ease, box-shadow ${duration * 1.5}ms ease`;
-    el.style.transform = 'translate(0px, 0px) scaleX(1) scaleY(1)';
+    el.style.transform = 'translate3d(0px, 0px, 0) scaleX(1) scaleY(1)';
     el.style.background = origBg;
     el.style.borderColor = origBorder;
     el.style.boxShadow = origBoxShadow;
