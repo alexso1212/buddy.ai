@@ -5,7 +5,7 @@ import {
   Globe, ChevronDown, ChevronUp, ExternalLink, FileText, RefreshCw,
   PanelRightOpen, Loader2, Search, Terminal, AlertTriangle, WifiOff,
   Clock, MessageSquarePlus, Scissors, ServerCrash, PlayCircle, AlertCircle,
-  Square, FolderOpen,
+  Square, FolderOpen, ListChecks, CircleDot, ChevronRight,
 } from "lucide-react";
 import {
   useBuddyMessageData,
@@ -19,6 +19,9 @@ import AIMessageContent from "./AIMessageContent";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingBlock from "./ThinkingBlock";
 import ArtifactPanel, { isLongContent, extractArtifactTitle } from "./ArtifactPanel";
+import MultiConfirmSheet from "./MultiConfirmSheet";
+import SingleConfirmSheet from "./SingleConfirmSheet";
+import DecisionSheet from "./DecisionSheet";
 
 function BrandLogo({ breathing }: { breathing?: boolean }) {
   return (
@@ -696,39 +699,29 @@ export function BuddyAssistantMessage() {
 
   if (message.type === "confirm" && message.action && callbacks.onConfirm && callbacks.onReject) {
     return (
-      <div
-        className="flex justify-start px-3 mb-6"
-        style={{ animation: 'messageAppear 200ms ease-out' }}
-        data-testid={`ai-message-${message.id}`}
-      >
-        <div className="max-w-[90%]">
-          <AiConfirmCard
-            action={message.action}
-            onConfirm={() => callbacks.onConfirm!(message.id)}
-            onReject={() => callbacks.onReject!(message.id)}
-            onSkip={callbacks.onSkip ? () => callbacks.onSkip!(message.id) : undefined}
-            confirmed={message.confirmed ?? null}
-            skipped={message.skipped ?? false}
-          />
-        </div>
-      </div>
+      <ConfirmSummaryLine
+        message={message}
+        callbacks={callbacks}
+      />
     );
   }
 
   if (message.type === "multi_confirm" && message.actions && callbacks.onConfirm && callbacks.onReject) {
-    const confirmStates = message.actionConfirmed ?? message.actions.map(() => null);
-    const hasUndecided = confirmStates.some((c) => c === null);
     return (
-      <MultiConfirmGroup
+      <MultiConfirmSummaryLine
         message={message}
-        confirmStates={confirmStates}
-        hasUndecided={hasUndecided}
+        callbacks={callbacks}
       />
     );
   }
 
   if (message.type === "decision_request") {
-    return <DecisionRequestCard message={message} />;
+    return (
+      <DecisionSummaryLine
+        message={message}
+        callbacks={callbacks}
+      />
+    );
   }
 
   if (message.type === "follow_up" && message.followUp && callbacks.onFollowUpSubmit) {
@@ -986,23 +979,168 @@ interface DecisionItem {
   warning: string;
 }
 
-const DECISION_TYPE_ICONS: Record<string, typeof AlertTriangle> = {
-  assignee_unclear: AlertTriangle,
-  deadline_missing: Clock,
-  scope_unclear: AlertCircle,
-  priority_unclear: AlertTriangle,
-  dependency_unclear: AlertCircle,
-};
+function SummaryBubble({
+  icon: Icon,
+  iconColor,
+  label,
+  countLabel,
+  statusLabel,
+  statusColor,
+  onOpen,
+  messageId,
+  testIdPrefix,
+}: {
+  icon: typeof Check;
+  iconColor: string;
+  label: string;
+  countLabel?: string;
+  statusLabel?: string;
+  statusColor?: string;
+  onOpen: () => void;
+  messageId: string;
+  testIdPrefix: string;
+}) {
+  return (
+    <div
+      className="flex justify-start px-3 mb-6"
+      style={{ animation: 'messageAppear 200ms ease-out' }}
+      data-testid={`ai-message-${messageId}`}
+    >
+      <div className="max-w-[90%]">
+        <div className="mb-2"><BrandLogo /></div>
+        <button
+          onClick={onOpen}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '10px 16px',
+            borderRadius: 14,
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            cursor: 'pointer',
+            width: '100%',
+            textAlign: 'left',
+            transition: 'background 150ms ease',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+          data-testid={`${testIdPrefix}-open-${messageId}`}
+        >
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 10,
+              background: `${iconColor}18`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <Icon size={16} color={iconColor} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: '#ECECEC' }}>{label}</div>
+            {countLabel && (
+              <div style={{ fontSize: 12, color: '#9A9893', marginTop: 1 }}>{countLabel}</div>
+            )}
+          </div>
+          {statusLabel ? (
+            <span style={{ fontSize: 12, fontWeight: 500, color: statusColor || '#9A9893', flexShrink: 0 }}>
+              {statusLabel}
+            </span>
+          ) : (
+            <ChevronRight size={16} color="#9A9893" style={{ flexShrink: 0 }} />
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
 
-function DecisionRequestCard({ message }: { message: BuddyMessage }) {
-  let parsed: { type: string; items: DecisionItem[]; createdAt?: string } | null = null;
-  try {
-    parsed = typeof message.content === 'string' ? JSON.parse(message.content) : null;
-  } catch {
-    parsed = null;
+function ConfirmSummaryLine({ message, callbacks }: { message: BuddyMessage; callbacks: import("./BuddyRuntime").BuddyCallbacks }) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  return (
+    <>
+      <SummaryBubble
+        icon={CircleDot}
+        iconColor="#AE5630"
+        label={message.action?.summary || "待确认操作"}
+        statusLabel={message.confirmed === true ? "已确认" : message.confirmed === false ? "已取消" : undefined}
+        statusColor={message.confirmed === true ? "#34D399" : message.confirmed === false ? "#F87171" : undefined}
+        onOpen={() => setSheetOpen(true)}
+        messageId={message.id}
+        testIdPrefix="confirm-summary"
+      />
+      <SingleConfirmSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        message={message}
+        onConfirm={(msgId) => callbacks.onConfirm?.(msgId)}
+        onReject={(msgId) => callbacks.onReject?.(msgId)}
+      />
+    </>
+  );
+}
+
+function MultiConfirmSummaryLine({ message, callbacks }: { message: BuddyMessage; callbacks: import("./BuddyRuntime").BuddyCallbacks }) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const actions = message.actions || [];
+  const confirmStates = message.actionConfirmed ?? actions.map(() => null);
+  const confirmedCount = confirmStates.filter(c => c === true).length;
+  const skippedCount = (message.actionSkipped || []).filter(Boolean).length;
+  const rejectedCount = confirmStates.filter(c => c === false).length;
+  const totalDecided = confirmedCount + skippedCount + rejectedCount;
+  const allDecided = totalDecided === actions.length && actions.length > 0;
+
+  let statusLabel: string | undefined;
+  let statusColor: string | undefined;
+  if (allDecided) {
+    statusLabel = `${confirmedCount} 已确认`;
+    statusColor = "#34D399";
   }
 
-  if (!parsed || parsed.type !== 'decision_request' || !parsed.items?.length) {
+  return (
+    <>
+      <SummaryBubble
+        icon={ListChecks}
+        iconColor="#AE5630"
+        label={`已识别 ${actions.length} 个任务`}
+        countLabel={allDecided ? `${confirmedCount} 已确认, ${skippedCount + rejectedCount} 已跳过` : `${totalDecided}/${actions.length} 已处理`}
+        statusLabel={allDecided ? "已完成" : "请确认"}
+        statusColor={allDecided ? "#34D399" : "#AE5630"}
+        onOpen={() => setSheetOpen(true)}
+        messageId={message.id}
+        testIdPrefix="multi-confirm-summary"
+      />
+      <MultiConfirmSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        message={message}
+        onConfirm={(msgId, idx) => callbacks.onConfirm?.(msgId, idx)}
+        onReject={(msgId, idx) => callbacks.onReject?.(msgId, idx)}
+        onSkip={callbacks.onSkip ? (msgId, idx) => callbacks.onSkip?.(msgId, idx) : undefined}
+        onConfirmAll={(msgId) => callbacks.onConfirmAll?.(msgId)}
+      />
+    </>
+  );
+}
+
+function DecisionSummaryLine({ message, callbacks }: { message: BuddyMessage; callbacks: import("./BuddyRuntime").BuddyCallbacks }) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  let itemCount = 0;
+  try {
+    const parsed = typeof message.content === 'string' ? JSON.parse(message.content) : null;
+    if (parsed?.type === 'decision_request' && parsed.items?.length) {
+      itemCount = parsed.items.length;
+    }
+  } catch {}
+
+  if (itemCount === 0) {
     return (
       <div className="flex justify-start px-3 mb-6" data-testid={`ai-message-${message.id}`}>
         <div className="max-w-[90%]">
@@ -1014,62 +1152,25 @@ function DecisionRequestCard({ message }: { message: BuddyMessage }) {
   }
 
   return (
-    <div
-      className="flex justify-start px-3 mb-6"
-      style={{ animation: 'messageAppear 200ms ease-out' }}
-      data-testid={`decision-request-${message.id}`}
-    >
-      <div className="max-w-[90%] w-full">
-        <div className="mb-2"><BrandLogo /></div>
-        <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 overflow-hidden">
-          <div className="px-4 py-3 border-b border-amber-200/60 dark:border-amber-800/60 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-            <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
-              AI创建的任务需要你确认
-            </span>
-            <span className="text-xs text-amber-600/70 dark:text-amber-400/70 ml-auto">
-              {parsed.items.length} 项待确认
-            </span>
-          </div>
-          <div className="divide-y divide-amber-200/40 dark:divide-amber-800/40">
-            {parsed.items.map((item) => {
-              const Icon = DECISION_TYPE_ICONS[item.decisionType || ''] || AlertCircle;
-              return (
-                <div
-                  key={item.decisionTaskId}
-                  className="px-4 py-3 flex items-start gap-3"
-                  data-testid={`decision-item-${item.decisionTaskId}`}
-                >
-                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 flex items-center justify-center text-xs font-medium mt-0.5">
-                    {item.index}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-[var(--text-primary)]">
-                      {item.originalTaskTitle}
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <Icon className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-                      <span className="text-xs text-amber-700 dark:text-amber-300">
-                        {item.label}
-                      </span>
-                    </div>
-                    {item.warning && (
-                      <p className="text-xs text-[var(--text-secondary)] mt-1">
-                        {item.warning}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="px-4 py-2.5 bg-amber-100/50 dark:bg-amber-900/20 border-t border-amber-200/60 dark:border-amber-800/60">
-            <p className="text-xs text-amber-700 dark:text-amber-400">
-              请直接回复确认信息，例如：&quot;第1个任务交给张三，截止下周五&quot;
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
+    <>
+      <SummaryBubble
+        icon={AlertTriangle}
+        iconColor="#F59E0B"
+        label={`${itemCount} 项任务需要你确认`}
+        countLabel="AI创建的任务存在待确认信息"
+        onOpen={() => setSheetOpen(true)}
+        messageId={message.id}
+        testIdPrefix="decision-summary"
+      />
+      <DecisionSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        message={message}
+        onSubmitDecisions={(text) => {
+          callbacks.onSendMessage?.(text);
+          setSheetOpen(false);
+        }}
+      />
+    </>
   );
 }
