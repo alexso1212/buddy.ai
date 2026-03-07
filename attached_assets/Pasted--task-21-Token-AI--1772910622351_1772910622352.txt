@@ -1,0 +1,489 @@
+# task-21（终版）: 全局防重复 — 先检测后消费
+
+> **核心原则**：在花 Token 之前先拦住重复。便宜的检测在前，贵的 AI 处理在后，中间让人确认。
+> **覆盖范围**：任务创建 + 知识库上传 + 文档/纪要上传
+> **预计耗时**：15-20 分钟
+> **替代**：之前的 task-21 去重 + 冲突解决文档全部作废，以本文件为准
+
+-----
+
+## 一、Token 节省原则
+
+```
+❌ 错误流程（浪费 Token）：
+  用户上传文件 → AI 花 5000 Token 读完 → 发现是重复的 → 白花了
+
+✅ 正确流程（先检测后消费）：
+  用户上传文件 → 文件名+哈希检测（0 Token）→ 发现疑似重复
+  → 弹 Widget 问用户 → 用户说"不是重复" → 才开始 AI 处理
+```
+
+每个入口都遵循这个三步：
+
+```
+Step 1: 零成本检测（哈希/文件名/标题关键词）    → 0 Token
+Step 2: 人工确认（弹 Widget）                   → 0 Token
+Step 3: AI 处理（只有确认不重复后才执行）         → 正常消费
+```
+
+-----
+
+## 二、入口1：任务创建防重复
+
+### 触发点
+
+- AI 聊天中创建任务（confirm / multi_confirm）
+- 手动表单创建任务
+- 批量创建（会议纪要提取）
+
+### 检测流程
+
+```
+用户说"创建任务：整理Q2销售数据"
+    ↓
+Step 1: 后端关键词匹配（0 Token）
+  → 提取关键词 ["整理", "Q2", "销售", "数据"]
+  → 扫描活跃任务表（通常 <500 条，<10ms）
+  → Jaccard 相似度计算
+    ↓
+┌── 相似度 > 0.8 → 高度疑似重复
+│   → 返回给前端（不创建）
+│   → AI 不消耗任何 Token
+│
+├── 相似度 0.5-0.8 → 可能相关
+│   → 返回疑似列表给前端
+│   → AI 不消耗任何 Token
+│
+└── 相似度 < 0.5 → 无重复
+    → 正常创建
+    ↓
+Step 2: 前端弹 Widget（0 Token）
+  "系统中已有相似任务：「Q2销售报表整理」(进行中)"
+  [这是同一个任务，不创建]  [不同的任务，继续创建]
+    ↓
+Step 3: 用户确认后才执行创建
+```
+
+### 实现：`server/services/tasks/deduplication.ts`
+
+```typescript
+/**
+ * 轻量级任务去重检测 — 零 AI Token 消耗
+ */
+export async function detectTaskDuplicate(params: {
+  orgId: number;
+  title: string;
+  description?: string;
+}): Promise<{ 
+  hasDuplicate: boolean;
+  matches: { id: number; title: string; status: string; assigneeName: string; similarity: number }[];
+}> {
+  const { orgId, title } = params;
+  
+  // 获取活跃任务
+  const tasks = await storage.getActiveTasksByOrg(orgId);
+  
+  const matches = [];
+  const titleKeywords = extractKeywords(title);
+  
+  for (const task of tasks) {
+    const taskKeywords = extractKeywords(task.title);
+    const sim = jaccardSimilarity(titleKeywords, taskKeywords);
+    
+    if (sim > 0.5) {
+      matches.push({
+        id: task.id,
+        title: task.title,
+        status: task.status,
+        assigneeName: task.assigneeName || '未分配',
+        similarity: sim,
+      });
+    }
+  }
+  
+  matches.sort((a, b) => b.similarity - a.similarity);
+  
+  return {
+    hasDuplicate: matches.length > 0,
+    matches: matches.slice(0, 3), // 最多返回3个
+  };
+}
+
+function extractKeywords(text: string): string[] {
+  const words: string[] = [];
+  // 英文词
+  const en = text.match(/[a-zA-Z0-9]+/g) || [];
+  const stopEn = new Set(['the','a','an','is','are','to','of','in','for','and','or','not','this','that','it','be','do','have']);
+  words.push(...en.filter(w => w.length > 1 && !stopEn.has(w.toLowerCase())).map(w => w.toLowerCase()));
+  // 中文2字词
+  const cn = text.replace(/[a-zA-Z0-9\s]/g, '');
+  const stopCn = new Set(['的','了','和','是','在','有','这','那','个','中','为','与','等']);
+  for (let i = 0; i < cn.length - 1; i++) {
+    const bigram = cn.slice(i, i + 2);
+    if (!stopCn.has(bigram[0]) && !stopCn.has(bigram[1])) words.push(bigram);
+  }
+  return words;
+}
+
+function jaccardSimilarity(a: string[], b: string[]): number {
+  if (!a.length || !b.length) return 0;
+  const setA = new Set(a);
+  const setB = new Set(b);
+  const intersection = [...setA].filter(x => setB.has(x)).length;
+  const union = new Set([...setA, ...setB]).size;
+  return union > 0 ? intersection / union : 0;
+}
+```
+
+### 接入 actionExecutor
+
+```typescript
+// 在 executeAction 中 create_task 之前
+if (actionType === 'create_task') {
+  const dupCheck = await detectTaskDuplicate({ orgId, title: data.title });
+  if (dupCheck.hasDuplicate) {
+    return {
+      success: false,
+      error: 'duplicate_suspected',
+      matches: dupCheck.matches,
+    };
+  }
+}
+```
+
+### 前端处理
+
+```typescript
+// /api/ai/confirm 返回 duplicate_suspected 时
+if (result.error === 'duplicate_suspected') {
+  // 不弹 toast，弹 Widget 让用户决定
+  setInteractiveInput([{
+    type: 'single_select',
+    question: `已有相似任务：「${result.matches[0].title}」(${result.matches[0].status})`,
+    options: [
+      '这是同一个任务，不重复创建',
+      '这是不同的任务，继续创建',
+    ],
+  }]);
+}
+```
+
+用户选”继续创建”时，重新调 confirm 接口并带 `forceCreate: true` 参数跳过去重检测。
+
+-----
+
+## 三、入口2：知识库文档防重复
+
+### 触发点
+
+- 知识库页面上传文件
+- Smart Setup 批量上传 ZIP
+
+### 检测流程
+
+```
+用户上传 "员工手册v3.pdf"
+    ↓
+Step 1: 文件名 + 文件大小检测（0 Token，0 AI）
+  → 查 kb_documents 表：同组织内是否有同名文件？
+  → 同名 + 文件大小一样 → 极大概率是同一个文件
+  → 同名 + 大小不同 → 可能是新版本
+    ↓
+┌── 同名同大小 → "这个文件已经在知识库中了"
+│   → Widget: [已知道了] [这是更新版本，替换旧的]
+│
+├── 同名不同大小 → "知识库中有同名文件（旧版本）"
+│   → Widget: [替换旧版本] [保留两个版本] [取消上传]
+│
+└── 不同名 → 继续 Step 1.5
+    ↓
+Step 1.5: 内容哈希检测（需要读文件但不需要 AI）
+  → 计算文件内容的 MD5 哈希
+  → 查 kb_documents 表：同组织内是否有相同哈希？
+  → 相同哈希 = 完全相同的内容，只是文件名不同
+    ↓
+┌── 哈希相同 → "这个文件内容和「xxx」完全相同"
+│   → Widget: [已知道了，不上传] [文件名不同但要保留]
+│
+└── 哈希不同 → 不重复，开始 AI 处理（Step 3）
+    → 提取文本 + 切片 + 入库
+```
+
+### 数据库改动
+
+在 `kb_documents` 表新增 `contentHash` 字段：
+
+```typescript
+contentHash: varchar('content_hash', { length: 64 }),
+```
+
+文件上传处理时计算哈希：
+
+```typescript
+import crypto from 'crypto';
+
+// 在 processDocument 的入口处
+const fileBuffer = fs.readFileSync(filePath);
+const contentHash = crypto.createHash('md5').update(fileBuffer).digest('hex');
+
+// 检查重复
+const existing = await db.select().from(kbDocuments).where(
+  and(
+    eq(kbDocuments.orgId, orgId),
+    eq(kbDocuments.contentHash, contentHash)
+  )
+).limit(1);
+
+if (existing.length > 0) {
+  return { duplicate: true, existingDoc: existing[0] };
+}
+
+// 不重复 → 继续处理（这里才开始花 Token）
+```
+
+### Smart Setup 批量上传的处理
+
+ZIP 解压后，对每个文件先做哈希检查：
+
+```typescript
+// 在 zipProcessor.ts 中
+const files = extractFromZip(zipPath);
+const newFiles = [];
+const duplicateFiles = [];
+
+for (const file of files) {
+  const hash = md5(file.content);
+  const existing = await findKbDocByHash(orgId, hash);
+  if (existing) {
+    duplicateFiles.push({ file, existingDoc: existing });
+  } else {
+    newFiles.push(file);
+  }
+}
+
+// 只处理新文件（省 Token）
+// 提示用户跳过了几个重复的
+console.log(`${files.length} files: ${newFiles.length} new, ${duplicateFiles.length} duplicates skipped`);
+```
+
+-----
+
+## 四、入口3：会议纪要/文档上传到聊天
+
+### 触发点
+
+- 用户在 AI 聊天中上传文件（附件）
+- 用户粘贴长文本（可能是会议纪要）
+
+### 检测流程
+
+```
+用户在聊天中上传 "周会纪要0307.docx" 并说"帮我从中提取任务"
+    ↓
+Step 1: 文件哈希检测（0 Token）
+  → 计算哈希
+  → 查最近7天的聊天附件记录
+    ↓
+┌── 哈希匹配 → "这份文件2小时前被Lisa上传过，从中创建了5个任务"
+│   → Widget: [查看已创建的任务] [这是不同的文件，继续处理]
+│   → 如果用户选"查看" → 不花 Token
+│   → 如果用户选"继续" → 才花 Token 做 AI 处理
+│
+└── 无匹配 → Step 2
+    ↓
+Step 2: 主题+时间相似度检测（Haiku，约 200 Token — 极便宜）
+  → 只读文件的前 300 字符（标题+开头）
+  → 用 Haiku 提取：会议时间、主题关键词
+  → 和最近7天的会议记录/聊天记录对比
+    ↓
+┌── 主题+时间相似 → "今天14:00有一个类似主题的会议已被处理过"
+│   → Widget: [查看已有记录] [这是不同的会议，继续]
+│
+└── 不相似 → Step 3
+    ↓
+Step 3: AI 完整处理（正常消耗 Token）
+  → 读完整文件
+  → 提取任务
+  → 展示确认
+```
+
+**关键点**：Step 2 用 Haiku 只读 300 字符，约 200 Token（¥0.0002）。比读完整文件（可能 5000+ Token）便宜 25 倍。
+
+### 附件哈希记录
+
+在 `chat_messages` 的 metadata 中记录附件哈希：
+
+```typescript
+// 用户发送带附件的消息时
+const attachmentHashes = attachments.map(att => ({
+  name: att.name,
+  hash: crypto.createHash('md5').update(Buffer.from(att.base64, 'base64')).digest('hex'),
+}));
+
+// 存入 metadata
+messageMetadata.attachmentHashes = attachmentHashes;
+```
+
+检测时查询：
+
+```typescript
+async function findRecentAttachmentByHash(orgId: number, hash: string, days: number = 7) {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  
+  // 查最近的聊天消息中的附件哈希
+  const messages = await db.select({
+    id: chatMessages.id,
+    metadata: chatMessages.metadata,
+    createdAt: chatMessages.createdAt,
+    conversationId: chatMessages.conversationId,
+  })
+  .from(chatMessages)
+  .innerJoin(conversations, eq(chatMessages.conversationId, conversations.id))
+  .where(
+    and(
+      eq(conversations.orgId, orgId),
+      gt(chatMessages.createdAt, cutoff),
+      sql`${chatMessages.metadata}::text LIKE '%${hash}%'`
+    )
+  )
+  .limit(5);
+  
+  for (const msg of messages) {
+    try {
+      const meta = JSON.parse(msg.metadata || '{}');
+      if (meta.attachmentHashes?.some((ah: any) => ah.hash === hash)) {
+        return {
+          messageId: msg.id,
+          conversationId: msg.conversationId,
+          createdAt: msg.createdAt,
+        };
+      }
+    } catch {}
+  }
+  
+  return null;
+}
+```
+
+-----
+
+## 五、AI 自检 Prompt 增强
+
+在 `prompts.ts` 中追加。这是最后一道防线——前面的零成本检测没拦住的，AI 用语义理解兜底。
+
+```
+### 规则7: 创建前自检（防止重复）
+
+在创建任务之前，检查「当前活跃任务」列表：
+
+1. 如果发现语义高度相似的已有任务（即使措辞不同），**不要直接创建**
+2. 在回复中列出疑似重复项，用 interactiveInput 让用户选择
+
+示例：
+  用户说："创建任务整理Q2销售数据"
+  已有任务列表中有："Q2销售报表整理（进行中，AlexSo负责）"
+
+  → 你应该回复：
+  {
+    "type": "text",
+    "message": "系统中已有一个相似任务：\n\n• Q2销售报表整理（进行中，AlexSo负责）\n\n请确认是否需要另外创建。",
+    "interactiveInput": [{
+      "type": "single_select",
+      "question": "如何处理？",
+      "options": ["这是同一个任务，不用创建", "这是不同的任务，继续创建"]
+    }]
+  }
+
+3. 从会议纪要批量提取任务时，在任务清单中标注哪些和已有任务重复：
+  用 🆕 标记新任务，⚠️ 标记疑似重复
+```
+
+-----
+
+## 六、Token 消费对照表
+
+|操作         |无防重                        |有防重                  |节省      |
+|-----------|---------------------------|---------------------|--------|
+|上传重复文件到知识库 |3000-5000 Token（AI读+切片）    |0 Token（哈希拦截）        |100%    |
+|重复的会议纪要提取任务|8000-15000 Token（AI读+提取+确认）|200 Token（Haiku读300字）|97%     |
+|创建重复任务     |500-2000 Token（AI处理指令）     |0 Token（关键词匹配）       |100%    |
+|非重复的正常操作   |正常消耗                       |正常消耗 + 10ms检测延迟      |0（无额外成本）|
+
+-----
+
+## 七、完整的检测优先级
+
+每个入口的检测按成本从低到高执行，任何一步检测到重复就停下来问用户：
+
+```
+成本: ¥0          ¥0           ¥0          ¥0.0002      正常消费
+     │            │            │            │            │
+     ↓            ↓            ↓            ↓            ↓
+  文件名匹配 → 文件大小比对 → 内容哈希 → Haiku快检 → 完整AI处理
+     │            │            │            │            │
+     └── 命中就停 ─┘── 命中就停 ─┘── 命中就停 ─┘── 命中就停 ─┘
+              ↓
+         弹 Widget 让用户确认
+              ↓
+     用户说"不是重复" → 才继续到下一步
+```
+
+-----
+
+## 八、验证清单
+
+### 任务防重复
+
+- [ ] 创建和已有任务标题高度相似的任务 → Widget 提示
+- [ ] 用户选”继续创建” + forceCreate → 正常创建
+- [ ] 用户选”不创建” → 跳过
+- [ ] 批量创建时自动标注 🆕 和 ⚠️
+- [ ] AI 自检也能捕获语义相似的重复
+
+### 知识库防重复
+
+- [ ] 上传同名同大小文件 → 提示已存在
+- [ ] 上传不同名但内容相同的文件 → 哈希检测到
+- [ ] 上传同名不同大小 → 提示可能是新版本
+- [ ] Smart Setup ZIP 中的重复文件被跳过
+- [ ] kb_documents 表有 contentHash 字段
+
+### 聊天附件防重复
+
+- [ ] 上传最近7天内已上传过的相同文件 → 提示
+- [ ] 用户选”继续处理”后才消耗 Token
+- [ ] 附件哈希记录在 chat_messages.metadata 中
+
+### Token 节省
+
+- [ ] 重复文件不消耗 AI Token（哈希拦截）
+- [ ] 疑似重复的文件只用 Haiku 读 300 字符检测
+- [ ] 非重复文件处理速度不受影响（检测延迟 <50ms）
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读 `task-21-dedup-final.md`，实现全局防重复机制。
+> 
+> **之前的 task-21 去重、task-21 冲突解决两份文档作废，以本文件为准。**
+> **不需要 task_versions 表和 task_conflict_notifications 表。**
+> 
+> 实现内容：
+> 
+> 1. `server/services/tasks/deduplication.ts` — 任务相似度检测
+> 1. `kb_documents` 表新增 `contentHash` 字段
+> 1. 文件上传时计算 MD5 哈希并检查重复
+> 1. `actionExecutor.ts` 的 create_task 中接入去重检测
+> 1. `/api/ai/confirm` 路由处理 duplicate_suspected 返回
+> 1. `prompts.ts` 新增规则7（AI 自检）
+> 1. 前端收到 duplicate_suspected 时弹 Widget
+> 1. Smart Setup ZIP 处理时跳过哈希重复的文件
+> 
+> 核心原则：
+> 
+> - **零成本检测在前**：文件名/大小/哈希匹配不花任何 Token
+> - **人工确认在中**：弹 Widget 让用户决定，不自动跳过
+> - **AI 处理在后**：只有确认不重复后才开始花 Token
+> - `/api/ai/confirm` 支持 `forceCreate: true` 参数跳过去重
+> - 不需要层级仲裁、版本管理、差异合并 — 那些太复杂了

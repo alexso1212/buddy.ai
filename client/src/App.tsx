@@ -1532,6 +1532,20 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function AdminOwnerRedirect() {
+  const { user } = useAuth();
+  const [, navigate] = useLocation();
+  useEffect(() => {
+    if (user && !user.isSuperAdmin) {
+      navigate('/admin/ai', { replace: true });
+    }
+  }, [user, navigate]);
+  if (user?.isSuperAdmin) {
+    return <Suspense fallback={<AdminLoadingFallback />}><AdminOverview /></Suspense>;
+  }
+  return <AdminLoadingFallback />;
+}
+
 function AdminLoadingFallback() {
   return (
     <div className="flex items-center justify-center h-screen bg-background">
@@ -1550,7 +1564,7 @@ function Router() {
       <Route>
         <AuthGuard>
           <Switch>
-            <Route path="/admin">{() => <Suspense fallback={<AdminLoadingFallback />}><AdminOverview /></Suspense>}</Route>
+            <Route path="/admin">{() => <AdminOwnerRedirect />}</Route>
             <Route path="/admin/ai">{() => <Suspense fallback={<AdminLoadingFallback />}><AdminAI /></Suspense>}</Route>
             <Route path="/admin/users">{() => <Suspense fallback={<AdminLoadingFallback />}><AdminUsers /></Suspense>}</Route>
             <Route path="/admin/orgs">{() => <Suspense fallback={<AdminLoadingFallback />}><AdminOrgs /></Suspense>}</Route>

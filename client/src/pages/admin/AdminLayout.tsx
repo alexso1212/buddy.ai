@@ -16,14 +16,14 @@ import {
   X,
 } from "lucide-react";
 
-const navItems = [
-  { path: "/admin", label: "系统概览", icon: LayoutDashboard, exact: true },
-  { path: "/admin/ai", label: "AI 监控", icon: Cpu },
-  { path: "/admin/users", label: "用户分析", icon: Users },
-  { path: "/admin/orgs", label: "组织管理", icon: Building2 },
-  { path: "/admin/kb", label: "知识库", icon: BookOpen },
-  { path: "/admin/security", label: "安全审计", icon: Shield },
-  { path: "/admin/workforce", label: "AI 依赖分析", icon: BrainCircuit },
+const allNavItems = [
+  { path: "/admin", label: "系统概览", icon: LayoutDashboard, exact: true, superAdminOnly: true },
+  { path: "/admin/ai", label: "AI 监控", icon: Cpu, superAdminOnly: false },
+  { path: "/admin/users", label: "用户分析", icon: Users, superAdminOnly: true },
+  { path: "/admin/orgs", label: "组织管理", icon: Building2, superAdminOnly: true },
+  { path: "/admin/kb", label: "知识库", icon: BookOpen, superAdminOnly: false },
+  { path: "/admin/security", label: "安全审计", icon: Shield, superAdminOnly: false },
+  { path: "/admin/workforce", label: "AI 依赖分析", icon: BrainCircuit, superAdminOnly: true },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -35,7 +35,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     setMobileOpen(false);
   }, [location]);
 
-  if (user && !user.isSuperAdmin) {
+  const isSuperAdmin = !!user?.isSuperAdmin;
+  const isOwner = user?.role === 'owner';
+
+  if (user && !isSuperAdmin && !isOwner) {
     return (
       <div className="flex h-screen items-center justify-center bg-background px-4" data-testid="admin-access-denied">
         <div className="text-center space-y-3">
@@ -53,6 +56,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     );
   }
 
+  const navItems = allNavItems.filter(item => isSuperAdmin || !item.superAdminOnly);
+
   const sidebarContent = (
     <>
       <div className="p-4 border-b border-border flex items-center justify-between">
@@ -60,7 +65,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <h1 className="text-base font-semibold text-foreground" data-testid="text-admin-title">
             管理后台
           </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">Super Admin Panel</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {isSuperAdmin ? "Super Admin" : "Owner"}
+          </p>
         </div>
         <button
           className="md:hidden p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"

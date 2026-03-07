@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -1195,6 +1196,7 @@ function AboutPage({ onBack }: { onBack: () => void }) {
 export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onCloseSidebar }: SettingsPageProps) {
   const { user: authUser, logout } = useAuth();
   const { theme } = useTheme();
+  const [, navigate] = useLocation();
   const [page, setPage] = useState<PageId>('main');
   const [subVisible, setSubVisible] = useState(false);
   const [subSlideIn, setSubSlideIn] = useState(false);
@@ -1497,18 +1499,18 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
               />
             </SettingsGroup>
 
-            {authUser?.isSuperAdmin && (
+            {(authUser?.isSuperAdmin || authUser?.role === 'owner') && (
               <>
                 <GroupSpacer />
                 <SettingsGroup>
                   <SettingsItem
                     icon={Shield}
                     label="管理后台"
-                    value="Super Admin"
+                    value={authUser?.isSuperAdmin ? "Super Admin" : "Owner"}
                     onClick={() => {
                       onClose();
                       onCloseSidebar();
-                      window.location.href = '/admin';
+                      navigate('/admin');
                     }}
                     testId="settings-nav-admin"
                   />

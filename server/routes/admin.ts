@@ -45,7 +45,33 @@ export async function superAdminMiddleware(req: any, res: any, next: any) {
   next();
 }
 
-adminRouter.get("/health", async (_req, res) => {
+export async function adminOrOwnerMiddleware(req: any, res: any, next: any) {
+  if (!req.currentUserId) {
+    return res.status(401).json({ error: '未登录' });
+  }
+  const user = await storage.getUserById(req.currentUserId);
+  if (!user) {
+    return res.status(403).json({ error: '无权访问管理后台' });
+  }
+  if (isSuperAdmin(user)) {
+    req.isSuperAdmin = true;
+    return next();
+  }
+  if (req.userRole === 'owner') {
+    req.isSuperAdmin = false;
+    return next();
+  }
+  return res.status(403).json({ error: '无权访问管理后台' });
+}
+
+function requireSuperAdmin(req: any, res: any, next: any) {
+  if (!req.isSuperAdmin) {
+    return res.status(403).json({ error: '此功能仅限超级管理员' });
+  }
+  next();
+}
+
+adminRouter.get("/health", requireSuperAdmin, async (_req, res) => {
   let dbOk = false, dbLatency = 0;
   try {
     const t = Date.now();
@@ -79,7 +105,7 @@ adminRouter.get("/health", async (_req, res) => {
   });
 });
 
-adminRouter.get("/overview", async (_req, res) => {
+adminRouter.get("/overview", requireSuperAdmin, async (_req, res) => {
   try {
     const result = await db.execute(sql`
       SELECT
@@ -110,17 +136,23 @@ adminRouter.get("/overview", async (_req, res) => {
   }
 });
 
-adminRouter.get("/ai/stats", async (req, res) => {
+adminRouter.get("/ai/stats", async (req: any, res) => {
   try {
     const period = (req.query.period as string) || 'month';
-    let dateCondition: string;
+    let dateFilter: ReturnType<typeof sql>;
     switch (period) {
-      case 'today': dateCondition = "created_at >= CURRENT_DATE"; break;
-      case 'week': dateCondition = "created_at >= CURRENT_DATE - INTERVAL '7 days'"; break;
-      default: dateCondition = "created_at >= DATE_TRUNC('month', CURRENT_DATE)";
+      case 'today': dateFilter = sql`created_at >= CURRENT_DATE`; break;
+      case 'week': dateFilter = sql`created_at >= CURRENT_DATE - INTERVAL '7 days'`; break;
+      default: dateFilter = sql`created_at >= DATE_TRUNC('month', CURRENT_DATE)`;
     }
 
-    const byModel = await db.execute(sql.raw(`
+    if (!req.isSuperAdmin && !req.orgId) {
+      return res.status(403).json({ error: '无法确定组织' });
+    }
+
+    const orgFilter = req.isSuperAdmin ? sql`` : sql` AND org_id = ${req.orgId}`;
+
+    const byModel = await db.execute(sql`
       SELECT 
         model, 
         COUNT(*) as calls,
@@ -129,37 +161,40 @@ adminRouter.get("/ai/stats", async (req, res) => {
         COALESCE(SUM(total_tokens), 0) as total_tokens,
         COALESCE(SUM(CAST(cost_usd AS NUMERIC)), 0) as cost_usd
       FROM token_usage
-      WHERE ${dateCondition}
+      WHERE ${dateFilter}${orgFilter}
       GROUP BY model
       ORDER BY total_tokens DESC
-    `));
+    `);
 
-    const byPurpose = await db.execute(sql.raw(`
+    const byPurpose = await db.execute(sql`
       SELECT 
         purpose, 
         COUNT(*) as calls,
         COALESCE(SUM(total_tokens), 0) as total_tokens,
         COALESCE(SUM(CAST(cost_usd AS NUMERIC)), 0) as cost_usd
       FROM token_usage
-      WHERE ${dateCondition}
+      WHERE ${dateFilter}${orgFilter}
       GROUP BY purpose
       ORDER BY total_tokens DESC
-    `));
+    `);
 
-    const byOrg = await db.execute(sql.raw(`
-      SELECT 
-        tu.org_id,
-        o.name as org_name,
-        COUNT(*) as calls,
-        COALESCE(SUM(tu.total_tokens), 0) as total_tokens,
-        COALESCE(SUM(CAST(tu.cost_usd AS NUMERIC)), 0) as cost_usd
-      FROM token_usage tu
-      LEFT JOIN organizations o ON tu.org_id = o.id
-      WHERE tu.${dateCondition}
-      GROUP BY tu.org_id, o.name
-      ORDER BY total_tokens DESC
-      LIMIT 10
-    `));
+    let byOrg = { rows: [] as any[] };
+    if (req.isSuperAdmin) {
+      byOrg = await db.execute(sql`
+        SELECT 
+          tu.org_id,
+          o.name as org_name,
+          COUNT(*) as calls,
+          COALESCE(SUM(tu.total_tokens), 0) as total_tokens,
+          COALESCE(SUM(CAST(tu.cost_usd AS NUMERIC)), 0) as cost_usd
+        FROM token_usage tu
+        LEFT JOIN organizations o ON tu.org_id = o.id
+        WHERE ${dateFilter}
+        GROUP BY tu.org_id, o.name
+        ORDER BY total_tokens DESC
+        LIMIT 10
+      `);
+    }
 
     res.json({ data: { byModel: byModel.rows, byPurpose: byPurpose.rows, byOrg: byOrg.rows } });
   } catch (e: any) {
@@ -167,15 +202,19 @@ adminRouter.get("/ai/stats", async (req, res) => {
   }
 });
 
-adminRouter.get("/ai/hourly", async (_req, res) => {
+adminRouter.get("/ai/hourly", async (req: any, res) => {
   try {
+    if (!req.isSuperAdmin && !req.orgId) {
+      return res.status(403).json({ error: '无法确定组织' });
+    }
+    const orgFilter = req.isSuperAdmin ? sql`` : sql` AND org_id = ${req.orgId}`;
     const result = await db.execute(sql`
       SELECT 
         DATE_TRUNC('hour', created_at) as hour,
         COUNT(*) as calls,
         COALESCE(SUM(total_tokens), 0) as tokens
       FROM token_usage
-      WHERE created_at >= NOW() - INTERVAL '24 hours'
+      WHERE created_at >= NOW() - INTERVAL '24 hours'${orgFilter}
       GROUP BY hour
       ORDER BY hour
     `);
@@ -185,7 +224,7 @@ adminRouter.get("/ai/hourly", async (_req, res) => {
   }
 });
 
-adminRouter.get("/ai/config", async (_req, res) => {
+adminRouter.get("/ai/config", requireSuperAdmin, async (_req, res) => {
   try {
     const providers = await storage.getAiProviders();
     const enriched = providers.map(p => ({
@@ -208,7 +247,7 @@ adminRouter.get("/ai/config", async (_req, res) => {
   }
 });
 
-adminRouter.get("/ai/providers", async (_req, res) => {
+adminRouter.get("/ai/providers", requireSuperAdmin, async (_req, res) => {
   try {
     const providers = await storage.getAiProviders();
     const enriched = providers.map(p => ({
@@ -221,7 +260,7 @@ adminRouter.get("/ai/providers", async (_req, res) => {
   }
 });
 
-adminRouter.post("/ai/providers", async (req, res) => {
+adminRouter.post("/ai/providers", requireSuperAdmin, async (req, res) => {
   try {
     const parsed = providerCreateSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -240,7 +279,7 @@ adminRouter.post("/ai/providers", async (req, res) => {
   }
 });
 
-adminRouter.patch("/ai/providers/:id", async (req, res) => {
+adminRouter.patch("/ai/providers/:id", requireSuperAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const existing = await storage.getAiProvider(id);
@@ -257,7 +296,7 @@ adminRouter.patch("/ai/providers/:id", async (req, res) => {
   }
 });
 
-adminRouter.delete("/ai/providers/:id", async (req, res) => {
+adminRouter.delete("/ai/providers/:id", requireSuperAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const existing = await storage.getAiProvider(id);
@@ -270,7 +309,7 @@ adminRouter.delete("/ai/providers/:id", async (req, res) => {
   }
 });
 
-adminRouter.put("/ai/providers/reorder", async (req, res) => {
+adminRouter.put("/ai/providers/reorder", requireSuperAdmin, async (req, res) => {
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -285,7 +324,7 @@ adminRouter.put("/ai/providers/reorder", async (req, res) => {
   }
 });
 
-adminRouter.post("/ai/providers/:id/test", async (req, res) => {
+adminRouter.post("/ai/providers/:id/test", requireSuperAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const provider = await storage.getAiProvider(id);
@@ -339,7 +378,7 @@ const modelProviderUpdateSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-adminRouter.get("/ai/model-providers", async (_req, res) => {
+adminRouter.get("/ai/model-providers", requireSuperAdmin, async (_req, res) => {
   try {
     const providers = await storage.getModelProviders();
     const enriched = providers.map(p => ({
@@ -352,7 +391,7 @@ adminRouter.get("/ai/model-providers", async (_req, res) => {
   }
 });
 
-adminRouter.post("/ai/model-providers", async (req, res) => {
+adminRouter.post("/ai/model-providers", requireSuperAdmin, async (req, res) => {
   try {
     const parsed = modelProviderCreateSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -372,7 +411,7 @@ adminRouter.post("/ai/model-providers", async (req, res) => {
   }
 });
 
-adminRouter.patch("/ai/model-providers/:id", async (req, res) => {
+adminRouter.patch("/ai/model-providers/:id", requireSuperAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const existing = await storage.getModelProvider(id);
@@ -389,7 +428,7 @@ adminRouter.patch("/ai/model-providers/:id", async (req, res) => {
   }
 });
 
-adminRouter.delete("/ai/model-providers/:id", async (req, res) => {
+adminRouter.delete("/ai/model-providers/:id", requireSuperAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const existing = await storage.getModelProvider(id);
@@ -402,7 +441,7 @@ adminRouter.delete("/ai/model-providers/:id", async (req, res) => {
   }
 });
 
-adminRouter.put("/ai/model-providers/reorder", async (req, res) => {
+adminRouter.put("/ai/model-providers/reorder", requireSuperAdmin, async (req, res) => {
   try {
     const { modelId, ids } = req.body;
     if (!modelId || !Array.isArray(ids) || ids.length === 0) {
@@ -417,7 +456,7 @@ adminRouter.put("/ai/model-providers/reorder", async (req, res) => {
   }
 });
 
-adminRouter.post("/ai/model-providers/:id/test", async (req, res) => {
+adminRouter.post("/ai/model-providers/:id/test", requireSuperAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const provider = await storage.getModelProvider(id);
@@ -452,7 +491,7 @@ adminRouter.post("/ai/model-providers/:id/test", async (req, res) => {
   }
 });
 
-adminRouter.get("/users/trend", async (_req, res) => {
+adminRouter.get("/users/trend", requireSuperAdmin, async (_req, res) => {
   try {
     const result = await db.execute(sql`
       SELECT DATE(created_at) as date, COUNT(*) as count
@@ -466,7 +505,7 @@ adminRouter.get("/users/trend", async (_req, res) => {
   }
 });
 
-adminRouter.get("/users/recent", async (_req, res) => {
+adminRouter.get("/users/recent", requireSuperAdmin, async (_req, res) => {
   try {
     const result = await db.execute(sql`
       SELECT id, display_name, email, auth_provider, role, created_at
@@ -478,7 +517,7 @@ adminRouter.get("/users/recent", async (_req, res) => {
   }
 });
 
-adminRouter.get("/orgs/list", async (_req, res) => {
+adminRouter.get("/orgs/list", requireSuperAdmin, async (_req, res) => {
   try {
     const result = await db.execute(sql`
       SELECT 
@@ -497,28 +536,40 @@ adminRouter.get("/orgs/list", async (_req, res) => {
   }
 });
 
-adminRouter.get("/kb/stats", async (_req, res) => {
+adminRouter.get("/kb/stats", async (req: any, res) => {
   try {
+    if (!req.isSuperAdmin && !req.orgId) {
+      return res.status(403).json({ error: '无法确定组织' });
+    }
+    const orgFilter = req.isSuperAdmin ? sql`` : sql` WHERE org_id = ${req.orgId}`;
+    const orgFilterAnd = req.isSuperAdmin ? sql`` : sql` AND org_id = ${req.orgId}`;
+
     const overview = await db.execute(sql`
       SELECT
-        (SELECT COUNT(*) FROM kb_documents) as total_docs,
-        (SELECT COUNT(*) FROM kb_documents WHERE status = 'ready') as ready_docs,
-        (SELECT COUNT(*) FROM kb_documents WHERE status = 'processing') as processing_docs,
-        (SELECT COUNT(*) FROM kb_documents WHERE status = 'error') as error_docs,
-        (SELECT COUNT(*) FROM kb_chunks) as total_chunks,
-        (SELECT COALESCE(SUM(file_size), 0) FROM kb_documents) as total_size_bytes
+        (SELECT COUNT(*) FROM kb_documents${orgFilter}) as total_docs,
+        (SELECT COUNT(*) FROM kb_documents WHERE status = 'ready'${orgFilterAnd}) as ready_docs,
+        (SELECT COUNT(*) FROM kb_documents WHERE status = 'processing'${orgFilterAnd}) as processing_docs,
+        (SELECT COUNT(*) FROM kb_documents WHERE status = 'error'${orgFilterAnd}) as error_docs,
+        (SELECT COUNT(*) FROM kb_chunks${req.isSuperAdmin ? sql`` : sql` WHERE doc_id IN (SELECT id FROM kb_documents WHERE org_id = ${req.orgId})`}) as total_chunks,
+        (SELECT COALESCE(SUM(file_size), 0) FROM kb_documents${orgFilter}) as total_size_bytes
     `);
 
-    const byCategory = await db.execute(sql`
+    const byCategory = await db.execute(req.isSuperAdmin ? sql`
       SELECT category, COUNT(*) as count FROM kb_documents WHERE category IS NOT NULL GROUP BY category ORDER BY count DESC
+    ` : sql`
+      SELECT category, COUNT(*) as count FROM kb_documents WHERE category IS NOT NULL AND org_id = ${req.orgId} GROUP BY category ORDER BY count DESC
     `);
 
-    const byType = await db.execute(sql`
+    const byType = await db.execute(req.isSuperAdmin ? sql`
       SELECT file_type, COUNT(*) as count FROM kb_documents WHERE file_type IS NOT NULL GROUP BY file_type ORDER BY count DESC
+    ` : sql`
+      SELECT file_type, COUNT(*) as count FROM kb_documents WHERE file_type IS NOT NULL AND org_id = ${req.orgId} GROUP BY file_type ORDER BY count DESC
     `);
 
-    const errors = await db.execute(sql`
+    const errors = await db.execute(req.isSuperAdmin ? sql`
       SELECT id, title, file_name, org_id, created_at FROM kb_documents WHERE status = 'error' ORDER BY created_at DESC LIMIT 20
+    ` : sql`
+      SELECT id, title, file_name, org_id, created_at FROM kb_documents WHERE status = 'error' AND org_id = ${req.orgId} ORDER BY created_at DESC LIMIT 20
     `);
 
     res.json({ data: { overview: overview.rows[0], byCategory: byCategory.rows, byType: byType.rows, errors: errors.rows } });
@@ -527,15 +578,19 @@ adminRouter.get("/kb/stats", async (_req, res) => {
   }
 });
 
-adminRouter.get("/security/logs", async (req, res) => {
+adminRouter.get("/security/logs", async (req: any, res) => {
   try {
+    if (!req.isSuperAdmin && !req.orgId) {
+      return res.status(403).json({ error: '无法确定组织' });
+    }
     const limit = parseInt(req.query.limit as string) || 50;
+    const orgFilter = req.isSuperAdmin ? sql`` : sql` AND al.org_id = ${req.orgId}`;
     const result = await db.execute(sql`
       SELECT al.*, u.display_name as user_name, u.email as user_email, o.name as org_name
       FROM activity_logs al
       LEFT JOIN users u ON al.user_id = u.id
       LEFT JOIN organizations o ON al.org_id = o.id
-      WHERE al.action IN ('delete', 'update_role', 'smart_setup', 'claim', 'assign_department_role', 'purchase_tokens', 'scrape_url', 'delete_task', 'delete_project', 'update_user')
+      WHERE al.action IN ('delete', 'update_role', 'smart_setup', 'claim', 'assign_department_role', 'purchase_tokens', 'scrape_url', 'delete_task', 'delete_project', 'update_user')${orgFilter}
       ORDER BY al.created_at DESC
       LIMIT ${limit}
     `);
@@ -545,7 +600,7 @@ adminRouter.get("/security/logs", async (req, res) => {
   }
 });
 
-adminRouter.get("/ai-workforce", async (req, res) => {
+adminRouter.get("/ai-workforce", requireSuperAdmin, async (req, res) => {
   try {
     const period = (req.query.period as string) || 'month';
     let dateCondition: string;
@@ -629,7 +684,7 @@ adminRouter.get("/ai-workforce", async (req, res) => {
   }
 });
 
-adminRouter.get("/ai-workforce/:userId", async (req, res) => {
+adminRouter.get("/ai-workforce/:userId", requireSuperAdmin, async (req, res) => {
   try {
     const userId = parseInt(req.params.userId);
 

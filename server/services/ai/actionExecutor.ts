@@ -253,6 +253,27 @@ export async function executeAction(
         return { success: false, message: '未找到该用户' };
       }
 
+      if (oldUser.orgId !== orgId) {
+        return { success: false, message: '无法修改其他组织的成员' };
+      }
+
+      const requester = await storage.getUserById(userId);
+      const requesterRole = requester?.role || 'member';
+      const roleHierarchy: Record<string, number> = { member: 0, head: 1, admin: 2, owner: 3 };
+
+      if (updateFields.role !== undefined) {
+        if (roleHierarchy[requesterRole] < 2) {
+          return { success: false, message: '只有管理员或负责人才能修改角色' };
+        }
+        if (roleHierarchy[updateFields.role] >= roleHierarchy[requesterRole]) {
+          return { success: false, message: '不能将角色提升到与自己相同或更高的级别' };
+        }
+      }
+
+      if (updateFields.isActive !== undefined && roleHierarchy[requesterRole] < 2) {
+        return { success: false, message: '只有管理员或负责人才能停用/激活成员' };
+      }
+
       const updateData: Record<string, any> = {};
       if (updateFields.displayName !== undefined) updateData.displayName = updateFields.displayName;
       if (updateFields.role !== undefined) updateData.role = updateFields.role;

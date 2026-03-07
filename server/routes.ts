@@ -7,7 +7,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { authMiddleware, generateToken, getTokenExpiry } from './middleware/auth';
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
-import adminRouter, { superAdminMiddleware } from './routes/admin';
+import adminRouter, { adminOrOwnerMiddleware } from './routes/admin';
 import {
   insertOrganizationSchema,
   insertDepartmentSchema,
@@ -41,7 +41,7 @@ export async function registerRoutes(server: Server, app: Express) {
   await setupAuth(app);
   registerAuthRoutes(app);
 
-  app.use("/api/admin", authMiddleware, superAdminMiddleware, adminRouter);
+  app.use("/api/admin", authMiddleware, adminOrOwnerMiddleware, adminRouter);
 
   app.get("/api/auth/oidc/complete", async (req: any, res) => {
     try {

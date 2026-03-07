@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
+import { useAuth } from "@/lib/auth";
 import AdminLayout from "./AdminLayout";
 import {
   Cpu,
@@ -420,6 +421,8 @@ function ModelGroup({
 }
 
 export default function AdminAI() {
+  const { user: authUser } = useAuth();
+  const isSuperAdmin = !!authUser?.isSuperAdmin;
   const [period, setPeriod] = useState<Period>("month");
   const [addingForModel, setAddingForModel] = useState<string | null>(null);
   const [editingProvider, setEditingProvider] = useState<ModelProvider | null>(null);
@@ -444,6 +447,7 @@ export default function AdminAI() {
 
   const { data: config } = useQuery<any>({
     queryKey: ["/api/admin/ai/config"],
+    enabled: isSuperAdmin,
   });
 
   const { data: modelProvidersData, isLoading: providersLoading } = useQuery<any>({
@@ -453,6 +457,7 @@ export default function AdminAI() {
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
+    enabled: isSuperAdmin,
   });
 
   const allModelProviders: ModelProvider[] = modelProvidersData?.data || [];
@@ -672,64 +677,68 @@ export default function AdminAI() {
             </div>
           </div>
 
-          <div className="bg-card border border-border rounded-xl p-4" data-testid="card-by-org">
-            <h3 className="text-sm font-medium text-foreground mb-3">按组织 (Top 10)</h3>
-            <div className="space-y-2">
-              {(s.byOrg || []).map((o: any) => (
-                <div key={o.org_id} className="flex items-center justify-between text-sm">
-                  <span className="text-foreground text-xs truncate max-w-[120px]">{o.org_name || `Org #${o.org_id}`}</span>
-                  <div className="text-right">
-                    <span className="text-muted-foreground text-xs">{parseInt(o.calls)} calls</span>
-                    <span className="text-foreground ml-2 text-xs">${parseFloat(o.cost_usd).toFixed(3)}</span>
+          {isSuperAdmin && (
+            <div className="bg-card border border-border rounded-xl p-4" data-testid="card-by-org">
+              <h3 className="text-sm font-medium text-foreground mb-3">按组织 (Top 10)</h3>
+              <div className="space-y-2">
+                {(s.byOrg || []).map((o: any) => (
+                  <div key={o.org_id} className="flex items-center justify-between text-sm">
+                    <span className="text-foreground text-xs truncate max-w-[120px]">{o.org_name || `Org #${o.org_id}`}</span>
+                    <div className="text-right">
+                      <span className="text-muted-foreground text-xs">{parseInt(o.calls)} calls</span>
+                      <span className="text-foreground ml-2 text-xs">${parseFloat(o.cost_usd).toFixed(3)}</span>
+                    </div>
                   </div>
-                </div>
-              ))}
-              {(s.byOrg || []).length === 0 && (
-                <p className="text-xs text-muted-foreground">暂无数据</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-card border border-border rounded-xl p-4" data-testid="card-model-providers">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-sm font-medium text-foreground flex items-center gap-2">
-                <Server className="w-4 h-4 text-primary" />
-                API 端点管理
-              </h3>
-              <p className="text-[11px] text-muted-foreground mt-1">
-                按模型分组管理 API 端点。同一模型下可添加多个端点，拖拽调整优先级顺序，系统按顺序尝试调用。
-              </p>
-            </div>
-          </div>
-
-          {providersLoading ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-20 bg-muted rounded-lg animate-pulse" />
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {SYSTEM_MODELS.map((model) => (
-                <ModelGroup
-                  key={model.id}
-                  model={model}
-                  providers={getProvidersForModel(model.id)}
-                  onAdd={setAddingForModel}
-                  onEdit={setEditingProvider}
-                  onDelete={setDeleteConfirm}
-                  onToggle={handleToggleActive}
-                  onTest={handleTest}
-                  onReorder={handleReorder}
-                  testingId={testingId}
-                  testResult={testResult}
-                />
-              ))}
+                ))}
+                {(s.byOrg || []).length === 0 && (
+                  <p className="text-xs text-muted-foreground">暂无数据</p>
+                )}
+              </div>
             </div>
           )}
         </div>
+
+        {isSuperAdmin && (
+          <div className="bg-card border border-border rounded-xl p-4" data-testid="card-model-providers">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-medium text-foreground flex items-center gap-2">
+                  <Server className="w-4 h-4 text-primary" />
+                  API 端点管理
+                </h3>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  按模型分组管理 API 端点。同一模型下可添加多个端点，拖拽调整优先级顺序，系统按顺序尝试调用。
+                </p>
+              </div>
+            </div>
+
+            {providersLoading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-20 bg-muted rounded-lg animate-pulse" />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {SYSTEM_MODELS.map((model) => (
+                  <ModelGroup
+                    key={model.id}
+                    model={model}
+                    providers={getProvidersForModel(model.id)}
+                    onAdd={setAddingForModel}
+                    onEdit={setEditingProvider}
+                    onDelete={setDeleteConfirm}
+                    onToggle={handleToggleActive}
+                    onTest={handleTest}
+                    onReorder={handleReorder}
+                    testingId={testingId}
+                    testResult={testResult}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {deleteConfirm !== null && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" data-testid="dialog-delete-confirm">
@@ -760,7 +769,7 @@ export default function AdminAI() {
           </div>
         )}
 
-        {Object.keys(taskRouting).length > 0 && (
+        {isSuperAdmin && Object.keys(taskRouting).length > 0 && (
           <div className="bg-card border border-border rounded-xl p-4" data-testid="card-task-routing">
             <h4 className="text-xs font-medium text-foreground mb-3 flex items-center gap-1.5">
               <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
