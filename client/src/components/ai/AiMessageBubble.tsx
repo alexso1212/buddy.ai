@@ -784,7 +784,7 @@ export default function AiMessageBubble({
               autoFocus
               style={{
                 width: '100%',
-                background: 'rgba(174,86,48,0.12)',
+                background: 'rgba(0,0,0,0.75)',
                 borderRadius: 18,
                 padding: '10px 14px',
                 fontFamily: 'var(--font-sans)',
@@ -847,7 +847,7 @@ export default function AiMessageBubble({
         <div
           style={{
             maxWidth: '82%',
-            background: 'rgba(174,86,48,0.12)',
+            background: 'rgba(0,0,0,0.75)',
             borderRadius: '18px 18px 4px 18px',
             padding: '10px 14px',
             fontFamily: 'var(--font-sans)',
