@@ -1030,4 +1030,28 @@ export const insertAiProviderSchema = createInsertSchema(aiProviders).omit({
 export type InsertAiProvider = z.infer<typeof insertAiProviderSchema>;
 export type AiProvider = typeof aiProviders.$inferSelect;
 
+// ============================================================
+// AI Model Providers — ai_model_providers（按模型分组的 API 配置）
+// ============================================================
+export const aiModelProviders = pgTable('ai_model_providers', {
+  id: serial('id').primaryKey(),
+  modelId: varchar('model_id', { length: 100 }).notNull(),
+  providerName: varchar('provider_name', { length: 255 }).notNull(),
+  baseUrl: text('base_url'),
+  apiKeyEnvVar: varchar('api_key_env_var', { length: 100 }).notNull(),
+  timeout: integer('timeout').notNull().default(90000),
+  priority: integer('priority').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const insertAiModelProviderSchema = createInsertSchema(aiModelProviders).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertAiModelProvider = z.infer<typeof insertAiModelProviderSchema>;
+export type AiModelProvider = typeof aiModelProviders.$inferSelect;
+
 export * from "./models/auth";

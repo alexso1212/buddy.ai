@@ -9,7 +9,7 @@ I prefer iterative development with clear, concise explanations at each step. I 
 ## System Architecture
 The application is built with an Express.js backend, a React (TypeScript) frontend utilizing Vite, and PostgreSQL with Drizzle ORM. Styling is handled with Tailwind CSS and shadcn/ui components, and `wouter` manages frontend routing. Key architectural principles include role-based access control, multi-tenant isolation, and deep AI integration across all functionalities.
 
-**Core Data Model:** A 25-table PostgreSQL database schema supports comprehensive management of organizations, departments, users, projects, and tasks. It includes features for invitation management, task deliverable versioning, submission tracking, a knowledge base with pgvector for semantic search, daily AI briefing generation, and AI-extracted member profiles.
+**Core Data Model:** A 26-table PostgreSQL database schema supports comprehensive management of organizations, departments, users, projects, and tasks. It includes features for invitation management, task deliverable versioning, submission tracking, a knowledge base with pgvector for semantic search, daily AI briefing generation, and AI-extracted member profiles.
 
 **Backend (API):**
 - **RESTful API:** Provides CRUD operations with Zod validation and automatic activity logging.
@@ -41,7 +41,7 @@ The application is built with an Express.js backend, a React (TypeScript) fronte
 
 **Super Admin Dashboard:**
 - Provides administrative control and monitoring for system health, AI consumption, user trends, organization management, knowledge base statistics, and security logs.
-- Features dynamic AI Provider Management for configuring and managing AI service providers with fallback mechanisms.
+- Features model-centric AI Provider Management: models (Claude Opus/Sonnet/Haiku, GPT-4o, DeepSeek) are fixed categories; under each model, admins add/manage multiple API endpoints (base URL optional for official APIs, API key env var, timeout). Drag-to-reorder sets per-model priority for fallback. Uses `ai_model_providers` table (new) alongside legacy `ai_providers` table.
 
 **iOS App (Capacitor):** The project is configured for iOS packaging via Capacitor, loading the web application from a deployed domain.
 

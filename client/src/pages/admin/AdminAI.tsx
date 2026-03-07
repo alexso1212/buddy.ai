@@ -1,10 +1,9 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import AdminLayout from "./AdminLayout";
 import {
   Cpu,
-  Globe,
   Key,
   Server,
   ArrowRight,
@@ -21,6 +20,8 @@ import {
   Check,
   Loader2,
   AlertCircle,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import {
   LineChart,
@@ -34,13 +35,12 @@ import {
 
 type Period = "today" | "week" | "month";
 
-interface AiProvider {
+interface ModelProvider {
   id: number;
-  name: string;
-  type: string;
-  baseUrl: string;
+  modelId: string;
+  providerName: string;
+  baseUrl: string | null;
   apiKeyEnvVar: string;
-  models: string[];
   timeout: number;
   priority: number;
   isActive: boolean;
@@ -48,21 +48,25 @@ interface AiProvider {
 }
 
 interface ProviderFormData {
-  name: string;
-  type: string;
+  providerName: string;
   baseUrl: string;
   apiKeyEnvVar: string;
-  models: string[];
   timeout: number;
   isActive: boolean;
 }
 
+const SYSTEM_MODELS = [
+  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", desc: "日常任务首选" },
+  { id: "claude-opus-4-6", label: "Claude Opus 4.6", desc: "深度分析模式" },
+  { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5", desc: "快速响应" },
+  { id: "gpt-4o", label: "GPT-4o", desc: "OpenAI 多模态" },
+  { id: "deepseek-chat", label: "DeepSeek V3", desc: "高性价比" },
+];
+
 const emptyForm: ProviderFormData = {
-  name: "",
-  type: "proxy",
+  providerName: "",
   baseUrl: "",
   apiKeyEnvVar: "",
-  models: [],
   timeout: 90000,
   isActive: true,
 };
@@ -72,38 +76,35 @@ function authHeaders() {
 }
 
 function ProviderFormDialog({
+  modelId,
   initial,
+  editId,
   onSave,
   onCancel,
   saving,
 }: {
+  modelId: string;
   initial: ProviderFormData;
+  editId?: number;
   onSave: (data: ProviderFormData) => void;
   onCancel: () => void;
   saving: boolean;
 }) {
   const [form, setForm] = useState<ProviderFormData>(initial);
-  const [modelInput, setModelInput] = useState("");
-
-  const addModel = () => {
-    const v = modelInput.trim();
-    if (v && !form.models.includes(v)) {
-      setForm({ ...form, models: [...form.models, v] });
-      setModelInput("");
-    }
-  };
-
-  const removeModel = (m: string) => {
-    setForm({ ...form, models: form.models.filter((x) => x !== m) });
-  };
+  const modelLabel = SYSTEM_MODELS.find(m => m.id === modelId)?.label || modelId;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" data-testid="dialog-provider-form">
       <div className="bg-card border border-border rounded-xl p-6 w-full max-w-lg mx-4 shadow-xl">
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-base font-semibold text-foreground">
-            {initial.name ? "Edit Provider" : "Add Provider"}
-          </h3>
+          <div>
+            <h3 className="text-base font-semibold text-foreground">
+              {editId ? "编辑 API 端点" : "添加 API 端点"}
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              模型: <span className="font-mono text-primary">{modelLabel}</span>
+            </p>
+          </div>
           <button onClick={onCancel} className="text-muted-foreground hover:text-foreground" data-testid="button-close-form">
             <X className="w-4 h-4" />
           </button>
@@ -111,101 +112,49 @@ function ProviderFormDialog({
 
         <div className="space-y-4">
           <div>
-            <label className="text-xs text-muted-foreground block mb-1">Name</label>
+            <label className="text-xs text-muted-foreground block mb-1">名称</label>
             <input
               className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="e.g. Claude Proxy"
+              value={form.providerName}
+              onChange={(e) => setForm({ ...form, providerName: e.target.value })}
+              placeholder="例如: Claude 官方 API、代理服务"
               data-testid="input-provider-name"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground block mb-1">Type</label>
-              <select
-                className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                value={form.type}
-                onChange={(e) => setForm({ ...form, type: e.target.value })}
-                data-testid="select-provider-type"
-              >
-                <option value="proxy">Proxy</option>
-                <option value="direct">Direct</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground block mb-1">Timeout (ms)</label>
-              <input
-                type="number"
-                className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                value={form.timeout}
-                onChange={(e) => setForm({ ...form, timeout: parseInt(e.target.value) || 90000 })}
-                data-testid="input-provider-timeout"
-              />
-            </div>
-          </div>
-
           <div>
-            <label className="text-xs text-muted-foreground block mb-1">Base URL</label>
+            <label className="text-xs text-muted-foreground block mb-1">
+              Base URL <span className="text-muted-foreground/60">(留空则使用官方地址)</span>
+            </label>
             <input
               className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
               value={form.baseUrl}
               onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
-              placeholder="https://api.example.com/v1"
+              placeholder="https://api.anthropic.com/v1"
               data-testid="input-provider-baseurl"
             />
           </div>
 
           <div>
-            <label className="text-xs text-muted-foreground block mb-1">API Key Env Var</label>
+            <label className="text-xs text-muted-foreground block mb-1">API Key 环境变量名</label>
             <input
               className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
               value={form.apiKeyEnvVar}
               onChange={(e) => setForm({ ...form, apiKeyEnvVar: e.target.value })}
-              placeholder="e.g. CLAUDE_SIMPLE_API_KEY"
+              placeholder="例如: CLAUDE_SIMPLE_API_KEY"
               data-testid="input-provider-envvar"
             />
           </div>
 
           <div>
-            <label className="text-xs text-muted-foreground block mb-1">Models</label>
-            <div className="flex gap-2 mb-2">
-              <input
-                className="flex-1 bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-                value={modelInput}
-                onChange={(e) => setModelInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addModel();
-                  }
-                }}
-                placeholder="Type model name, press Enter"
-                data-testid="input-model-name"
-              />
-              <button
-                type="button"
-                onClick={addModel}
-                className="px-3 py-2 bg-primary/10 text-primary rounded-lg text-xs hover:bg-primary/20 transition-colors"
-                data-testid="button-add-model"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {form.models.map((m) => (
-                <span
-                  key={m}
-                  className="text-[11px] px-2 py-0.5 rounded-md bg-primary/5 text-primary border border-primary/10 font-mono flex items-center gap-1"
-                >
-                  {m}
-                  <button onClick={() => removeModel(m)} className="hover:text-destructive" data-testid={`button-remove-model-${m}`}>
-                    <X className="w-3 h-3" />
-                  </button>
-                </span>
-              ))}
-            </div>
+            <label className="text-xs text-muted-foreground block mb-1">超时 (ms)</label>
+            <input
+              type="number"
+              className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              value={form.timeout}
+              onChange={(e) => setForm({ ...form, timeout: parseInt(e.target.value) || 90000 })}
+              data-testid="input-provider-timeout"
+            />
           </div>
         </div>
 
@@ -215,16 +164,16 @@ function ProviderFormDialog({
             className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground rounded-lg transition-colors"
             data-testid="button-cancel-form"
           >
-            Cancel
+            取消
           </button>
           <button
             onClick={() => onSave(form)}
-            disabled={saving || !form.name || !form.baseUrl || !form.apiKeyEnvVar}
+            disabled={saving || !form.providerName || !form.apiKeyEnvVar}
             className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
             data-testid="button-save-provider"
           >
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            Save
+            保存
           </button>
         </div>
       </div>
@@ -232,15 +181,248 @@ function ProviderFormDialog({
   );
 }
 
+function ModelGroup({
+  model,
+  providers,
+  onAdd,
+  onEdit,
+  onDelete,
+  onToggle,
+  onTest,
+  onReorder,
+  testingId,
+  testResult,
+}: {
+  model: typeof SYSTEM_MODELS[number];
+  providers: ModelProvider[];
+  onAdd: (modelId: string) => void;
+  onEdit: (p: ModelProvider) => void;
+  onDelete: (id: number) => void;
+  onToggle: (p: ModelProvider) => void;
+  onTest: (id: number) => void;
+  onReorder: (modelId: string, ids: number[]) => void;
+  testingId: number | null;
+  testResult: { id: number; success: boolean; message: string } | null;
+}) {
+  const [expanded, setExpanded] = useState(providers.length > 0);
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [dragOverId, setDragOverId] = useState<number | null>(null);
+
+  const handleDragStart = useCallback((e: React.DragEvent, id: number) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(id));
+    setDragId(id);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, id: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverId(id);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent, targetId: number) => {
+      e.preventDefault();
+      setDragId(null);
+      setDragOverId(null);
+      const srcId = parseInt(e.dataTransfer.getData("text/plain"));
+      if (srcId === targetId) return;
+      const ids = providers.map((p) => p.id);
+      const srcIdx = ids.indexOf(srcId);
+      const tgtIdx = ids.indexOf(targetId);
+      if (srcIdx === -1 || tgtIdx === -1) return;
+      const newIds = [...ids];
+      newIds.splice(srcIdx, 1);
+      newIds.splice(tgtIdx, 0, srcId);
+      onReorder(model.id, newIds);
+    },
+    [providers, onReorder, model.id]
+  );
+
+  const activeCount = providers.filter(p => p.isActive).length;
+
+  return (
+    <div className="border border-border rounded-lg overflow-hidden" data-testid={`model-group-${model.id}`}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-3 px-4 py-3 bg-muted/30 hover:bg-muted/50 transition-colors text-left"
+        data-testid={`btn-toggle-model-${model.id}`}
+      >
+        {expanded ? (
+          <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+        ) : (
+          <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-foreground">{model.label}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/5 text-primary border border-primary/10 font-mono">
+              {model.id}
+            </span>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-0.5">{model.desc}</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {providers.length > 0 ? (
+            <span className="text-[11px] text-muted-foreground">
+              {activeCount}/{providers.length} 个端点
+            </span>
+          ) : (
+            <span className="text-[11px] text-muted-foreground/50">未配置</span>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); onAdd(model.id); }}
+            className="p-1 text-muted-foreground hover:text-primary rounded-md hover:bg-primary/10 transition-colors"
+            title="添加 API 端点"
+            data-testid={`btn-add-provider-${model.id}`}
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </button>
+
+      {expanded && providers.length > 0 && (
+        <div className="border-t border-border">
+          <div className="p-1">
+            {providers.map((prov, idx) => (
+              <div
+                key={prov.id}
+                draggable
+                onDragStart={(e) => handleDragStart(e, prov.id)}
+                onDragOver={(e) => handleDragOver(e, prov.id)}
+                onDragLeave={() => setDragOverId(null)}
+                onDrop={(e) => handleDrop(e, prov.id)}
+                onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-100 ${
+                  dragId === prov.id
+                    ? "opacity-40 border border-dashed border-primary"
+                    : dragOverId === prov.id
+                    ? "bg-primary/5 border border-primary/30"
+                    : "hover:bg-muted/30"
+                }`}
+                data-testid={`provider-row-${prov.id}`}
+              >
+                <div className="cursor-grab active:cursor-grabbing shrink-0" data-testid={`grip-${prov.id}`}>
+                  <GripVertical className="w-3.5 h-3.5 text-muted-foreground/50" />
+                </div>
+
+                <span className="text-[10px] font-mono text-muted-foreground w-5 h-5 rounded-full bg-muted flex items-center justify-center shrink-0">
+                  {idx + 1}
+                </span>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-sm ${prov.isActive ? "text-foreground" : "text-muted-foreground line-through"}`}>
+                      {prov.providerName}
+                    </span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                        prov.keyConfigured
+                          ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                          : "bg-destructive/10 text-destructive"
+                      }`}
+                    >
+                      {prov.keyConfigured ? "Key OK" : "No Key"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground">
+                    {prov.baseUrl ? (
+                      <span className="font-mono truncate max-w-[200px]">{prov.baseUrl}</span>
+                    ) : (
+                      <span className="italic">官方 API</span>
+                    )}
+                    <span className="shrink-0">
+                      <Key className="w-3 h-3 inline mr-0.5" />
+                      {prov.apiKeyEnvVar}
+                    </span>
+                    <span className="shrink-0">{prov.timeout / 1000}s</span>
+                  </div>
+                </div>
+
+                {testResult?.id === prov.id && (
+                  <div
+                    className={`text-[10px] px-2 py-1 rounded-md flex items-center gap-1 shrink-0 ${
+                      testResult.success
+                        ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                        : "bg-destructive/10 text-destructive"
+                    }`}
+                    data-testid={`test-result-${prov.id}`}
+                  >
+                    {testResult.success ? <Check className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+                    {testResult.message}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button
+                    onClick={() => onTest(prov.id)}
+                    disabled={testingId === prov.id}
+                    className="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors"
+                    title="测试连接"
+                    data-testid={`btn-test-${prov.id}`}
+                  >
+                    {testingId === prov.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <TestTube className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => onToggle(prov)}
+                    className={`p-1.5 rounded-md transition-colors ${
+                      prov.isActive
+                        ? "text-green-600 hover:bg-green-500/10"
+                        : "text-muted-foreground hover:bg-muted"
+                    }`}
+                    title={prov.isActive ? "禁用" : "启用"}
+                    data-testid={`btn-toggle-${prov.id}`}
+                  >
+                    {prov.isActive ? <Power className="w-3.5 h-3.5" /> : <PowerOff className="w-3.5 h-3.5" />}
+                  </button>
+                  <button
+                    onClick={() => onEdit(prov)}
+                    className="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors"
+                    data-testid={`btn-edit-${prov.id}`}
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onDelete(prov.id)}
+                    className="p-1.5 text-muted-foreground hover:text-destructive rounded-md hover:bg-destructive/10 transition-colors"
+                    data-testid={`btn-delete-${prov.id}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {expanded && providers.length === 0 && (
+        <div className="border-t border-border px-4 py-6 text-center">
+          <p className="text-xs text-muted-foreground mb-2">此模型尚未配置任何 API 端点</p>
+          <button
+            onClick={() => onAdd(model.id)}
+            className="text-xs text-primary hover:text-primary/80 transition-colors"
+            data-testid={`btn-add-first-${model.id}`}
+          >
+            + 添加第一个端点
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminAI() {
   const [period, setPeriod] = useState<Period>("month");
-  const [editingProvider, setEditingProvider] = useState<AiProvider | null>(null);
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [addingForModel, setAddingForModel] = useState<string | null>(null);
+  const [editingProvider, setEditingProvider] = useState<ModelProvider | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [testingId, setTestingId] = useState<number | null>(null);
   const [testResult, setTestResult] = useState<{ id: number; success: boolean; message: string } | null>(null);
-  const [dragId, setDragId] = useState<number | null>(null);
-  const [dragOverId, setDragOverId] = useState<number | null>(null);
 
   const { data: stats, isLoading: statsLoading } = useQuery<any>({
     queryKey: ["/api/admin/ai/stats", period],
@@ -261,37 +443,49 @@ export default function AdminAI() {
     queryKey: ["/api/admin/ai/config"],
   });
 
-  const { data: providersData, isLoading: providersLoading } = useQuery<any>({
-    queryKey: ["/api/admin/ai/providers"],
+  const { data: modelProvidersData, isLoading: providersLoading } = useQuery<any>({
+    queryKey: ["/api/admin/ai/model-providers"],
     queryFn: async () => {
-      const res = await fetch("/api/admin/ai/providers", { headers: authHeaders() });
+      const res = await fetch("/api/admin/ai/model-providers", { headers: authHeaders() });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
   });
 
-  const providers: (AiProvider & { keyConfigured?: boolean })[] = providersData?.data || [];
+  const allModelProviders: ModelProvider[] = modelProvidersData?.data || [];
+
+  const getProvidersForModel = (modelId: string) =>
+    allModelProviders
+      .filter((p) => p.modelId === modelId)
+      .sort((a, b) => a.priority - b.priority);
 
   const createMutation = useMutation({
-    mutationFn: async (data: ProviderFormData) => {
-      const res = await fetch("/api/admin/ai/providers", {
+    mutationFn: async ({ modelId, data }: { modelId: string; data: ProviderFormData }) => {
+      const res = await fetch("/api/admin/ai/model-providers", {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          modelId,
+          providerName: data.providerName,
+          baseUrl: data.baseUrl || null,
+          apiKeyEnvVar: data.apiKeyEnvVar,
+          timeout: data.timeout,
+          isActive: data.isActive,
+        }),
       });
       if (!res.ok) throw new Error("Failed to create provider");
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/providers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/model-providers"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/config"] });
-      setShowAddForm(false);
+      setAddingForModel(null);
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<ProviderFormData> }) => {
-      const res = await fetch(`/api/admin/ai/providers/${id}`, {
+      const res = await fetch(`/api/admin/ai/model-providers/${id}`, {
         method: "PATCH",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -300,7 +494,7 @@ export default function AdminAI() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/providers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/model-providers"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/config"] });
       setEditingProvider(null);
     },
@@ -308,31 +502,31 @@ export default function AdminAI() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/admin/ai/providers/${id}`, {
+      const res = await fetch(`/api/admin/ai/model-providers/${id}`, {
         method: "DELETE",
         headers: authHeaders(),
       });
       if (!res.ok) throw new Error("Failed to delete provider");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/providers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/model-providers"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/config"] });
       setDeleteConfirm(null);
     },
   });
 
   const reorderMutation = useMutation({
-    mutationFn: async (ids: number[]) => {
-      const res = await fetch("/api/admin/ai/providers/reorder", {
+    mutationFn: async ({ modelId, ids }: { modelId: string; ids: number[] }) => {
+      const res = await fetch("/api/admin/ai/model-providers/reorder", {
         method: "PUT",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
+        body: JSON.stringify({ modelId, ids }),
       });
       if (!res.ok) throw new Error("Failed to reorder");
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/providers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/model-providers"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/config"] });
     },
   });
@@ -341,7 +535,7 @@ export default function AdminAI() {
     setTestingId(id);
     setTestResult(null);
     try {
-      const res = await fetch(`/api/admin/ai/providers/${id}/test`, {
+      const res = await fetch(`/api/admin/ai/model-providers/${id}/test`, {
         method: "POST",
         headers: authHeaders(),
       });
@@ -357,51 +551,13 @@ export default function AdminAI() {
     setTestingId(null);
   };
 
-  const handleToggleActive = (provider: AiProvider) => {
-    updateMutation.mutate({ id: provider.id, data: { isActive: !provider.isActive } });
+  const handleToggleActive = (provider: ModelProvider) => {
+    updateMutation.mutate({ id: provider.id, data: { isActive: !provider.isActive } as any });
   };
 
-  const handleDragStart = useCallback((e: React.DragEvent, id: number) => {
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", String(id));
-    setDragId(id);
-  }, []);
-
-  const handleDragOver = useCallback((e: React.DragEvent, id: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDragOverId(id);
-  }, []);
-
-  const handleDragLeave = useCallback(() => {
-    setDragOverId(null);
-  }, []);
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent, targetId: number) => {
-      e.preventDefault();
-      setDragId(null);
-      setDragOverId(null);
-      const srcId = parseInt(e.dataTransfer.getData("text/plain"));
-      if (srcId === targetId) return;
-
-      const ids = providers.map((p) => p.id);
-      const srcIdx = ids.indexOf(srcId);
-      const tgtIdx = ids.indexOf(targetId);
-      if (srcIdx === -1 || tgtIdx === -1) return;
-
-      const newIds = [...ids];
-      newIds.splice(srcIdx, 1);
-      newIds.splice(tgtIdx, 0, srcId);
-      reorderMutation.mutate(newIds);
-    },
-    [providers, reorderMutation]
-  );
-
-  const handleDragEnd = useCallback(() => {
-    setDragId(null);
-    setDragOverId(null);
-  }, []);
+  const handleReorder = useCallback((modelId: string, ids: number[]) => {
+    reorderMutation.mutate({ modelId, ids });
+  }, [reorderMutation]);
 
   const s = stats?.data || {};
   const hourlyData = (hourly?.data || []).map((h: any) => ({
@@ -532,185 +688,41 @@ export default function AdminAI() {
           </div>
         </div>
 
-        <div className="bg-card border border-border rounded-xl p-4" data-testid="card-api-providers">
+        <div className="bg-card border border-border rounded-xl p-4" data-testid="card-model-providers">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-foreground flex items-center gap-2">
-              <Server className="w-4 h-4 text-primary" />
-              API Provider 管理
-            </h3>
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-              data-testid="button-add-provider"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add Provider
-            </button>
+            <div>
+              <h3 className="text-sm font-medium text-foreground flex items-center gap-2">
+                <Server className="w-4 h-4 text-primary" />
+                API 端点管理
+              </h3>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                按模型分组管理 API 端点。同一模型下可添加多个端点，拖拽调整优先级顺序，系统按顺序尝试调用。
+              </p>
+            </div>
           </div>
-
-          <p className="text-[11px] text-muted-foreground mb-3">
-            Drag to reorder priority. Higher priority providers are tried first; lower priority ones serve as fallback.
-          </p>
 
           {providersLoading ? (
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-28 bg-muted rounded-lg animate-pulse" />
+                <div key={i} className="h-20 bg-muted rounded-lg animate-pulse" />
               ))}
             </div>
           ) : (
             <div className="space-y-2">
-              {providers.map((prov) => (
-                <div
-                  key={prov.id}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, prov.id)}
-                  onDragOver={(e) => handleDragOver(e, prov.id)}
-                  onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDrop(e, prov.id)}
-                  onDragEnd={handleDragEnd}
-                  className={`border rounded-lg p-4 transition-all duration-150 ${
-                    dragId === prov.id
-                      ? "opacity-40 border-dashed border-primary"
-                      : dragOverId === prov.id
-                      ? "border-primary bg-primary/5 shadow-sm"
-                      : prov.isActive
-                      ? "border-border bg-card"
-                      : "border-border/50 bg-muted/30"
-                  }`}
-                  data-testid={`card-provider-${prov.id}`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="flex flex-col items-center gap-1 pt-0.5 cursor-grab active:cursor-grabbing" data-testid={`grip-provider-${prov.id}`}>
-                      <GripVertical className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-[10px] font-mono text-muted-foreground w-5 h-5 rounded-full bg-muted flex items-center justify-center">
-                        {prov.priority}
-                      </span>
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {prov.type === "proxy" ? (
-                            <Globe className="w-4 h-4 text-blue-500 shrink-0" />
-                          ) : (
-                            <Zap className="w-4 h-4 text-green-500 shrink-0" />
-                          )}
-                          <span className={`text-sm font-medium ${prov.isActive ? "text-foreground" : "text-muted-foreground line-through"}`}>
-                            {prov.name}
-                          </span>
-                          <span
-                            className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                              prov.type === "proxy"
-                                ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                                : "bg-green-500/10 text-green-600 dark:text-green-400"
-                            }`}
-                          >
-                            {prov.type === "proxy" ? "Proxy" : "Direct"}
-                          </span>
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full ${
-                              prov.keyConfigured
-                                ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                                : "bg-destructive/10 text-destructive"
-                            }`}
-                          >
-                            {prov.keyConfigured ? "Key OK" : "No Key"}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            onClick={() => handleTest(prov.id)}
-                            disabled={testingId === prov.id}
-                            className="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors"
-                            title="Test connection"
-                            data-testid={`button-test-${prov.id}`}
-                          >
-                            {testingId === prov.id ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <TestTube className="w-3.5 h-3.5" />
-                            )}
-                          </button>
-                          <button
-                            onClick={() => handleToggleActive(prov)}
-                            className={`p-1.5 rounded-md transition-colors ${
-                              prov.isActive
-                                ? "text-green-600 hover:bg-green-500/10"
-                                : "text-muted-foreground hover:bg-muted"
-                            }`}
-                            title={prov.isActive ? "Disable" : "Enable"}
-                            data-testid={`button-toggle-${prov.id}`}
-                          >
-                            {prov.isActive ? <Power className="w-3.5 h-3.5" /> : <PowerOff className="w-3.5 h-3.5" />}
-                          </button>
-                          <button
-                            onClick={() => setEditingProvider(prov)}
-                            className="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors"
-                            data-testid={`button-edit-${prov.id}`}
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirm(prov.id)}
-                            className="p-1.5 text-muted-foreground hover:text-destructive rounded-md hover:bg-destructive/10 transition-colors"
-                            data-testid={`button-delete-${prov.id}`}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {testResult?.id === prov.id && (
-                        <div
-                          className={`text-xs px-2.5 py-1.5 rounded-md mb-2 flex items-center gap-1.5 ${
-                            testResult.success
-                              ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                              : "bg-destructive/10 text-destructive"
-                          }`}
-                          data-testid={`test-result-${prov.id}`}
-                        >
-                          {testResult.success ? <Check className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
-                          {testResult.message}
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                        <div>
-                          <span className="text-muted-foreground block mb-0.5">Base URL</span>
-                          <div className="bg-muted rounded-md px-2 py-1 font-mono text-foreground break-all text-[11px]">
-                            {prov.baseUrl}
-                          </div>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground block mb-0.5">Env Var</span>
-                          <div className="bg-muted rounded-md px-2 py-1 font-mono text-foreground flex items-center gap-1 text-[11px]">
-                            <Key className="w-3 h-3 shrink-0" />
-                            {prov.apiKeyEnvVar}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-2">
-                        <div className="flex flex-wrap gap-1">
-                          {prov.models.map((model) => (
-                            <span
-                              key={model}
-                              className="text-[10px] px-1.5 py-0.5 rounded-md bg-primary/5 text-primary border border-primary/10 font-mono"
-                            >
-                              {model}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="mt-1.5 text-[11px] text-muted-foreground">
-                        Timeout: {prov.timeout / 1000}s
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              {SYSTEM_MODELS.map((model) => (
+                <ModelGroup
+                  key={model.id}
+                  model={model}
+                  providers={getProvidersForModel(model.id)}
+                  onAdd={setAddingForModel}
+                  onEdit={setEditingProvider}
+                  onDelete={setDeleteConfirm}
+                  onToggle={handleToggleActive}
+                  onTest={handleTest}
+                  onReorder={handleReorder}
+                  testingId={testingId}
+                  testResult={testResult}
+                />
               ))}
             </div>
           )}
@@ -719,9 +731,9 @@ export default function AdminAI() {
         {deleteConfirm !== null && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" data-testid="dialog-delete-confirm">
             <div className="bg-card border border-border rounded-xl p-6 w-full max-w-sm mx-4 shadow-xl">
-              <h3 className="text-sm font-semibold text-foreground mb-2">Delete Provider</h3>
+              <h3 className="text-sm font-semibold text-foreground mb-2">删除端点</h3>
               <p className="text-xs text-muted-foreground mb-4">
-                Are you sure? This provider will be permanently removed from the fallback chain.
+                确定要删除此 API 端点吗？删除后将从优先级链中移除。
               </p>
               <div className="flex justify-end gap-2">
                 <button
@@ -729,7 +741,7 @@ export default function AdminAI() {
                   className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground rounded-lg"
                   data-testid="button-cancel-delete"
                 >
-                  Cancel
+                  取消
                 </button>
                 <button
                   onClick={() => deleteMutation.mutate(deleteConfirm)}
@@ -738,7 +750,7 @@ export default function AdminAI() {
                   data-testid="button-confirm-delete"
                 >
                   {deleteMutation.isPending && <Loader2 className="w-3 h-3 animate-spin" />}
-                  Delete
+                  删除
                 </button>
               </div>
             </div>
@@ -768,26 +780,27 @@ export default function AdminAI() {
         )}
       </div>
 
-      {showAddForm && (
+      {addingForModel && (
         <ProviderFormDialog
+          modelId={addingForModel}
           initial={emptyForm}
-          onSave={(data) => createMutation.mutate(data)}
-          onCancel={() => setShowAddForm(false)}
+          onSave={(data) => createMutation.mutate({ modelId: addingForModel, data })}
+          onCancel={() => setAddingForModel(null)}
           saving={createMutation.isPending}
         />
       )}
 
       {editingProvider && (
         <ProviderFormDialog
+          modelId={editingProvider.modelId}
           initial={{
-            name: editingProvider.name,
-            type: editingProvider.type,
-            baseUrl: editingProvider.baseUrl,
+            providerName: editingProvider.providerName,
+            baseUrl: editingProvider.baseUrl || "",
             apiKeyEnvVar: editingProvider.apiKeyEnvVar,
-            models: editingProvider.models,
             timeout: editingProvider.timeout,
             isActive: editingProvider.isActive,
           }}
+          editId={editingProvider.id}
           onSave={(data) => updateMutation.mutate({ id: editingProvider.id, data })}
           onCancel={() => setEditingProvider(null)}
           saving={updateMutation.isPending}

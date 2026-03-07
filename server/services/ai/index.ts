@@ -5,10 +5,12 @@ import { SYSTEM_PROMPT } from './prompts';
 import { ACTION_SCHEMAS } from './actionSchemas';
 import { storage } from '../../storage';
 import { CODE_TOOLS, executeCodeTool } from './codeTools';
-import type { AiProvider } from '@shared/schema';
+import type { AiProvider, AiModelProvider } from '@shared/schema';
 
 let cachedProviders: AiProvider[] | null = null;
+let cachedModelProviders: AiModelProvider[] | null = null;
 let providersCacheTime = 0;
+let modelProvidersCacheTime = 0;
 const PROVIDER_CACHE_TTL = 60000;
 const clientCache = new Map<string, OpenAI>();
 
@@ -37,8 +39,48 @@ function getHardcodedFallbackProviders(): AiProvider[] {
 
 export function invalidateProviderCache() {
   cachedProviders = null;
+  cachedModelProviders = null;
   providersCacheTime = 0;
+  modelProvidersCacheTime = 0;
   clientCache.clear();
+}
+
+async function loadModelProviders(): Promise<AiModelProvider[]> {
+  const now = Date.now();
+  if (cachedModelProviders && now - modelProvidersCacheTime < PROVIDER_CACHE_TTL) {
+    return cachedModelProviders;
+  }
+  try {
+    cachedModelProviders = await storage.getModelProviders();
+    modelProvidersCacheTime = now;
+    return cachedModelProviders;
+  } catch (e) {
+    if (cachedModelProviders) return cachedModelProviders;
+    return [];
+  }
+}
+
+function getDefaultBaseUrl(modelId: string): string {
+  if (modelId.startsWith('claude')) return 'https://vip.aipro.love/v1';
+  if (modelId === 'deepseek-chat') return 'https://openrouter.ai/api/v1';
+  return 'https://api.openai.com/v1';
+}
+
+function getClientForModelProvider(mp: AiModelProvider): OpenAI | null {
+  const apiKey = process.env[mp.apiKeyEnvVar];
+  if (!apiKey) return null;
+  const baseUrl = mp.baseUrl || getDefaultBaseUrl(mp.modelId);
+  const cacheKey = `mp_${mp.id}_${baseUrl}_${mp.apiKeyEnvVar}`;
+  let client = clientCache.get(cacheKey);
+  if (!client) {
+    client = new OpenAI({
+      baseURL: baseUrl,
+      apiKey,
+      timeout: mp.timeout,
+    });
+    clientCache.set(cacheKey, client);
+  }
+  return client;
 }
 
 function getClientForProvider(provider: AiProvider): OpenAI | null {
@@ -57,14 +99,26 @@ function getClientForProvider(provider: AiProvider): OpenAI | null {
   return client;
 }
 
-async function getProvidersForModel(model: string): Promise<{ provider: AiProvider; client: OpenAI }[]> {
+async function getProvidersForModel(model: string): Promise<{ provider: { name: string; id: number }; client: OpenAI }[]> {
+  const modelProviders = await loadModelProviders();
+  const modelSpecific = modelProviders.filter(mp => mp.modelId === model && mp.isActive);
+
+  if (modelSpecific.length > 0) {
+    const result: { provider: { name: string; id: number }; client: OpenAI }[] = [];
+    for (const mp of modelSpecific) {
+      const client = getClientForModelProvider(mp);
+      if (client) result.push({ provider: { name: mp.providerName, id: mp.id }, client });
+    }
+    if (result.length > 0) return result;
+  }
+
   const providers = await loadProviders();
-  const result: { provider: AiProvider; client: OpenAI }[] = [];
+  const result: { provider: { name: string; id: number }; client: OpenAI }[] = [];
   for (const p of providers) {
     if (!p.isActive) continue;
     if (!p.models.includes(model)) continue;
     const client = getClientForProvider(p);
-    if (client) result.push({ provider: p, client });
+    if (client) result.push({ provider: { name: p.name, id: p.id }, client });
   }
   return result;
 }

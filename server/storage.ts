@@ -75,6 +75,9 @@ import {
   aiProviders,
   type AiProvider,
   type InsertAiProvider,
+  aiModelProviders,
+  type AiModelProvider,
+  type InsertAiModelProvider,
 } from "@shared/schema";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -1162,6 +1165,48 @@ export class DatabaseStorage {
         await tx.update(aiProviders)
           .set({ priority: i, updatedAt: new Date() })
           .where(eq(aiProviders.id, ids[i]));
+      }
+    });
+  }
+
+  async getModelProviders(): Promise<AiModelProvider[]> {
+    return db.select().from(aiModelProviders).orderBy(aiModelProviders.modelId, aiModelProviders.priority);
+  }
+
+  async getModelProvidersByModel(modelId: string): Promise<AiModelProvider[]> {
+    return db.select().from(aiModelProviders)
+      .where(eq(aiModelProviders.modelId, modelId))
+      .orderBy(aiModelProviders.priority);
+  }
+
+  async getModelProvider(id: number): Promise<AiModelProvider | undefined> {
+    const [provider] = await db.select().from(aiModelProviders).where(eq(aiModelProviders.id, id));
+    return provider;
+  }
+
+  async createModelProvider(data: InsertAiModelProvider): Promise<AiModelProvider> {
+    const [provider] = await db.insert(aiModelProviders).values(data).returning();
+    return provider;
+  }
+
+  async updateModelProvider(id: number, data: Partial<InsertAiModelProvider>): Promise<AiModelProvider> {
+    const [provider] = await db.update(aiModelProviders)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(aiModelProviders.id, id))
+      .returning();
+    return provider;
+  }
+
+  async deleteModelProvider(id: number): Promise<void> {
+    await db.delete(aiModelProviders).where(eq(aiModelProviders.id, id));
+  }
+
+  async reorderModelProviders(modelId: string, ids: number[]): Promise<void> {
+    await db.transaction(async (tx) => {
+      for (let i = 0; i < ids.length; i++) {
+        await tx.update(aiModelProviders)
+          .set({ priority: i, updatedAt: new Date() })
+          .where(and(eq(aiModelProviders.id, ids[i]), eq(aiModelProviders.modelId, modelId)));
       }
     });
   }

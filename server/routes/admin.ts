@@ -314,6 +314,144 @@ adminRouter.post("/ai/providers/:id/test", async (req, res) => {
   }
 });
 
+const VALID_MODEL_IDS = [
+  'claude-sonnet-4-6',
+  'claude-opus-4-6',
+  'claude-haiku-4-5-20251001',
+  'gpt-4o',
+  'deepseek-chat',
+] as const;
+
+const modelProviderCreateSchema = z.object({
+  modelId: z.enum(VALID_MODEL_IDS),
+  providerName: z.string().min(1),
+  baseUrl: z.string().url().nullable().optional().or(z.literal('').transform(() => null)),
+  apiKeyEnvVar: z.string().min(1),
+  timeout: z.number().int().positive().default(90000),
+  isActive: z.boolean().default(true),
+});
+
+const modelProviderUpdateSchema = z.object({
+  providerName: z.string().min(1).optional(),
+  baseUrl: z.string().nullable().optional(),
+  apiKeyEnvVar: z.string().min(1).optional(),
+  timeout: z.number().int().positive().optional(),
+  isActive: z.boolean().optional(),
+});
+
+adminRouter.get("/ai/model-providers", async (_req, res) => {
+  try {
+    const providers = await storage.getModelProviders();
+    const enriched = providers.map(p => ({
+      ...p,
+      keyConfigured: !!process.env[p.apiKeyEnvVar],
+    }));
+    res.json({ data: enriched });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.post("/ai/model-providers", async (req, res) => {
+  try {
+    const parsed = modelProviderCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+    }
+    const existing = await storage.getModelProvidersByModel(parsed.data.modelId);
+    const maxPriority = existing.length > 0 ? Math.max(...existing.map(p => p.priority)) + 1 : 0;
+    const provider = await storage.createModelProvider({
+      ...parsed.data,
+      baseUrl: parsed.data.baseUrl || null,
+      priority: maxPriority,
+    });
+    invalidateProviderCache();
+    res.json({ data: { ...provider, keyConfigured: !!process.env[provider.apiKeyEnvVar] } });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.patch("/ai/model-providers/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const existing = await storage.getModelProvider(id);
+    if (!existing) return res.status(404).json({ error: 'Provider not found' });
+    const parsed = modelProviderUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+    }
+    const provider = await storage.updateModelProvider(id, parsed.data);
+    invalidateProviderCache();
+    res.json({ data: { ...provider, keyConfigured: !!process.env[provider.apiKeyEnvVar] } });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.delete("/ai/model-providers/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const existing = await storage.getModelProvider(id);
+    if (!existing) return res.status(404).json({ error: 'Provider not found' });
+    await storage.deleteModelProvider(id);
+    invalidateProviderCache();
+    res.json({ data: { success: true } });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.put("/ai/model-providers/reorder", async (req, res) => {
+  try {
+    const { modelId, ids } = req.body;
+    if (!modelId || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'modelId and ids array required' });
+    }
+    await storage.reorderModelProviders(modelId, ids);
+    invalidateProviderCache();
+    const providers = await storage.getModelProvidersByModel(modelId);
+    res.json({ data: providers.map(p => ({ ...p, keyConfigured: !!process.env[p.apiKeyEnvVar] })) });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.post("/ai/model-providers/:id/test", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const provider = await storage.getModelProvider(id);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+    const apiKey = process.env[provider.apiKeyEnvVar];
+    if (!apiKey) {
+      return res.json({ data: { success: false, error: `环境变量 ${provider.apiKeyEnvVar} 未配置` } });
+    }
+    const defaultBaseUrl = provider.modelId.startsWith('claude')
+      ? 'https://vip.aipro.love/v1'
+      : provider.modelId === 'deepseek-chat'
+        ? 'https://openrouter.ai/api/v1'
+        : 'https://api.openai.com/v1';
+    const baseUrl = provider.baseUrl || defaultBaseUrl;
+    const OpenAI = (await import('openai')).default;
+    const client = new OpenAI({ baseURL: baseUrl, apiKey, timeout: 15000 });
+    const startTime = Date.now();
+    try {
+      await client.chat.completions.create({
+        model: provider.modelId,
+        messages: [{ role: 'user', content: 'Hi' }],
+        max_tokens: 5,
+      });
+      const latency = Date.now() - startTime;
+      res.json({ data: { success: true, latency, model: provider.modelId } });
+    } catch (apiErr: any) {
+      const latency = Date.now() - startTime;
+      res.json({ data: { success: false, error: apiErr.message, latency } });
+    }
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 adminRouter.get("/users/trend", async (_req, res) => {
   try {
     const result = await db.execute(sql`
