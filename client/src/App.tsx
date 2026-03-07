@@ -1,5 +1,5 @@
 import { Switch, Route, useLocation, Link, Redirect } from "wouter";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, lazy, Suspense } from "react";
 import { queryClient, apiRequest } from "./lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
@@ -25,13 +25,13 @@ import ChatsPage from "@/pages/chats";
 import OnboardingPage from "@/pages/OnboardingPage";
 import KnowledgeBase from "@/pages/knowledge-base";
 import SettingsPage from "@/components/SettingsPage";
-import AdminOverview from "@/pages/admin/AdminOverview";
-import AdminAI from "@/pages/admin/AdminAI";
-import AdminUsers from "@/pages/admin/AdminUsers";
-import AdminOrgs from "@/pages/admin/AdminOrgs";
-import AdminKB from "@/pages/admin/AdminKB";
-import AdminSecurity from "@/pages/admin/AdminSecurity";
-import AdminWorkforce from "@/pages/admin/AdminWorkforce";
+const AdminOverview = lazy(() => import("@/pages/admin/AdminOverview"));
+const AdminAI = lazy(() => import("@/pages/admin/AdminAI"));
+const AdminUsers = lazy(() => import("@/pages/admin/AdminUsers"));
+const AdminOrgs = lazy(() => import("@/pages/admin/AdminOrgs"));
+const AdminKB = lazy(() => import("@/pages/admin/AdminKB"));
+const AdminSecurity = lazy(() => import("@/pages/admin/AdminSecurity"));
+const AdminWorkforce = lazy(() => import("@/pages/admin/AdminWorkforce"));
 import { useStreamingConvIds } from "@/stores/chatStreamStore";
 import {
   LayoutDashboard,
@@ -1532,6 +1532,17 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function AdminLoadingFallback() {
+  return (
+    <div className="flex items-center justify-center h-screen bg-background">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        <span className="text-sm text-muted-foreground">Loading...</span>
+      </div>
+    </div>
+  );
+}
+
 function Router() {
   return (
     <Switch>
@@ -1539,13 +1550,13 @@ function Router() {
       <Route>
         <AuthGuard>
           <Switch>
-            <Route path="/admin" component={AdminOverview} />
-            <Route path="/admin/ai" component={AdminAI} />
-            <Route path="/admin/users" component={AdminUsers} />
-            <Route path="/admin/orgs" component={AdminOrgs} />
-            <Route path="/admin/kb" component={AdminKB} />
-            <Route path="/admin/security" component={AdminSecurity} />
-            <Route path="/admin/workforce" component={AdminWorkforce} />
+            <Route path="/admin">{() => <Suspense fallback={<AdminLoadingFallback />}><AdminOverview /></Suspense>}</Route>
+            <Route path="/admin/ai">{() => <Suspense fallback={<AdminLoadingFallback />}><AdminAI /></Suspense>}</Route>
+            <Route path="/admin/users">{() => <Suspense fallback={<AdminLoadingFallback />}><AdminUsers /></Suspense>}</Route>
+            <Route path="/admin/orgs">{() => <Suspense fallback={<AdminLoadingFallback />}><AdminOrgs /></Suspense>}</Route>
+            <Route path="/admin/kb">{() => <Suspense fallback={<AdminLoadingFallback />}><AdminKB /></Suspense>}</Route>
+            <Route path="/admin/security">{() => <Suspense fallback={<AdminLoadingFallback />}><AdminSecurity /></Suspense>}</Route>
+            <Route path="/admin/workforce">{() => <Suspense fallback={<AdminLoadingFallback />}><AdminWorkforce /></Suspense>}</Route>
             <Route path="/onboarding" component={OnboardingPage} />
             <Route path="/"><Redirect to="/agent" /></Route>
             <Route path="/chats" component={ChatsPage} />
