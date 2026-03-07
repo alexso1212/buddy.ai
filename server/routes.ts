@@ -3644,6 +3644,25 @@ ${existingBlock}`
               console.error('Failed to parse action block:', parseErr);
             }
           }
+
+          try {
+            const parsed = JSON.parse(fullText.trim());
+            if (parsed && parsed.interactiveInput && Array.isArray(parsed.interactiveInput)) {
+              const questions = parsed.interactiveInput.map((q: any, idx: number) => ({
+                id: q.id || `q_${idx}`,
+                question: q.question || '',
+                type: q.type || 'single_select',
+                options: q.options || [],
+              }));
+              if (questions.length > 0) {
+                res.write(`data: ${JSON.stringify({ type: 'interactive_input', questions })}\n\n`);
+              }
+              if (parsed.message) {
+                displayText = JSON.stringify({ ...parsed, interactiveInput: undefined });
+              }
+            }
+          } catch (_) {
+          }
           const donePayload: any = { type: 'done', fullText: displayText };
           if (chunk.tokenUsage) {
             donePayload.tokenUsage = {

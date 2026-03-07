@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, X, Paperclip, GripVertical } from "lucide-re
 export interface InteractiveQuestion {
   id: string;
   question: string;
-  type: "single_select" | "multi_select" | "rank_priorities";
+  type: "single_select" | "multi_select" | "rank_priorities" | "confirm" | "date_pick";
   options: string[];
 }
 
@@ -289,8 +289,11 @@ export default function InteractiveInputWidget({
         <div
           ref={cardRef}
           style={{
-            background: "#1c1c1e",
+            background: "rgba(31, 30, 27, 0.95)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
             borderRadius: 16,
+            border: "1px solid rgba(255,255,255,0.08)",
             overflow: "hidden",
             position: "relative",
             maxWidth: 560,
@@ -423,7 +426,84 @@ export default function InteractiveInputWidget({
                       {currentQ.question}
                     </h3>
 
-                    {currentQ.type === "rank_priorities" ? (
+                    {currentQ.type === "confirm" ? (
+                      <div style={{ display: "flex", gap: 12, justifyContent: "center", padding: "4px 0 8px" }}>
+                        <button
+                          onClick={() => {
+                            const updated = { ...answers, [currentQ.id]: ["确认"] };
+                            setAnswers(updated);
+                            setTimeout(() => onSubmit(updated), 200);
+                          }}
+                          style={{
+                            padding: "12px 28px",
+                            borderRadius: 12,
+                            background: "#ae5630",
+                            color: "#fff",
+                            fontSize: 15,
+                            fontWeight: 500,
+                            border: "none",
+                            cursor: "pointer",
+                            transition: "all 150ms ease",
+                          }}
+                          onMouseDown={e => (e.currentTarget.style.transform = "scale(0.97)")}
+                          onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
+                          onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")}
+                          data-testid="btn-confirm-yes"
+                        >
+                          确认
+                        </button>
+                        <button
+                          onClick={() => {
+                            const updated = { ...answers, [currentQ.id]: ["取消"] };
+                            setAnswers(updated);
+                            setTimeout(() => onSubmit(updated), 200);
+                          }}
+                          style={{
+                            padding: "12px 28px",
+                            borderRadius: 12,
+                            background: "rgba(255,255,255,0.08)",
+                            color: "#eee",
+                            fontSize: 15,
+                            fontWeight: 500,
+                            border: "1px solid rgba(255,255,255,0.1)",
+                            cursor: "pointer",
+                            transition: "all 150ms ease",
+                          }}
+                          onMouseDown={e => (e.currentTarget.style.transform = "scale(0.97)")}
+                          onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
+                          onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")}
+                          data-testid="btn-confirm-no"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    ) : currentQ.type === "date_pick" ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "4px 0 8px" }}>
+                        <input
+                          type="date"
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val) {
+                              const updated = { ...answers, [currentQ.id]: [val] };
+                              setAnswers(updated);
+                              setTimeout(() => onSubmit(updated), 300);
+                            }
+                          }}
+                          style={{
+                            width: "100%",
+                            padding: "12px 16px",
+                            borderRadius: 12,
+                            background: "rgba(255,255,255,0.08)",
+                            color: "#eee",
+                            fontSize: 15,
+                            border: "1px solid rgba(255,255,255,0.1)",
+                            outline: "none",
+                            colorScheme: "dark",
+                          }}
+                          data-testid="input-date-pick"
+                        />
+                      </div>
+                    ) : currentQ.type === "rank_priorities" ? (
                       <div data-no-deform>
                         <Reorder.Group
                           axis="y"
@@ -561,7 +641,7 @@ export default function InteractiveInputWidget({
               </div>
             )}
 
-            {currentQ.type !== "rank_priorities" && (
+            {currentQ.type !== "rank_priorities" && currentQ.type !== "confirm" && currentQ.type !== "date_pick" && (
               <div
                 style={{
                   display: "flex",

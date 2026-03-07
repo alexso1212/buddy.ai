@@ -1,0 +1,310 @@
+# task-20: AI 主动弹出交互式 Widget
+
+> **核心理念**：用户不应该打字说”确认”、“好的”、“安排吧”——应该点一个按钮
+> **改动范围**：AI system prompt（让AI更频繁返回interactive_input）+ 前端确保Widget正常弹出
+> **预计耗时**：10-15 分钟
+
+-----
+
+## 一、问题
+
+现在 AI 经常这样回复：
+
+```
+AI：好的，我帮你整理了3个任务，确认后我将批量创建。请回复"确认"。
+
+用户要打字："确认"  ← 多余的摩擦
+```
+
+应该是这样：
+
+```
+AI：好的，我帮你整理了3个任务：
+    1. 制定投流控本奖励规则
+    2. 设计熔断管控机制
+    3. 制定超额获客奖励标准
+
+    ┌─────────────────────────────┐
+    │  [✅ 全部确认]  [✏️ 我要修改]  │
+    └─────────────────────────────┘
+```
+
+-----
+
+## 二、哪些场景应该弹 Widget
+
+|场景      |当前行为           |改为                   |
+|--------|---------------|---------------------|
+|确认创建任务  |AI说”请确认”       |弹 [确认创建] [取消]        |
+|确认批量创建  |AI说”确认后批量创建”   |弹 [全部确认] [逐个确认] [取消] |
+|二选一决策   |AI说”你想A还是B？”   |弹 [A选项] [B选项]        |
+|是否需要补充信息|AI说”需要我帮你xxx吗？”|弹 [好的，帮我做] [不用了]     |
+|模糊指令澄清  |AI说”你是指A还是B？”  |弹 [指的是A] [指的是B] [都不是]|
+|任务分配确认  |AI说”分配给张三可以吗？” |弹 [确认分配] [换个人]       |
+|截止日期确认  |AI推测了日期        |弹 [确认日期] [选其他日期]     |
+|优先级选择   |AI不确定优先级       |弹 [紧急] [高] [中] [低]   |
+|是否继续操作  |AI完成一步后        |弹 [继续下一步] [就到这里]     |
+|知识库搜索建议 |AI找到相关文档       |弹 [查看详情] [搜索更多] [不需要]|
+
+-----
+
+## 三、改动1：System Prompt
+
+在 `server/services/ai/prompts.ts` 的 SYSTEM_PROMPT 中，**新增交互式输出规则**：
+
+找到现有的 `## 重要规则` 部分，在 `### 规则1: 输出格式` 之后追加：
+
+```
+### 规则6: 交互式选择（极其重要）
+
+当你的回复包含以下任何一种情况时，**必须**在 JSON 中附带 interactiveInput 字段，让用户通过点击按钮而不是打字来回应：
+
+#### 必须弹出 Widget 的场景：
+
+1. **确认类**：任何需要用户说"确认""好的""可以"的地方
+   → 弹出 [确认] [取消] 按钮
+
+2. **选择类**：任何"你想要A还是B"的地方
+   → 弹出选项按钮
+
+3. **是否类**：任何"需要我帮你xxx吗？"的地方
+   → 弹出 [好的] [不用了] 按钮
+
+4. **澄清类**：任何"你是指xxx还是yyy？"的地方
+   → 弹出对应选项
+
+5. **下一步类**：完成一个操作后询问后续
+   → 弹出 [继续] [就到这里] 按钮
+
+#### interactiveInput 的 JSON 格式：
+
+在你的正常回复 JSON 中，额外添加 interactiveInput 数组：
+
+{
+  "type": "text",
+  "message": "我整理了以下3个任务，请确认是否创建：\n\n1. 制定投流控本奖励规则\n2. 设计熔断管控机制\n3. 制定超额获客奖励标准",
+  "interactiveInput": [
+    {
+      "type": "single_select",
+      "question": "是否创建这些任务？",
+      "options": ["全部确认创建", "我要修改几个", "先不创建"]
+    }
+  ]
+}
+
+又比如：
+{
+  "type": "text",
+  "message": "这个任务可以分配给张三（销售经理）或李四（销售专员），你觉得谁更合适？",
+  "interactiveInput": [
+    {
+      "type": "single_select",
+      "question": "分配给谁？",
+      "options": ["张三（销售经理）", "李四（销售专员）", "先不分配"]
+    }
+  ]
+}
+
+又比如完成操作后：
+{
+  "type": "text",
+  "message": "✅ 任务「制定投流控本奖励规则」已创建成功，已分配给AlexSo。",
+  "interactiveInput": [
+    {
+      "type": "single_select",
+      "question": "接下来？",
+      "options": ["继续创建下一个任务", "查看所有待办", "就到这里"]
+    }
+  ]
+}
+
+#### interactiveInput 支持的类型：
+
+1. single_select — 单选（用户点一个选项）
+{
+  "type": "single_select",
+  "question": "问题文字",
+  "options": ["选项A", "选项B", "选项C"]
+}
+
+2. multi_select — 多选（用户可选多个）
+{
+  "type": "multi_select",
+  "question": "选择要创建的任务",
+  "options": ["任务1", "任务2", "任务3", "全部"]
+}
+
+3. confirm — 简单确认（是/否）
+{
+  "type": "confirm",
+  "question": "确认创建这个任务吗？"
+}
+→ 自动渲染为 [确认] [取消] 两个按钮
+
+4. date_pick — 日期选择
+{
+  "type": "date_pick",
+  "question": "截止日期是？"
+}
+
+#### 重要原则：
+- 宁可多弹 Widget 也不要让用户打字确认
+- 如果你不确定某个回复是否需要 Widget，就加上
+- Widget 的选项要简洁明了，通常 2-4 个选项
+- 每次回复最多1个 interactiveInput（不要堆叠多个）
+- 如果回复是纯信息展示（如查询结果），不需要 Widget
+```
+
+-----
+
+## 四、改动2：后端 SSE 事件触发
+
+在 `server/routes.ts` 的 `/api/ai/chat/stream` 路由中，AI 返回的 JSON 如果包含 `interactiveInput` 字段，需要作为单独的 SSE 事件发送。
+
+检查现有的 `action` 事件处理逻辑——当 AI 返回 JSON 中有 `interactiveInput` 时：
+
+```typescript
+// 在解析 AI 返回的 JSON 后
+if (parsedJson.interactiveInput) {
+  // 发送 interactive_input SSE 事件
+  res.write(`data: ${JSON.stringify({ 
+    type: 'interactive_input', 
+    questions: parsedJson.interactiveInput 
+  })}\n\n`);
+}
+```
+
+**检查点**：现有代码中应该已有 `interactive_input` 事件类型的处理（从 agent.tsx 的 SSE 处理中可以看到有 `event.type === 'interactive_input'`）。确保后端在正确的时机发送这个事件。
+
+**关键问题**：当前的 `interactive_input` 事件可能只在特定的代码路径中触发（比如只有 follow_up 类型才触发）。需要扩展为**任何 AI 回复中包含 interactiveInput 字段都触发**。
+
+在 chatStream 的 JSON 解析逻辑中（处理 AI 返回的完整 JSON 后），加一个通用检查：
+
+```typescript
+// 在解析 AI 返回的 JSON 结果后（不管是 text/confirm/follow_up 类型）
+const aiResponse = JSON.parse(fullText);
+
+// 如果 AI 返回了 interactiveInput，发送 Widget 事件
+if (aiResponse.interactiveInput && Array.isArray(aiResponse.interactiveInput)) {
+  yield { type: 'interactive_input', questions: aiResponse.interactiveInput };
+}
+```
+
+-----
+
+## 五、改动3：前端 Widget 在 assistant-ui 架构中的接入
+
+Phase 2 迁移到 assistant-ui 后，InteractiveInputWidget 的挂载位置需要确认。
+
+在 agent.tsx 中检查：
+
+1. `interactiveInput` 状态还在不在
+1. SSE 收到 `interactive_input` 事件后是否正确设置状态
+1. InteractiveInputWidget 组件是否还在渲染
+
+如果 Phase 2 迁移时不小心丢了 Widget 的渲染，需要恢复：
+
+```typescript
+// 在 agent.tsx 的消息列表下方、输入栏上方
+{interactiveInput && (
+  <InteractiveInputWidget
+    questions={interactiveInput}
+    onSubmit={(answers) => {
+      // 把用户的选择格式化为文字发送给 AI
+      const answerText = formatAnswersForAI(answers);
+      handleSend(answerText);
+      setInteractiveInput(null);
+    }}
+    onDismiss={() => setInteractiveInput(null)}
+  />
+)}
+```
+
+-----
+
+## 六、改动4：confirm 类型的快捷处理
+
+对于 `"type": "confirm"` 类型的 interactiveInput（简单的是/否），渲染为两个按钮而不是选项列表：
+
+```typescript
+// 在 InteractiveInputWidget 中
+if (question.type === 'confirm') {
+  return (
+    <div className="flex gap-3 justify-center p-4">
+      <button 
+        onClick={() => onSubmit([{ question: question.question, answer: '确认' }])}
+        className="px-6 py-2.5 rounded-xl bg-[#ae5630] text-white font-medium
+                   hover:bg-[#c4633a] active:scale-[0.98] transition-all"
+      >
+        ✅ 确认
+      </button>
+      <button
+        onClick={() => onSubmit([{ question: question.question, answer: '取消' }])}
+        className="px-6 py-2.5 rounded-xl bg-[rgba(255,255,255,0.08)] text-[#eee]
+                   hover:bg-[rgba(255,255,255,0.12)] active:scale-[0.98] transition-all
+                   border border-[rgba(255,255,255,0.1)]"
+      >
+        取消
+      </button>
+    </div>
+  );
+}
+```
+
+-----
+
+## 七、Widget 样式对齐 Claude Clone
+
+Widget 的样式也要和 Claude Clone 主题一致：
+
+```
+背景：rgba(31, 30, 27, 0.95) + backdrop-filter: blur(20px)
+圆角：16px
+边框：1px solid rgba(255,255,255,0.08)
+选项按钮：
+  默认：bg-[rgba(255,255,255,0.06)] text-[#eee]
+  hover：bg-[rgba(255,255,255,0.12)]
+  选中：bg-[#ae5630] text-white
+  active：scale-[0.98]
+字体：font-serif（和整体一致）
+动画：从底部滑入 translateY(20px) → translateY(0)，300ms
+```
+
+-----
+
+## 八、验证
+
+### Prompt 验证
+
+- [ ] 对 AI 说”帮我创建一个任务” → AI 返回 follow_up + Widget 弹出让选择项目/负责人
+- [ ] 对 AI 说”这三个任务都安排一下” → Widget 弹出 [全部确认] [我要修改]
+- [ ] 对 AI 说”分析一下团队负载” → AI 返回纯文本，不弹 Widget（查询类不需要）
+- [ ] AI 完成一个操作后 → Widget 弹出 [继续] [就到这里]
+- [ ] AI 不确定用户意图时 → Widget 弹出澄清选项
+
+### 前端验证
+
+- [ ] Widget 在输入栏上方正确弹出
+- [ ] 点击选项后 Widget 消失，选择结果发送给 AI
+- [ ] Widget 的样式和 Claude Clone 主题一致
+- [ ] confirm 类型渲染为两个大按钮
+- [ ] single_select 渲染为选项列表
+- [ ] Widget 有从底部滑入的动画
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读 `task-20-proactive-widgets.md`。
+> 
+> 两个改动：
+> 
+> 1. **修改 prompts.ts 的 SYSTEM_PROMPT**：新增规则6（交互式选择），告诉 AI 凡是需要用户确认/选择/决策的地方都必须返回 interactiveInput
+> 1. **确保前端 Widget 在 assistant-ui 架构下正常工作**：检查 interactiveInput 状态、SSE 事件处理、Widget 渲染位置
+> 
+> 重点：
+> 
+> - 不需要改 InteractiveInputWidget 的核心逻辑，主要是让 AI 更频繁地触发它
+> - 在后端 chatStream 的 JSON 解析中，通用地检查 interactiveInput 字段
+> - Widget 样式对齐 Claude Clone 主题
+> - 测试时重点验证：AI 是否真的开始主动弹 Widget 了
