@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import {
   Check, Copy, Share2, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X,
   Globe, ChevronDown, ChevronUp, ExternalLink, FileText, RefreshCw,
-  PanelRightOpen, Loader2, Search, Terminal, AlertTriangle, WifiOff,
+  Loader2, Search, Terminal, AlertTriangle, WifiOff,
   Clock, MessageSquarePlus, Scissors, ServerCrash, PlayCircle, AlertCircle,
   Square, FolderOpen,
 } from "lucide-react";
@@ -18,7 +18,8 @@ import AiGuidedCreation from "./AiGuidedCreation";
 import AIMessageContent from "./AIMessageContent";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingBlock from "./ThinkingBlock";
-import ArtifactPanel, { isLongContent, extractArtifactTitle } from "./ArtifactPanel";
+import { isLongContent, extractArtifactTitle } from "./ArtifactPanel";
+import ArtifactCard from "./ArtifactCard";
 
 function BrandLogo({ breathing }: { breathing?: boolean }) {
   return (
@@ -840,11 +841,25 @@ function MultiConfirmGroup({
   );
 }
 
-function DefaultAssistantMessage({ message, isLastAssistant }: { message: BuddyMessage; isLastAssistant: boolean }) {
-  const { onRegenerate } = useBuddyCallbacks();
-  const [artifactOpen, setArtifactOpen] = useState(false);
+function extractArtifactExtension(content: string): string {
+  const codeBlockMatch = content.match(/```(\w+)/);
+  if (codeBlockMatch) {
+    const lang = codeBlockMatch[1].toLowerCase();
+    const langToExt: Record<string, string> = {
+      javascript: 'js', typescript: 'ts', python: 'py',
+      html: 'html', css: 'css', jsx: 'jsx', tsx: 'tsx',
+      svg: 'svg', mermaid: 'mermaid', markdown: 'md',
+    };
+    return langToExt[lang] || lang;
+  }
+  return 'md';
+}
 
-  const showArtifactButton = !message.isStreaming && isLongContent(message.content);
+function DefaultAssistantMessage({ message, isLastAssistant }: { message: BuddyMessage; isLastAssistant: boolean }) {
+  const { onRegenerate, onOpenArtifact } = useBuddyCallbacks();
+
+  const hasLongContent = isLongContent(message.content);
+  const showArtifactCard = hasLongContent;
   const MAX_COLLAPSED_LENGTH = 2000;
   const isLongMessage = message.content.length > MAX_COLLAPSED_LENGTH && !message.isStreaming;
   const [contentExpanded, setContentExpanded] = useState(true);
@@ -856,6 +871,12 @@ function DefaultAssistantMessage({ message, isLastAssistant }: { message: BuddyM
   }, [message.isStreaming]);
 
   const displayContent = contentExpanded ? message.content : message.content.slice(0, MAX_COLLAPSED_LENGTH);
+
+  const handleArtifactClick = useCallback(() => {
+    if (onOpenArtifact) {
+      onOpenArtifact(message.content, extractArtifactTitle(message.content));
+    }
+  }, [message.content, onOpenArtifact]);
 
   return (
     <div
@@ -929,20 +950,14 @@ function DefaultAssistantMessage({ message, isLastAssistant }: { message: BuddyM
             </button>
           </div>
         )}
-        {showArtifactButton && (
-          <button
-            onClick={() => setArtifactOpen(true)}
-            className="flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-            style={{
-              background: 'rgba(255,255,255,0.06)',
-              color: 'var(--text-secondary)',
-              border: '1px solid rgba(255,255,255,0.08)',
-            }}
-            data-testid={`btn-open-artifact-${message.id}`}
-          >
-            <PanelRightOpen className="w-3.5 h-3.5" strokeWidth={1.5} />
-            Open in panel
-          </button>
+        {showArtifactCard && (
+          <ArtifactCard
+            title={extractArtifactTitle(message.content)}
+            extension={extractArtifactExtension(message.content)}
+            onClick={handleArtifactClick}
+            isGenerating={!!message.isStreaming}
+            messageId={message.id}
+          />
         )}
         {!message.isStreaming && (
           <div className="flex items-center">
@@ -963,15 +978,6 @@ function DefaultAssistantMessage({ message, isLastAssistant }: { message: BuddyM
           </div>
         )}
       </div>
-      {artifactOpen && (
-        <ArtifactPanel
-          content={message.content}
-          title={extractArtifactTitle(message.content)}
-          isOpen={artifactOpen}
-          onClose={() => setArtifactOpen(false)}
-          messageId={message.id}
-        />
-      )}
     </div>
   );
 }

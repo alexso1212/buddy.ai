@@ -7,6 +7,8 @@ import { useToast } from "@/hooks/use-toast";
 import AiInputBar from "@/components/ai/AiInputBar";
 import type { Attachment } from "@/components/ai/AiInputBar";
 import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Pencil, X, Check, ListFilter, ChevronRight, Search, Star, FolderOpen, ArrowDown, AlertCircle, Clock, Square } from "lucide-react";
+import ArtifactSidePanel from "@/components/ai/ArtifactSidePanel";
+import ArtifactBottomSheet from "@/components/ai/ArtifactBottomSheet";
 import InteractiveInputWidget, { formatAnswersForDisplay, formatAnswersForAI, type InteractiveQuestion } from "@/components/ai/InteractiveInputWidget";
 import { Button } from "@/components/ui/button";
 import AgentLogo from "@/components/AgentLogo";
@@ -960,6 +962,15 @@ export default function Agent() {
   const [replyStyle, setReplyStyle] = useState('normal');
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [interactiveInput, setInteractiveInput] = useState<InteractiveQuestion[] | null>(null);
+  const [artifactPanel, setArtifactPanel] = useState<{ content: string; title: string } | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
   const scrollRef = useRef<HTMLDivElement>(null);
   const conversationHistory = useRef<{ role: string; content: string }[]>([]);
   const [activeConvSystemPrompt, setActiveConvSystemPrompt] = useState<string | undefined>();
@@ -2219,6 +2230,14 @@ export default function Agent() {
     navigate('/agent', { replace: true });
   }, [navigate]);
 
+  const handleOpenArtifact = useCallback((content: string, title: string) => {
+    setArtifactPanel({ content, title });
+  }, []);
+
+  const handleCloseArtifact = useCallback(() => {
+    setArtifactPanel(null);
+  }, []);
+
   const buddyCallbacks: BuddyCallbacks = useMemo(() => ({
     onConfirm: handleConfirm,
     onReject: handleReject,
@@ -2232,13 +2251,14 @@ export default function Agent() {
     onContinueGeneration: handleContinueGeneration,
     onNewConversation: handleNewConversation,
     onTrimAndRetry: handleTrimAndRetry,
-  }), [handleConfirm, handleReject, handleSkip, handleConfirmAll, handleFollowUpSubmit, handleStepAnswer, handleRegenerate, handleEditMessage, handleRetry, handleContinueGeneration, handleNewConversation, handleTrimAndRetry]);
+    onOpenArtifact: handleOpenArtifact,
+  }), [handleConfirm, handleReject, handleSkip, handleConfirmAll, handleFollowUpSubmit, handleStepAnswer, handleRegenerate, handleEditMessage, handleRetry, handleContinueGeneration, handleNewConversation, handleTrimAndRetry, handleOpenArtifact]);
 
   const showWelcome = !activeConvId && messages.length === 0 && !showChat;
 
   return (
-    <div className="relative h-full bg-transparent overflow-x-hidden" style={{ touchAction: 'pan-y' }} data-testid="agent-page">
-      
+    <div className="flex h-full bg-transparent overflow-hidden" data-testid="agent-page">
+      <div className="relative flex-1 min-w-0 overflow-x-hidden" style={{ touchAction: 'pan-y', transition: 'flex 350ms cubic-bezier(0.25,1,0.5,1)' }}>
 
       {showWelcome ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center px-4" style={{ paddingBottom: 80 }}>
@@ -2401,6 +2421,25 @@ export default function Agent() {
         lastUserMessage={lastUserMessage}
         onEscape={handleStop}
       />
+      </div>
+
+      {!isMobile && artifactPanel && (
+        <ArtifactSidePanel
+          content={artifactPanel.content}
+          title={artifactPanel.title}
+          isOpen={true}
+          onClose={handleCloseArtifact}
+        />
+      )}
+
+      {isMobile && artifactPanel && (
+        <ArtifactBottomSheet
+          open={true}
+          title={artifactPanel.title}
+          content={artifactPanel.content}
+          onClose={handleCloseArtifact}
+        />
+      )}
     </div>
   );
 }

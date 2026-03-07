@@ -1,0 +1,165 @@
+# Task: Implement Claude-Style Streaming Response UI — Phase 4: Widgets & Citations
+
+## Prerequisites
+
+Phase 1, 2, and 3 must be fully working before starting this phase.
+
+## Reference
+
+Full specification: `BUDDY_CLAUDE_STREAMING_UI_SPEC.md`, Sections 15, 16.
+
+## Deliverables (Phase 4 Only)
+
+### 1. Interactive Widgets (End of Response)
+
+When the AI sends a widget event, render interactive selection UI at the bottom of the response. Three types:
+
+#### 1a. Single Select
+
+```
+Which approach do you prefer?
+
+┌────────────────────────────────────────┐
+│  ○  Option A — Description text        │
+└────────────────────────────────────────┘
+┌────────────────────────────────────────┐
+│  ○  Option B — Description text        │
+└────────────────────────────────────────┘
+┌────────────────────────────────────────┐
+│  ○  Option C — Description text        │
+└────────────────────────────────────────┘
+```
+
+- Radio button (○) on the left, 18px diameter, 2px border #6b6b6b, border-radius 50%
+- Selected state: border color → #7ab5e0, filled inner circle #7ab5e0
+
+#### 1b. Multi Select
+
+Same layout but with checkboxes:
+
+- Checkbox (☐) on the left, 18px square, 2px border #6b6b6b, border-radius 4px
+- Selected state: background fill #7ab5e0, white checkmark inside
+- Submit button appears below after at least 1 selection
+
+#### 1c. Rank / Priority
+
+Same layout but with drag grip handle on the left:
+
+```svg
+<!-- Drag handle — 16x16 -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="#6b6b6b">
+  <circle cx="5" cy="4" r="1.5"/>
+  <circle cx="11" cy="4" r="1.5"/>
+  <circle cx="5" cy="8" r="1.5"/>
+  <circle cx="11" cy="8" r="1.5"/>
+  <circle cx="5" cy="12" r="1.5"/>
+  <circle cx="11" cy="12" r="1.5"/>
+</svg>
+```
+
+- Items are draggable to reorder
+- Use HTML5 drag and drop or a lightweight library
+- Submit button appears below
+
+#### Common Option Styling (all 3 types)
+
+Each option:
+
+- Background: #2a2a2a
+- Border: 1px solid #3a3a3a
+- Border radius: 10px
+- Padding: 12px 14px
+- Display: flex, align-items: center, gap: 10px
+- Font-size: 14px, color #e8e8e8
+- Hover: background → #333, border-color → #7ab5e0
+- Selected: border-color #7ab5e0, background rgba(122, 181, 224, 0.08)
+- Gap between options: 8px
+
+**Entry animation**: Each option slides up + fades in, STAGGERED:
+
+- Option 1: delay 0ms
+- Option 2: delay 80ms
+- Option 3: delay 160ms
+- Option 4: delay 240ms
+
+```css
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.widget-option {
+  animation: slideUpFade 300ms cubic-bezier(0.22, 1.0, 0.36, 1.0) backwards;
+}
+.widget-option:nth-child(1) { animation-delay: 0ms; }
+.widget-option:nth-child(2) { animation-delay: 80ms; }
+.widget-option:nth-child(3) { animation-delay: 160ms; }
+.widget-option:nth-child(4) { animation-delay: 240ms; }
+```
+
+**Post-selection behavior** (single select): After user taps an option, the widget collapses into a compact summary line: “Selected: Option B” — fade transition 200ms. The selection text is sent as the user’s next message automatically.
+
+**Post-selection behavior** (multi select / rank): After user taps Submit, same collapse behavior, selection sent as message.
+
+### 2. Citation Superscripts
+
+When the response includes citations from web search, they appear as small clickable superscript numbers inline in the text.
+
+**Inline display**: `The study found significant results¹ in all categories²`
+
+- Superscript number
+- Color: #7ab5e0
+- Font-size: 12px
+- Font-weight: 500
+- Cursor: pointer
+- Padding: 0 2px
+- Hover: underline
+
+**Tap/click behavior**: Shows a small popover tooltip below/above the citation number.
+
+**Popover**:
+
+- Background: #2a2a2a
+- Border: 1px solid #3a3a3a
+- Border radius: 8px
+- Padding: 8px 12px
+- Box shadow: 0 4px 12px rgba(0,0,0,0.3)
+- Max width: 300px
+- Source title: color #e8e8e8, font-size 13px
+- URL: color #7ab5e0, font-size 12px, truncated with ellipsis
+- Entry animation: fade in 150ms + scale from 0.95 → 1.0
+- Dismiss: tap outside or tap citation again
+
+**Positioning**: Popover appears below the citation number. If near bottom of viewport, flip to above. Use a small triangle/caret pointing to the citation number.
+
+## Validation
+
+After implementation, verify:
+
+1. Single select: options appear with stagger animation, tap selects one, widget collapses, selection sent as message
+1. Multi select: checkboxes work, Submit button appears, collapse on submit
+1. Rank: drag reorder works on both desktop (mouse) and mobile (touch), Submit button appears
+1. All widget options have correct hover/selected visual states
+1. Citations render as blue superscript numbers inline in text
+1. Tapping citation shows popover with source info
+1. Tapping outside popover dismisses it
+1. Multiple citations in one response all work independently
+
+## Final Check
+
+After this phase, the complete streaming UI should include:
+
+- ✅ Starburst loading indicator
+- ✅ Extended Thinking collapse bar with shimmer
+- ✅ Streaming text with markdown rendering
+- ✅ Code blocks with syntax highlighting + copy
+- ✅ Inline tool call cards (search, code, etc.)
+- ✅ Artifact cards with file type thumbnails
+- ✅ Background processing banner
+- ✅ Side panel (desktop) / Bottom sheet (mobile)
+- ✅ Interactive widgets (single, multi, rank)
+- ✅ Citation superscripts with popovers
+- ✅ Action buttons (copy, retry, thumbs up/down)
+- ✅ Stop/Send button toggle
+- ✅ Auto-scroll with user override
+- ✅ All animations smooth, all spacing tight

@@ -62,7 +62,15 @@ The application is built with an Express.js backend, a React (TypeScript) fronte
 - **ToolCallCard redesign** (`AiMessageBubble.tsx`): Inline SVG icons per tool type (magnifying glass for search, terminal for code/default). Status indicators: spinner SVG (0.8s rotation) for running, green check circle for complete (cross-fade 200ms), red X for error. `var(--bg-secondary)` background, 10px radius, tight 4px margin spacing. Expandable detail area on complete with chevron rotation animation.
 - **CSS additions** (`index.css`): `@keyframes shimmer` (background-position sweep), `@keyframes toolSpinner` (0.8s linear rotation), `@keyframes expandSlideDown` (300ms max-height/opacity). Classes: `.thinking-collapse-bar`, `.thinking-collapse-bar.active::after`, `.thinking-collapse-bar.clickable`, `.thinking-expand-content`, `.tool-spinner`, `.expand-slide-down`.
 - All colors use CSS variables (`var(--bg-secondary)`, `var(--text-secondary)`, `var(--border-code)`, `var(--accent-green)`, etc.) for theme compatibility.
-- Phases 3-5 (artifacts, widgets, citations, polish) are NOT yet implemented.
+- Phases 4-5 (widgets, citations, polish) are NOT yet implemented.
+
+**Claude-Style Streaming UI (Phase 3 — Artifacts & Panels):**
+- **ArtifactCard** (`ArtifactCard.tsx`): Inline card replacing old "Open in panel" button. 56x56 thumbnail with DocumentIcon/CodeIcon SVG, title (15px, line-clamp 2), subtitle with extension mapping (e.g., "Code . TSX", "File . MD"). `artifactSlideUp` 250ms entry animation. `BackgroundProcessingBanner` shows StarburstIndicator + text while streaming.
+- **ArtifactSidePanel** (`ArtifactSidePanel.tsx`): Desktop (>=768px) side panel, `clamp(400px, 50vw, 700px)` width, `flexShrink: 0`. Slides in from right via `panelSlideInRight` (350ms ease-out-quart), closes with `panelSlideOutRight` (250ms). Header with title, copy, download, close buttons. Body renders `AIMessageContent`. Esc key closes.
+- **ArtifactBottomSheet** (`ArtifactBottomSheet.tsx`): Mobile (<768px) bottom sheet, max-height 90vh. Overlay `rgba(0,0,0,0.5)` with `overlayFadeIn`. Sheet uses `sheetSlideUp` (400ms ease-spring). Drag handle with `touch-action: none` (only on handle). Swipe-to-dismiss if dragged >30% of height.
+- **Layout integration** (`agent.tsx`): Outer container changed to `flex h-full`. Chat area is `flex-1 min-w-0` with smooth transition. Side panel rendered alongside (not overlay) so chat shrinks. `artifactPanel` state managed at layout level. `onOpenArtifact` callback added to `BuddyCallbacks` interface, passed through `BuddyRuntimeProvider`.
+- **CSS additions** (`index.css`): `@keyframes artifactSlideUp`, `panelSlideInRight`, `panelSlideOutRight`, `sheetSlideUp`, `sheetSlideDown`, `overlayFadeIn`. Classes: `.artifact-side-panel`, `.artifact-side-panel.closing`, `.artifact-bottom-sheet-overlay`, `.artifact-bottom-sheet`, `.artifact-bottom-sheet.closing`.
+- Old `ArtifactPanel` component retained for utility exports (`isLongContent`, `extractArtifactTitle`) but no longer rendered directly in message bubbles.
 
 **iOS App (Capacitor):** The project is configured for iOS packaging via Capacitor, loading the web application from a deployed domain.
 

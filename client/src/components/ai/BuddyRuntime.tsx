@@ -97,6 +97,7 @@ export interface BuddyCallbacks {
   onContinueGeneration?: (messageId: string) => void;
   onNewConversation?: () => void;
   onTrimAndRetry?: (messageId: string) => void;
+  onOpenArtifact?: (content: string, title: string) => void;
 }
 
 const CallbacksContext = createContext<BuddyCallbacks>({});

@@ -1,12 +1,13 @@
 import { useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { Check, Copy, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink, FileText, RefreshCw, PanelRightOpen, WifiOff, Clock, MessageSquarePlus, Scissors, ServerCrash, PlayCircle, AlertCircle } from "lucide-react";
+import { Check, Copy, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink, FileText, RefreshCw, WifiOff, Clock, MessageSquarePlus, Scissors, ServerCrash, PlayCircle, AlertCircle } from "lucide-react";
 import AiConfirmCard from "./AiConfirmCard";
 import AiGuidedCreation from "./AiGuidedCreation";
 import AIMessageContent from "./AIMessageContent";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingBlock from "./ThinkingBlock";
-import ArtifactPanel, { isLongContent, extractArtifactTitle } from "./ArtifactPanel";
+import { isLongContent, extractArtifactTitle } from "./ArtifactPanel";
+import ArtifactCard from "./ArtifactCard";
 
 interface ActionPayload {
   actionType: string;
@@ -88,7 +89,22 @@ interface AiMessageBubbleProps {
   onContinueGeneration?: (messageId: string) => void;
   onNewConversation?: () => void;
   onTrimAndRetry?: (messageId: string) => void;
+  onOpenArtifact?: (content: string, title: string) => void;
   isLastAssistant?: boolean;
+}
+
+function extractArtifactExtension(content: string): string {
+  const codeBlockMatch = content.match(/```(\w+)/);
+  if (codeBlockMatch) {
+    const lang = codeBlockMatch[1].toLowerCase();
+    const langToExt: Record<string, string> = {
+      javascript: 'js', typescript: 'ts', python: 'py',
+      html: 'html', css: 'css', jsx: 'jsx', tsx: 'tsx',
+      svg: 'svg', mermaid: 'mermaid', markdown: 'md',
+    };
+    return langToExt[lang] || lang;
+  }
+  return 'md';
 }
 
 function BrandLogo({ breathing }: { breathing?: boolean }) {
@@ -753,11 +769,11 @@ export default function AiMessageBubble({
   onContinueGeneration,
   onNewConversation,
   onTrimAndRetry,
+  onOpenArtifact,
   isLastAssistant,
 }: AiMessageBubbleProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.content);
-  const [artifactOpen, setArtifactOpen] = useState(false);
   if (message.role === "system") {
     if (message.errorType && message.errorType !== 'unknown') {
       return (
@@ -1013,7 +1029,8 @@ export default function AiMessageBubble({
     );
   }
 
-  const showArtifactButton = !message.isStreaming && isLongContent(message.content);
+  const hasLongContent = isLongContent(message.content);
+  const showArtifactCard = hasLongContent;
   const MAX_COLLAPSED_LENGTH = 2000;
   const isLongMessage = message.content.length > MAX_COLLAPSED_LENGTH && !message.isStreaming;
   const [contentExpanded, setContentExpanded] = useState(true);
@@ -1025,6 +1042,12 @@ export default function AiMessageBubble({
   }, [message.isStreaming]);
 
   const displayContent = contentExpanded ? message.content : message.content.slice(0, MAX_COLLAPSED_LENGTH);
+
+  const handleArtifactClick = useCallback(() => {
+    if (onOpenArtifact) {
+      onOpenArtifact(message.content, extractArtifactTitle(message.content));
+    }
+  }, [message.content, onOpenArtifact]);
 
   return (
     <div
@@ -1098,20 +1121,14 @@ export default function AiMessageBubble({
             </button>
           </div>
         )}
-        {showArtifactButton && (
-          <button
-            onClick={() => setArtifactOpen(true)}
-            className="flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-            style={{
-              background: 'rgba(255,255,255,0.06)',
-              color: 'var(--text-secondary)',
-              border: '1px solid rgba(255,255,255,0.08)',
-            }}
-            data-testid={`btn-open-artifact-${message.id}`}
-          >
-            <PanelRightOpen className="w-3.5 h-3.5" strokeWidth={1.5} />
-            Open in panel
-          </button>
+        {showArtifactCard && (
+          <ArtifactCard
+            title={extractArtifactTitle(message.content)}
+            extension={extractArtifactExtension(message.content)}
+            onClick={handleArtifactClick}
+            isGenerating={!!message.isStreaming}
+            messageId={message.id}
+          />
         )}
         {!message.isStreaming && (
           <div className="flex items-center">
@@ -1132,15 +1149,6 @@ export default function AiMessageBubble({
           </div>
         )}
       </div>
-      {artifactOpen && (
-        <ArtifactPanel
-          content={message.content}
-          title={extractArtifactTitle(message.content)}
-          isOpen={artifactOpen}
-          onClose={() => setArtifactOpen(false)}
-          messageId={message.id}
-        />
-      )}
     </div>
   );
 }
