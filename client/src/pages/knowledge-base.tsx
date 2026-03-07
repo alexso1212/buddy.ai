@@ -160,6 +160,8 @@ export default function KnowledgeBase() {
     return { total, ready, processing, error, orgRelevant, classified };
   }, [documents]);
 
+  const [dupInfo, setDupInfo] = useState<{ message: string; duplicateType: string; existingDoc: any } | null>(null);
+
   const uploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {
       const token = localStorage.getItem('buddy_token');
@@ -168,6 +170,12 @@ export default function KnowledgeBase() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
       });
+      if (res.status === 409) {
+        const dupData = await res.json();
+        if (dupData.error === 'duplicate_detected') {
+          throw Object.assign(new Error(dupData.message), { isDuplicate: true, dupData });
+        }
+      }
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: '上传失败' }));
         throw new Error(err.error || '上传失败');
@@ -179,8 +187,12 @@ export default function KnowledgeBase() {
       toast({ title: '文档上传成功', description: 'AI 正在分类...' });
       resetUploadForm();
     },
-    onError: (err: Error) => {
-      toast({ title: '上传失败', description: err.message, variant: 'destructive' });
+    onError: (err: any) => {
+      if (err.isDuplicate) {
+        setDupInfo(err.dupData);
+      } else {
+        toast({ title: '上传失败', description: err.message, variant: 'destructive' });
+      }
     },
   });
 
@@ -241,13 +253,15 @@ export default function KnowledgeBase() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
-  function handleUpload() {
+  function handleUpload(force = false) {
     if (!selectedFile) return;
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('title', uploadTitle || selectedFile.name.replace(/\.[^/.]+$/, ''));
     formData.append('category', 'general');
     formData.append('visibility', 'org');
+    if (force) formData.append('forceUpload', 'true');
+    setDupInfo(null);
     uploadMutation.mutate(formData);
   }
 
@@ -630,6 +644,49 @@ export default function KnowledgeBase() {
           extractedFiles={analysisResult.extractedFiles}
         />
       )}
+
+      <Dialog open={!!dupInfo} onOpenChange={(open) => { if (!open) setDupInfo(null); }}>
+        <DialogContent className="sm:max-w-md" data-testid="dialog-duplicate">
+          <DialogHeader>
+            <DialogTitle>检测到重复文件</DialogTitle>
+          </DialogHeader>
+          {dupInfo && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">{dupInfo.message}</p>
+              <div className="p-3 rounded-lg bg-muted/30 border text-sm">
+                <p className="font-medium text-foreground">{dupInfo.existingDoc?.title}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  文件名：{dupInfo.existingDoc?.fileName} | 上传时间：{dupInfo.existingDoc?.createdAt ? new Date(dupInfo.existingDoc.createdAt).toLocaleString('zh-CN') : '-'}
+                </p>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => { setDupInfo(null); resetUploadForm(); }} data-testid="button-dup-cancel">
+                  取消上传
+                </Button>
+                {dupInfo.duplicateType === 'same_name_diff_size' && (
+                  <Button variant="secondary" onClick={() => {
+                    if (!selectedFile) return;
+                    const formData = new FormData();
+                    formData.append('file', selectedFile);
+                    formData.append('title', uploadTitle || selectedFile.name.replace(/\.[^/.]+$/, ''));
+                    formData.append('category', 'general');
+                    formData.append('visibility', 'org');
+                    formData.append('forceUpload', 'true');
+                    formData.append('replaceDocId', String(dupInfo.existingDoc?.id));
+                    setDupInfo(null);
+                    uploadMutation.mutate(formData);
+                  }} data-testid="button-dup-replace">
+                    替换旧版本
+                  </Button>
+                )}
+                <Button onClick={() => handleUpload(true)} data-testid="button-dup-force">
+                  {dupInfo.duplicateType === 'same_name_same_size' ? '仍然上传' : '保留两个版本'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

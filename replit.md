@@ -38,6 +38,7 @@ The application is built with an Express.js backend, a React (TypeScript) fronte
 - **Project AI Decomposition:** AI generates Work Breakdown Structures (WBS) with tasks, dependencies, and assignee suggestions for projects.
 - **Submission AI Pre-Review:** AI analyzes task submissions against descriptions, providing relevance scores and improvement suggestions.
 - **Briefing Action Suggestions:** Daily briefings include AI-suggested one-click actions derived from task statuses.
+- **Global Deduplication System:** Pre-AI-consumption duplicate detection across three entry points: (1) Task creation uses Jaccard keyword similarity matching (0 tokens); (2) KB uploads check filename + file size + MD5 content hash (0 tokens); (3) Chat attachments compute MD5 and check 7-day history. All dedup checks happen before AI processing, with user confirmation widgets before proceeding. `forceCreate`/`forceUpload` flags bypass detection after user confirms. AI self-check prompt rules also instruct the model to verify against active task lists.
 
 **Super Admin Dashboard:**
 - Provides administrative control and monitoring for system health, AI consumption, user trends, organization management, knowledge base statistics, and security logs.

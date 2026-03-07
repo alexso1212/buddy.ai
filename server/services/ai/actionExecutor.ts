@@ -1,15 +1,29 @@
 import { storage } from "../../storage";
 import { judgeTaskAssignment } from "./verdictService";
 import { createDecisionTasksForWarnings, pushDecisionRequests } from "./decisionService";
+import { detectTaskDuplicate } from "../tasks/deduplication";
 
 export async function executeAction(
   actionType: string,
   data: Record<string, any>,
   userId: number,
-  orgId: number = 1
-): Promise<{ success: boolean; message: string; entity?: any; duplicateWarning?: string }> {
+  orgId: number = 1,
+  options?: { forceCreate?: boolean }
+): Promise<{ success: boolean; message: string; entity?: any; duplicateWarning?: string; error?: string; matches?: any[] }> {
   switch (actionType) {
     case 'create_task': {
+      if (!options?.forceCreate) {
+        const dupCheck = await detectTaskDuplicate({ orgId, title: data.title });
+        if (dupCheck.hasDuplicate) {
+          return {
+            success: false,
+            error: 'duplicate_suspected',
+            message: `发现 ${dupCheck.matches.length} 个相似任务`,
+            matches: dupCheck.matches,
+          };
+        }
+      }
+
       const duplicate = await storage.checkDuplicateTask(orgId, data.title, data.assigneeId, data.memberProfileId);
       let duplicateWarning: string | undefined;
       if (duplicate) {

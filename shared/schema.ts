@@ -894,6 +894,7 @@ export const kbDocuments = pgTable('kb_documents', {
   kbRelevance: integer('kb_relevance'),
   sensitivity: varchar('sensitivity', { length: 20 }),
   aiSummary: text('ai_summary'),
+  contentHash: varchar('content_hash', { length: 64 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

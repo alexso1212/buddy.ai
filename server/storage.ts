@@ -1,6 +1,6 @@
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { eq, and, desc, or, inArray, sql, ilike, gte } from "drizzle-orm";
+import { eq, and, desc, or, inArray, notInArray, sql, ilike, gte } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import {
   organizations,
@@ -316,6 +316,15 @@ export class DatabaseStorage {
     return result ?? null;
   }
 
+  async getActiveTasksByOrg(orgId: number): Promise<Task[]> {
+    return db.select().from(tasks).where(
+      and(
+        eq(tasks.orgId, orgId),
+        notInArray(tasks.status, ['done', 'cancelled'])
+      )
+    );
+  }
+
   async getTaskDependencies(taskId: number): Promise<TaskDependency[]> {
     return db.select().from(taskDependencies).where(
       or(eq(taskDependencies.taskId, taskId), eq(taskDependencies.dependsOnTaskId, taskId))
@@ -576,6 +585,27 @@ export class DatabaseStorage {
     const [result] = await db.insert(chatMessages).values(data).returning();
     await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, data.conversationId));
     return result;
+  }
+
+  async findRecentAttachmentMessages(orgId: number, days: number = 7) {
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    return db.select({
+      id: chatMessages.id,
+      metadata: chatMessages.metadata,
+      createdAt: chatMessages.createdAt,
+      conversationId: chatMessages.conversationId,
+    })
+    .from(chatMessages)
+    .innerJoin(conversations, eq(chatMessages.conversationId, conversations.id))
+    .where(
+      and(
+        eq(conversations.orgId, orgId),
+        gte(chatMessages.createdAt, cutoff),
+        sql`${chatMessages.metadata} IS NOT NULL AND ${chatMessages.metadata}::text LIKE '%attachmentHashes%'`
+      )
+    )
+    .orderBy(desc(chatMessages.createdAt))
+    .limit(50);
   }
 
   async deleteChatMessagesByConversation(conversationId: number): Promise<void> {
@@ -1037,6 +1067,20 @@ export class DatabaseStorage {
   async updateKbDocument(id: number, data: Partial<typeof kbDocuments.$inferInsert>) {
     const [doc] = await db.update(kbDocuments).set({ ...data, updatedAt: new Date() }).where(eq(kbDocuments.id, id)).returning();
     return doc;
+  }
+
+  async findKbDocByHash(orgId: number, contentHash: string) {
+    const [doc] = await db.select().from(kbDocuments).where(
+      and(eq(kbDocuments.orgId, orgId), eq(kbDocuments.contentHash, contentHash))
+    ).limit(1);
+    return doc || null;
+  }
+
+  async findKbDocByFileName(orgId: number, fileName: string) {
+    const [doc] = await db.select().from(kbDocuments).where(
+      and(eq(kbDocuments.orgId, orgId), eq(kbDocuments.fileName, fileName))
+    ).limit(1);
+    return doc || null;
   }
 
   async deleteKbDocument(id: number) {

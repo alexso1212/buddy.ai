@@ -965,6 +965,7 @@ export default function Agent() {
   const [convTitle, setConvTitle] = useState<string>("");
   const [showChat, setShowChat] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const pendingDupActionRef = useRef<ActionPayload | null>(null);
   const isStreamingRef = useRef(false);
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
   const streamFullTextRef = useRef('');
@@ -1179,15 +1180,61 @@ export default function Agent() {
   }, []);
 
   const handleInteractiveSubmit = useCallback(
-    (answers: Record<string, string[]>) => {
+    async (answers: Record<string, string[]>) => {
       if (!interactiveInput) return;
+
+      if (answers['dup_check'] && pendingDupActionRef.current) {
+        const choice = answers['dup_check'][0];
+        const dupAction = pendingDupActionRef.current;
+        pendingDupActionRef.current = null;
+        setInteractiveInput(null);
+
+        if (choice === '这是不同的任务，继续创建') {
+          try {
+            const res = await apiRequest("POST", "/api/ai/confirm", {
+              actionType: dupAction.actionType,
+              data: dupAction.data,
+              currentUserId: currentUserId || 1,
+              conversationId: activeConvId || undefined,
+              forceCreate: true,
+            });
+            const json = await res.json();
+            const result = json.data;
+            const sysMsg: Message = {
+              id: nextId(),
+              role: "system",
+              content: result.message || "任务已创建",
+            };
+            setMessages((prev) => [...prev, sysMsg]);
+            if (activeConvId) saveMessageToDB(activeConvId, sysMsg);
+            queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+          } catch (err: any) {
+            const sysMsg: Message = {
+              id: nextId(),
+              role: "system",
+              content: err.message || "创建失败，请重试",
+            };
+            setMessages((prev) => [...prev, sysMsg]);
+          }
+        } else {
+          const sysMsg: Message = {
+            id: nextId(),
+            role: "system",
+            content: "已取消创建，不重复创建该任务。",
+          };
+          setMessages((prev) => [...prev, sysMsg]);
+          if (activeConvId) saveMessageToDB(activeConvId, sysMsg);
+        }
+        return;
+      }
+
       const displayText = formatAnswersForDisplay(interactiveInput, answers);
       const structuredData = formatAnswersForAI(interactiveInput, answers);
       setInteractiveInput(null);
       const responseText = `[用户选择] ${displayText}\n\n${JSON.stringify(structuredData)}`;
       handleSendRef.current?.(responseText);
     },
-    [interactiveInput]
+    [interactiveInput, activeConvId]
   );
 
   const handleInteractiveDismiss = useCallback(() => {
@@ -1864,6 +1911,29 @@ export default function Agent() {
 
         const json = await res.json();
         const result = json.data;
+
+        if (result.error === 'duplicate_suspected' && result.matches?.length > 0) {
+          const matchInfo = result.matches.map((m: any) =>
+            `- "${m.title}" (${m.status}, 相似度: ${Math.round(m.similarity * 100)}%)`
+          ).join('\n');
+
+          const dupMsg: Message = {
+            id: nextId(),
+            role: "assistant",
+            content: `系统检测到相似任务：\n\n${matchInfo}\n\n请确认是否仍要创建新任务。`,
+          };
+          setMessages((prev) => [...prev, dupMsg]);
+          if (activeConvId) saveMessageToDB(activeConvId, dupMsg);
+
+          pendingDupActionRef.current = action;
+          setInteractiveInput([{
+            id: 'dup_check',
+            type: 'single_select' as const,
+            question: `已有相似任务「${result.matches[0].title}」(${result.matches[0].status})，如何处理？`,
+            options: ['这是同一个任务，不重复创建', '这是不同的任务，继续创建'],
+          }]);
+          return;
+        }
 
         let systemContent = result.message;
         if (result.duplicateWarning) {

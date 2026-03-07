@@ -1,4 +1,5 @@
 import fs from 'fs';
+import crypto from 'crypto';
 import path from 'path';
 import { storage } from '../../storage';
 import { processZipFile, processMultipleFiles, cleanupTempFiles, ExtractedFile } from './zipProcessor';
@@ -202,8 +203,19 @@ export async function confirmAndSetup(params: {
     console.log(`[Setup] Created ${membersCreated} member profiles`);
   }
 
+  let duplicatesSkipped = 0;
   for (const file of extractedFiles) {
     try {
+      const fileBuffer = fs.readFileSync(file.filePath);
+      const contentHash = crypto.createHash('md5').update(fileBuffer).digest('hex');
+
+      const existingByHash = await storage.findKbDocByHash(orgId, contentHash);
+      if (existingByHash) {
+        console.log(`[Setup] Skipping duplicate file ${file.fileName} (hash matches ${existingByHash.fileName})`);
+        duplicatesSkipped++;
+        continue;
+      }
+
       const classification = profile.fileClassifications.find(
         fc => fc.fileName === file.fileName
       );
@@ -240,6 +252,7 @@ export async function confirmAndSetup(params: {
         visibleDeptIds,
         status: 'pending',
         chunkCount: 0,
+        contentHash,
       });
 
       documentsCreated++;
@@ -255,7 +268,7 @@ export async function confirmAndSetup(params: {
     }
   }
 
-  console.log(`[Setup] Created ${documentsCreated} KB documents`);
+  console.log(`[Setup] Created ${documentsCreated} KB documents, skipped ${duplicatesSkipped} duplicates`);
 
   cleanupTempFiles(extractedFiles);
 

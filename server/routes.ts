@@ -3517,6 +3517,48 @@ ${existingBlock}`
       let aborted = false;
       req.on('close', () => { aborted = true; });
 
+      if (attachments && attachments.length > 0) {
+        try {
+          const attachmentHashes = attachments.map((att: any) => ({
+            name: att.name || 'unknown',
+            hash: crypto.createHash('md5').update(Buffer.from(att.base64 || '', 'base64')).digest('hex'),
+          }));
+
+          const recentWithHashes = await storage.findRecentAttachmentMessages(orgId, 7);
+
+          for (const attHash of attachmentHashes) {
+            for (const row of recentWithHashes) {
+              try {
+                const meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata;
+                if (meta?.attachmentHashes?.some((ah: any) => ah.hash === attHash.hash)) {
+                  const uploadTime = new Date(row.createdAt).toLocaleString('zh-CN');
+                  res.write(`data: ${JSON.stringify({
+                    type: 'token',
+                    content: `> **注意**: 文件「${attHash.name}」在 ${uploadTime} 已被上传过（对话 #${row.conversationId}）。如果这不是重复文件，我将继续处理。\n\n`
+                  })}\n\n`);
+                  fullText += `> **注意**: 文件「${attHash.name}」在 ${uploadTime} 已被上传过（对话 #${row.conversationId}）。如果这不是重复文件，我将继续处理。\n\n`;
+                  break;
+                }
+              } catch {}
+            }
+          }
+
+          setImmediate(async () => {
+            try {
+              await storage.createChatMessage({
+                conversationId: activeConvId,
+                role: 'system',
+                content: '[attachment_hashes]',
+                type: 'metadata',
+                metadata: JSON.stringify({ attachmentHashes }),
+              });
+            } catch {}
+          });
+        } catch (hashErr) {
+          console.error('Attachment hash check failed:', hashErr);
+        }
+      }
+
       let effectiveSystemPrompt = systemPrompt || '';
       if (replyStyle && replyStyle !== 'normal') {
         const styleMap: Record<string, string> = {
@@ -3799,14 +3841,18 @@ ${existingBlock}`
 
   app.post("/api/ai/confirm", authMiddleware, async (req: any, res) => {
     try {
-      const { actionType, data, currentUserId, conversationId } = req.body;
+      const { actionType, data, currentUserId, conversationId, forceCreate } = req.body;
       if (!actionType || !data) {
         return res.status(400).json({ error: 'actionType and data are required' });
       }
 
       const userId = currentUserId || req.currentUserId;
       const orgId = req.orgId || 1;
-      const result = await executeAction(actionType, data, userId, orgId);
+      const result = await executeAction(actionType, data, userId, orgId, { forceCreate: !!forceCreate });
+
+      if (result.error === 'duplicate_suspected') {
+        return res.json({ data: result });
+      }
 
       if (!result.success && result.entity?.conflict) {
         return res.status(409).json({ error: result.message, data: result });
@@ -4338,6 +4384,57 @@ ${existingBlock}`
       const file = req.file;
       const ext = pathModule.extname(file.originalname).toLowerCase().replace('.', '');
 
+      const fileBuffer = fsKb.readFileSync(file.path);
+      const contentHash = crypto.createHash('md5').update(fileBuffer).digest('hex');
+
+      const forceUpload = req.body.forceUpload === 'true' || req.body.forceUpload === true;
+      const replaceDocId = req.body.replaceDocId ? parseInt(req.body.replaceDocId) : null;
+
+      if (replaceDocId) {
+        const oldDoc = await storage.getKbDocumentById(replaceDocId);
+        if (oldDoc && oldDoc.orgId === orgId) {
+          try {
+            const oldFilePath = oldDoc.fileUrl.startsWith('/') ? oldDoc.fileUrl.slice(1) : oldDoc.fileUrl;
+            if (fsKb.existsSync(oldFilePath)) fsKb.unlinkSync(oldFilePath);
+          } catch {}
+          await storage.deleteKbChunksByDocument(replaceDocId);
+          await storage.deleteKbDocument(replaceDocId);
+        }
+      }
+
+      if (!forceUpload) {
+        const existingByName = await storage.findKbDocByFileName(orgId, file.originalname);
+        if (existingByName) {
+          try { fsKb.unlinkSync(file.path); } catch {}
+          if (existingByName.fileSize === file.size) {
+            return res.status(409).json({
+              error: 'duplicate_detected',
+              duplicateType: 'same_name_same_size',
+              existingDoc: { id: existingByName.id, title: existingByName.title, fileName: existingByName.fileName, createdAt: existingByName.createdAt },
+              message: `知识库中已有同名同大小的文件「${existingByName.title}」`,
+            });
+          } else {
+            return res.status(409).json({
+              error: 'duplicate_detected',
+              duplicateType: 'same_name_diff_size',
+              existingDoc: { id: existingByName.id, title: existingByName.title, fileName: existingByName.fileName, fileSize: existingByName.fileSize, createdAt: existingByName.createdAt },
+              message: `知识库中有同名文件「${existingByName.title}」（大小不同，可能是新版本）`,
+            });
+          }
+        }
+
+        const existingByHash = await storage.findKbDocByHash(orgId, contentHash);
+        if (existingByHash) {
+          try { fsKb.unlinkSync(file.path); } catch {}
+          return res.status(409).json({
+            error: 'duplicate_detected',
+            duplicateType: 'same_content',
+            existingDoc: { id: existingByHash.id, title: existingByHash.title, fileName: existingByHash.fileName, createdAt: existingByHash.createdAt },
+            message: `知识库中已有内容完全相同的文件「${existingByHash.title}」`,
+          });
+        }
+      }
+
       const docData = {
         orgId,
         uploadedBy: userId,
@@ -4351,6 +4448,7 @@ ${existingBlock}`
         visibleDeptIds: req.body.visibleDeptIds || null,
         status: 'pending',
         chunkCount: 0,
+        contentHash,
       };
 
       const doc = await storage.createKbDocument(docData);
