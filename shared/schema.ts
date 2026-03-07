@@ -187,6 +187,14 @@ export const tasks = pgTable('tasks', {
 
   starred: boolean('starred').default(false).notNull(),
 
+  isDecisionTask: boolean('is_decision_task').default(false).notNull(),
+  decisionForTaskId: integer('decision_for_task_id').references((): AnyPgColumn => tasks.id),
+  decisionType: varchar('decision_type', { length: 50 }),
+  decisionStatus: varchar('decision_status', { length: 50 }).default('pending'),
+  decisionDeadline: timestamp('decision_deadline'),
+  escalationDeadline: timestamp('escalation_deadline'),
+  escalatedToId: integer('escalated_to_id').references(() => users.id),
+
   version: integer('version').notNull().default(1),
 
   createdAt: timestamp('created_at').defaultNow().notNull(),

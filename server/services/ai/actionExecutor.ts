@@ -1,5 +1,6 @@
 import { storage } from "../../storage";
 import { judgeTaskAssignment } from "./verdictService";
+import { createDecisionTasksForWarnings, pushDecisionRequests } from "./decisionService";
 
 export async function executeAction(
   actionType: string,
@@ -63,6 +64,19 @@ export async function executeAction(
           changes: JSON.stringify(data),
           source: 'ai_chat',
         });
+      }
+
+      if (hasWarnings && newTask) {
+        try {
+          const decisionTasks = await createDecisionTasksForWarnings(
+            newTask, data.warnings, userId, orgId
+          );
+          if (decisionTasks.length > 0) {
+            await pushDecisionRequests(decisionTasks, orgId, userId);
+          }
+        } catch (err) {
+          console.error('[DecisionService] Failed to create decision tasks:', err);
+        }
       }
 
       return {
@@ -338,6 +352,59 @@ export async function executeAction(
       }
     }
 
+    case 'resolve_decision': {
+      const { decisionTaskId, updates } = data;
+      try {
+        const decisionCheck = await storage.getTaskById(decisionTaskId);
+        if (!decisionCheck) {
+          return { success: false, message: `决策任务 #${decisionTaskId} 不存在` };
+        }
+        if (decisionCheck.orgId !== orgId) {
+          return { success: false, message: '无权操作此决策任务' };
+        }
+        if (!decisionCheck.isDecisionTask) {
+          return { success: false, message: `任务 #${decisionTaskId} 不是决策任务` };
+        }
+        if (decisionCheck.assigneeId !== userId && decisionCheck.creatorId !== userId) {
+          return { success: false, message: '你不是此决策任务的负责人或创建者' };
+        }
+
+        const updateData: Record<string, any> = {};
+        if (updates.assigneeId) updateData.assigneeId = updates.assigneeId;
+        if (updates.dueDate) {
+          const parsedDate = new Date(updates.dueDate);
+          if (isNaN(parsedDate.getTime())) {
+            return { success: false, message: '截止日期格式无效' };
+          }
+          updateData.dueDate = parsedDate;
+        }
+        if (updates.priority) updateData.priority = updates.priority;
+        if (updates.description) updateData.description = updates.description;
+        if (updates.weight) updateData.weight = updates.weight;
+
+        const { decisionTask, originalTask } = await storage.resolveDecisionTask(decisionTaskId, updateData);
+        const taskTitle = originalTask?.title || '未知任务';
+
+        await storage.createActivityLog({
+          orgId,
+          userId,
+          entityType: 'task',
+          entityId: originalTask?.id || decisionTaskId,
+          action: 'decision_resolved',
+          changes: JSON.stringify({ decisionTaskId, updates }),
+          source: 'ai_chat',
+        });
+
+        return {
+          success: true,
+          message: `决策已确认，任务「${taskTitle}」已更新`,
+          entity: originalTask,
+        };
+      } catch (err: any) {
+        return { success: false, message: err.message || '决策处理失败' };
+      }
+    }
+
     default:
       return { success: false, message: `不支持的操作类型: ${actionType}` };
   }
@@ -403,6 +470,7 @@ export async function executeBatchActions(
 
     const createdTasks = await storage.batchCreateTasks(taskItems, orgId, userId);
 
+    const allDecisionTasks: any[] = [];
     for (let i = 0; i < createdTasks.length; i++) {
       results.push({
         success: true,
@@ -410,6 +478,28 @@ export async function executeBatchActions(
         entity: createdTasks[i],
         duplicateWarning: duplicateWarnings.get(i),
       });
+
+      if (createdTasks[i].needsReview && createdTasks[i].warnings) {
+        try {
+          const warnings = JSON.parse(createdTasks[i].warnings!);
+          if (Array.isArray(warnings) && warnings.length > 0) {
+            const decisionTasks = await createDecisionTasksForWarnings(
+              createdTasks[i], warnings, userId, orgId
+            );
+            allDecisionTasks.push(...decisionTasks);
+          }
+        } catch (err) {
+          console.error('[DecisionService] Failed to create decision tasks for batch task:', err);
+        }
+      }
+    }
+
+    if (allDecisionTasks.length > 0) {
+      try {
+        await pushDecisionRequests(allDecisionTasks, orgId, userId);
+      } catch (err) {
+        console.error('[DecisionService] Failed to push decision requests:', err);
+      }
     }
   }
 

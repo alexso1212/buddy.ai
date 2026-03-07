@@ -727,6 +727,10 @@ export function BuddyAssistantMessage() {
     );
   }
 
+  if (message.type === "decision_request") {
+    return <DecisionRequestCard message={message} />;
+  }
+
   if (message.type === "follow_up" && message.followUp && callbacks.onFollowUpSubmit) {
     const hasSteps = message.followUp.steps && message.followUp.steps.length > 0;
     if (!hasSteps) {
@@ -968,6 +972,104 @@ function DefaultAssistantMessage({ message, isLastAssistant }: { message: BuddyM
           messageId={message.id}
         />
       )}
+    </div>
+  );
+}
+
+interface DecisionItem {
+  index: number;
+  decisionTaskId: number;
+  originalTaskId: number | null;
+  originalTaskTitle: string;
+  decisionType: string | null;
+  label: string;
+  warning: string;
+}
+
+const DECISION_TYPE_ICONS: Record<string, typeof AlertTriangle> = {
+  assignee_unclear: AlertTriangle,
+  deadline_missing: Clock,
+  scope_unclear: AlertCircle,
+  priority_unclear: AlertTriangle,
+  dependency_unclear: AlertCircle,
+};
+
+function DecisionRequestCard({ message }: { message: BuddyMessage }) {
+  let parsed: { type: string; items: DecisionItem[]; createdAt?: string } | null = null;
+  try {
+    parsed = typeof message.content === 'string' ? JSON.parse(message.content) : null;
+  } catch {
+    parsed = null;
+  }
+
+  if (!parsed || parsed.type !== 'decision_request' || !parsed.items?.length) {
+    return (
+      <div className="flex justify-start px-3 mb-6" data-testid={`ai-message-${message.id}`}>
+        <div className="max-w-[90%]">
+          <div className="mb-2"><BrandLogo /></div>
+          <AIMessageContent content={message.content} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="flex justify-start px-3 mb-6"
+      style={{ animation: 'messageAppear 200ms ease-out' }}
+      data-testid={`decision-request-${message.id}`}
+    >
+      <div className="max-w-[90%] w-full">
+        <div className="mb-2"><BrandLogo /></div>
+        <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 overflow-hidden">
+          <div className="px-4 py-3 border-b border-amber-200/60 dark:border-amber-800/60 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
+              AI创建的任务需要你确认
+            </span>
+            <span className="text-xs text-amber-600/70 dark:text-amber-400/70 ml-auto">
+              {parsed.items.length} 项待确认
+            </span>
+          </div>
+          <div className="divide-y divide-amber-200/40 dark:divide-amber-800/40">
+            {parsed.items.map((item) => {
+              const Icon = DECISION_TYPE_ICONS[item.decisionType || ''] || AlertCircle;
+              return (
+                <div
+                  key={item.decisionTaskId}
+                  className="px-4 py-3 flex items-start gap-3"
+                  data-testid={`decision-item-${item.decisionTaskId}`}
+                >
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 flex items-center justify-center text-xs font-medium mt-0.5">
+                    {item.index}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-[var(--text-primary)]">
+                      {item.originalTaskTitle}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <Icon className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                      <span className="text-xs text-amber-700 dark:text-amber-300">
+                        {item.label}
+                      </span>
+                    </div>
+                    {item.warning && (
+                      <p className="text-xs text-[var(--text-secondary)] mt-1">
+                        {item.warning}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="px-4 py-2.5 bg-amber-100/50 dark:bg-amber-900/20 border-t border-amber-200/60 dark:border-amber-800/60">
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              请直接回复确认信息，例如：&quot;第1个任务交给张三，截止下周五&quot;
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

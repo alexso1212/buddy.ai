@@ -47,7 +47,7 @@ interface Message {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
-  type?: "text" | "confirm" | "multi_confirm" | "follow_up";
+  type?: "text" | "confirm" | "multi_confirm" | "follow_up" | "decision_request";
   action?: ActionPayload;
   actions?: ActionPayload[];
   confirmed?: boolean | null;

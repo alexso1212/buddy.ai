@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Plus, Pencil, Trash2, MessageSquare, GitBranch, ListTree, Activity, Scale, Check, X as XIcon, Loader2, UserPlus, Users, AlertCircle, AlertTriangle, Sparkles, Bot, FileText, Search } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, MessageSquare, GitBranch, ListTree, Activity, Scale, Check, X as XIcon, Loader2, UserPlus, Users, AlertCircle, AlertTriangle, Sparkles, Bot, FileText, Search, Clock } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
 interface TaskDetailResponse {
@@ -271,6 +271,15 @@ export default function TaskDetail() {
     queryKey: ['/api/tasks', id, 'submissions'],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/tasks/${id}/submissions`);
+      return res.json();
+    },
+    enabled: !!id,
+  });
+
+  const { data: decisionTasksRes } = useQuery<{ data: any[] }>({
+    queryKey: ['/api/tasks', id, 'decisions'],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/tasks/${id}/decisions`);
       return res.json();
     },
     enabled: !!id,
@@ -735,6 +744,35 @@ export default function TaskDetail() {
           </button>
         </div>
       )}
+
+      {(() => {
+        const pendingDecisions = (decisionTasksRes?.data || []).filter((d: any) => d.decisionStatus === 'pending');
+        if (pendingDecisions.length === 0) return null;
+        const assigneeIds = [...new Set(pendingDecisions.map((d: any) => d.assigneeId).filter(Boolean))];
+        const assigneeNames = assigneeIds.map((uid: number) => {
+          const u = users.find((u: any) => u.id === uid);
+          return u?.displayName || `用户#${uid}`;
+        }).join('、');
+        const oldest = pendingDecisions.reduce((min: any, d: any) =>
+          new Date(d.createdAt) < new Date(min.createdAt) ? d : min, pendingDecisions[0]);
+        const hoursAgo = Math.round((Date.now() - new Date(oldest.createdAt).getTime()) / (1000 * 60 * 60));
+        const timeText = hoursAgo < 1 ? '刚刚' : hoursAgo < 24 ? `${hoursAgo}小时前` : `${Math.round(hoursAgo / 24)}天前`;
+        return (
+          <div className="bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-lg p-4 mb-4" data-testid="pending-decision-banner">
+            <div className="flex items-start gap-2">
+              <Clock className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold text-orange-800 dark:text-orange-300">
+                  此任务有 {pendingDecisions.length} 项信息待确认
+                </h3>
+                <p className="text-xs text-orange-700 dark:text-orange-400 mt-1">
+                  已推送给 {assigneeNames}，等待回复中（{timeText}发起）
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <Card className={`p-6 ${detailTab === "info" ? "" : "hidden md:block"}`}>
         <div className="flex items-start justify-between gap-4 flex-wrap">

@@ -84,6 +84,17 @@ export const createDepartmentSchema = z.object({
   parentDeptId: z.number().optional(),
 });
 
+export const resolveDecisionSchema = z.object({
+  decisionTaskId: z.number(),
+  updates: z.object({
+    assigneeId: z.number().optional(),
+    dueDate: z.string().optional(),
+    priority: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+    description: z.string().optional(),
+    weight: z.number().min(1).max(10).optional(),
+  }),
+});
+
 export const ACTION_SCHEMAS: Record<string, z.ZodSchema> = {
   create_task: createTaskSchema,
   update_task: updateTaskSchema,
@@ -95,4 +106,5 @@ export const ACTION_SCHEMAS: Record<string, z.ZodSchema> = {
   create_user: createUserSchema,
   update_user: updateUserSchema,
   create_department: createDepartmentSchema,
+  resolve_decision: resolveDecisionSchema,
 };

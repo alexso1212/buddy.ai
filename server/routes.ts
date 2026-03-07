@@ -2722,6 +2722,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
         return new Date(t.dueDate) < now;
       }).length;
       const needsReviewCount = tasks.filter(t => t.needsReview).length;
+      const decisionStats = await storage.getDecisionTaskStats(req.orgId);
 
       const todayStart = new Date(now);
       todayStart.setHours(0, 0, 0, 0);
@@ -2744,11 +2745,37 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
           completedCount,
           overdueCount,
           needsReviewCount,
+          pendingDecisionCount: decisionStats.pendingCount,
           todayNew,
           weekNew,
           monthNew,
         }
       });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== Decision Tasks =====================
+  app.get("/api/tasks/:id/decisions", authMiddleware, async (req: any, res) => {
+    try {
+      const taskId = parseInt(req.params.id);
+      if (isNaN(taskId)) return res.status(400).json({ error: "Invalid task ID" });
+      const task = await storage.getTaskById(taskId);
+      if (!task || task.orgId !== req.orgId) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+      const decisions = await storage.getDecisionTasksForTask(taskId);
+      return res.json({ data: decisions });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/decision-tasks/pending", authMiddleware, async (req: any, res) => {
+    try {
+      const pending = await storage.getPendingDecisionTasksForUser(req.currentUserId, req.orgId);
+      return res.json({ data: pending });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }

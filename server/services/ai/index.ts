@@ -959,6 +959,29 @@ ${contextBlock}
 ${memoryLines}`;
   }
 
+  try {
+    const pendingDecisions = await storage.getPendingDecisionTasksForUser(context.currentUserId, context.orgId);
+    if (pendingDecisions.length > 0) {
+      const decisionLines = await Promise.all(pendingDecisions.map(async (d, i) => {
+        const originalTask = d.decisionForTaskId ? await storage.getTaskById(d.decisionForTaskId) : null;
+        const typeLabels: Record<string, string> = {
+          assignee_unclear: '需要确认负责人',
+          deadline_missing: '需要确认截止日期',
+          scope_unclear: '需要明确任务范围',
+          priority_unclear: '需要确认优先级',
+          dependency_unclear: '需要确认依赖关系',
+        };
+        const label = typeLabels[d.decisionType || ''] || '需要确认';
+        return `${i + 1}. [决策ID: ${d.id}] 原始任务「${originalTask?.title || '未知'}」(#${d.decisionForTaskId}) — ${label}`;
+      }));
+      prompt += `\n\n## 待确认决策任务
+当前用户有以下待确认的决策任务，如果用户的回复涉及这些决策的确认信息，请使用 resolve_decision 操作来处理：
+${decisionLines.join('\n')}`;
+    }
+  } catch (err) {
+    console.error('[AI] Failed to load pending decisions:', err);
+  }
+
   if (context.customSystemPrompt) {
     prompt += `\n\n## 额外指令\n${context.customSystemPrompt}`;
   }

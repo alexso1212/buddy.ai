@@ -50,6 +50,7 @@ interface StatsOverview {
   completedCount: number;
   overdueCount: number;
   needsReviewCount: number;
+  pendingDecisionCount: number;
   todayNew: number;
   weekNew: number;
   monthNew: number;
@@ -284,6 +285,7 @@ function Dashboard() {
     completedCount: 0,
     overdueCount: 0,
     needsReviewCount: 0,
+    pendingDecisionCount: 0,
     todayNew: 0,
     weekNew: 0,
     monthNew: 0,
@@ -461,7 +463,7 @@ function Dashboard() {
       <DailyBriefing />
 
       {/* Stats Cards Row */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3 md:gap-4 mb-8">
         <div className="bg-card rounded-lg shadow-sm p-3 md:p-6" data-testid="stat-total">
           <div className="text-muted-foreground text-xs md:text-sm font-medium truncate">总任务数</div>
           <div className="text-lg md:text-3xl font-bold text-foreground mt-1 md:mt-2">{stats.totalTasks}</div>
@@ -485,6 +487,11 @@ function Dashboard() {
         <div className="bg-card rounded-lg shadow-sm p-3 md:p-6" data-testid="stat-needs-review">
           <div className="text-muted-foreground text-xs md:text-sm font-medium truncate">待补充</div>
           <div className="text-lg md:text-3xl font-bold text-amber-600 mt-1 md:mt-2">{stats.needsReviewCount}</div>
+        </div>
+
+        <div className="bg-card rounded-lg shadow-sm p-3 md:p-6" data-testid="stat-pending-decisions">
+          <div className="text-muted-foreground text-xs md:text-sm font-medium truncate">待确认决策</div>
+          <div className="text-lg md:text-3xl font-bold text-orange-600 mt-1 md:mt-2">{stats.pendingDecisionCount}</div>
         </div>
       </div>
 

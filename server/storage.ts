@@ -1165,6 +1165,106 @@ export class DatabaseStorage {
       }
     });
   }
+
+  async createDecisionTask(data: {
+    orgId: number;
+    projectId: number;
+    title: string;
+    description: string;
+    creatorId: number;
+    assigneeId: number;
+    decisionForTaskId: number;
+    decisionType: string;
+    decisionDeadline: Date;
+    escalationDeadline: Date;
+  }): Promise<Task> {
+    const [result] = await db.insert(tasks).values({
+      ...data,
+      type: 'decision',
+      status: 'todo',
+      priority: 'high',
+      isDecisionTask: true,
+      decisionStatus: 'pending',
+      weight: 1,
+      progress: 0,
+      needsReview: false,
+    }).returning();
+    return result;
+  }
+
+  async resolveDecisionTask(
+    decisionTaskId: number,
+    updates: Partial<InsertTask>
+  ): Promise<{ decisionTask: Task; originalTask: Task | undefined }> {
+    const decisionTask = await this.getTaskById(decisionTaskId);
+    if (!decisionTask || !decisionTask.isDecisionTask || !decisionTask.decisionForTaskId) {
+      throw new Error(`Decision task #${decisionTaskId} not found or invalid`);
+    }
+
+    const [updatedDecision] = await db.update(tasks).set({
+      decisionStatus: 'resolved',
+      status: 'done',
+      completedAt: new Date(),
+      updatedAt: new Date(),
+    }).where(eq(tasks.id, decisionTaskId)).returning();
+
+    const originalTask = await db.update(tasks).set({
+      ...updates,
+      updatedAt: new Date(),
+    }).where(eq(tasks.id, decisionTask.decisionForTaskId)).returning().then(r => r[0]);
+
+    const remainingDecisions = await db.select({ count: sql<number>`count(*)` })
+      .from(tasks)
+      .where(and(
+        eq(tasks.decisionForTaskId, decisionTask.decisionForTaskId),
+        eq(tasks.isDecisionTask, true),
+        eq(tasks.decisionStatus, 'pending')
+      ));
+
+    if (Number(remainingDecisions[0]?.count) === 0 && originalTask) {
+      await db.update(tasks).set({
+        needsReview: false,
+        updatedAt: new Date(),
+      }).where(eq(tasks.id, decisionTask.decisionForTaskId));
+    }
+
+    return { decisionTask: updatedDecision, originalTask };
+  }
+
+  async getPendingDecisionTasksForUser(userId: number, orgId: number): Promise<Task[]> {
+    return db.select().from(tasks).where(and(
+      eq(tasks.orgId, orgId),
+      eq(tasks.assigneeId, userId),
+      eq(tasks.isDecisionTask, true),
+      eq(tasks.decisionStatus, 'pending')
+    )).orderBy(desc(tasks.createdAt));
+  }
+
+  async getPendingDecisionTasksForTask(taskId: number): Promise<Task[]> {
+    return db.select().from(tasks).where(and(
+      eq(tasks.decisionForTaskId, taskId),
+      eq(tasks.isDecisionTask, true),
+      eq(tasks.decisionStatus, 'pending')
+    ));
+  }
+
+  async getDecisionTaskStats(orgId: number): Promise<{ pendingCount: number }> {
+    const [result] = await db.select({ count: sql<number>`count(*)` })
+      .from(tasks)
+      .where(and(
+        eq(tasks.orgId, orgId),
+        eq(tasks.isDecisionTask, true),
+        eq(tasks.decisionStatus, 'pending')
+      ));
+    return { pendingCount: Number(result?.count || 0) };
+  }
+
+  async getDecisionTasksForTask(taskId: number): Promise<Task[]> {
+    return db.select().from(tasks).where(and(
+      eq(tasks.decisionForTaskId, taskId),
+      eq(tasks.isDecisionTask, true)
+    )).orderBy(desc(tasks.createdAt));
+  }
 }
 
 export const storage = new DatabaseStorage();
