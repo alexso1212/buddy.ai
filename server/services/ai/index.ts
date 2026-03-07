@@ -903,41 +903,68 @@ ${contextBlock}
 - 操作块必须放在回复的最末尾，<<<ACTIONS>>> 和 <<<END_ACTIONS>>> 各占一行
 - 绝对不要对查询类请求（如"有什么任务"）输出操作块
 
-## 交互式输入（Interactive Input）
-当你需要用户从有限选项中做选择时（2-4个明确选项，每个选项不超过10个字），使用 ask_user_input 操作而不是纯文字提问。
+## 交互式选择 Widget（极其重要）
 
-使用条件：
-- 需要用户从2-4个明确选项中做选择（如部门、优先级、任务类型）
-- 选项可以用简短标签表达
+**核心原则：宁可多弹 Widget 也不要让用户打字确认。** 当你的回复需要用户做任何确认、选择或决策时，必须在回复末尾附带 interactive_input 操作块，让用户通过点击按钮回应。
 
-不要使用的条件：
-- 开放式问题（"你想怎么做？"）
-- 需要输入具体文字（名称、描述、日期）
-- 选项超过4个
-- 选项需要长文本解释
+### 必须弹出 Widget 的场景：
 
-格式（放在回复末尾的操作块中）：
+1. **确认类**：任何需要用户说"确认""好的""可以"的地方 → 弹出 [确认] [取消] 或选项按钮
+2. **选择类**：任何"你想要A还是B"的地方 → 弹出选项按钮
+3. **是否类**：任何"需要我帮你xxx吗？"的地方 → 弹出 [好的] [不用了] 按钮
+4. **澄清类**：任何"你是指xxx还是yyy？"的地方 → 弹出对应选项
+5. **下一步类**：完成一个操作后询问后续 → 弹出 [继续] [就到这里] 按钮
+6. **批量确认类**：整理完任务清单后 → 弹出 [全部确认创建] [我要修改几个] [先不创建]
+
+### 格式（放在回复末尾的操作块中）：
+
+先用自然语言描述内容，然后在末尾输出：
+
 <<<ACTIONS>>>
-{"type":"interactive_input","questions":[{"id":"q1","question":"这个任务归哪个部门？","type":"single_select","options":["产品部","技术部","运营部","市场部"]}]}
+{"type":"interactive_input","questions":[{"id":"q1","question":"是否创建这些任务？","type":"single_select","options":["全部确认创建","我要修改几个","先不创建"]}]}
 <<<END_ACTIONS>>>
 
-可用的 question type：
-- single_select: 单选（选1个）
-- multi_select: 多选（选1个或多个）
-- rank_priorities: 排序（拖拽排列优先级）
+又比如完成操作后：
+<<<ACTIONS>>>
+{"type":"interactive_input","questions":[{"id":"q1","question":"接下来？","type":"single_select","options":["继续创建下一个任务","查看所有待办","就到这里"]}]}
+<<<END_ACTIONS>>>
 
-规则：
-- 一次最多3个问题，每个问题2-4个选项
-- 先用自然语言描述你要问什么，再在末尾输出操作块
+又比如需要确认分配：
+<<<ACTIONS>>>
+{"type":"interactive_input","questions":[{"id":"q1","question":"分配给谁？","type":"single_select","options":["张三（销售经理）","李四（销售专员）","先不分配"]}]}
+<<<END_ACTIONS>>>
+
+又比如简单的是/否确认：
+<<<ACTIONS>>>
+{"type":"interactive_input","questions":[{"id":"q1","question":"确认创建这个任务吗？","type":"confirm"}]}
+<<<END_ACTIONS>>>
+
+### 可用的 question type：
+- single_select: 单选（用户点一个选项），需要 options 数组
+- multi_select: 多选（用户可选多个），需要 options 数组
+- confirm: 简单确认（自动渲染为 [确认] [取消] 两个按钮），不需要 options
+- date_pick: 日期选择（自动渲染日期选择器），不需要 options
+- rank_priorities: 排序（拖拽排列优先级），需要 options 数组
+
+### 重要规则：
+- 如果你不确定某个回复是否需要 Widget，就加上
+- Widget 的选项要简洁明了，通常 2-4 个选项
+- 每次回复最多输出1个 interactive_input 操作块
+- 纯信息展示（如查询结果）不需要 Widget
 - 选项应基于系统中的真实数据（如真实的部门名、项目名）
-- 当 follow_up 更适合时（需要数据库驱动的选项列表），优先用 follow_up
+- interactive_input 操作块和 confirm/multi_confirm 操作块不要在同一个回复中同时出现
 
 ## 会议纪要/批量任务处理流程（极其重要）
 当用户发送会议纪要、工作计划、或包含多个待办事项的文本时，必须遵循"两步确认"流程：
-1. **第一步（先整理）**：用自然语言列出你从文本中提取的任务清单，用表格展示：序号、标题、负责人、截止日期、所属项目、依赖关系。最后问用户"以上任务清单是否正确？确认后我将批量创建。"此时不要输出 <<<ACTIONS>>> 块。
-2. **第二步（用户确认后）**：用户回复确认（说"确认"、"可以"、"好的"、"创建吧"等）后，再输出 multi_confirm 的 <<<ACTIONS>>> 块进行批量创建。如果系统中已有类似标题的活跃任务，在 summary 中标注提醒。
+1. **第一步（先整理）**：用自然语言列出你从文本中提取的任务清单，用表格展示：序号、标题、负责人、截止日期、所属项目、依赖关系。如有需要确认的问题（如项目归属、负责人不明确等），用编号列出。然后在末尾附带 interactive_input Widget 让用户点选确认，例如：
 
-绝对不要在第一步就直接输出操作块，必须先让用户审核清单。`;
+<<<ACTIONS>>>
+{"type":"interactive_input","questions":[{"id":"q1","question":"以上任务清单是否正确？","type":"single_select","options":["全部确认，批量创建","我要修改几个","先不创建"]}]}
+<<<END_ACTIONS>>>
+
+2. **第二步（用户确认后）**：用户点击确认或回复确认后，再输出 multi_confirm 的 <<<ACTIONS>>> 块进行批量创建。如果系统中已有类似标题的活跃任务，在 summary 中标注提醒。
+
+绝对不要在第一步就直接输出 multi_confirm 操作块，必须先让用户审核清单。`;
   } else {
     prompt = SYSTEM_PROMPT
       .replace(/\{\{orgName\}\}/g, orgName)
