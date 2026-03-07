@@ -1,0 +1,76 @@
+# Agent 前端代码导出（精确版）
+
+> 上次导出的是后端架构，这次需要**前端 Agent 聊天页面**的所有代码。
+
+## 请依次执行以下命令，把结果全部写入一个文件 `AGENT_FRONTEND_EXPORT.md`：
+
+```bash
+# 1. 前端目录结构
+echo "## 1. 前端目录结构" > AGENT_FRONTEND_EXPORT.md
+echo '```' >> AGENT_FRONTEND_EXPORT.md
+find client/src -maxdepth 3 -type f | sort >> AGENT_FRONTEND_EXPORT.md
+echo '```' >> AGENT_FRONTEND_EXPORT.md
+
+# 2. Agent 主页面
+echo -e "\n## 2. agent.tsx" >> AGENT_FRONTEND_EXPORT.md
+echo '```tsx' >> AGENT_FRONTEND_EXPORT.md
+cat client/src/pages/agent.tsx >> AGENT_FRONTEND_EXPORT.md
+echo '```' >> AGENT_FRONTEND_EXPORT.md
+
+# 3. 所有 AI 相关组件
+echo -e "\n## 3. AI Components" >> AGENT_FRONTEND_EXPORT.md
+for f in $(find client/src/components -name "*[Aa][Ii]*" -o -name "*chat*" -o -name "*message*" -o -name "*artifact*" -o -name "*thinking*" -o -name "*input*bar*" -o -name "*composer*" 2>/dev/null | sort); do
+  echo -e "\n### $f" >> AGENT_FRONTEND_EXPORT.md
+  echo '```tsx' >> AGENT_FRONTEND_EXPORT.md
+  cat "$f" >> AGENT_FRONTEND_EXPORT.md
+  echo '```' >> AGENT_FRONTEND_EXPORT.md
+done
+
+# 4. 如果上面没找到，直接列出 components 目录
+echo -e "\n## 4. components 目录列表" >> AGENT_FRONTEND_EXPORT.md
+echo '```' >> AGENT_FRONTEND_EXPORT.md
+find client/src/components -type f | sort >> AGENT_FRONTEND_EXPORT.md
+echo '```' >> AGENT_FRONTEND_EXPORT.md
+
+# 5. 登录/注册页面（看第三方登录按钮放哪里）
+echo -e "\n## 5. Auth Pages" >> AGENT_FRONTEND_EXPORT.md
+for f in $(find client/src/pages -name "*auth*" -o -name "*login*" -o -name "*register*" -o -name "*sign*" 2>/dev/null | sort); do
+  echo -e "\n### $f" >> AGENT_FRONTEND_EXPORT.md
+  echo '```tsx' >> AGENT_FRONTEND_EXPORT.md
+  cat "$f" >> AGENT_FRONTEND_EXPORT.md
+  echo '```' >> AGENT_FRONTEND_EXPORT.md
+done
+
+# 6. 全局样式（暗色主题变量）
+echo -e "\n## 6. Global Styles" >> AGENT_FRONTEND_EXPORT.md
+echo '```css' >> AGENT_FRONTEND_EXPORT.md
+head -200 client/src/index.css >> AGENT_FRONTEND_EXPORT.md 2>/dev/null || head -200 client/src/globals.css >> AGENT_FRONTEND_EXPORT.md 2>/dev/null
+echo '```' >> AGENT_FRONTEND_EXPORT.md
+
+# 7. App.tsx 路由配置
+echo -e "\n## 7. App.tsx" >> AGENT_FRONTEND_EXPORT.md
+echo '```tsx' >> AGENT_FRONTEND_EXPORT.md
+cat client/src/App.tsx >> AGENT_FRONTEND_EXPORT.md
+echo '```' >> AGENT_FRONTEND_EXPORT.md
+
+# 8. SSE 路由的实际代码（看后端发了哪些 event type）
+echo -e "\n## 8. SSE Stream Route (actual code)" >> AGENT_FRONTEND_EXPORT.md
+echo '```typescript' >> AGENT_FRONTEND_EXPORT.md
+# 提取 /api/ai/chat/stream 路由的完整代码
+sed -n '/app\.post.*ai\/chat\/stream/,/^});/p' server/routes.ts >> AGENT_FRONTEND_EXPORT.md
+echo '```' >> AGENT_FRONTEND_EXPORT.md
+
+echo "Done! File: AGENT_FRONTEND_EXPORT.md"
+echo "Size: $(wc -l < AGENT_FRONTEND_EXPORT.md) lines"
+```
+
+## 导出后把 AGENT_FRONTEND_EXPORT.md 上传给我
+
+这是做 Agent 交互改造规格书的必要输入。我需要看到：
+
+1. 消息气泡怎么渲染的（Markdown？HTML？纯文本？）
+1. 思考过程动画怎么实现的（有没有？什么样的？）
+1. 流式输出的 SSE 事件有哪些类型
+1. 输入栏的功能开关有哪些
+1. Artifact 面板的交互
+1. 代码块怎么渲染的（有语法高亮吗？有复制按钮吗？）
