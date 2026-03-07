@@ -56,7 +56,7 @@ export default function AdminAI() {
 
   return (
     <AdminLayout>
-      <div className="p-6 space-y-6 max-w-7xl">
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6 max-w-7xl">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold text-foreground" data-testid="text-admin-ai-title">
@@ -109,7 +109,7 @@ export default function AdminAI() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
           <div className="bg-card border border-border rounded-xl p-4" data-testid="card-by-model">
             <h3 className="text-sm font-medium text-foreground mb-3">按模型</h3>
             {statsLoading ? (
@@ -216,7 +216,7 @@ export default function AdminAI() {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div>
                     <span className="text-muted-foreground block mb-1">Base URL</span>
                     <div className="bg-muted rounded-md px-2.5 py-1.5 font-mono text-foreground break-all">
@@ -261,7 +261,7 @@ export default function AdminAI() {
                 <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
                 智能路由映射 (Task Classification)
               </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {Object.entries(taskRouting).map(([task, route]: [string, any]) => (
                   <div
                     key={task}

@@ -24,7 +24,7 @@ export default function AdminSecurity() {
 
   return (
     <AdminLayout>
-      <div className="p-6 space-y-6 max-w-7xl">
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6 max-w-7xl">
         <div>
           <h2 className="text-xl font-semibold text-foreground" data-testid="text-admin-security-title">
             安全审计

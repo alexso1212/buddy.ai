@@ -21,7 +21,7 @@ export default function AdminKB() {
 
   return (
     <AdminLayout>
-      <div className="p-6 space-y-6 max-w-7xl">
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6 max-w-7xl">
         <div>
           <h2 className="text-xl font-semibold text-foreground" data-testid="text-admin-kb-title">
             知识库概览
@@ -29,7 +29,7 @@ export default function AdminKB() {
           <p className="text-sm text-muted-foreground mt-0.5">文档处理状态、分类分布与异常文档</p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
           {[
             { label: "总文档数", value: ov.total_docs || 0, icon: BookOpen, color: "text-primary" },
             { label: "已就绪", value: ov.ready_docs || 0, icon: FileText, color: "text-green-500" },
@@ -53,7 +53,7 @@ export default function AdminKB() {
           <span>总 Chunks: {parseInt(ov.total_chunks || 0).toLocaleString()}</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
           <div className="bg-card border border-border rounded-xl p-4" data-testid="card-kb-category">
             <h3 className="text-sm font-medium text-foreground mb-3">按分类</h3>
             {isLoading ? (

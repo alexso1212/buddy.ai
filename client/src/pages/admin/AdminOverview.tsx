@@ -71,8 +71,8 @@ export default function AdminOverview() {
   if (isLoading) {
     return (
       <AdminLayout>
-        <div className="p-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="p-4 md:p-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="bg-card border border-border rounded-xl p-4 animate-pulse h-24" />
             ))}
@@ -84,7 +84,7 @@ export default function AdminOverview() {
 
   return (
     <AdminLayout>
-      <div className="p-6 space-y-6 max-w-7xl">
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6 max-w-7xl">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold text-foreground" data-testid="text-admin-overview-title">
@@ -102,7 +102,7 @@ export default function AdminOverview() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
           <StatCard
             label="总用户数"
             value={formatNum(d.total_users)}
@@ -161,7 +161,7 @@ export default function AdminOverview() {
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
           <div className="bg-card border border-border rounded-xl p-4" data-testid="card-system-health">
             <h3 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
               <Heart className="w-4 h-4 text-primary" />

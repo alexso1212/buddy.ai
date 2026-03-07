@@ -54,8 +54,8 @@ function MemberDetail({ userId }: { userId: number }) {
   const purposeColors = ["hsl(var(--primary))", "#f97316", "#22c55e", "#eab308", "#8b5cf6", "#ec4899"];
 
   return (
-    <div className="p-4 bg-muted/30 border-t border-border">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="p-3 md:p-4 bg-muted/30 border-t border-border">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
         <div>
           <h4 className="text-xs font-medium text-muted-foreground mb-2">3 个月趋势</h4>
           {trendData.length > 0 ? (
@@ -156,7 +156,7 @@ export default function AdminWorkforce() {
 
   return (
     <AdminLayout>
-      <div className="p-6 space-y-6 max-w-7xl">
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6 max-w-7xl">
         <div>
           <h2 className="text-xl font-semibold text-foreground" data-testid="text-admin-workforce-title">
             AI 依赖分析
@@ -164,7 +164,7 @@ export default function AdminWorkforce() {
           <p className="text-sm text-muted-foreground mt-0.5">分析团队成员对 AI 工具的依赖程度</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
           <div className="bg-card border border-border rounded-xl p-4 flex flex-col items-center justify-center" data-testid="card-team-index">
             <span className="text-xs text-muted-foreground mb-1">团队 AI 依赖指数</span>
             <div className="relative w-24 h-24 flex items-center justify-center">
