@@ -830,24 +830,22 @@ function Sidebar({
             </div>
           </CollapsibleContent>
 
-          <div style={{ height: 'calc(16px + env(safe-area-inset-bottom, 0px))' }} />
+          <div style={{ height: 16 }} />
+        </div>
 
-          <div
-            style={{
-              position: 'sticky',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              padding: '8px 16px',
-              paddingBottom: 'calc(8px + env(safe-area-inset-bottom, 0px))',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 8,
-              background: 'transparent',
-              pointerEvents: 'none',
-            }}
-          >
+        <div
+          style={{
+            flexShrink: 0,
+            padding: '8px 16px',
+            paddingBottom: 'calc(8px + env(safe-area-inset-bottom, 0px))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            background: 'transparent',
+            pointerEvents: 'none',
+          }}
+        >
             <div
               {...elasticDeformProps}
               style={{
@@ -913,7 +911,6 @@ function Sidebar({
                 <path d="M8.5 10.67h7M12 7.17v7" stroke="#AE5630" strokeWidth="2" strokeLinecap="round"/>
               </svg>
             </button>
-          </div>
         </div>
       </aside>
 
