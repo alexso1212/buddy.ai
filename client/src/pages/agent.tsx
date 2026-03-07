@@ -2156,8 +2156,7 @@ export default function Agent() {
     onContinueGeneration: handleContinueGeneration,
     onNewConversation: handleNewConversation,
     onTrimAndRetry: handleTrimAndRetry,
-    onSendMessage: handleSend,
-  }), [handleConfirm, handleReject, handleSkip, handleConfirmAll, handleFollowUpSubmit, handleStepAnswer, handleRegenerate, handleEditMessage, handleRetry, handleContinueGeneration, handleNewConversation, handleTrimAndRetry, handleSend]);
+  }), [handleConfirm, handleReject, handleSkip, handleConfirmAll, handleFollowUpSubmit, handleStepAnswer, handleRegenerate, handleEditMessage, handleRetry, handleContinueGeneration, handleNewConversation, handleTrimAndRetry]);
 
   const showWelcome = !activeConvId && messages.length === 0 && !showChat;
 
