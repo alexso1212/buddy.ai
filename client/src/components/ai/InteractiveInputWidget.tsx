@@ -403,7 +403,7 @@ export default function InteractiveInputWidget({
               width: 600,
               height: 600,
               borderRadius: "50%",
-              background: "radial-gradient(circle at center, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 30%, rgba(255,255,255,0.01) 60%, rgba(255,255,255,0) 100%)",
+              background: "radial-gradient(circle at center, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.05) 10%, rgba(255,255,255,0.035) 20%, rgba(255,255,255,0.02) 35%, rgba(255,255,255,0.01) 50%, rgba(255,255,255,0.004) 65%, rgba(255,255,255,0.001) 80%, rgba(255,255,255,0) 100%)",
               pointerEvents: "none",
               transform: "translate(-50%, -50%)",
               left: spotPos.x,

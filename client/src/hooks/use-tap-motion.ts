@@ -152,7 +152,8 @@ export function getElasticDeformProps(options?: ElasticDeformOptions) {
     el.style.boxShadow = `${offX.toFixed(1)}px ${offY.toFixed(1)}px ${spreadPx.toFixed(0)}px rgba(255,255,255,${glowIntensity.toFixed(2)}), 0 0 ${(spreadPx * 0.6).toFixed(0)}px rgba(255,255,255,${(glowIntensity * 0.4).toFixed(2)}), inset 0 0 ${(spreadPx * 0.5).toFixed(0)}px rgba(255,255,255,${(glowIntensity * 0.15).toFixed(2)})`;
 
     const bgAlpha = (0.25 + norm * 0.2).toFixed(2);
-    el.style.background = `radial-gradient(ellipse at ${(glowX * 100).toFixed(0)}% ${(glowY * 100).toFixed(0)}%, rgba(255,255,255,${bgAlpha}) 0%, rgba(255,255,255,${(parseFloat(bgAlpha) * 0.5).toFixed(2)}) 60%, rgba(255,255,255,${(parseFloat(bgAlpha) * 0.2).toFixed(2)}) 100%)`;
+    const a = parseFloat(bgAlpha);
+    el.style.background = `radial-gradient(ellipse at ${(glowX * 100).toFixed(0)}% ${(glowY * 100).toFixed(0)}%, rgba(255,255,255,${bgAlpha}) 0%, rgba(255,255,255,${(a * 0.7).toFixed(3)}) 15%, rgba(255,255,255,${(a * 0.45).toFixed(3)}) 30%, rgba(255,255,255,${(a * 0.25).toFixed(3)}) 50%, rgba(255,255,255,${(a * 0.1).toFixed(3)}) 70%, rgba(255,255,255,${(a * 0.03).toFixed(3)}) 85%, rgba(255,255,255,0) 100%)`;
     el.style.borderColor = `rgba(255,255,255,${(0.3 + norm * 0.25).toFixed(2)})`;
   };
 
