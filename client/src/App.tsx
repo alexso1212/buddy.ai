@@ -62,7 +62,6 @@ import {
   Search,
   Check,
   X,
-  MessageCirclePlus,
   BookOpen,
   Sparkles,
 } from "lucide-react";
@@ -831,7 +830,7 @@ function Sidebar({
             </div>
           </CollapsibleContent>
 
-          <div style={{ height: 'calc(76px + env(safe-area-inset-bottom, 0px))' }} />
+          <div style={{ height: 'calc(60px + env(safe-area-inset-bottom, 0px))' }} />
 
           <div
             style={{
@@ -909,7 +908,10 @@ function Sidebar({
               }}
               data-testid="button-new-chat"
             >
-              <MessageCirclePlus size={20} color="#FFFFFF" strokeWidth={2} />
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path d="M12 2C6.48 2 2 5.92 2 10.67c0 2.58 1.29 4.9 3.33 6.46-.08 1.27-.62 2.47-1.58 3.37a.5.5 0 00.35.85c2.1 0 3.82-.98 4.89-1.79.95.27 1.97.44 3.01.44 5.52 0 10-3.92 10-8.67S17.52 2 12 2z" fill="#F5E6D3"/>
+                <path d="M8.5 10.67h7M12 7.17v7" stroke="#AE5630" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
             </button>
           </div>
         </div>
