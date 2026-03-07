@@ -1032,6 +1032,15 @@ export type InsertAiProvider = z.infer<typeof insertAiProviderSchema>;
 export type AiProvider = typeof aiProviders.$inferSelect;
 
 // ============================================================
+// System Config — system_config（系统级键值配置）
+// ============================================================
+export const systemConfig = pgTable('system_config', {
+  key: varchar('key', { length: 100 }).primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+export type SystemConfig = typeof systemConfig.$inferSelect;
+
 // AI Model Providers — ai_model_providers（按模型分组的 API 配置）
 // ============================================================
 export const aiModelProviders = pgTable('ai_model_providers', {

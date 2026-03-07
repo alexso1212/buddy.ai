@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -24,6 +24,11 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronRight,
+  Search,
+  Eye,
+  EyeOff,
+  Save,
+  MessageSquare,
 } from "lucide-react";
 import {
   LineChart,
@@ -57,6 +62,12 @@ interface ProviderFormData {
   apiKey: string;
   timeout: number;
   isActive: boolean;
+}
+
+interface ChatModelEntry {
+  id: string;
+  label: string;
+  desc: string;
 }
 
 const SYSTEM_MODELS = [
@@ -203,6 +214,544 @@ function ProviderFormDialog({
   );
 }
 
+function BatchAddDialog({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const { toast } = useToast();
+  const [form, setForm] = useState({
+    providerName: "",
+    baseUrl: "",
+    apiKey: "",
+    apiKeyEnvVar: "",
+    timeout: 90000,
+  });
+  const [probing, setProbing] = useState(false);
+  const [probedModels, setProbedModels] = useState<{ id: string; name: string }[] | null>(null);
+  const [probeError, setProbeError] = useState<string | null>(null);
+  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+
+  const handleProbe = async () => {
+    if (!form.baseUrl) {
+      toast({ title: "请输入 Base URL", variant: "destructive" });
+      return;
+    }
+    if (!form.apiKey && !form.apiKeyEnvVar) {
+      toast({ title: "请输入 API Key 或环境变量名", variant: "destructive" });
+      return;
+    }
+    setProbing(true);
+    setProbeError(null);
+    setProbedModels(null);
+    try {
+      const res = await fetch("/api/admin/ai/probe-models", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          baseUrl: form.baseUrl,
+          apiKey: form.apiKey || undefined,
+          apiKeyEnvVar: form.apiKeyEnvVar || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "探测失败");
+      const models = json.data?.models || [];
+      setProbedModels(models);
+      setSelectedModels(new Set(models.map((m: any) => m.id)));
+    } catch (e: any) {
+      setProbeError(e.message);
+    }
+    setProbing(false);
+  };
+
+  const toggleModel = (id: string) => {
+    setSelectedModels(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSave = async () => {
+    if (selectedModels.size === 0) {
+      toast({ title: "请选择至少一个模型", variant: "destructive" });
+      return;
+    }
+    if (!form.providerName) {
+      toast({ title: "请输入端点名称", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/ai/model-providers/batch", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          modelIds: Array.from(selectedModels),
+          providerName: form.providerName,
+          baseUrl: form.baseUrl || null,
+          apiKey: form.apiKey || null,
+          apiKeyEnvVar: form.apiKeyEnvVar || null,
+          timeout: form.timeout,
+          isActive: true,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "批量创建失败");
+      toast({ title: `已为 ${selectedModels.size} 个模型添加端点` });
+      onCreated();
+      onClose();
+    } catch (e: any) {
+      toast({ title: "保存失败", description: e.message, variant: "destructive" });
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" data-testid="dialog-batch-add">
+      <div className="bg-card border border-border rounded-xl p-6 w-full max-w-xl mx-4 shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h3 className="text-base font-semibold text-foreground">添加 API 端点</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              输入 API 信息后探测可用模型，一次为多个模型创建端点
+            </p>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground" data-testid="button-close-batch">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">端点名称</label>
+            <input
+              className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              value={form.providerName}
+              onChange={(e) => setForm({ ...form, providerName: e.target.value })}
+              placeholder="例如: 官方 API、代理服务 A"
+              data-testid="input-batch-name"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Base URL</label>
+            <input
+              className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              value={form.baseUrl}
+              onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
+              placeholder="https://api.example.com/v1"
+              data-testid="input-batch-baseurl"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">
+              API Key
+            </label>
+            <input
+              type="password"
+              className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              value={form.apiKey}
+              onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
+              placeholder="sk-..."
+              data-testid="input-batch-apikey"
+            />
+            {!form.apiKey && (
+              <div className="mt-2">
+                <label className="text-xs text-muted-foreground block mb-1">
+                  或使用环境变量名
+                </label>
+                <input
+                  className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                  value={form.apiKeyEnvVar}
+                  onChange={(e) => setForm({ ...form, apiKeyEnvVar: e.target.value })}
+                  placeholder="CLAUDE_SIMPLE_API_KEY"
+                  data-testid="input-batch-envvar"
+                />
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">超时 (ms)</label>
+            <input
+              type="number"
+              className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              value={form.timeout}
+              onChange={(e) => setForm({ ...form, timeout: parseInt(e.target.value) || 90000 })}
+              data-testid="input-batch-timeout"
+            />
+          </div>
+
+          <button
+            onClick={handleProbe}
+            disabled={probing || (!form.baseUrl)}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm bg-primary/10 text-primary border border-primary/20 rounded-lg hover:bg-primary/20 transition-colors disabled:opacity-50"
+            data-testid="button-probe-models"
+          >
+            {probing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Search className="w-4 h-4" />
+            )}
+            {probing ? "正在探测..." : "探测可用模型"}
+          </button>
+
+          {probeError && (
+            <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg" data-testid="text-probe-error">
+              <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+              <p className="text-xs text-destructive">{probeError}</p>
+            </div>
+          )}
+
+          {probedModels && (
+            <div className="border border-border rounded-lg overflow-hidden" data-testid="panel-probed-models">
+              <div className="px-3 py-2 bg-muted/50 border-b border-border flex items-center justify-between">
+                <span className="text-xs font-medium text-foreground">
+                  发现 {probedModels.length} 个模型，已选 {selectedModels.size} 个
+                </span>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => setSelectedModels(new Set(probedModels.map(m => m.id)))}
+                    className="text-[10px] px-2 py-0.5 text-primary hover:bg-primary/10 rounded"
+                    data-testid="button-select-all"
+                  >
+                    全选
+                  </button>
+                  <button
+                    onClick={() => setSelectedModels(new Set())}
+                    className="text-[10px] px-2 py-0.5 text-muted-foreground hover:bg-muted rounded"
+                    data-testid="button-deselect-all"
+                  >
+                    取消全选
+                  </button>
+                </div>
+              </div>
+              <div className="max-h-[240px] overflow-y-auto p-1">
+                {probedModels.map((m) => (
+                  <label
+                    key={m.id}
+                    className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-muted/30 cursor-pointer"
+                    data-testid={`probe-model-${m.id}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedModels.has(m.id)}
+                      onChange={() => toggleModel(m.id)}
+                      className="rounded border-border text-primary focus:ring-primary"
+                    />
+                    <span className="text-sm font-mono text-foreground truncate">{m.id}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground rounded-lg transition-colors"
+            data-testid="button-cancel-batch"
+          >
+            取消
+          </button>
+          {probedModels && (
+            <button
+              onClick={handleSave}
+              disabled={saving || selectedModels.size === 0 || !form.providerName}
+              className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              data-testid="button-save-batch"
+            >
+              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              创建 {selectedModels.size} 个端点
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChatModelVisibilityPanel({
+  allProviders,
+}: {
+  allProviders: ModelProvider[];
+}) {
+  const { toast } = useToast();
+
+  const { data: chatModelsData, isLoading } = useQuery<any>({
+    queryKey: ["/api/admin/ai/chat-models"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/ai/chat-models", { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
+  const [visibleModels, setVisibleModels] = useState<ChatModelEntry[]>([]);
+  const [dirty, setDirty] = useState(false);
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (chatModelsData?.data) {
+      setVisibleModels(chatModelsData.data);
+      setDirty(false);
+    }
+  }, [chatModelsData]);
+
+  const configuredModelIds = [...new Set(allProviders.filter(p => p.isActive && p.keyConfigured).map(p => p.modelId))];
+
+  const availableModels = configuredModelIds.filter(
+    id => !visibleModels.some(v => v.id === id)
+  );
+
+  const saveMutation = useMutation({
+    mutationFn: async (models: ChatModelEntry[]) => {
+      const res = await fetch("/api/admin/ai/chat-models", {
+        method: "PUT",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ models }),
+      });
+      if (!res.ok) throw new Error("保存失败");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/chat-models"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai/available-models"] });
+      setDirty(false);
+      toast({ title: "聊天模型配置已保存" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "保存失败", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const addToVisible = (modelId: string) => {
+    const known = SYSTEM_MODELS.find(m => m.id === modelId);
+    const entry: ChatModelEntry = {
+      id: modelId,
+      label: known?.label || modelId.split('/').pop() || modelId,
+      desc: known?.desc || "",
+    };
+    setVisibleModels(prev => [...prev, entry]);
+    setDirty(true);
+  };
+
+  const removeFromVisible = (idx: number) => {
+    setVisibleModels(prev => prev.filter((_, i) => i !== idx));
+    setDirty(true);
+  };
+
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
+  const handleDragStart = useCallback((e: React.DragEvent, idx: number) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(idx));
+    setDragIdx(idx);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverIdx(idx);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, targetIdx: number) => {
+    e.preventDefault();
+    const srcIdx = parseInt(e.dataTransfer.getData("text/plain"));
+    setDragIdx(null);
+    setDragOverIdx(null);
+    if (srcIdx === targetIdx) return;
+    setVisibleModels(prev => {
+      const next = [...prev];
+      const [item] = next.splice(srcIdx, 1);
+      next.splice(targetIdx, 0, item);
+      return next;
+    });
+    setDirty(true);
+  }, []);
+
+  const updateLabel = (idx: number, field: 'label' | 'desc', value: string) => {
+    setVisibleModels(prev => prev.map((m, i) => i === idx ? { ...m, [field]: value } : m));
+    setDirty(true);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="bg-card border border-border rounded-xl p-4">
+        <div className="h-20 bg-muted rounded-lg animate-pulse" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-4" data-testid="card-chat-model-config">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-sm font-medium text-foreground flex items-center gap-2">
+            <MessageSquare className="w-4 h-4 text-primary" />
+            聊天模型配置
+          </h3>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            配置用户聊天页面可见的模型列表。拖拽调整显示顺序，点击编辑名称和描述。
+          </p>
+        </div>
+        {dirty && (
+          <button
+            onClick={() => saveMutation.mutate(visibleModels)}
+            disabled={saveMutation.isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
+            data-testid="button-save-chat-models"
+          >
+            {saveMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+            保存
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <h4 className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+            <Eye className="w-3.5 h-3.5" />
+            聊天可见 ({visibleModels.length})
+          </h4>
+          <div className="border border-border rounded-lg min-h-[120px]">
+            {visibleModels.length === 0 ? (
+              <div className="p-4 text-center text-xs text-muted-foreground">
+                从右侧添加模型到聊天列表
+              </div>
+            ) : (
+              <div className="p-1 space-y-0.5">
+                {visibleModels.map((m, idx) => (
+                  <div
+                    key={m.id}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, idx)}
+                    onDragOver={(e) => handleDragOver(e, idx)}
+                    onDragLeave={() => setDragOverIdx(null)}
+                    onDrop={(e) => handleDrop(e, idx)}
+                    onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
+                    className={`flex items-center gap-2 px-2.5 py-2 rounded-md transition-all ${
+                      dragIdx === idx
+                        ? "opacity-40 border border-dashed border-primary"
+                        : dragOverIdx === idx
+                        ? "bg-primary/5 border border-primary/30"
+                        : "hover:bg-muted/30 border border-transparent"
+                    }`}
+                    data-testid={`visible-model-${m.id}`}
+                  >
+                    <div className="cursor-grab active:cursor-grabbing shrink-0">
+                      <GripVertical className="w-3.5 h-3.5 text-muted-foreground/50" />
+                    </div>
+                    <span className="text-[10px] font-mono text-muted-foreground w-5 h-5 rounded-full bg-muted flex items-center justify-center shrink-0">
+                      {idx + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      {editingIdx === idx ? (
+                        <div className="space-y-1">
+                          <input
+                            className="w-full bg-muted border border-border rounded px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                            value={m.label}
+                            onChange={(e) => updateLabel(idx, 'label', e.target.value)}
+                            placeholder="显示名称"
+                            data-testid={`input-label-${m.id}`}
+                          />
+                          <input
+                            className="w-full bg-muted border border-border rounded px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                            value={m.desc}
+                            onChange={(e) => updateLabel(idx, 'desc', e.target.value)}
+                            placeholder="简短描述"
+                            data-testid={`input-desc-${m.id}`}
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <span className="text-sm text-foreground block truncate">{m.label}</span>
+                          <span className="text-[10px] text-muted-foreground font-mono block truncate">{m.id}</span>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        onClick={() => setEditingIdx(editingIdx === idx ? null : idx)}
+                        className="p-1 text-muted-foreground hover:text-foreground rounded"
+                        data-testid={`btn-edit-visible-${m.id}`}
+                      >
+                        {editingIdx === idx ? <Check className="w-3 h-3" /> : <Pencil className="w-3 h-3" />}
+                      </button>
+                      <button
+                        onClick={() => removeFromVisible(idx)}
+                        className="p-1 text-muted-foreground hover:text-destructive rounded"
+                        data-testid={`btn-remove-visible-${m.id}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <h4 className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+            <EyeOff className="w-3.5 h-3.5" />
+            可添加 ({availableModels.length})
+          </h4>
+          <div className="border border-border rounded-lg min-h-[120px]">
+            {availableModels.length === 0 ? (
+              <div className="p-4 text-center text-xs text-muted-foreground">
+                {configuredModelIds.length === 0
+                  ? "尚无已配置的模型端点"
+                  : "所有已配置模型都已添加到聊天列表"}
+              </div>
+            ) : (
+              <div className="p-1 space-y-0.5">
+                {availableModels.map((modelId) => {
+                  const known = SYSTEM_MODELS.find(m => m.id === modelId);
+                  return (
+                    <div
+                      key={modelId}
+                      className="flex items-center gap-2 px-2.5 py-2 rounded-md hover:bg-muted/30"
+                      data-testid={`available-model-${modelId}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm text-foreground block truncate">
+                          {known?.label || modelId}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground font-mono block truncate">
+                          {modelId}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => addToVisible(modelId)}
+                        className="p-1 text-primary hover:bg-primary/10 rounded"
+                        title="添加到聊天可见"
+                        data-testid={`btn-add-visible-${modelId}`}
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ModelGroup({
   model,
   providers,
@@ -215,7 +764,7 @@ function ModelGroup({
   testingId,
   testResult,
 }: {
-  model: typeof SYSTEM_MODELS[number];
+  model: { id: string; label: string; desc: string };
   providers: ModelProvider[];
   onAdd: (modelId: string) => void;
   onEdit: (p: ModelProvider) => void;
@@ -451,6 +1000,7 @@ export default function AdminAI() {
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [testingId, setTestingId] = useState<number | null>(null);
   const [testResult, setTestResult] = useState<{ id: number; success: boolean; message: string } | null>(null);
+  const [showBatchAdd, setShowBatchAdd] = useState(false);
 
   const { data: stats, isLoading: statsLoading } = useQuery<any>({
     queryKey: ["/api/admin/ai/stats", period],
@@ -488,6 +1038,16 @@ export default function AdminAI() {
     allModelProviders
       .filter((p) => p.modelId === modelId)
       .sort((a, b) => a.priority - b.priority);
+
+  const allModelIds = [...new Set([
+    ...SYSTEM_MODELS.map(m => m.id),
+    ...allModelProviders.map(p => p.modelId),
+  ])];
+
+  const allModelsForDisplay = allModelIds.map(id => {
+    const known = SYSTEM_MODELS.find(m => m.id === id);
+    return known || { id, label: id, desc: "" };
+  });
 
   const createMutation = useMutation({
     mutationFn: async ({ modelId, data }: { modelId: string; data: ProviderFormData }) => {
@@ -748,6 +1308,10 @@ export default function AdminAI() {
         </div>
 
         {isSuperAdmin && (
+          <ChatModelVisibilityPanel allProviders={allModelProviders} />
+        )}
+
+        {isSuperAdmin && (
           <div className="bg-card border border-border rounded-xl p-4" data-testid="card-model-providers">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -759,6 +1323,14 @@ export default function AdminAI() {
                   按模型分组管理 API 端点。同一模型下可添加多个端点，拖拽调整优先级顺序，系统按顺序尝试调用。
                 </p>
               </div>
+              <button
+                onClick={() => setShowBatchAdd(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                data-testid="button-batch-add"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                添加 API 端点
+              </button>
             </div>
 
             {providersLoading ? (
@@ -769,7 +1341,7 @@ export default function AdminAI() {
               </div>
             ) : (
               <div className="space-y-2">
-                {SYSTEM_MODELS.map((model) => (
+                {allModelsForDisplay.map((model) => (
                   <ModelGroup
                     key={model.id}
                     model={model}
@@ -840,6 +1412,16 @@ export default function AdminAI() {
           </div>
         )}
       </div>
+
+      {showBatchAdd && (
+        <BatchAddDialog
+          onClose={() => setShowBatchAdd(false)}
+          onCreated={() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/model-providers"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/config"] });
+          }}
+        />
+      )}
 
       {addingForModel && (
         <ProviderFormDialog

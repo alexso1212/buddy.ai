@@ -3213,6 +3213,28 @@ Return ONLY the JSON object, no other text.`;
   });
 
   // ===================== AI Guided Options =====================
+  app.get("/api/ai/available-models", authMiddleware, async (_req: any, res) => {
+    const DEFAULT_CHAT_MODELS = [
+      { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', desc: '日常任务首选' },
+      { id: 'claude-opus-4-6', label: 'Opus 4.6', desc: '深度分析模式' },
+      { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', desc: '快速响应' },
+    ];
+    try {
+      const val = await storage.getSystemConfig('chat_visible_models');
+      if (val) {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((m: any) => m.id && m.label)) {
+            return res.json({ data: parsed });
+          }
+        } catch {}
+      }
+      res.json({ data: DEFAULT_CHAT_MODELS });
+    } catch (e: any) {
+      res.json({ data: DEFAULT_CHAT_MODELS });
+    }
+  });
+
   app.get("/api/ai/guided-options", authMiddleware, async (req: any, res) => {
     try {
       const { type, projectId } = req.query;

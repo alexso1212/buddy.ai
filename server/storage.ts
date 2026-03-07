@@ -78,6 +78,7 @@ import {
   aiModelProviders,
   type AiModelProvider,
   type InsertAiModelProvider,
+  systemConfig,
 } from "@shared/schema";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -1353,6 +1354,20 @@ export class DatabaseStorage {
       eq(tasks.decisionForTaskId, taskId),
       eq(tasks.isDecisionTask, true)
     )).orderBy(desc(tasks.createdAt));
+  }
+
+  async getSystemConfig(key: string): Promise<string | null> {
+    const [row] = await db.select().from(systemConfig).where(eq(systemConfig.key, key));
+    return row?.value ?? null;
+  }
+
+  async setSystemConfig(key: string, value: string): Promise<void> {
+    await db.insert(systemConfig)
+      .values({ key, value, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: systemConfig.key,
+        set: { value, updatedAt: new Date() },
+      });
   }
 }
 

@@ -353,16 +353,8 @@ adminRouter.post("/ai/providers/:id/test", requireSuperAdmin, async (req, res) =
   }
 });
 
-const VALID_MODEL_IDS = [
-  'claude-sonnet-4-6',
-  'claude-opus-4-6',
-  'claude-haiku-4-5-20251001',
-  'gpt-4o',
-  'deepseek-chat',
-] as const;
-
 const modelProviderCreateSchema = z.object({
-  modelId: z.enum(VALID_MODEL_IDS),
+  modelId: z.string().min(1),
   providerName: z.string().min(1),
   baseUrl: z.string().url().nullable().optional().or(z.literal('').transform(() => null)),
   apiKeyEnvVar: z.string().optional().nullable(),
@@ -491,6 +483,119 @@ adminRouter.post("/ai/model-providers/:id/test", requireSuperAdmin, async (req, 
       const latency = Date.now() - startTime;
       res.json({ data: { success: false, error: apiErr.message, latency } });
     }
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.post("/ai/probe-models", requireSuperAdmin, async (req, res) => {
+  try {
+    const { baseUrl, apiKey, apiKeyEnvVar } = req.body;
+    const key = apiKey || (apiKeyEnvVar ? process.env[apiKeyEnvVar] : null);
+    if (!key) return res.status(400).json({ error: 'API Key 未提供' });
+    if (!baseUrl) return res.status(400).json({ error: 'Base URL 未提供' });
+    try {
+      const parsed = new URL(baseUrl);
+      const host = parsed.hostname;
+      if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|0\.|localhost|::1|\[::1\])/.test(host)) {
+        return res.status(400).json({ error: '不允许访问内网地址' });
+      }
+    } catch {
+      return res.status(400).json({ error: 'Base URL 格式无效' });
+    }
+    const OpenAI = (await import('openai')).default;
+    const client = new OpenAI({ baseURL: baseUrl, apiKey: key, timeout: 15000 });
+    const result = await client.models.list();
+    const models: { id: string; name: string }[] = [];
+    for await (const m of result) {
+      models.push({ id: m.id, name: m.id });
+    }
+    models.sort((a, b) => a.id.localeCompare(b.id));
+    res.json({ data: { models } });
+  } catch (e: any) {
+    res.status(500).json({ error: `探测失败: ${e.message}` });
+  }
+});
+
+const batchCreateSchema = z.object({
+  modelIds: z.array(z.string().min(1)).min(1),
+  providerName: z.string().min(1),
+  baseUrl: z.string().url().nullable().optional().or(z.literal('').transform(() => null)),
+  apiKeyEnvVar: z.string().optional().nullable(),
+  apiKey: z.string().optional().nullable(),
+  timeout: z.number().int().positive().default(90000),
+  isActive: z.boolean().default(true),
+}).refine(d => d.apiKeyEnvVar || d.apiKey, { message: '请提供 API Key 或环境变量名' });
+
+adminRouter.post("/ai/model-providers/batch", requireSuperAdmin, async (req, res) => {
+  try {
+    const parsed = batchCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+    }
+    const created: any[] = [];
+    for (const modelId of parsed.data.modelIds) {
+      const existing = await storage.getModelProvidersByModel(modelId);
+      const maxPriority = existing.length > 0 ? Math.max(...existing.map(p => p.priority)) + 1 : 0;
+      const provider = await storage.createModelProvider({
+        modelId,
+        providerName: parsed.data.providerName,
+        baseUrl: parsed.data.baseUrl || null,
+        apiKeyEnvVar: parsed.data.apiKeyEnvVar || null,
+        apiKey: parsed.data.apiKey || null,
+        timeout: parsed.data.timeout,
+        isActive: parsed.data.isActive,
+        priority: maxPriority,
+      });
+      created.push({ ...provider, apiKey: provider.apiKey ? '***' : null });
+    }
+    invalidateProviderCache();
+    res.json({ data: created });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+const DEFAULT_CHAT_MODELS = JSON.stringify([
+  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', desc: '日常任务首选' },
+  { id: 'claude-opus-4-6', label: 'Opus 4.6', desc: '深度分析模式' },
+  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', desc: '快速响应' },
+]);
+
+const chatModelEntrySchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  desc: z.string().default(""),
+});
+const chatModelsArraySchema = z.array(chatModelEntrySchema).min(1);
+
+adminRouter.get("/ai/chat-models", requireSuperAdmin, async (_req, res) => {
+  try {
+    const val = await storage.getSystemConfig('chat_visible_models');
+    if (val) {
+      try {
+        const parsed = JSON.parse(val);
+        const validated = chatModelsArraySchema.safeParse(parsed);
+        if (validated.success) {
+          return res.json({ data: validated.data });
+        }
+      } catch {}
+    }
+    res.json({ data: JSON.parse(DEFAULT_CHAT_MODELS) });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.put("/ai/chat-models", requireSuperAdmin, async (req, res) => {
+  try {
+    const { models } = req.body;
+    const validated = chatModelsArraySchema.safeParse(models);
+    if (!validated.success) {
+      return res.status(400).json({ error: '无效的模型列表', details: validated.error.flatten() });
+    }
+    await storage.setSystemConfig('chat_visible_models', JSON.stringify(validated.data));
+    res.json({ data: validated.data });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }

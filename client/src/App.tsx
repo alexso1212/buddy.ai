@@ -1594,29 +1594,37 @@ function Router() {
   );
 }
 
-const PRIMARY_MODELS = [
+const FALLBACK_MODELS = [
   { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', desc: 'Most efficient for everyday tasks' },
   { id: 'claude-opus-4-6', label: 'Opus 4.6', desc: 'Deep mode · Higher token cost' },
   { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', desc: 'Fastest for quick answers' },
 ];
 
-const MORE_MODELS = [
-  { id: 'gpt-4o', label: 'GPT-4o', desc: 'OpenAI flagship model' },
-  { id: 'deepseek-chat', label: 'DeepSeek V3', desc: 'Cost-effective alternative' },
-];
-
-const ALL_MODELS = [...PRIMARY_MODELS, ...MORE_MODELS];
-
 function ModelSelector() {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState(() => {
-    try { return localStorage.getItem('buddy_model') || ALL_MODELS[0].id; } catch { return ALL_MODELS[0].id; }
+    try { return localStorage.getItem('buddy_model') || FALLBACK_MODELS[0].id; } catch { return FALLBACK_MODELS[0].id; }
   });
   const [extThinking, setExtThinking] = useState(() => {
     try { return localStorage.getItem('buddy_extended_thinking') === 'true'; } catch { return false; }
   });
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [models, setModels] = useState(FALLBACK_MODELS);
   const dropRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('buddy_token');
+    if (!token) return;
+    fetch('/api/ai/available-models', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(json => {
+        if (json?.data && Array.isArray(json.data) && json.data.length > 0) {
+          setModels(json.data);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -1631,9 +1639,9 @@ function ModelSelector() {
     };
   }, [open]);
 
-  const current = ALL_MODELS.find(m => m.id === selected) || ALL_MODELS[0];
+  const current = models.find(m => m.id === selected) || models[0];
 
-  const selectModel = (m: typeof ALL_MODELS[0]) => {
+  const selectModel = (m: typeof models[0]) => {
     setSelected(m.id);
     try { localStorage.setItem('buddy_model', m.id); } catch {}
     window.dispatchEvent(new CustomEvent('model-changed', { detail: m.id }));
@@ -1647,7 +1655,7 @@ function ModelSelector() {
     window.dispatchEvent(new CustomEvent('extended-thinking-changed', { detail: next }));
   };
 
-  const renderModelRow = (m: typeof ALL_MODELS[0]) => (
+  const renderModelRow = (m: typeof models[0]) => (
     <button
       key={m.id}
       {...tapMotionProps}
@@ -1703,7 +1711,7 @@ function ModelSelector() {
             fontWeight: 600,
             color: 'var(--text-primary)',
             lineHeight: 1.2,
-          }}>{current.label}</span>
+          }}>{current?.label || selected}</span>
           {extThinking && (
             <span style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.2 }}>Extended</span>
           )}
@@ -1736,7 +1744,7 @@ function ModelSelector() {
           zIndex: 50,
           animation: 'fadeIn 150ms ease-out',
         }} data-testid="model-selector-dropdown">
-          {PRIMARY_MODELS.map(renderModelRow)}
+          {models.map(renderModelRow)}
 
           <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '4px 8px' }} />
 
@@ -1781,36 +1789,6 @@ function ModelSelector() {
               }} />
             </div>
           </div>
-
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '4px 8px' }} />
-
-          <div
-            style={{
-              padding: '12px 14px',
-              borderRadius: 10,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              cursor: 'pointer',
-              transition: 'background 150ms',
-            }}
-            onClick={() => setMoreOpen(v => !v)}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-            data-testid="btn-more-models"
-          >
-            <ChevronRight
-              size={16}
-              color="#ECECEC"
-              style={{
-                transform: moreOpen ? 'rotate(90deg)' : 'rotate(0deg)',
-                transition: 'transform 200ms',
-              }}
-            />
-            <span style={{ fontSize: 15, color: '#ECECEC' }}>More models</span>
-          </div>
-
-          {moreOpen && MORE_MODELS.map(renderModelRow)}
         </div>
       )}
     </div>
