@@ -94,12 +94,22 @@ function convertMessage(msg: BuddyMessage): ThreadMessageLike {
     contentParts.push({ type: "text", text: "" });
   }
 
-  return {
+  const mappedRole = msg.role === "system" ? "assistant" : msg.role;
+
+  const result: ThreadMessageLike = {
     id: msg.id,
-    role: msg.role === "system" ? "assistant" : msg.role,
+    role: mappedRole,
     content: contentParts,
     createdAt: msg.timestamp ? new Date(msg.timestamp) : undefined,
-    status: msg.isStreaming
+    metadata: {
+      custom: {
+        buddyMessage: msg,
+      },
+    },
+  };
+
+  if (mappedRole === "assistant") {
+    result.status = msg.isStreaming
       ? { type: "running" as const }
       : msg.errorType
         ? {
@@ -107,13 +117,10 @@ function convertMessage(msg: BuddyMessage): ThreadMessageLike {
             reason: "error" as const,
             error: msg.errorType,
           }
-        : { type: "complete" as const, reason: "stop" as const },
-    metadata: {
-      custom: {
-        buddyMessage: msg,
-      },
-    },
-  };
+        : { type: "complete" as const, reason: "stop" as const };
+  }
+
+  return result;
 }
 
 interface BuddyRuntimeProviderProps {
