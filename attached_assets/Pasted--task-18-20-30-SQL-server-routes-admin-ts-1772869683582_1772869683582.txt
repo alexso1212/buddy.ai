@@ -1,0 +1,769 @@
+# task-18: 管理后台监控面板
+
+> **预计耗时**：20-30 分钟（页面多但逻辑不复杂，主要是SQL聚合+前端展示）
+> **新增文件**：`server/routes/admin.ts`（管理API集中管理）、`client/src/pages/admin/` 目录（5个页面）
+> **改动文件**：`shared/schema.ts`（users表加 isSuperAdmin）、`server/routes.ts`（挂载admin路由）、`App.tsx`（注册admin路由）
+> **风险等级**：低（纯新增，不改现有业务逻辑）
+
+-----
+
+## 架构决定：同一项目，路由隔离
+
+```
+同一个 Express 服务器
+├── /api/*              ← 现有业务 API（authMiddleware）
+├── /api/admin/*        ← 管理后台 API（superAdminMiddleware）
+└── /admin/*            ← 管理后台前端页面
+
+同一个数据库
+├── 业务表（users, tasks, token_usage...）
+└── 不新建表，全部用聚合查询读现有数据
+```
+
+**为什么不分项目**：
+
+- 共享数据库，不需要跨服务 API 通信
+- 共享认证，superAdmin 就是 users 表里的一个标记
+- 数据量小（几百用户级别），不会因为管理查询拖慢业务
+- 部署和维护只有一套
+
+-----
+
+## STEP 1：数据库改动
+
+### users 表新增 isSuperAdmin 字段
+
+```typescript
+isSuperAdmin: boolean('is_super_admin').notNull().default(false),
+```
+
+推送后手动标记自己为超级管理员：
+
+```sql
+UPDATE users SET is_super_admin = true WHERE email = '你的邮箱';
+```
+
+或者用环境变量方式（不改数据库）：
+
+```typescript
+// 超管判断逻辑（两种方式取其一）
+function isSuperAdmin(user: any): boolean {
+  // 方式A：数据库字段
+  if (user.isSuperAdmin) return true;
+  // 方式B：环境变量白名单
+  const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim());
+  if (adminEmails.includes(user.email)) return true;
+  return false;
+}
+```
+
+**推荐两种都支持**，方便灵活控制。
+
+-----
+
+## STEP 2：超管中间件
+
+```typescript
+// server/middleware/superAdmin.ts 或直接写在 admin 路由文件中
+
+async function superAdminMiddleware(req: any, res: any, next: any) {
+  // 先走普通 authMiddleware 的逻辑获取 user
+  // 如果项目中 authMiddleware 把 user 信息挂在 req 上，直接用
+  
+  if (!req.currentUserId) {
+    return res.status(401).json({ error: '未登录' });
+  }
+  
+  const user = await storage.getUserById(req.currentUserId);
+  if (!user || !isSuperAdmin(user)) {
+    return res.status(403).json({ error: '无权访问管理后台' });
+  }
+  
+  req.isSuperAdmin = true;
+  next();
+}
+```
+
+-----
+
+## STEP 3：创建 `server/routes/admin.ts`
+
+所有管理后台 API 集中在一个文件里，挂载到 `/api/admin`。
+
+```typescript
+import { Router } from 'express';
+import { db } from '../db'; // 或实际的数据库引入方式
+import { sql } from 'drizzle-orm';
+import { storage } from '../storage';
+
+const adminRouter = Router();
+
+// ==================== 系统健康 ====================
+
+adminRouter.get("/health", async (_req, res) => {
+  const start = Date.now();
+  
+  // 数据库检测
+  let dbOk = false, dbLatency = 0;
+  try {
+    const t = Date.now();
+    await db.execute(sql`SELECT 1`);
+    dbLatency = Date.now() - t;
+    dbOk = true;
+  } catch {}
+  
+  // 内存
+  const mem = process.memoryUsage();
+  
+  // AI配置
+  const aiSimple = !!process.env.CLAUDE_SIMPLE_API_KEY;
+  const aiComplex = !!process.env.CLAUDE_COMPLEX_API_KEY;
+
+  res.json({
+    data: {
+      status: dbOk ? 'healthy' : 'degraded',
+      uptime: Math.floor(process.uptime()),
+      db: { ok: dbOk, latencyMs: dbLatency },
+      ai: { simpleKey: aiSimple, complexKey: aiComplex, embeddingAvailable: process.env.EMBEDDING_AVAILABLE === 'true' },
+      memory: {
+        heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+        rssMB: Math.round(mem.rss / 1024 / 1024),
+      },
+      nodeVersion: process.version,
+      timestamp: new Date().toISOString(),
+    }
+  });
+});
+
+// ==================== 总览 ====================
+
+adminRouter.get("/overview", async (_req, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT
+        (SELECT COUNT(*) FROM users) as total_users,
+        (SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_DATE) as new_users_today,
+        (SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_DATE - INTERVAL '7 days') as new_users_week,
+        (SELECT COUNT(*) FROM organizations) as total_orgs,
+        (SELECT COUNT(DISTINCT user_id) FROM activity_logs WHERE created_at >= CURRENT_DATE) as dau,
+        (SELECT COUNT(DISTINCT user_id) FROM activity_logs WHERE created_at >= CURRENT_DATE - INTERVAL '7 days') as wau,
+        (SELECT COUNT(DISTINCT user_id) FROM activity_logs WHERE created_at >= CURRENT_DATE - INTERVAL '30 days') as mau,
+        (SELECT COUNT(*) FROM tasks) as total_tasks,
+        (SELECT COUNT(*) FROM tasks WHERE status NOT IN ('done','cancelled')) as active_tasks,
+        (SELECT COUNT(*) FROM tasks WHERE due_date IS NOT NULL AND due_date < CURRENT_DATE AND status NOT IN ('done','cancelled')) as overdue_tasks,
+        (SELECT COUNT(*) FROM tasks WHERE created_at >= CURRENT_DATE) as tasks_created_today,
+        (SELECT COUNT(*) FROM kb_documents) as total_kb_docs,
+        (SELECT COUNT(*) FROM kb_documents WHERE status = 'error') as failed_kb_docs,
+        (SELECT COUNT(*) FROM kb_chunks) as total_kb_chunks,
+        (SELECT COALESCE(SUM(total_tokens), 0) FROM token_usage WHERE created_at >= CURRENT_DATE) as tokens_today,
+        (SELECT COALESCE(SUM(total_tokens), 0) FROM token_usage WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE)) as tokens_month,
+        (SELECT COUNT(*) FROM token_usage WHERE created_at >= CURRENT_DATE) as ai_calls_today,
+        (SELECT COUNT(*) FROM member_profiles WHERE status = 'pending') as pending_profiles,
+        (SELECT COUNT(*) FROM briefings WHERE date = TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD')) as briefings_today
+    `);
+    
+    res.json({ data: result.rows[0] });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ==================== AI 消耗 ====================
+
+// 按模型和用途的消耗统计
+adminRouter.get("/ai/stats", async (req, res) => {
+  try {
+    const period = req.query.period || 'month'; // today / week / month
+    let dateFilter;
+    switch (period) {
+      case 'today': dateFilter = sql`created_at >= CURRENT_DATE`; break;
+      case 'week': dateFilter = sql`created_at >= CURRENT_DATE - INTERVAL '7 days'`; break;
+      default: dateFilter = sql`created_at >= DATE_TRUNC('month', CURRENT_DATE)`;
+    }
+
+    // 按模型统计
+    const byModel = await db.execute(sql`
+      SELECT 
+        model, 
+        COUNT(*) as calls,
+        COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
+        COALESCE(SUM(completion_tokens), 0) as completion_tokens,
+        COALESCE(SUM(total_tokens), 0) as total_tokens
+      FROM token_usage
+      WHERE ${dateFilter}
+      GROUP BY model
+      ORDER BY total_tokens DESC
+    `);
+
+    // 按用途统计
+    const byPurpose = await db.execute(sql`
+      SELECT 
+        purpose, 
+        COUNT(*) as calls,
+        COALESCE(SUM(total_tokens), 0) as total_tokens
+      FROM token_usage
+      WHERE ${dateFilter}
+      GROUP BY purpose
+      ORDER BY total_tokens DESC
+    `);
+
+    // 按组织 Top 10
+    const byOrg = await db.execute(sql`
+      SELECT 
+        tu.org_id,
+        o.name as org_name,
+        COUNT(*) as calls,
+        COALESCE(SUM(tu.total_tokens), 0) as total_tokens
+      FROM token_usage tu
+      LEFT JOIN organizations o ON tu.org_id = o.id
+      WHERE tu.${dateFilter}
+      GROUP BY tu.org_id, o.name
+      ORDER BY total_tokens DESC
+      LIMIT 10
+    `);
+
+    res.json({ data: { byModel: byModel.rows, byPurpose: byPurpose.rows, byOrg: byOrg.rows } });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 每小时趋势（最近24h）
+adminRouter.get("/ai/hourly", async (_req, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT 
+        DATE_TRUNC('hour', created_at) as hour,
+        COUNT(*) as calls,
+        COALESCE(SUM(total_tokens), 0) as tokens
+      FROM token_usage
+      WHERE created_at >= NOW() - INTERVAL '24 hours'
+      GROUP BY hour
+      ORDER BY hour
+    `);
+    res.json({ data: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ==================== 用户分析 ====================
+
+// 注册趋势（最近30天）
+adminRouter.get("/users/trend", async (_req, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT DATE(created_at) as date, COUNT(*) as count
+      FROM users
+      WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+      GROUP BY date ORDER BY date
+    `);
+    res.json({ data: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 最近注册用户
+adminRouter.get("/users/recent", async (_req, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT id, name, display_name, email, phone, last_login_method, created_at
+      FROM users ORDER BY created_at DESC LIMIT 20
+    `);
+    res.json({ data: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 登录方式分布
+adminRouter.get("/users/login-methods", async (_req, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT last_login_method, COUNT(*) as count
+      FROM users
+      WHERE last_login_method IS NOT NULL
+      GROUP BY last_login_method
+    `);
+    res.json({ data: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ==================== 组织分析 ====================
+
+adminRouter.get("/orgs/list", async (_req, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT 
+        o.id, o.name, o.created_at, o.token_balance,
+        (SELECT COUNT(*) FROM org_memberships om WHERE om.org_id = o.id) as member_count,
+        (SELECT COUNT(*) FROM tasks t WHERE t.org_id = o.id) as task_count,
+        (SELECT COUNT(*) FROM kb_documents kd WHERE kd.org_id = o.id) as kb_doc_count,
+        (SELECT COALESCE(SUM(tu.total_tokens), 0) FROM token_usage tu WHERE tu.org_id = o.id AND tu.created_at >= DATE_TRUNC('month', CURRENT_DATE)) as tokens_this_month
+      FROM organizations o
+      ORDER BY o.created_at DESC
+    `);
+    res.json({ data: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ==================== 知识库概览 ====================
+
+adminRouter.get("/kb/stats", async (_req, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT
+        (SELECT COUNT(*) FROM kb_documents) as total_docs,
+        (SELECT COUNT(*) FROM kb_documents WHERE status = 'ready') as ready_docs,
+        (SELECT COUNT(*) FROM kb_documents WHERE status = 'processing') as processing_docs,
+        (SELECT COUNT(*) FROM kb_documents WHERE status = 'error') as error_docs,
+        (SELECT COUNT(*) FROM kb_chunks) as total_chunks,
+        (SELECT COALESCE(SUM(file_size), 0) FROM kb_documents) as total_size_bytes
+    `);
+    
+    // 按分类分布
+    const byCategory = await db.execute(sql`
+      SELECT category, COUNT(*) as count FROM kb_documents GROUP BY category ORDER BY count DESC
+    `);
+    
+    // 按类型分布
+    const byType = await db.execute(sql`
+      SELECT file_type, COUNT(*) as count FROM kb_documents GROUP BY file_type ORDER BY count DESC
+    `);
+    
+    // 失败的文档列表
+    const errors = await db.execute(sql`
+      SELECT id, title, file_name, org_id, created_at FROM kb_documents WHERE status = 'error' ORDER BY created_at DESC LIMIT 20
+    `);
+    
+    res.json({ data: { overview: result.rows[0], byCategory: byCategory.rows, byType: byType.rows, errors: errors.rows }});
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ==================== 安全审计 ====================
+
+adminRouter.get("/security/logs", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const result = await db.execute(sql`
+      SELECT al.*, u.name as user_name, u.email as user_email, o.name as org_name
+      FROM activity_logs al
+      LEFT JOIN users u ON al.user_id = u.id
+      LEFT JOIN organizations o ON al.org_id = o.id
+      WHERE al.action IN ('delete', 'update_role', 'smart_setup', 'claim', 'assign_department_role', 'purchase_tokens', 'scrape_url')
+      ORDER BY al.created_at DESC
+      LIMIT ${limit}
+    `);
+    res.json({ data: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ==================== 员工 AI 化分析 ====================
+
+// 全员 AI 依赖指数
+adminRouter.get("/ai-workforce", async (req, res) => {
+  try {
+    const period = req.query.period || 'month';
+    let dateFilter;
+    switch (period) {
+      case 'week': dateFilter = sql`>= CURRENT_DATE - INTERVAL '7 days'`; break;
+      default: dateFilter = sql`>= DATE_TRUNC('month', CURRENT_DATE)`;
+    }
+
+    // 每个用户的 AI 使用数据
+    const userData = await db.execute(sql`
+      SELECT 
+        u.id as user_id,
+        u.name,
+        u.display_name,
+        u.email,
+        -- AI 对话数据
+        (SELECT COUNT(*) FROM token_usage tu WHERE tu.user_id = u.id AND tu.created_at ${dateFilter}) as ai_conversations,
+        (SELECT COALESCE(SUM(tu.total_tokens), 0) FROM token_usage tu WHERE tu.user_id = u.id AND tu.created_at ${dateFilter}) as ai_tokens,
+        -- 任务数据
+        (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status = 'done' AND t.updated_at ${dateFilter}) as tasks_completed,
+        -- 交付物数据（需要检查 task_deliverables 表结构）
+        (SELECT COUNT(*) FROM task_deliverables td 
+         JOIN tasks t ON td.task_id = t.id 
+         WHERE t.assignee_id = u.id AND td.created_at ${dateFilter}) as total_deliverables,
+        (SELECT COUNT(*) FROM task_deliverables td 
+         JOIN tasks t ON td.task_id = t.id 
+         WHERE t.assignee_id = u.id AND td.created_at ${dateFilter}
+         AND (td.description LIKE '%ai_chat%' OR td.source = 'ai_chat')) as ai_deliverables,
+        -- 任务创建方式
+        (SELECT COUNT(*) FROM activity_logs al 
+         WHERE al.user_id = u.id AND al.action = 'create_task' AND al.source = 'ai' 
+         AND al.created_at ${dateFilter}) as tasks_created_by_ai,
+        (SELECT COUNT(*) FROM activity_logs al 
+         WHERE al.user_id = u.id AND al.action = 'create_task' AND al.source != 'ai' 
+         AND al.created_at ${dateFilter}) as tasks_created_manual
+      FROM users u
+      WHERE EXISTS (SELECT 1 FROM org_memberships om WHERE om.user_id = u.id)
+      ORDER BY ai_tokens DESC
+    `);
+
+    // 计算 AI 依赖指数
+    const results = userData.rows.map((row: any) => {
+      const aiConversations = parseInt(row.ai_conversations) || 0;
+      const aiTokens = parseInt(row.ai_tokens) || 0;
+      const tasksCompleted = parseInt(row.tasks_completed) || 0;
+      const totalDeliverables = parseInt(row.total_deliverables) || 0;
+      const aiDeliverables = parseInt(row.ai_deliverables) || 0;
+      const tasksAI = parseInt(row.tasks_created_by_ai) || 0;
+      const tasksManual = parseInt(row.tasks_created_manual) || 0;
+
+      // AI 交付占比 (40%)
+      const deliveryScore = totalDeliverables > 0 ? (aiDeliverables / totalDeliverables) * 100 : 0;
+      
+      // 对话强度 (25%)
+      const convRatio = tasksCompleted > 0 ? aiConversations / tasksCompleted : 0;
+      const convScore = Math.min(100, convRatio * 10);
+      
+      // 任务规划 AI 化 (20%)
+      const totalCreated = tasksAI + tasksManual;
+      const planScore = totalCreated > 0 ? (tasksAI / totalCreated) * 100 : 0;
+      
+      // Token 强度 (15%)
+      const tokenScore = Math.min(100, aiTokens / 5000);
+      
+      const index = Math.round(
+        deliveryScore * 0.40 + convScore * 0.25 + planScore * 0.20 + tokenScore * 0.15
+      );
+
+      let riskLevel: string;
+      if (index >= 70) riskLevel = 'critical';
+      else if (index >= 50) riskLevel = 'high';
+      else if (index >= 20) riskLevel = 'medium';
+      else riskLevel = 'low';
+
+      return {
+        userId: row.user_id,
+        name: row.display_name || row.name,
+        email: row.email,
+        aiDependencyIndex: Math.min(100, index),
+        riskLevel,
+        aiConversations,
+        aiTokens,
+        tasksCompleted,
+        totalDeliverables,
+        aiDeliverables,
+        aiDeliveryRatio: totalDeliverables > 0 ? Math.round(aiDeliverables / totalDeliverables * 100) : 0,
+        tasksCreatedByAI: tasksAI,
+        tasksCreatedManual: tasksManual,
+      };
+    });
+
+    // 按 AI 指数排序
+    results.sort((a: any, b: any) => b.aiDependencyIndex - a.aiDependencyIndex);
+
+    // 团队整体指数
+    const validResults = results.filter((r: any) => r.aiConversations > 0 || r.tasksCompleted > 0);
+    const teamIndex = validResults.length > 0
+      ? Math.round(validResults.reduce((sum: number, r: any) => sum + r.aiDependencyIndex, 0) / validResults.length)
+      : 0;
+
+    // 分布统计
+    const distribution = {
+      low: results.filter((r: any) => r.riskLevel === 'low').length,
+      medium: results.filter((r: any) => r.riskLevel === 'medium').length,
+      high: results.filter((r: any) => r.riskLevel === 'high').length,
+      critical: results.filter((r: any) => r.riskLevel === 'critical').length,
+    };
+
+    res.json({ data: { teamIndex, distribution, members: results } });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 单人 AI 化详情
+adminRouter.get("/ai-workforce/:userId", async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId);
+    
+    // 最近 3 个月的趋势
+    const trend = await db.execute(sql`
+      SELECT 
+        TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') as month,
+        COUNT(*) as ai_calls,
+        COALESCE(SUM(total_tokens), 0) as tokens
+      FROM token_usage
+      WHERE user_id = ${userId}
+        AND created_at >= CURRENT_DATE - INTERVAL '3 months'
+      GROUP BY month
+      ORDER BY month
+    `);
+
+    // 最近的 AI 对话（最后 20 条）
+    const recentChats = await db.execute(sql`
+      SELECT purpose, model, total_tokens, created_at
+      FROM token_usage
+      WHERE user_id = ${userId}
+      ORDER BY created_at DESC
+      LIMIT 20
+    `);
+
+    // 用途分布
+    const byPurpose = await db.execute(sql`
+      SELECT purpose, COUNT(*) as calls, COALESCE(SUM(total_tokens), 0) as tokens
+      FROM token_usage
+      WHERE user_id = ${userId}
+        AND created_at >= DATE_TRUNC('month', CURRENT_DATE)
+      GROUP BY purpose
+    `);
+
+    res.json({ data: { trend: trend.rows, recentChats: recentChats.rows, byPurpose: byPurpose.rows } });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+export default adminRouter;
+```
+
+### 在 routes.ts 中挂载
+
+```typescript
+import adminRouter from './routes/admin';
+
+// 在其他路由之后
+app.use("/api/admin", authMiddleware, superAdminMiddleware, adminRouter);
+```
+
+**注意**：先过 `authMiddleware`（获取用户信息），再过 `superAdminMiddleware`（检查是否超管）。
+
+-----
+
+## STEP 4：前端页面
+
+### 文件结构
+
+```
+client/src/pages/admin/
+├── AdminLayout.tsx      # 管理后台布局（左侧导航+右侧内容）
+├── AdminOverview.tsx     # 总览 Dashboard
+├── AdminAI.tsx           # AI 服务监控
+├── AdminUsers.tsx        # 用户分析
+├── AdminOrgs.tsx         # 组织管理
+├── AdminKB.tsx           # 知识库概览
+├── AdminSecurity.tsx     # 安全审计
+└── AdminWorkforce.tsx    # 员工 AI 化分析
+```
+
+### AdminLayout.tsx
+
+```typescript
+// 独立的布局，不复用主应用的侧边栏
+// 左侧窄导航（图标+文字），右侧内容区
+
+function AdminLayout({ children }: { children: React.ReactNode }) {
+  const [currentPath] = useLocation();
+  
+  const navItems = [
+    { path: '/admin', icon: LayoutDashboard, label: '总览' },
+    { path: '/admin/ai', icon: Brain, label: 'AI 服务' },
+    { path: '/admin/users', icon: Users, label: '用户' },
+    { path: '/admin/orgs', icon: Building, label: '组织' },
+    { path: '/admin/kb', icon: BookOpen, label: '知识库' },
+    { path: '/admin/security', icon: Shield, label: '安全审计' },
+    { path: '/admin/workforce', icon: UserCog, label: 'AI 化分析' },
+  ];
+
+  return (
+    <div className="flex h-screen">
+      <nav className="w-56 border-r bg-card p-4 space-y-1">
+        <h1 className="text-lg font-bold mb-6 px-3">🛡️ 管理后台</h1>
+        {navItems.map(item => (
+          <Link key={item.path} to={item.path}>
+            <div className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${
+              currentPath === item.path ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent'
+            }`}>
+              <item.icon className="w-4 h-4" />
+              {item.label}
+            </div>
+          </Link>
+        ))}
+        <div className="pt-4 border-t mt-4">
+          <Link to="/">
+            <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-accent">
+              <ArrowLeft className="w-4 h-4" />
+              返回主应用
+            </div>
+          </Link>
+        </div>
+      </nav>
+      <main className="flex-1 overflow-auto p-6">
+        {children}
+      </main>
+    </div>
+  );
+}
+```
+
+### AdminOverview.tsx（总览）
+
+核心：一个请求 `/api/admin/overview` 拿到所有数字，展示为统计卡片+趋势图。
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  系统状态  🟢 正常  |  DB: 2ms  |  内存: 186MB  |  运行14天  │
+├──────────────────────────────────────────────────────────────┤
+│  ┌────┐ ┌────┐ ┌────┐ ┌────┐ ┌────┐ ┌────┐                 │
+│  │用户│ │组织│ │DAU │ │任务│ │逾期│ │文档│                 │
+│  │156 │ │23  │ │34  │ │428 │ │15⚠│ │89  │                 │
+│  └────┘ └────┘ └────┘ └────┘ └────┘ └────┘                 │
+│                                                              │
+│  AI 本月消耗                                                  │
+│  Token: 2.34M  |  成本: ¥48  |  调用: 1,234                 │
+│  [Haiku 65%] [Sonnet 28%] [Opus 7%]                         │
+│                                                              │
+│  ⚠️ 需要关注                                                 │
+│  • 2 个知识库文档处理失败                                      │
+│  • 15 个逾期任务                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+用 recharts 画趋势图（项目已有这个依赖）。
+
+### AdminWorkforce.tsx（员工 AI 化分析）
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  📊 员工 AI 化分析                    本月 [◀ ▶]             │
+│                                                              │
+│  团队 AI 依赖指数：42 / 100                                   │
+│  ████████████████████░░░░░░░░░░░  中等                       │
+│                                                              │
+│  分布：低 4人 | 中 3人 | 高 2人 | 极高 1人                    │
+│                                                              │
+│  ── 成员明细 ──────────────────────────────────────────       │
+│  | 成员 | AI指数 | AI对话 | 任务完成 | AI交付% | 风险 |       │
+│  | 王五 | 82    | 86    | 8       | 88%    | 🔴  |       │
+│  | 小李 | 65    | 45    | 12      | 60%    | 🟡  |       │
+│  | Lisa | 38    | 28    | 15      | 25%    | 🟢  |       │
+│  | 张三 | 22    | 15    | 18      | 10%    | 🟢  |       │
+│                                                              │
+│  点击成员查看详情 →                                           │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**颜色规则**：
+
+- 🟢 低(0-20)：绿色
+- 🟡 中(20-50)：不显示特殊颜色
+- 🟠 高(50-70)：橙色
+- 🔴 极高(70+)：红色
+
+**点击成员展开详情面板**（或跳转 `/admin/workforce/:userId`），显示趋势、用途分布、AI建议。
+
+-----
+
+## STEP 5：在 App.tsx 注册路由
+
+```typescript
+import AdminLayout from './pages/admin/AdminLayout';
+import AdminOverview from './pages/admin/AdminOverview';
+import AdminAI from './pages/admin/AdminAI';
+import AdminUsers from './pages/admin/AdminUsers';
+import AdminOrgs from './pages/admin/AdminOrgs';
+import AdminKB from './pages/admin/AdminKB';
+import AdminSecurity from './pages/admin/AdminSecurity';
+import AdminWorkforce from './pages/admin/AdminWorkforce';
+
+// Admin 路由组
+<Route path="/admin">
+  <AdminLayout>
+    <Route path="/" component={AdminOverview} />
+    <Route path="/ai" component={AdminAI} />
+    <Route path="/users" component={AdminUsers} />
+    <Route path="/orgs" component={AdminOrgs} />
+    <Route path="/kb" component={AdminKB} />
+    <Route path="/security" component={AdminSecurity} />
+    <Route path="/workforce" component={AdminWorkforce} />
+    <Route path="/workforce/:userId" component={AdminWorkforceDetail} />
+  </AdminLayout>
+</Route>
+```
+
+**注意 wouter 的嵌套路由语法**：检查项目中其他嵌套路由是怎么写的，用同样的方式。如果 wouter 不支持上面这种写法，改为在 AdminLayout 内部用 Switch + Route。
+
+### 管理后台入口
+
+不放在主应用侧边栏里。入口方式：
+
+```typescript
+// 方式1：在用户设置菜单（头像点击弹出的 Action Sheet）中添加
+{isSuperAdmin && (
+  <Link to="/admin">
+    <DropdownMenuItem>
+      <Shield className="w-4 h-4 mr-2" />
+      管理后台
+    </DropdownMenuItem>
+  </Link>
+)}
+
+// 方式2：直接访问 /admin URL（知道地址就能访问，superAdminMiddleware 保护）
+```
+
+-----
+
+## STEP 6：自动刷新
+
+总览页面数据每 30 秒自动刷新：
+
+```typescript
+const { data } = useQuery({
+  queryKey: ['/api/admin/overview'],
+  refetchInterval: 30000, // 30秒刷新
+});
+```
+
+AI 消耗页面每 60 秒刷新。员工 AI 化分析不需要自动刷新（数据变化慢）。
+
+-----
+
+## 验证清单
+
+- [ ] users 表有 is_super_admin 字段
+- [ ] 自己的账号已标记为超管
+- [ ] `/api/admin/overview` 正常返回数据
+- [ ] `/api/admin/health` 显示系统状态
+- [ ] 非超管访问 /api/admin/* 返回 403
+- [ ] /admin 页面正常加载（独立布局，不显示主应用侧边栏）
+- [ ] 总览 Dashboard 显示正确的统计数字
+- [ ] AI 消耗页面按模型/用途/组织分组显示
+- [ ] 用户分析显示 DAU/WAU/MAU 和注册趋势
+- [ ] 组织列表显示成员数、任务数、Token 消耗
+- [ ] 知识库概览显示文档统计和失败列表
+- [ ] 安全审计显示最近的敏感操作
+- [ ] 员工 AI 化分析显示 AI 依赖指数和排序
+- [ ] 点击成员能看到详情（趋势、用途分布）
+- [ ] 从管理后台能返回主应用
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读项目根目录的 `task-18-admin-dashboard.md`，按步骤执行。
+> 
+> 重要规则：
+> 
+> 1. 管理后台 API 全部在 `/api/admin/*` 下，用 `superAdminMiddleware` 保护
+> 1. 超管判断支持两种方式：`is_super_admin` 数据库字段 + `ADMIN_EMAILS` 环境变量
+> 1. SQL 查询中的表名和字段名要匹配实际的 schema（用 snake_case 还是 camelCase，看 Drizzle 配置）
+> 1. 前端用独立布局（AdminLayout），不复用主应用侧边栏
+> 1. 图表用 recharts（项目已有）
+> 1. 员工 AI 化分析只在超管后台显示，绝不暴露给普通用户
+> 1. overview 端点一个请求返回所有核心指标，减少前端请求数
+> 1. token_usage 表的字段名（prompt_tokens / completion_tokens / total_tokens）需要确认实际命名
+> 1. 如果某些表或字段不存在（如 task_deliverables 的 source 字段），对应的查询返回 0 即可，不要报错
+> 1. 先确保 /api/admin/overview 和 /api/admin/health 能跑通，再做前端页面
