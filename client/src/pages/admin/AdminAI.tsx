@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { useToast } from "@/hooks/use-toast";
 import AdminLayout from "./AdminLayout";
 import {
   Cpu,
@@ -41,7 +42,8 @@ interface ModelProvider {
   modelId: string;
   providerName: string;
   baseUrl: string | null;
-  apiKeyEnvVar: string;
+  apiKeyEnvVar: string | null;
+  apiKey: string | null;
   timeout: number;
   priority: number;
   isActive: boolean;
@@ -52,6 +54,7 @@ interface ProviderFormData {
   providerName: string;
   baseUrl: string;
   apiKeyEnvVar: string;
+  apiKey: string;
   timeout: number;
   isActive: boolean;
 }
@@ -68,6 +71,7 @@ const emptyForm: ProviderFormData = {
   providerName: "",
   baseUrl: "",
   apiKeyEnvVar: "",
+  apiKey: "",
   timeout: 90000,
   isActive: true,
 };
@@ -137,14 +141,31 @@ function ProviderFormDialog({
           </div>
 
           <div>
-            <label className="text-xs text-muted-foreground block mb-1">API Key 环境变量名</label>
+            <label className="text-xs text-muted-foreground block mb-1">
+              API Key <span className="text-muted-foreground/60">(直接粘贴密钥)</span>
+            </label>
             <input
+              type="password"
               className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-              value={form.apiKeyEnvVar}
-              onChange={(e) => setForm({ ...form, apiKeyEnvVar: e.target.value })}
-              placeholder="例如: CLAUDE_SIMPLE_API_KEY"
-              data-testid="input-provider-envvar"
+              value={form.apiKey}
+              onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
+              placeholder={editId ? "留空则保留现有密钥" : "sk-..."}
+              data-testid="input-provider-apikey"
             />
+            {!form.apiKey && (
+              <div className="mt-2">
+                <label className="text-xs text-muted-foreground block mb-1">
+                  或使用环境变量名 <span className="text-muted-foreground/60">(高级)</span>
+                </label>
+                <input
+                  className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                  value={form.apiKeyEnvVar}
+                  onChange={(e) => setForm({ ...form, apiKeyEnvVar: e.target.value })}
+                  placeholder="例如: CLAUDE_SIMPLE_API_KEY"
+                  data-testid="input-provider-envvar"
+                />
+              </div>
+            )}
           </div>
 
           <div>
@@ -169,7 +190,7 @@ function ProviderFormDialog({
           </button>
           <button
             onClick={() => onSave(form)}
-            disabled={saving || !form.providerName || !form.apiKeyEnvVar}
+            disabled={saving || !form.providerName || (!editId && !form.apiKey && !form.apiKeyEnvVar)}
             className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
             data-testid="button-save-provider"
           >
@@ -337,7 +358,7 @@ function ModelGroup({
                     )}
                     <span className="shrink-0">
                       <Key className="w-3 h-3 inline mr-0.5" />
-                      {prov.apiKeyEnvVar}
+                      {prov.apiKey ? prov.apiKey : prov.apiKeyEnvVar || '-'}
                     </span>
                     <span className="shrink-0">{prov.timeout / 1000}s</span>
                   </div>
@@ -422,6 +443,7 @@ function ModelGroup({
 
 export default function AdminAI() {
   const { user: authUser } = useAuth();
+  const { toast } = useToast();
   const isSuperAdmin = !!authUser?.isSuperAdmin;
   const [period, setPeriod] = useState<Period>("month");
   const [addingForModel, setAddingForModel] = useState<string | null>(null);
@@ -476,35 +498,58 @@ export default function AdminAI() {
           modelId,
           providerName: data.providerName,
           baseUrl: data.baseUrl || null,
-          apiKeyEnvVar: data.apiKeyEnvVar,
+          apiKeyEnvVar: data.apiKeyEnvVar || null,
+          apiKey: data.apiKey || null,
           timeout: data.timeout,
           isActive: data.isActive,
         }),
       });
-      if (!res.ok) throw new Error("Failed to create provider");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: '保存失败' }));
+        throw new Error(err.error || '保存失败');
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/model-providers"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/config"] });
       setAddingForModel(null);
+      toast({ title: "API 端点已添加" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "保存失败", description: err.message, variant: "destructive" });
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<ProviderFormData> }) => {
+      const payload: Record<string, any> = {
+        providerName: data.providerName,
+        baseUrl: data.baseUrl || null,
+        timeout: data.timeout,
+        isActive: data.isActive,
+      };
+      if (data.apiKey) payload.apiKey = data.apiKey;
+      if (data.apiKeyEnvVar) payload.apiKeyEnvVar = data.apiKeyEnvVar;
       const res = await fetch(`/api/admin/ai/model-providers/${id}`, {
         method: "PATCH",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Failed to update provider");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: '更新失败' }));
+        throw new Error(err.error || '更新失败');
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/model-providers"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/config"] });
       setEditingProvider(null);
+      toast({ title: "API 端点已更新" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "更新失败", description: err.message, variant: "destructive" });
     },
   });
 
@@ -520,6 +565,10 @@ export default function AdminAI() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/model-providers"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ai/config"] });
       setDeleteConfirm(null);
+      toast({ title: "API 端点已删除" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "删除失败", description: err.message, variant: "destructive" });
     },
   });
 
@@ -808,7 +857,8 @@ export default function AdminAI() {
           initial={{
             providerName: editingProvider.providerName,
             baseUrl: editingProvider.baseUrl || "",
-            apiKeyEnvVar: editingProvider.apiKeyEnvVar,
+            apiKeyEnvVar: editingProvider.apiKeyEnvVar || "",
+            apiKey: "",
             timeout: editingProvider.timeout,
             isActive: editingProvider.isActive,
           }}

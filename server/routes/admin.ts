@@ -141,40 +141,40 @@ adminRouter.get("/ai/stats", async (req: any, res) => {
     const period = (req.query.period as string) || 'month';
     let dateFilter: ReturnType<typeof sql>;
     switch (period) {
-      case 'today': dateFilter = sql`created_at >= CURRENT_DATE`; break;
-      case 'week': dateFilter = sql`created_at >= CURRENT_DATE - INTERVAL '7 days'`; break;
-      default: dateFilter = sql`created_at >= DATE_TRUNC('month', CURRENT_DATE)`;
+      case 'today': dateFilter = sql`tu.created_at >= CURRENT_DATE`; break;
+      case 'week': dateFilter = sql`tu.created_at >= CURRENT_DATE - INTERVAL '7 days'`; break;
+      default: dateFilter = sql`tu.created_at >= DATE_TRUNC('month', CURRENT_DATE)`;
     }
 
     if (!req.isSuperAdmin && !req.orgId) {
       return res.status(403).json({ error: '无法确定组织' });
     }
 
-    const orgFilter = req.isSuperAdmin ? sql`` : sql` AND org_id = ${req.orgId}`;
+    const orgFilter = req.isSuperAdmin ? sql`` : sql` AND tu.org_id = ${req.orgId}`;
 
     const byModel = await db.execute(sql`
       SELECT 
-        model, 
+        tu.model, 
         COUNT(*) as calls,
-        COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
-        COALESCE(SUM(completion_tokens), 0) as completion_tokens,
-        COALESCE(SUM(total_tokens), 0) as total_tokens,
-        COALESCE(SUM(CAST(cost_usd AS NUMERIC)), 0) as cost_usd
-      FROM token_usage
+        COALESCE(SUM(tu.prompt_tokens), 0) as prompt_tokens,
+        COALESCE(SUM(tu.completion_tokens), 0) as completion_tokens,
+        COALESCE(SUM(tu.total_tokens), 0) as total_tokens,
+        COALESCE(SUM(CAST(tu.cost_usd AS NUMERIC)), 0) as cost_usd
+      FROM token_usage tu
       WHERE ${dateFilter}${orgFilter}
-      GROUP BY model
+      GROUP BY tu.model
       ORDER BY total_tokens DESC
     `);
 
     const byPurpose = await db.execute(sql`
       SELECT 
-        purpose, 
+        tu.purpose, 
         COUNT(*) as calls,
-        COALESCE(SUM(total_tokens), 0) as total_tokens,
-        COALESCE(SUM(CAST(cost_usd AS NUMERIC)), 0) as cost_usd
-      FROM token_usage
+        COALESCE(SUM(tu.total_tokens), 0) as total_tokens,
+        COALESCE(SUM(CAST(tu.cost_usd AS NUMERIC)), 0) as cost_usd
+      FROM token_usage tu
       WHERE ${dateFilter}${orgFilter}
-      GROUP BY purpose
+      GROUP BY tu.purpose
       ORDER BY total_tokens DESC
     `);
 
@@ -365,15 +365,17 @@ const modelProviderCreateSchema = z.object({
   modelId: z.enum(VALID_MODEL_IDS),
   providerName: z.string().min(1),
   baseUrl: z.string().url().nullable().optional().or(z.literal('').transform(() => null)),
-  apiKeyEnvVar: z.string().min(1),
+  apiKeyEnvVar: z.string().optional().nullable(),
+  apiKey: z.string().optional().nullable(),
   timeout: z.number().int().positive().default(90000),
   isActive: z.boolean().default(true),
-});
+}).refine(d => d.apiKeyEnvVar || d.apiKey, { message: '请提供 API Key 或环境变量名' });
 
 const modelProviderUpdateSchema = z.object({
   providerName: z.string().min(1).optional(),
   baseUrl: z.string().nullable().optional(),
-  apiKeyEnvVar: z.string().min(1).optional(),
+  apiKeyEnvVar: z.string().nullable().optional(),
+  apiKey: z.string().nullable().optional(),
   timeout: z.number().int().positive().optional(),
   isActive: z.boolean().optional(),
 });
@@ -383,7 +385,8 @@ adminRouter.get("/ai/model-providers", requireSuperAdmin, async (_req, res) => {
     const providers = await storage.getModelProviders();
     const enriched = providers.map(p => ({
       ...p,
-      keyConfigured: !!process.env[p.apiKeyEnvVar],
+      apiKey: p.apiKey ? `${p.apiKey.slice(0, 8)}...${p.apiKey.slice(-4)}` : null,
+      keyConfigured: !!(p.apiKey || (p.apiKeyEnvVar && process.env[p.apiKeyEnvVar])),
     }));
     res.json({ data: enriched });
   } catch (e: any) {
@@ -401,11 +404,13 @@ adminRouter.post("/ai/model-providers", requireSuperAdmin, async (req, res) => {
     const maxPriority = existing.length > 0 ? Math.max(...existing.map(p => p.priority)) + 1 : 0;
     const provider = await storage.createModelProvider({
       ...parsed.data,
+      apiKeyEnvVar: parsed.data.apiKeyEnvVar || null,
+      apiKey: parsed.data.apiKey || null,
       baseUrl: parsed.data.baseUrl || null,
       priority: maxPriority,
     });
     invalidateProviderCache();
-    res.json({ data: { ...provider, keyConfigured: !!process.env[provider.apiKeyEnvVar] } });
+    res.json({ data: { ...provider, apiKey: provider.apiKey ? '***' : null, keyConfigured: !!(provider.apiKey || (provider.apiKeyEnvVar && process.env[provider.apiKeyEnvVar])) } });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -422,7 +427,7 @@ adminRouter.patch("/ai/model-providers/:id", requireSuperAdmin, async (req, res)
     }
     const provider = await storage.updateModelProvider(id, parsed.data);
     invalidateProviderCache();
-    res.json({ data: { ...provider, keyConfigured: !!process.env[provider.apiKeyEnvVar] } });
+    res.json({ data: { ...provider, apiKey: provider.apiKey ? '***' : null, keyConfigured: !!(provider.apiKey || (provider.apiKeyEnvVar && process.env[provider.apiKeyEnvVar])) } });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -461,9 +466,9 @@ adminRouter.post("/ai/model-providers/:id/test", requireSuperAdmin, async (req, 
     const id = parseInt(req.params.id);
     const provider = await storage.getModelProvider(id);
     if (!provider) return res.status(404).json({ error: 'Provider not found' });
-    const apiKey = process.env[provider.apiKeyEnvVar];
+    const apiKey = provider.apiKey || (provider.apiKeyEnvVar ? process.env[provider.apiKeyEnvVar] : null);
     if (!apiKey) {
-      return res.json({ data: { success: false, error: `环境变量 ${provider.apiKeyEnvVar} 未配置` } });
+      return res.json({ data: { success: false, error: provider.apiKeyEnvVar ? `环境变量 ${provider.apiKeyEnvVar} 未配置` : 'API Key 未配置' } });
     }
     const defaultBaseUrl = provider.modelId.startsWith('claude')
       ? 'https://vip.aipro.love/v1'

@@ -66,11 +66,17 @@ function getDefaultBaseUrl(modelId: string): string {
   return 'https://api.openai.com/v1';
 }
 
+function resolveApiKey(mp: AiModelProvider): string | null {
+  if (mp.apiKey) return mp.apiKey;
+  if (mp.apiKeyEnvVar) return process.env[mp.apiKeyEnvVar] || null;
+  return null;
+}
+
 function getClientForModelProvider(mp: AiModelProvider): OpenAI | null {
-  const apiKey = process.env[mp.apiKeyEnvVar];
+  const apiKey = resolveApiKey(mp);
   if (!apiKey) return null;
   const baseUrl = mp.baseUrl || getDefaultBaseUrl(mp.modelId);
-  const cacheKey = `mp_${mp.id}_${baseUrl}_${mp.apiKeyEnvVar}`;
+  const cacheKey = `mp_${mp.id}_${baseUrl}`;
   let client = clientCache.get(cacheKey);
   if (!client) {
     client = new OpenAI({
