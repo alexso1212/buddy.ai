@@ -1,0 +1,657 @@
+# task-19 Phase 2：用 assistant-ui 消息组件替换 AiMessageBubble
+
+> **前置条件**：Phase 1 完成（BuddyRuntime + ScrollToBottom 已工作）
+> **预计耗时**：20-30 分钟
+> **核心思路**：用 assistant-ui 的 ThreadPrimitive.Messages 渲染消息，把我们的15+种业务组件以自定义渲染方式嵌入
+> **风险控制**：先在 `/agent-v2` 测试路由做，验证通过后再切正式路由
+
+-----
+
+## 一、当前 AiMessageBubble 处理的消息类型
+
+从代码中梳理，AiMessageBubble 处理以下类型：
+
+|类型        |触发条件                     |渲染什么               |迁移策略                   |
+|----------|-------------------------|-------------------|-----------------------|
+|普通文本      |role=assistant, type=text|Markdown 渲染        |→ **用 assistant-ui 内置**|
+|用户消息      |role=user                |纯文本 + 附件预览         |→ **用 assistant-ui 内置**|
+|流式输出      |isStreaming=true         |逐字显示 + Logo动画      |→ **用 assistant-ui 内置**|
+|思考过程      |thinking + isThinking    |ThinkingBlock 折叠/展开|→ **自定义组件嵌入**          |
+|确认操作      |type=confirm             |AiConfirmCard      |→ **自定义组件嵌入**          |
+|批量确认      |type=multi_confirm       |MultiConfirmGroup  |→ **自定义组件嵌入**          |
+|引导创建      |type=follow_up           |AiGuidedCreation   |→ **自定义组件嵌入**          |
+|搜索结果      |searchResults 存在         |可折叠的来源列表           |→ **自定义组件嵌入**          |
+|代码文件      |codeFiles 存在             |文件列表标签             |→ **自定义组件嵌入**          |
+|工具调用      |toolCalls 存在             |工具状态指示器            |→ **自定义组件嵌入**          |
+|错误状态      |errorType 存在             |错误卡片 + 重试按钮        |→ **自定义组件嵌入**          |
+|附件        |attachments 存在           |图片缩略图/文件图标         |→ **用 assistant-ui 内置**|
+|操作栏       |role=assistant 非流式       |复制/重新生成/点赞/点踩      |→ **用 assistant-ui 内置**|
+|Token用量   |tokenUsage 存在            |极淡的 token 数字       |→ **自定义组件嵌入**          |
+|Artifact面板|长内容检测                    |ArtifactPanel 右侧滑出 |→ **保留现有逻辑**           |
+
+**迁移原则**：assistant-ui 内置的直接用，业务特有的以自定义组件嵌入。
+
+-----
+
+## 二、实现架构
+
+```
+ThreadPrimitive.Messages
+  ├── UserMessage（assistant-ui 内置 + 轻微定制）
+  │     └── 用户文本 + 附件预览
+  │
+  └── AssistantMessage（assistant-ui 骨架 + 大量自定义）
+        ├── SearchResultsBar（搜索来源标签）
+        ├── CodeFilesBar（代码文件标签）
+        ├── ToolCallsDisplay（工具调用状态）
+        ├── ThinkingBlock（思考过程折叠）
+        ├── MessageContent（Markdown / 确认卡片 / 引导创建）
+        │     ├── type=text → assistant-ui 的 Markdown 渲染
+        │     ├── type=confirm → AiConfirmCard
+        │     ├── type=multi_confirm → MultiConfirmGroup
+        │     └── type=follow_up → AiGuidedCreation
+        ├── ActionBar（复制/重新生成/点赞/点踩）
+        └── ErrorCard（错误状态 + 重试）
+```
+
+-----
+
+## 三、具体实现
+
+### Step 1：创建自定义消息组件
+
+创建 `client/src/components/ai/BuddyMessages.tsx`：
+
+```typescript
+import {
+  ThreadPrimitive,
+  MessagePrimitive,
+  ComposerPrimitive,
+  ActionBarPrimitive,
+} from "@assistant-ui/react";
+
+// 从 BuddyRuntime 中读取我们的 metadata
+import { useBuddyMessageData } from "./BuddyRuntime";
+
+// 复用现有的业务组件
+import AiConfirmCard from "./AiConfirmCard";
+import AiGuidedCreation from "./AiGuidedCreation";
+import ThinkingBlock from "./ThinkingBlock";
+
+/**
+ * 自定义用户消息
+ */
+function BuddyUserMessage() {
+  return (
+    <MessagePrimitive.Root className="flex justify-end mb-4 px-4">
+      <div className="max-w-[85%] rounded-2xl rounded-br-sm px-4 py-2.5"
+           style={{ background: 'rgba(174,86,48,0.12)' }}>
+        <MessagePrimitive.Content />
+        {/* 附件预览（如果有） */}
+        <BuddyUserAttachments />
+      </div>
+    </MessagePrimitive.Root>
+  );
+}
+
+/**
+ * 自定义 AI 消息（核心）
+ */
+function BuddyAssistantMessage() {
+  // 从 runtime 的 metadata 中获取我们的自定义数据
+  // assistant-ui 通过 useMessage() hook 暴露消息数据
+  // 我们在 BuddyRuntime 的 convertMessage 中把自定义数据放在 metadata 里
+  
+  return (
+    <MessagePrimitive.Root className="mb-5 px-4">
+      {/* Logo */}
+      <div className="mb-1">
+        <MessagePrimitive.If speaking={false}>
+          <BuddyLogo isStreaming={false} />
+        </MessagePrimitive.If>
+        <MessagePrimitive.If speaking={true}>
+          <BuddyLogo isStreaming={true} />
+        </MessagePrimitive.If>
+      </div>
+      
+      {/* 搜索结果标签（如果有） */}
+      <BuddySearchResults />
+      
+      {/* 代码文件标签（如果有） */}
+      <BuddyCodeFiles />
+      
+      {/* 工具调用状态（如果有） */}
+      <BuddyToolCalls />
+      
+      {/* 思考过程（如果有） */}
+      <BuddyThinking />
+      
+      {/* 消息内容：根据类型选择渲染方式 */}
+      <BuddyMessageBody />
+      
+      {/* 操作栏：复制/重新生成/点赞/点踩 */}
+      <MessagePrimitive.If speaking={false}>
+        <BuddyActionBar />
+      </MessagePrimitive.If>
+      
+      {/* 错误状态（如果有） */}
+      <BuddyErrorCard />
+    </MessagePrimitive.Root>
+  );
+}
+
+/**
+ * Logo：流式时呼吸动画，完成后静态
+ */
+function BuddyLogo({ isStreaming }: { isStreaming: boolean }) {
+  return (
+    <div className={isStreaming ? 'logo-breathing' : ''} style={{ width: 20, height: 20 }}>
+      <AgentLogo size={20} animate={false} glow={false} />
+    </div>
+  );
+}
+
+/**
+ * 消息体：根据消息类型决定渲染方式
+ */
+function BuddyMessageBody() {
+  // 读取消息的自定义 metadata
+  const messageData = useBuddyMessageData();
+  
+  if (!messageData) {
+    // 没有自定义数据，用 assistant-ui 默认的 Markdown 渲染
+    return <MessagePrimitive.Content />;
+  }
+  
+  const { type, action, actions, followUp, confirmed, actionConfirmed } = messageData;
+  
+  // 确认操作
+  if (type === 'confirm' && action) {
+    return (
+      <div>
+        <MessagePrimitive.Content />
+        <AiConfirmCard 
+          action={action}
+          confirmed={confirmed}
+          onConfirm={() => messageData.onConfirm?.(messageData.messageId)}
+          onReject={() => messageData.onReject?.(messageData.messageId)}
+          onSkip={() => messageData.onSkip?.(messageData.messageId)}
+        />
+      </div>
+    );
+  }
+  
+  // 批量确认
+  if (type === 'multi_confirm' && actions) {
+    return (
+      <div>
+        <MessagePrimitive.Content />
+        <MultiConfirmGroup 
+          actions={actions}
+          actionConfirmed={actionConfirmed}
+          onConfirm={(idx) => messageData.onConfirm?.(messageData.messageId, idx)}
+          onReject={(idx) => messageData.onReject?.(messageData.messageId, idx)}
+          onConfirmAll={() => messageData.onConfirmAll?.(messageData.messageId)}
+        />
+      </div>
+    );
+  }
+  
+  // 引导创建
+  if (type === 'follow_up' && followUp) {
+    return (
+      <div>
+        <MessagePrimitive.Content />
+        <AiGuidedCreation
+          followUp={followUp}
+          onSubmit={(mergedData, creationType) => 
+            messageData.onFollowUpSubmit?.(messageData.messageId, mergedData, creationType)
+          }
+          submitted={messageData.followUpSubmitted}
+        />
+      </div>
+    );
+  }
+  
+  // 默认：Markdown 渲染
+  return <MessagePrimitive.Content />;
+}
+
+/**
+ * 思考过程
+ */
+function BuddyThinking() {
+  const messageData = useBuddyMessageData();
+  if (!messageData?.thinking) return null;
+  
+  return (
+    <ThinkingBlock
+      thinking={messageData.thinking}
+      isThinking={messageData.isThinking || false}
+      thinkingDuration={messageData.thinkingDuration}
+    />
+  );
+}
+
+/**
+ * 搜索结果
+ */
+function BuddySearchResults() {
+  const messageData = useBuddyMessageData();
+  if (!messageData?.searchResults?.length) return null;
+  
+  const [expanded, setExpanded] = useState(false);
+  
+  return (
+    <div className="mb-2">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="search-sources-tag"
+      >
+        <Search className="w-3 h-3" />
+        搜索了 {messageData.searchResults.length} 个来源
+        <ChevronDown className={cn("w-3 h-3 transition-transform", expanded && "rotate-180")} />
+      </button>
+      
+      {expanded && (
+        <div className="mt-2 space-y-1 pl-2 border-l-2 border-[rgba(255,255,255,0.08)]">
+          {messageData.searchResults.map((r: any, i: number) => (
+            <a key={i} href={r.url} target="_blank" rel="noopener noreferrer"
+               className="block text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] truncate">
+              {r.title}
+              <span className="opacity-40 ml-2">{new URL(r.url).hostname}</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 工具调用状态
+ */
+function BuddyToolCalls() {
+  const messageData = useBuddyMessageData();
+  if (!messageData?.toolCalls?.length) return null;
+  
+  return (
+    <div className="mb-2 space-y-1">
+      {messageData.toolCalls.map((call: any, i: number) => (
+        <div key={i} className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+          {call.status === 'running' ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : call.status === 'complete' ? (
+            <Check className="w-3 h-3 text-green-500" />
+          ) : (
+            <AlertCircle className="w-3 h-3 text-red-400" />
+          )}
+          <span>{call.completedLabel || call.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * 操作栏：复制/重新生成/点赞/点踩
+ * 使用 assistant-ui 的 ActionBarPrimitive
+ */
+function BuddyActionBar() {
+  const messageData = useBuddyMessageData();
+  
+  return (
+    <ActionBarPrimitive.Root className="flex items-center gap-1 mt-2">
+      <ActionBarPrimitive.Copy asChild>
+        <button className="w-7 h-7 rounded-md flex items-center justify-center 
+                          text-[var(--text-secondary)] hover:text-[var(--text-primary)] 
+                          hover:bg-white/5 transition-colors">
+          <Copy className="w-3.5 h-3.5" strokeWidth={1.5} />
+        </button>
+      </ActionBarPrimitive.Copy>
+      
+      {/* 重新生成只在最后一条 AI 消息显示 */}
+      <ActionBarPrimitive.Reload asChild>
+        <button className="w-7 h-7 rounded-md flex items-center justify-center
+                          text-[var(--text-secondary)] hover:text-[var(--text-primary)]
+                          hover:bg-white/5 transition-colors">
+          <RotateCcw className="w-3.5 h-3.5" strokeWidth={1.5} />
+        </button>
+      </ActionBarPrimitive.Reload>
+      
+      {/* 点赞/点踩保留现有逻辑 */}
+      <BuddyFeedbackButtons />
+      
+      {/* Token 用量（极淡） */}
+      {messageData?.tokenUsage && (
+        <span className="text-[10px] text-[var(--text-secondary)] opacity-30 ml-auto tabular-nums">
+          {messageData.tokenUsage.totalTokens.toLocaleString()} tokens
+        </span>
+      )}
+    </ActionBarPrimitive.Root>
+  );
+}
+
+/**
+ * 错误卡片
+ */
+function BuddyErrorCard() {
+  const messageData = useBuddyMessageData();
+  if (!messageData?.errorType) return null;
+  
+  // 复用现有的错误渲染逻辑（从 AiMessageBubble 中提取）
+  const errorMessages: Record<string, { icon: any; title: string; desc: string }> = {
+    network: { icon: WifiOff, title: '网络连接失败', desc: '请检查网络连接后重试' },
+    timeout: { icon: Clock, title: '请求超时', desc: 'AI 响应超时，请稍后重试' },
+    rate_limit: { icon: AlertTriangle, title: '请求过于频繁', desc: '请稍等片刻再试' },
+    context_too_long: { icon: Scissors, title: '对话过长', desc: '建议开始新对话或清理历史' },
+    service_unavailable: { icon: ServerCrash, title: 'AI 服务暂时不可用', desc: '请稍后重试' },
+  };
+  
+  const error = errorMessages[messageData.errorType] || 
+    { icon: AlertCircle, title: '出了点问题', desc: '请重试' };
+  const ErrorIcon = error.icon;
+  
+  return (
+    <div className="mt-2 p-3 rounded-lg border border-red-500/20 bg-red-500/5">
+      <div className="flex items-center gap-2 text-sm text-red-400">
+        <ErrorIcon className="w-4 h-4" />
+        <span className="font-medium">{error.title}</span>
+      </div>
+      <p className="text-xs text-[var(--text-secondary)] mt-1">{error.desc}</p>
+      {messageData.onRetry && (
+        <button
+          onClick={() => messageData.onRetry?.(messageData.messageId)}
+          className="mt-2 text-xs text-[var(--brand)] hover:underline flex items-center gap-1"
+        >
+          <RotateCcw className="w-3 h-3" /> 重试
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 用户消息附件
+ */
+function BuddyUserAttachments() {
+  const messageData = useBuddyMessageData();
+  if (!messageData?.attachments?.length) return null;
+  
+  return (
+    <div className="flex gap-2 mt-2 flex-wrap">
+      {messageData.attachments.map((att: any, i: number) => (
+        <div key={i} className="rounded-lg overflow-hidden border border-[rgba(255,255,255,0.1)]">
+          {att.type === 'image' && att.previewUrl ? (
+            <img src={att.previewUrl} alt={att.name} className="max-w-[120px] max-h-[80px] object-cover" />
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-2 text-xs text-[var(--text-secondary)]">
+              <FileText className="w-3.5 h-3.5" />
+              <span className="truncate max-w-[100px]">{att.name}</span>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export { BuddyUserMessage, BuddyAssistantMessage };
+```
+
+### Step 2：更新 BuddyRuntime 的消息转换
+
+在 `BuddyRuntime.tsx` 的 `convertMessage` 函数中，确保所有自定义数据都传入 metadata：
+
+```typescript
+function convertMessage(msg: OurMessage): ThreadMessageLike {
+  return {
+    role: msg.role as "user" | "assistant",
+    content: [{ type: "text", text: msg.content || "" }],
+    id: msg.id,
+    metadata: {
+      // 把我们所有的自定义数据都放进 metadata
+      messageId: msg.id,
+      type: msg.type,
+      action: msg.action,
+      actions: msg.actions,
+      confirmed: msg.confirmed,
+      actionConfirmed: msg.actionConfirmed,
+      followUp: msg.followUp,
+      followUpSubmitted: msg.followUpSubmitted,
+      isStreaming: msg.isStreaming,
+      searchResults: msg.searchResults,
+      codeFiles: msg.codeFiles,
+      codeFilesFailed: msg.codeFilesFailed,
+      attachments: msg.attachments,
+      thinking: msg.thinking,
+      isThinking: msg.isThinking,
+      thinkingDuration: msg.thinkingDuration,
+      tokenUsage: msg.tokenUsage,
+      errorType: msg.errorType,
+      toolCalls: msg.toolCalls,
+      retryPayload: msg.retryPayload,
+      // 回调函数引用（通过闭包传递）
+      onConfirm: callbacks.onConfirm,
+      onReject: callbacks.onReject,
+      onSkip: callbacks.onSkip,
+      onConfirmAll: callbacks.onConfirmAll,
+      onFollowUpSubmit: callbacks.onFollowUpSubmit,
+      onRetry: callbacks.onRetry,
+      onRegenerate: callbacks.onRegenerate,
+    },
+  };
+}
+```
+
+**关于回调函数**：assistant-ui 的 metadata 可以传任意数据。把 agent.tsx 中的 `handleConfirm`、`handleReject` 等回调传进 convertMessage，然后在自定义组件中通过 `useBuddyMessageData()` 读取。
+
+### Step 3：创建 useBuddyMessageData Hook
+
+```typescript
+// 在 BuddyRuntime.tsx 或单独文件中
+import { useMessage } from "@assistant-ui/react";
+
+export function useBuddyMessageData() {
+  const message = useMessage();
+  // metadata 在 assistant-ui 中通过 message.metadata 访问
+  // 具体访问方式取决于 assistant-ui 的版本
+  // 查看 assistant-ui 文档确认：
+  // - useMessage().metadata
+  // - useMessageContext().metadata  
+  // - 或通过 MessagePrimitive 的 render props
+  return message?.metadata as any || null;
+}
+```
+
+**重要**：`useMessage()` 的具体返回结构需要查 assistant-ui 文档。如果 metadata 的访问方式和上面写的不同，让 Replit 按实际 API 调整。
+
+### Step 4：在 agent.tsx 中接入自定义消息组件
+
+```typescript
+import { BuddyUserMessage, BuddyAssistantMessage } from "@/components/ai/BuddyMessages";
+
+// 在 ThreadPrimitive 中使用自定义组件
+<ThreadPrimitive.Messages
+  components={{
+    UserMessage: BuddyUserMessage,
+    AssistantMessage: BuddyAssistantMessage,
+  }}
+/>
+```
+
+### Step 5：配置 assistant-ui 的 Markdown 渲染
+
+assistant-ui 内置了 Markdown 渲染，但需要配置代码高亮和表格样式。
+
+```typescript
+import { makeMarkdownText } from "@assistant-ui/react-markdown";
+
+// 自定义 Markdown 渲染，复用我们已有的代码块和表格组件
+const MarkdownText = makeMarkdownText({
+  // 代码块用我们现有的 highlight.js 配置
+  components: {
+    // 如果 assistant-ui 的默认代码块不够好，可以覆盖
+    // 但建议先用默认的看看效果，不够再改
+  },
+});
+```
+
+### Step 6：Composer（输入栏）
+
+用 assistant-ui 的 Composer 替换 AiInputBar，或者保留 AiInputBar 通过 runtime 通信。
+
+**建议先保留 AiInputBar**——因为它有 Add-to-chat 面板、功能开关（知识库/搜索/代码上下文）等自定义功能，这些 assistant-ui 的 Composer 没有。
+
+如果后续想迁移，可以用 ComposerPrimitive 做自定义 Composer：
+
+```typescript
+<ComposerPrimitive.Root>
+  <ComposerPrimitive.Input placeholder="输入消息..." />
+  <ComposerPrimitive.Send>
+    <ArrowUp className="w-4 h-4" />
+  </ComposerPrimitive.Send>
+</ComposerPrimitive.Root>
+```
+
+但 Phase 2 先不动输入栏。
+
+-----
+
+## 四、主题适配
+
+### 暖色调覆盖
+
+```css
+/* 覆盖 assistant-ui 的默认样式变量 */
+[data-assistant-ui] {
+  /* 品牌色 */
+  --aui-primary: var(--brand, #AE5630);
+  --aui-primary-foreground: #ffffff;
+  
+  /* 背景色 */
+  --aui-background: var(--bg-main, #1E1D1A);
+  --aui-foreground: var(--text-primary, #ECECEC);
+  
+  /* 消息气泡 */
+  --aui-user-message-bg: rgba(174, 86, 48, 0.12);
+  --aui-assistant-message-bg: transparent;
+}
+```
+
+### Logo 呼吸动画
+
+```css
+@keyframes logo-breathe {
+  0%, 100% { 
+    transform: scale(1); 
+    filter: drop-shadow(0 0 0px var(--brand));
+  }
+  50% { 
+    transform: scale(1.15); 
+    filter: drop-shadow(0 0 6px var(--brand));
+  }
+}
+
+.logo-breathing {
+  animation: logo-breathe 2s ease-in-out infinite;
+}
+```
+
+-----
+
+## 五、迁移顺序（安全渐进）
+
+```
+1. 创建 BuddyMessages.tsx（自定义消息组件）
+2. 创建 useBuddyMessageData hook
+3. 更新 BuddyRuntime 的 convertMessage（传入完整 metadata + 回调）
+4. 在 /agent-v2 测试路由中用 ThreadPrimitive.Messages + 自定义组件
+5. 验证：普通文本消息渲染正确
+6. 验证：流式输出正常
+7. 验证：思考过程显示正确
+8. 验证：确认卡片正常工作（点击确认/拒绝）
+9. 验证：引导创建流程正常
+10. 验证：搜索结果、工具调用、错误状态
+11. 验证：操作栏（复制/重新生成/点赞/点踩）
+12. 样式调整（暖色调、间距、字体）
+13. 切到正式 /agent 路由
+```
+
+-----
+
+## 六、验证清单
+
+### 消息渲染
+
+- [ ] 用户消息右对齐、暖色背景
+- [ ] AI 消息左对齐、无背景、Logo 在上方
+- [ ] 流式输出时 Logo 呼吸动画
+- [ ] 流式完成后 Logo 静止
+- [ ] Markdown 正确渲染（标题/列表/加粗/引用）
+- [ ] 代码块有语法高亮
+- [ ] 表格可横向滚动
+- [ ] 链接可点击
+
+### 业务组件
+
+- [ ] type=confirm → AiConfirmCard 正常显示和交互
+- [ ] type=multi_confirm → 批量确认正常
+- [ ] type=follow_up → AiGuidedCreation 引导流程正常
+- [ ] 思考过程可折叠/展开
+- [ ] 搜索结果以折叠标签展示
+- [ ] 工具调用状态正常显示
+- [ ] 错误卡片 + 重试按钮正常
+
+### 操作栏
+
+- [ ] 复制按钮正常
+- [ ] 重新生成只在最后一条 AI 消息显示
+- [ ] 点赞/点踩正常
+- [ ] Token 用量显示（极淡）
+
+### 自动化功能
+
+- [ ] 自动滚动到底部（新消息时）
+- [ ] 手动向上滚动后停止自动滚动
+- [ ] “回到底部”按钮正常
+- [ ] 停止生成按钮正常
+
+### 回归测试
+
+- [ ] 对话列表/搜索/切换对话正常
+- [ ] 新建对话正常
+- [ ] 加载历史消息正常
+- [ ] 附件上传正常
+- [ ] 功能开关（知识库/搜索/代码上下文）正常
+- [ ] 移动端布局正常
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读 `task-19-phase2-messages.md`，执行 assistant-ui 消息组件迁移。
+> 
+> **最重要的规则：先在 /agent-v2 测试路由做，验证通过后再切正式路由。**
+> 
+> 执行步骤：
+> 
+> 1. **先读 assistant-ui 文档**：
+> - Messages 组件：https://www.assistant-ui.com/docs/primitives/Message
+> - ActionBar：https://www.assistant-ui.com/docs/primitives/ActionBar
+> - 自定义消息渲染：搜索 `components` prop 和 `makeMarkdownText`
+> - metadata 访问方式：搜索 `useMessage` hook
+> 1. 创建 BuddyMessages.tsx
+> 1. 更新 BuddyRuntime 的 convertMessage
+> 1. 在 /agent-v2 测试路由验证
+> 1. 逐个验证消息类型（按验证清单）
+> 1. 样式调整
+> 1. 切到正式路由
+> 
+> 关键注意：
+> 
+> - **回调函数传递**：确认/拒绝/重试等回调需要从 agent.tsx 传入 runtime，再通过 metadata 传到自定义组件
+> - **useMessage() 的实际 API**：需要查文档确认 metadata 的访问方式，我的写法可能和实际 API 有差异
+> - **不动输入栏**：Phase 2 保留 AiInputBar，不迁移到 ComposerPrimitive
+> - **不动侧边栏**：对话管理、搜索、侧边栏完全不动
+> - 如果某个业务组件在 assistant-ui 中无法正常工作，临时回退到 AiMessageBubble 渲染那一种类型
