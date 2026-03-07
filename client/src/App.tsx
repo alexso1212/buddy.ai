@@ -62,7 +62,7 @@ import {
   Search,
   Check,
   X,
-  MessageSquarePlus,
+  MessageCirclePlus,
   BookOpen,
   Sparkles,
 } from "lucide-react";
@@ -909,7 +909,7 @@ function Sidebar({
               }}
               data-testid="button-new-chat"
             >
-              <MessageSquarePlus size={20} color="#FFFFFF" strokeWidth={2} />
+              <MessageCirclePlus size={20} color="#FFFFFF" strokeWidth={2} />
             </button>
           </div>
         </div>
