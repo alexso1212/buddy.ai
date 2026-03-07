@@ -166,7 +166,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
         WebkitOverflowScrolling: 'touch',
         touchAction: 'pan-x pan-y',
       }}>
-        <div style={{ display: 'flex', minWidth: 'min-content' }}>
+        <div style={{ display: 'flex' }}>
           <div style={{
             padding: '14px 0',
             paddingLeft: 12,
@@ -191,6 +191,8 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
             padding: '14px 16px',
             margin: 0,
             flex: 1,
+            minWidth: 0,
+            overflowX: 'auto',
           }}>
             {highlighted ? (
               <code
@@ -376,6 +378,10 @@ export default function AIMessageContent({ content }: AIMessageContentProps) {
         lineHeight: '1.65',
         letterSpacing: '0.02em',
         color: 'var(--text-primary)',
+        overflowX: 'hidden',
+        overflowWrap: 'break-word',
+        wordBreak: 'break-word',
+        minWidth: 0,
       }}
       data-testid="ai-message-content"
     >

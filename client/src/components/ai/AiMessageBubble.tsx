@@ -1001,7 +1001,7 @@ export default function AiMessageBubble({
       style={{ animation: 'messageAppear 200ms ease-out' }}
       data-testid={`ai-message-${message.id}`}
     >
-      <div className="max-w-3xl">
+      <div className="max-w-3xl min-w-0" style={{ maxWidth: 'min(768px, calc(100vw - 40px))' }}>
         <div className="mb-1 flex items-center gap-2">
           <BrandLogo breathing={!!message.isStreaming} />
         </div>
