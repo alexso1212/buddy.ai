@@ -750,7 +750,7 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
     const y = iRect.top - cRect.top;
     const w = iRect.width;
     const h = iRect.height;
-    const r = 20;
+    const r = 24;
 
     const mask = `
       url("data:image/svg+xml,${encodeURIComponent(

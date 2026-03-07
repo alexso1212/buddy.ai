@@ -667,20 +667,14 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
         <div
           ref={composerWrapRef}
           style={{
-            borderRadius: 20,
+            borderRadius: 24,
             position: 'relative' as const,
-            padding: 1,
-            background: showGlow
-              ? `radial-gradient(ellipse 120px 80px at ${glowPos.x * 100}% ${glowPos.y * 100}%, rgba(255,255,255,${isPressed ? 0.65 : 0.4}) 0%, rgba(255,255,255,${isPressed ? 0.25 : 0.15}) 50%, rgba(255,255,255,0.08) 100%)`
-              : 'linear-gradient(to bottom, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.10) 40%, rgba(255,255,255,0.05) 100%)',
-            boxShadow: showGlow
-              ? `0 0 ${isPressed ? 24 : 14}px rgba(255,255,255,${isPressed ? 0.15 : 0.08})`
-              : 'none',
+            background: 'transparent',
+            border: '1px solid rgba(255,255,255,0.15)',
             outline: isDragOver ? '2px dashed rgba(212,162,127,0.5)' : 'none',
             outlineOffset: 2,
-            transition: showGlow && !isPressed
-              ? 'background 0.5s ease, box-shadow 0.5s ease'
-              : 'background 0.05s ease, box-shadow 0.05s ease',
+            overflow: 'hidden',
+            transition: 'border-color 200ms ease',
           }}
           onPointerDown={handleComposerPointerDown}
           onPointerUp={handleComposerPointerUp}
@@ -692,30 +686,11 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
           data-testid="ai-composer"
         >
           <div style={{
-            background: '#1A1918',
-            borderRadius: 19,
+            background: 'transparent',
+            borderRadius: 23,
             overflow: 'hidden',
             position: 'relative',
           }}>
-          {spotPos && (
-            <div
-              style={{
-                position: 'absolute',
-                width: '150%',
-                height: 0,
-                paddingBottom: '150%',
-                borderRadius: '50%',
-                background: 'radial-gradient(circle at center, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 30%, rgba(255,255,255,0.01) 60%, rgba(255,255,255,0) 100%)',
-                pointerEvents: 'none',
-                transform: 'translate(-50%, -50%)',
-                left: spotPos.x - 1,
-                top: spotPos.y - 1,
-                opacity: spotVisible ? 1 : 0,
-                transition: 'opacity 300ms ease-out',
-                zIndex: 0,
-              }}
-            />
-          )}
           <textarea
             ref={textareaRef}
             value={value}
@@ -732,9 +707,9 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
             rows={1}
             style={{
               width: '100%',
-              minHeight: 36,
+              minHeight: 44,
               maxHeight: 288,
-              padding: '14px 16px 8px 16px',
+              padding: '16px 16px 10px 16px',
               fontSize: 16,
               fontFamily: 'var(--font-sans)',
               lineHeight: 1.5,
@@ -748,7 +723,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
               zIndex: 1,
             }}
             className={cn(
-              "placeholder:text-[var(--text-placeholder)]",
+              "placeholder:text-[rgba(255,255,255,0.3)]",
               "disabled:opacity-50 disabled:cursor-not-allowed"
             )}
             data-testid="ai-input"
@@ -853,10 +828,10 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
-                  color: 'var(--text-secondary)',
-                  transition: 'background 150ms',
+                  color: 'rgba(255,255,255,0.4)',
+                  transition: 'color 150ms',
                 }}
-                className="hover:bg-white/5"
+                className="hover:text-[rgba(255,255,255,0.7)]"
                 data-testid="ai-attach"
               >
                 <Plus className="w-5 h-5" />
@@ -952,6 +927,13 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
           </div>
           </div>
         </div>
+        <p style={{
+          textAlign: 'center',
+          fontSize: 11,
+          color: 'rgba(255,255,255,0.3)',
+          marginTop: 8,
+          lineHeight: 1.3,
+        }}>BuddyAI can make mistakes. Please double check responses.</p>
       </div>
 
       <AddToChatSheet
