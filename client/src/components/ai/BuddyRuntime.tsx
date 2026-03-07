@@ -1,9 +1,10 @@
-import { type ReactNode, useCallback } from "react";
+import { type ReactNode, useCallback, createContext, useContext } from "react";
 import {
   useExternalStoreRuntime,
   AssistantRuntimeProvider,
   type ThreadMessageLike,
   type AppendMessage,
+  useMessage,
 } from "@assistant-ui/react";
 
 interface ActionPayload {
@@ -83,6 +84,42 @@ export interface BuddyMessage {
   partialContent?: string;
 }
 
+export interface BuddyCallbacks {
+  onConfirm?: (messageId: string, actionIndex?: number) => void;
+  onReject?: (messageId: string, actionIndex?: number) => void;
+  onSkip?: (messageId: string, actionIndex?: number) => void;
+  onConfirmAll?: (messageId: string) => void;
+  onFollowUpSubmit?: (messageId: string, mergedData: Record<string, any>, creationType?: string) => void;
+  onStepAnswer?: (stepLabel: string, answerLabel: string) => void;
+  onRegenerate?: (messageId: string) => void;
+  onEditMessage?: (messageId: string, newContent: string) => void;
+  onRetry?: (messageId: string) => void;
+  onContinueGeneration?: (messageId: string) => void;
+  onNewConversation?: () => void;
+  onTrimAndRetry?: (messageId: string) => void;
+}
+
+const CallbacksContext = createContext<BuddyCallbacks>({});
+const IsLastAssistantContext = createContext<(msgId: string) => boolean>(() => false);
+
+export function useBuddyCallbacks(): BuddyCallbacks {
+  return useContext(CallbacksContext);
+}
+
+export function useIsLastAssistant(msgId: string): boolean {
+  const check = useContext(IsLastAssistantContext);
+  return check(msgId);
+}
+
+export function useBuddyMessageData(): BuddyMessage | undefined {
+  try {
+    const buddyMsg = useMessage((s) => (s.metadata as any)?.custom?.buddyMessage);
+    return buddyMsg as BuddyMessage | undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function convertMessage(msg: BuddyMessage): ThreadMessageLike {
   const contentParts: Array<{ type: "text"; text: string }> = [];
 
@@ -96,31 +133,28 @@ function convertMessage(msg: BuddyMessage): ThreadMessageLike {
 
   const mappedRole = msg.role === "system" ? "assistant" : msg.role;
 
-  const result: ThreadMessageLike = {
+  const assistantStatus = msg.isStreaming
+    ? { type: "running" as const }
+    : msg.errorType
+      ? {
+          type: "incomplete" as const,
+          reason: "error" as const,
+          error: msg.errorType,
+        }
+      : { type: "complete" as const, reason: "stop" as const };
+
+  return {
     id: msg.id,
     role: mappedRole,
     content: contentParts,
     createdAt: msg.timestamp ? new Date(msg.timestamp) : undefined,
+    ...(mappedRole === "assistant" ? { status: assistantStatus } : {}),
     metadata: {
       custom: {
         buddyMessage: msg,
       },
     },
   };
-
-  if (mappedRole === "assistant") {
-    result.status = msg.isStreaming
-      ? { type: "running" as const }
-      : msg.errorType
-        ? {
-            type: "incomplete" as const,
-            reason: "error" as const,
-            error: msg.errorType,
-          }
-        : { type: "complete" as const, reason: "stop" as const };
-  }
-
-  return result;
 }
 
 interface BuddyRuntimeProviderProps {
@@ -128,6 +162,7 @@ interface BuddyRuntimeProviderProps {
   isRunning: boolean;
   onSend: (text: string) => void;
   onCancel: () => void;
+  callbacks: BuddyCallbacks;
   children: ReactNode;
 }
 
@@ -136,6 +171,7 @@ export function BuddyRuntimeProvider({
   isRunning,
   onSend,
   onCancel,
+  callbacks,
   children,
 }: BuddyRuntimeProviderProps) {
   const onNew = useCallback(
@@ -160,10 +196,25 @@ export function BuddyRuntimeProvider({
     onCancel: handleCancel,
   });
 
+  const checkIsLastAssistant = useCallback(
+    (msgId: string) => {
+      const lastIdx = messages.reduce(
+        (acc, m, i) => (m.role === "assistant" && !m.isStreaming ? i : acc),
+        -1,
+      );
+      if (lastIdx === -1) return false;
+      return messages[lastIdx].id === msgId;
+    },
+    [messages],
+  );
+
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      {children}
-    </AssistantRuntimeProvider>
+    <CallbacksContext.Provider value={callbacks}>
+      <IsLastAssistantContext.Provider value={checkIsLastAssistant}>
+        <AssistantRuntimeProvider runtime={runtime}>
+          {children}
+        </AssistantRuntimeProvider>
+      </IsLastAssistantContext.Provider>
+    </CallbacksContext.Provider>
   );
 }
-

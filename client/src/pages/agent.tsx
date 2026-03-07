@@ -4,7 +4,6 @@ import { useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import AiMessageBubble from "@/components/ai/AiMessageBubble";
 import AiInputBar from "@/components/ai/AiInputBar";
 import type { Attachment } from "@/components/ai/AiInputBar";
 import { Trash2, ListPlus, BarChart3, Users, CheckSquare, Plus, ArrowLeft, MessageSquare, Pencil, X, Check, ListFilter, ChevronRight, Search, Star, FolderOpen, ArrowDown, AlertCircle, Clock, Square } from "lucide-react";
@@ -14,7 +13,8 @@ import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
 import { useAuth } from "@/lib/auth";
 import { setStreamState, clearStreamState, getStreamState, takeoverStream, isBackgroundStreamActive } from "@/stores/chatStreamStore";
-import { BuddyRuntimeProvider } from "@/components/ai/BuddyRuntime";
+import { BuddyRuntimeProvider, type BuddyCallbacks } from "@/components/ai/BuddyRuntime";
+import { BuddyUserMessage, BuddyAssistantMessage } from "@/components/ai/BuddyMessages";
 import { ThreadPrimitive } from "@assistant-ui/react";
 
 interface ActionPayload {
@@ -2143,6 +2143,21 @@ export default function Agent() {
     navigate('/agent', { replace: true });
   }, [navigate]);
 
+  const buddyCallbacks: BuddyCallbacks = useMemo(() => ({
+    onConfirm: handleConfirm,
+    onReject: handleReject,
+    onSkip: handleSkip,
+    onConfirmAll: handleConfirmAll,
+    onFollowUpSubmit: handleFollowUpSubmit,
+    onStepAnswer: handleStepAnswer,
+    onRegenerate: handleRegenerate,
+    onEditMessage: handleEditMessage,
+    onRetry: handleRetry,
+    onContinueGeneration: handleContinueGeneration,
+    onNewConversation: handleNewConversation,
+    onTrimAndRetry: handleTrimAndRetry,
+  }), [handleConfirm, handleReject, handleSkip, handleConfirmAll, handleFollowUpSubmit, handleStepAnswer, handleRegenerate, handleEditMessage, handleRetry, handleContinueGeneration, handleNewConversation, handleTrimAndRetry]);
+
   const showWelcome = !activeConvId && messages.length === 0 && !showChat;
 
   return (
@@ -2186,6 +2201,7 @@ export default function Agent() {
           isRunning={loading}
           onSend={handleSend}
           onCancel={handleStop}
+          callbacks={buddyCallbacks}
         >
           <ThreadPrimitive.Root className="absolute inset-0 flex flex-col" style={{ background: 'transparent' }}>
             <ThreadPrimitive.Viewport
@@ -2197,28 +2213,12 @@ export default function Agent() {
               style={{ paddingTop: 54, paddingBottom: 'calc(160px + 3.33vh)', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', touchAction: 'pan-y' }}
             >
               <div className="max-w-3xl mx-auto">
-                {(() => {
-                  const lastAssistantIdx = messages.reduce((acc, m, i) => m.role === 'assistant' && !m.isStreaming ? i : acc, -1);
-                  return messages.map((msg, idx) => (
-                    <AiMessageBubble
-                      key={msg.id}
-                      message={msg}
-                      onConfirm={handleConfirm}
-                      onReject={handleReject}
-                      onSkip={handleSkip}
-                      onConfirmAll={handleConfirmAll}
-                      onFollowUpSubmit={handleFollowUpSubmit}
-                      onStepAnswer={handleStepAnswer}
-                      onRegenerate={handleRegenerate}
-                      onEditMessage={handleEditMessage}
-                      onRetry={handleRetry}
-                      onContinueGeneration={handleContinueGeneration}
-                      onNewConversation={handleNewConversation}
-                      onTrimAndRetry={handleTrimAndRetry}
-                      isLastAssistant={idx === lastAssistantIdx}
-                    />
-                  ));
-                })()}
+                <ThreadPrimitive.Messages
+                  components={{
+                    UserMessage: BuddyUserMessage,
+                    AssistantMessage: BuddyAssistantMessage,
+                  }}
+                />
                 {loading && !messages.some(m => m.isStreaming) && (
                   <div className="flex justify-start px-3 mb-6" data-testid="ai-loading">
                     <ThinkingAnimation size={36} />
