@@ -14,6 +14,8 @@ import AgentLogo from "@/components/AgentLogo";
 import ThinkingAnimation from "@/components/ThinkingAnimation";
 import { useAuth } from "@/lib/auth";
 import { setStreamState, clearStreamState, getStreamState, takeoverStream, isBackgroundStreamActive } from "@/stores/chatStreamStore";
+import { BuddyRuntimeProvider } from "@/components/ai/BuddyRuntime";
+import { ThreadPrimitive } from "@assistant-ui/react";
 
 interface ActionPayload {
   actionType: string;
@@ -2179,94 +2181,102 @@ export default function Agent() {
           <ThinkingAnimation size={48} label="加载中" />
         </div>
       ) : (
-        <div
-          className="absolute inset-0 overflow-y-auto overflow-x-hidden"
-          ref={scrollRef}
-          onScroll={handleScrollEvent}
-          data-testid="agent-messages"
-          style={{ paddingTop: 54, paddingBottom: 'calc(160px + 3.33vh)', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', touchAction: 'pan-y' }}
+        <BuddyRuntimeProvider
+          messages={messages}
+          isRunning={loading}
+          onSend={handleSend}
+          onCancel={handleStop}
         >
-          
-          <div className="max-w-3xl mx-auto">
-            {(() => {
-              const lastAssistantIdx = messages.reduce((acc, m, i) => m.role === 'assistant' && !m.isStreaming ? i : acc, -1);
-              return messages.map((msg, idx) => (
-                <AiMessageBubble
-                  key={msg.id}
-                  message={msg}
-                  onConfirm={handleConfirm}
-                  onReject={handleReject}
-                  onSkip={handleSkip}
-                  onConfirmAll={handleConfirmAll}
-                  onFollowUpSubmit={handleFollowUpSubmit}
-                  onStepAnswer={handleStepAnswer}
-                  onRegenerate={handleRegenerate}
-                  onEditMessage={handleEditMessage}
-                  onRetry={handleRetry}
-                  onContinueGeneration={handleContinueGeneration}
-                  onNewConversation={handleNewConversation}
-                  onTrimAndRetry={handleTrimAndRetry}
-                  isLastAssistant={idx === lastAssistantIdx}
-                />
-              ));
-            })()}
-            {loading && !messages.some(m => m.isStreaming) && (
-              <div className="flex justify-start px-3 mb-6" data-testid="ai-loading">
-                <ThinkingAnimation size={36} />
+          <ThreadPrimitive.Root className="absolute inset-0 flex flex-col" style={{ background: 'transparent' }}>
+            <ThreadPrimitive.Viewport
+              autoScroll
+              className="flex-1 overflow-y-auto overflow-x-hidden"
+              ref={scrollRef as any}
+              onScroll={handleScrollEvent}
+              data-testid="agent-messages"
+              style={{ paddingTop: 54, paddingBottom: 'calc(160px + 3.33vh)', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', touchAction: 'pan-y' }}
+            >
+              <div className="max-w-3xl mx-auto">
+                {(() => {
+                  const lastAssistantIdx = messages.reduce((acc, m, i) => m.role === 'assistant' && !m.isStreaming ? i : acc, -1);
+                  return messages.map((msg, idx) => (
+                    <AiMessageBubble
+                      key={msg.id}
+                      message={msg}
+                      onConfirm={handleConfirm}
+                      onReject={handleReject}
+                      onSkip={handleSkip}
+                      onConfirmAll={handleConfirmAll}
+                      onFollowUpSubmit={handleFollowUpSubmit}
+                      onStepAnswer={handleStepAnswer}
+                      onRegenerate={handleRegenerate}
+                      onEditMessage={handleEditMessage}
+                      onRetry={handleRetry}
+                      onContinueGeneration={handleContinueGeneration}
+                      onNewConversation={handleNewConversation}
+                      onTrimAndRetry={handleTrimAndRetry}
+                      isLastAssistant={idx === lastAssistantIdx}
+                    />
+                  ));
+                })()}
+                {loading && !messages.some(m => m.isStreaming) && (
+                  <div className="flex justify-start px-3 mb-6" data-testid="ai-loading">
+                    <ThinkingAnimation size={36} />
+                  </div>
+                )}
+              </div>
+            </ThreadPrimitive.Viewport>
+
+            {messages.some(m => m.isStreaming) && (
+              <div className="absolute z-30 flex justify-center" style={{ bottom: 'calc(170px + 3.33vh)', left: 0, right: 0, pointerEvents: 'none' }}>
+                <button
+                  onClick={handleStop}
+                  className="flex items-center gap-2 transition-all hover:scale-105"
+                  style={{
+                    padding: '6px 16px',
+                    borderRadius: 999,
+                    background: 'rgba(255,255,255,0.08)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'var(--text-secondary)',
+                    fontSize: 13,
+                    fontFamily: 'var(--font-sans)',
+                    pointerEvents: 'auto',
+                    cursor: 'pointer',
+                    backdropFilter: 'blur(16px)',
+                    WebkitBackdropFilter: 'blur(16px)',
+                  }}
+                  data-testid="btn-stop-streaming"
+                >
+                  <Square className="w-3 h-3 fill-current" />
+                  停止生成
+                </button>
               </div>
             )}
-          </div>
-        </div>
-      )}
 
-      {messages.some(m => m.isStreaming) && (
-        <div className="absolute z-30 flex justify-center" style={{ bottom: 'calc(170px + 3.33vh)', left: 0, right: 0, pointerEvents: 'none' }}>
-          <button
-            onClick={handleStop}
-            className="flex items-center gap-2 transition-all hover:scale-105"
-            style={{
-              padding: '6px 16px',
-              borderRadius: 999,
-              background: 'rgba(255,255,255,0.08)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              color: 'var(--text-secondary)',
-              fontSize: 13,
-              fontFamily: 'var(--font-sans)',
-              pointerEvents: 'auto',
-              cursor: 'pointer',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
-            }}
-            data-testid="btn-stop-streaming"
-          >
-            <Square className="w-3 h-3 fill-current" />
-            停止生成
-          </button>
-        </div>
-      )}
-
-      {showScrollBtn && messages.length > 0 && !messages.some(m => m.isStreaming) && (
-        <div className="absolute z-30 flex justify-center" style={{ bottom: 'calc(160px + 3.33vh)', left: 0, right: 0, pointerEvents: 'none' }}>
-          <button
-            onClick={() => scrollToBottom(true)}
-            className="flex items-center justify-center hover:scale-105 transition-transform"
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: '50%',
-              background: 'rgba(255,255,255,0.12)',
-              border: '1px solid rgba(255,255,255,0.15)',
-              backdropFilter: 'blur(24px)',
-              WebkitBackdropFilter: 'blur(24px)',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)',
-              pointerEvents: 'auto',
-              cursor: 'pointer',
-            }}
-            data-testid="btn-scroll-bottom"
-          >
-            <ArrowDown className="w-4 h-4" style={{ color: 'rgba(255,255,255,0.85)' }} strokeWidth={2} />
-          </button>
-        </div>
+            <ThreadPrimitive.ScrollToBottom asChild>
+              <button
+                className="absolute z-30 flex items-center justify-center hover:scale-105 transition-transform"
+                style={{
+                  bottom: 'calc(160px + 3.33vh)',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: 36,
+                  height: 36,
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.12)',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  backdropFilter: 'blur(24px)',
+                  WebkitBackdropFilter: 'blur(24px)',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)',
+                  cursor: 'pointer',
+                }}
+                data-testid="btn-scroll-bottom"
+              >
+                <ArrowDown className="w-4 h-4" style={{ color: 'rgba(255,255,255,0.85)' }} strokeWidth={2} />
+              </button>
+            </ThreadPrimitive.ScrollToBottom>
+          </ThreadPrimitive.Root>
+        </BuddyRuntimeProvider>
       )}
 
       {process.env.NODE_ENV === 'development' && !interactiveInput && (

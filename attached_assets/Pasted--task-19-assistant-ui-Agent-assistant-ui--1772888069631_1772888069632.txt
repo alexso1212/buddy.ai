@@ -1,0 +1,263 @@
+# task-19（修订）：用 assistant-ui 重构 Agent 聊天界面
+
+> **方案**：用开源库 `assistant-ui` 替换自建的聊天组件
+> **为什么**：这个库专门做 AI 聊天 UI，已经实现了 Claude 级别的所有交互细节，不需要我们自己摸索像素
+> **技术栈兼容性**：React + shadcn/ui + Tailwind + TypeScript —— 和我们100%一致
+
+-----
+
+## 一、assistant-ui 是什么
+
+GitHub: https://github.com/assistant-ui/assistant-ui
+NPM: @assistant-ui/react
+Stars: 5K+，YC 孵化
+官网: https://www.assistant-ui.com
+Claude 风格 Demo: https://www.assistant-ui.com/examples/claude
+
+**已内置的功能（不需要我们自己实现）：**
+
+- 流式输出 + 自动滚动
+- Markdown 渲染 + 代码语法高亮
+- 文件附件上传和预览
+- 工具调用展示 + 人工确认（human-in-the-loop）
+- 重试、中断、继续生成
+- 键盘快捷键 + 无障碍
+- 语音输入（可选）
+- 可完全自定义主题（基于 shadcn/ui）
+
+**关键特性：支持自定义后端**
+assistant-ui 不要求用 Vercel AI SDK 或任何特定后端。它有 `Custom Runtime` 模式，可以接入我们现有的 SSE 流式后端。
+
+-----
+
+## 二、集成方案
+
+### 不是全部替换，是替换聊天渲染层
+
+```
+现在的架构：
+  agent.tsx → 自建的消息列表 + AiMessageBubble + AiInputBar + SSE处理
+
+改造后：
+  agent.tsx → assistant-ui 的 Thread + Composer + 消息组件 + SSE处理（保留现有后端对接）
+```
+
+**保留的**：
+
+- 所有后端逻辑（routes.ts, chatStream, SSE）
+- 对话管理（侧边栏、对话列表、搜索）
+- 业务组件（AiConfirmCard, AiGuidedCreation, AiFollowUpCard）
+
+**替换的**：
+
+- AiMessageBubble → assistant-ui 的 Message 组件
+- AIMessageContent → assistant-ui 的 Markdown 渲染
+- AiInputBar → assistant-ui 的 Composer
+- ThinkingAnimation / ThinkingBlock → assistant-ui 的 thinking 展示
+- 手动的滚动管理 → assistant-ui 的自动滚动
+- 手动的流式 token 渲染 → assistant-ui 的流式渲染
+
+-----
+
+## 三、安装
+
+```bash
+npm install @assistant-ui/react @assistant-ui/react-markdown
+```
+
+assistant-ui 的 shadcn 主题组件（可选但推荐）：
+
+```bash
+npx assistant-ui@latest add thread
+```
+
+这会在 `components/ui/assistant-ui/` 下生成一组 shadcn 风格的组件，可以直接改样式。
+
+-----
+
+## 四、自定义 Runtime（接入现有SSE后端）
+
+assistant-ui 的 Custom Runtime 让我们可以保留现有的 `/api/ai/chat/stream` 后端，只替换前端渲染层。
+
+```typescript
+import { useExternalStoreRuntime, ThreadMessageLike } from "@assistant-ui/react";
+
+// 把我们的 Message 格式转为 assistant-ui 的格式
+function convertMessage(msg: OurMessage): ThreadMessageLike {
+  return {
+    role: msg.role as "user" | "assistant",
+    content: [{ type: "text", text: msg.content }],
+    // 如果有 thinking
+    ...(msg.thinking ? { 
+      metadata: { thinking: msg.thinking, thinkingDuration: msg.thinkingDuration } 
+    } : {}),
+  };
+}
+
+// 在 agent.tsx 中
+function AgentPage() {
+  const [messages, setMessages] = useState<OurMessage[]>([]);
+  
+  const runtime = useExternalStoreRuntime({
+    messages: messages.map(convertMessage),
+    isRunning: isStreaming,
+    onNew: async (message) => {
+      // 用户发送新消息 → 调用我们现有的 handleSend 逻辑
+      handleSend(message.content[0].text);
+    },
+    onCancel: () => {
+      // 用户点停止 → 调用我们现有的 handleStop 逻辑
+      handleStop();
+    },
+  });
+
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>
+      <Thread />
+    </AssistantRuntimeProvider>
+  );
+}
+```
+
+**核心点**：`useExternalStoreRuntime` 让 assistant-ui 作为纯渲染层，我们的 SSE 逻辑、对话历史管理、后端交互全部保留不变。assistant-ui 只负责”好看地显示消息”。
+
+-----
+
+## 五、主题定制（匹配暖色调）
+
+assistant-ui 默认是中性色调。改成我们的暖色调品牌色：
+
+```css
+/* 在全局样式中覆盖 assistant-ui 的 CSS 变量 */
+:root {
+  --aui-primary: var(--brand);  /* #AE5630 */
+  --aui-primary-foreground: #ffffff;
+}
+
+/* 或者直接修改 assistant-ui 生成的 shadcn 组件的 Tailwind class */
+```
+
+由于 assistant-ui 生成的组件是 shadcn 风格（代码直接在你的项目中），你可以像改 shadcn 组件一样直接改它们的样式。
+
+-----
+
+## 六、保留业务组件
+
+assistant-ui 支持自定义消息渲染。我们的 AiConfirmCard、AiGuidedCreation 等业务组件可以作为自定义组件嵌入：
+
+```typescript
+import { makeAssistantTool } from "@assistant-ui/react";
+
+// 把我们的确认卡片注册为 assistant-ui 的工具组件
+const ConfirmTool = makeAssistantTool({
+  toolName: "confirm_action",
+  render: ({ args }) => <AiConfirmCard action={args} onConfirm={...} />,
+});
+```
+
+或者更简单的方式——在消息渲染中检测消息类型，用条件渲染切换：
+
+```typescript
+function CustomMessage({ message }) {
+  if (message.type === 'confirm') {
+    return <AiConfirmCard ... />;
+  }
+  if (message.type === 'follow_up') {
+    return <AiGuidedCreation ... />;
+  }
+  // 默认用 assistant-ui 的渲染
+  return <DefaultMessage message={message} />;
+}
+```
+
+-----
+
+## 七、执行步骤
+
+### Step 1：安装 + 初始化（5分钟）
+
+```bash
+npm install @assistant-ui/react @assistant-ui/react-markdown
+npx assistant-ui@latest add thread
+```
+
+### Step 2：先在一个测试页面跑通（10分钟）
+
+创建 `/agent-v2` 路由，用 assistant-ui 的默认 Thread 组件 + 我们的 SSE 后端。
+确保流式输出能正常显示。
+
+### Step 3：接入自定义 Runtime（15分钟）
+
+用 `useExternalStoreRuntime` 把我们的消息状态和 SSE 逻辑接入 assistant-ui。
+确保：发送消息、流式接收、停止生成、重试 都正常。
+
+### Step 4：迁移业务组件（15分钟）
+
+把 AiConfirmCard、AiGuidedCreation、AiFollowUpCard、InteractiveInputWidget 等
+以自定义渲染的方式嵌入 assistant-ui 的消息列表中。
+
+### Step 5：主题和样式调整（10分钟）
+
+改品牌色、暖色调、字体、暗色主题。
+对照 Claude 的截图微调间距和细节。
+
+### Step 6：替换正式路由（5分钟）
+
+测试通过后，把 `/agent` 路由切到新组件。
+旧的 AiMessageBubble、AIMessageContent 等文件可以保留但不再使用。
+
+-----
+
+## 八、对比效果
+
+|维度      |自建（现在）           |assistant-ui（改造后）|
+|--------|-----------------|-----------------|
+|流式渲染    |手动 50ms 缓冲       |内置优化渲染           |
+|自动滚动    |手动管理             |内置，含”回到底部”按钮     |
+|Markdown|ReactMarkdown    |内置，更好的代码块渲染      |
+|思考过程    |自建 ThinkingBlock |内置 thinking 展示   |
+|代码高亮    |highlight.js 手动集成|内置               |
+|文件附件    |手动处理             |内置上传+预览          |
+|键盘快捷键   |部分实现             |完整实现             |
+|无障碍     |未处理              |WAI-ARIA 完整      |
+|停止/重试   |手动实现             |内置               |
+|移动端适配   |手动修过几次           |内置响应式            |
+|维护成本    |高（6个组件 2000+行）   |低（升级 npm 包）      |
+
+-----
+
+## 九、风险评估
+
+|风险                         |概率|对策                         |
+|---------------------------|--|---------------------------|
+|assistant-ui 和我们的 SSE 格式不兼容|低 |Custom Runtime 支持任意数据格式    |
+|业务组件（确认卡片等）无法嵌入            |低 |支持完全自定义渲染                  |
+|样式和我们的暖色调不匹配               |低 |组件代码在我们项目中，可以直接改           |
+|引入新依赖增加包体积                 |低 |assistant-ui 本身很轻，核心 < 30KB|
+|社区维护不稳定                    |低 |YC 孵化，活跃维护，5K stars        |
+
+-----
+
+## 给 Replit Agent 的指令
+
+> 请阅读项目根目录的 `task-19-assistant-ui.md`。
+> 
+> 核心任务：用开源库 `assistant-ui` 重构 Agent 聊天界面的渲染层。
+> 
+> 执行顺序：
+> 
+> 1. 安装 @assistant-ui/react 和 @assistant-ui/react-markdown
+> 1. 运行 `npx assistant-ui@latest add thread` 生成 shadcn 主题组件
+> 1. **先看 assistant-ui 的官方文档**：https://www.assistant-ui.com/docs/getting-started
+> 1. **特别看 Custom Runtime 文档**：https://www.assistant-ui.com/docs/runtimes/custom
+> 1. 先在 `/agent-v2` 测试路由跑通基本功能
+> 1. 确认流式输出、停止、重试都正常后，迁移业务组件
+> 1. 调整主题匹配暖色调
+> 1. 替换正式路由
+> 
+> 重要：
+> 
+> - **不改后端**——SSE 路由、chatStream、所有后端逻辑完全不动
+> - **保留业务组件**——AiConfirmCard、AiGuidedCreation 等以自定义渲染方式嵌入
+> - **保留侧边栏**——对话列表、搜索、对话管理不动，只替换中间的聊天区域
+> - 如果 assistant-ui 某个功能和我们的需求冲突，优先保留我们的业务逻辑
