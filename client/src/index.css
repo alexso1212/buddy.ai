@@ -690,3 +690,8 @@ html, body {
 .hljs-tag { color: #7ee787; }
 .hljs-name { color: #7ee787; }
 .hljs-attribute { color: #79c0ff; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

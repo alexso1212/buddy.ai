@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import type { PanInfo } from "framer-motion";
-import { ChevronLeft, ChevronRight, X, Paperclip, GripVertical } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, ChevronDown, ChevronUp, Paperclip, GripVertical } from "lucide-react";
 
 export interface InteractiveQuestion {
   id: string;
@@ -86,6 +86,7 @@ export default function InteractiveInputWidget({
   onSubmit,
   onDismiss,
 }: Props) {
+  const [collapsed, setCollapsed] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
   const [direction, setDirection] = useState(0);
   const [answers, setAnswers] = useState<InteractiveAnswers>(() => {
@@ -242,145 +243,251 @@ export default function InteractiveInputWidget({
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onDismiss();
+      if (e.key === "Escape") {
+        if (collapsed) {
+          onDismiss();
+        } else {
+          setCollapsed(true);
+        }
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onDismiss]);
+  }, [onDismiss, collapsed]);
 
   const isSelected = (option: string) => (answers[currentQ?.id] || []).includes(option);
 
   if (!currentQ) return null;
 
-  return (
-    <>
+  if (collapsed) {
+    return (
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.25 }}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0, 0, 0, 0.5)",
-          zIndex: 99,
-        }}
-        onClick={onDismiss}
-        data-testid="interactive-overlay"
-      />
-
-      <motion.div
-        initial={{ y: "100%", opacity: 0 }}
+        initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        exit={{ y: "100%", opacity: 0 }}
-        transition={springTransition}
-        onClick={(e) => e.stopPropagation()}
+        exit={{ y: 20, opacity: 0 }}
+        transition={{ type: "spring", damping: 25, stiffness: 300 }}
         style={{
           position: "fixed",
           bottom: 0,
           left: 0,
           right: 0,
-          zIndex: 100,
-          padding: "0 12px 16px",
-          paddingBottom: "max(16px, env(safe-area-inset-bottom))",
+          zIndex: 40,
+          padding: "0 12px 8px",
+          paddingBottom: "max(8px, env(safe-area-inset-bottom))",
+          pointerEvents: "none",
         }}
-        data-testid="interactive-input-widget"
+        data-testid="interactive-widget-collapsed"
       >
         <div
-          ref={cardRef}
           style={{
-            background: "rgba(31, 30, 27, 0.95)",
-            backdropFilter: "blur(20px)",
-            WebkitBackdropFilter: "blur(20px)",
-            borderRadius: 16,
-            border: "1px solid rgba(255,255,255,0.08)",
-            overflow: "hidden",
-            position: "relative",
             maxWidth: 560,
             margin: "0 auto",
+            display: "flex",
+            gap: 8,
+            pointerEvents: "auto",
           }}
-          onPointerDown={handleCardPointerDown}
-          onPointerMove={handleCardPointerMove}
-          onPointerUp={handleCardPointerUp}
-          onPointerLeave={handleCardPointerUp}
-          onPointerCancel={handleCardPointerUp}
         >
-          {spotPos && (
-            <div
-              style={{
-                position: "absolute",
-                width: 600,
-                height: 600,
-                borderRadius: "50%",
-                background: "radial-gradient(circle at center, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 30%, rgba(255,255,255,0.01) 60%, rgba(255,255,255,0) 100%)",
-                pointerEvents: "none",
-                transform: "translate(-50%, -50%)",
-                left: spotPos.x,
-                top: spotPos.y,
-                opacity: spotVisible ? 1 : 0,
-                transition: "opacity 300ms ease-out",
-                zIndex: 1,
-              }}
-            />
-          )}
+          <button
+            onClick={() => setCollapsed(false)}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 16px",
+              borderRadius: 24,
+              background: "rgba(31, 30, 27, 0.95)",
+              backdropFilter: "blur(20px)",
+              WebkitBackdropFilter: "blur(20px)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              cursor: "pointer",
+              transition: "all 150ms ease",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+            }}
+            onMouseDown={e => (e.currentTarget.style.transform = "scale(0.98)")}
+            onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
+            onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")}
+            data-testid="btn-expand-widget"
+          >
+            <div style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: "#ae5630",
+              flexShrink: 0,
+              animation: "pulse 2s ease-in-out infinite",
+            }} />
+            <span style={{
+              fontSize: 14,
+              color: "rgba(255,255,255,0.7)",
+              flex: 1,
+              textAlign: "left",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}>
+              {currentQ.question}
+            </span>
+            <ChevronUp size={16} style={{ color: "rgba(255,255,255,0.4)", flexShrink: 0 }} />
+          </button>
+          <button
+            onClick={onDismiss}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: "50%",
+              background: "rgba(31, 30, 27, 0.95)",
+              backdropFilter: "blur(20px)",
+              WebkitBackdropFilter: "blur(20px)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+            }}
+            data-testid="btn-dismiss-collapsed"
+          >
+            <X size={14} style={{ color: "rgba(255,255,255,0.5)" }} />
+          </button>
+        </div>
+      </motion.div>
+    );
+  }
 
+  return (
+    <motion.div
+      initial={{ y: "100%", opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: "100%", opacity: 0 }}
+      transition={springTransition}
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        position: "fixed",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 40,
+        padding: "0 12px 16px",
+        paddingBottom: "max(16px, env(safe-area-inset-bottom))",
+        pointerEvents: "none",
+      }}
+      data-testid="interactive-input-widget"
+    >
+      <div
+        ref={cardRef}
+        style={{
+          background: "rgba(31, 30, 27, 0.95)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          borderRadius: 16,
+          border: "1px solid rgba(255,255,255,0.08)",
+          overflow: "hidden",
+          position: "relative",
+          maxWidth: 560,
+          margin: "0 auto",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+          pointerEvents: "auto",
+        }}
+        onPointerDown={handleCardPointerDown}
+        onPointerMove={handleCardPointerMove}
+        onPointerUp={handleCardPointerUp}
+        onPointerLeave={handleCardPointerUp}
+        onPointerCancel={handleCardPointerUp}
+      >
+        {spotPos && (
           <div
             style={{
-              position: "relative",
-              zIndex: 2,
+              position: "absolute",
+              width: 600,
+              height: 600,
+              borderRadius: "50%",
+              background: "radial-gradient(circle at center, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 30%, rgba(255,255,255,0.01) 60%, rgba(255,255,255,0) 100%)",
+              pointerEvents: "none",
+              transform: "translate(-50%, -50%)",
+              left: spotPos.x,
+              top: spotPos.y,
+              opacity: spotVisible ? 1 : 0,
+              transition: "opacity 300ms ease-out",
+              zIndex: 1,
+            }}
+          />
+        )}
+
+        <div
+          style={{
+            position: "relative",
+            zIndex: 2,
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <div
+            style={{
               display: "flex",
-              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "14px 16px 10px",
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "14px 16px 10px",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {totalPages > 1 && (
-                  <>
-                    <button
-                      onClick={() => goToPage(currentPage - 1)}
-                      disabled={currentPage === 0}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        color: currentPage === 0 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.5)",
-                        cursor: currentPage === 0 ? "default" : "pointer",
-                        padding: "4px 8px",
-                        display: "flex",
-                        fontSize: 18,
-                      }}
-                      data-testid="btn-prev-question"
-                    >
-                      <ChevronLeft size={16} />
-                    </button>
-                    <span style={{ fontSize: 14, color: "rgba(255,255,255,0.5)", userSelect: "none" }}>
-                      {currentPage + 1} of {totalPages}
-                    </span>
-                    <button
-                      onClick={() => goToPage(currentPage + 1)}
-                      disabled={currentPage === totalPages - 1}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        color: currentPage === totalPages - 1 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.5)",
-                        cursor: currentPage === totalPages - 1 ? "default" : "pointer",
-                        padding: "4px 8px",
-                        display: "flex",
-                        fontSize: 18,
-                      }}
-                      data-testid="btn-next-question"
-                    >
-                      <ChevronRight size={16} />
-                    </button>
-                  </>
-                )}
-              </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {totalPages > 1 && (
+                <>
+                  <button
+                    onClick={() => goToPage(currentPage - 1)}
+                    disabled={currentPage === 0}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: currentPage === 0 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.5)",
+                      cursor: currentPage === 0 ? "default" : "pointer",
+                      padding: "4px 8px",
+                      display: "flex",
+                      fontSize: 18,
+                    }}
+                    data-testid="btn-prev-question"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <span style={{ fontSize: 14, color: "rgba(255,255,255,0.5)", userSelect: "none" }}>
+                    {currentPage + 1} of {totalPages}
+                  </span>
+                  <button
+                    onClick={() => goToPage(currentPage + 1)}
+                    disabled={currentPage === totalPages - 1}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: currentPage === totalPages - 1 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.5)",
+                      cursor: currentPage === totalPages - 1 ? "default" : "pointer",
+                      padding: "4px 8px",
+                      display: "flex",
+                      fontSize: 18,
+                    }}
+                    data-testid="btn-next-question"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </>
+              )}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <button
+                onClick={() => setCollapsed(true)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "rgba(255,255,255,0.5)",
+                  cursor: "pointer",
+                  padding: "4px 8px",
+                  display: "flex",
+                  fontSize: 20,
+                }}
+                data-testid="btn-collapse-widget"
+              >
+                <ChevronDown size={18} />
+              </button>
               <button
                 onClick={onDismiss}
                 style={{
@@ -397,289 +504,289 @@ export default function InteractiveInputWidget({
                 <X size={18} />
               </button>
             </div>
-
-            <div style={{ overflow: "hidden", position: "relative", minHeight: 120 }}>
-              <AnimatePresence initial={false} custom={direction} mode="popLayout">
-                <motion.div
-                  key={currentPage}
-                  custom={direction}
-                  variants={cardVariants}
-                  initial="enter"
-                  animate="center"
-                  exit="exit"
-                  drag={totalPages > 1 ? "x" : false}
-                  dragConstraints={{ left: 0, right: 0 }}
-                  dragElastic={0.8}
-                  onDragEnd={handleDragEnd}
-                  style={{ touchAction: totalPages > 1 ? "pan-y" : "auto" }}
-                >
-                  <div style={{ padding: "4px 20px 14px" }}>
-                    <h3
-                      style={{
-                        fontSize: 18,
-                        fontWeight: 600,
-                        color: "#ffffff",
-                        margin: "0 0 16px 0",
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      {currentQ.question}
-                    </h3>
-
-                    {currentQ.type === "confirm" ? (
-                      <div style={{ display: "flex", gap: 12, justifyContent: "center", padding: "4px 0 8px" }}>
-                        <button
-                          onClick={() => {
-                            const updated = { ...answers, [currentQ.id]: ["确认"] };
-                            setAnswers(updated);
-                            setTimeout(() => onSubmit(updated), 200);
-                          }}
-                          style={{
-                            padding: "12px 28px",
-                            borderRadius: 12,
-                            background: "#ae5630",
-                            color: "#fff",
-                            fontSize: 15,
-                            fontWeight: 500,
-                            border: "none",
-                            cursor: "pointer",
-                            transition: "all 150ms ease",
-                          }}
-                          onMouseDown={e => (e.currentTarget.style.transform = "scale(0.97)")}
-                          onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
-                          onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")}
-                          data-testid="btn-confirm-yes"
-                        >
-                          确认
-                        </button>
-                        <button
-                          onClick={() => {
-                            const updated = { ...answers, [currentQ.id]: ["取消"] };
-                            setAnswers(updated);
-                            setTimeout(() => onSubmit(updated), 200);
-                          }}
-                          style={{
-                            padding: "12px 28px",
-                            borderRadius: 12,
-                            background: "rgba(255,255,255,0.08)",
-                            color: "#eee",
-                            fontSize: 15,
-                            fontWeight: 500,
-                            border: "1px solid rgba(255,255,255,0.1)",
-                            cursor: "pointer",
-                            transition: "all 150ms ease",
-                          }}
-                          onMouseDown={e => (e.currentTarget.style.transform = "scale(0.97)")}
-                          onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
-                          onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")}
-                          data-testid="btn-confirm-no"
-                        >
-                          取消
-                        </button>
-                      </div>
-                    ) : currentQ.type === "date_pick" ? (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "4px 0 8px" }}>
-                        <input
-                          type="date"
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            if (val) {
-                              const updated = { ...answers, [currentQ.id]: [val] };
-                              setAnswers(updated);
-                              setTimeout(() => onSubmit(updated), 300);
-                            }
-                          }}
-                          style={{
-                            width: "100%",
-                            padding: "12px 16px",
-                            borderRadius: 12,
-                            background: "rgba(255,255,255,0.08)",
-                            color: "#eee",
-                            fontSize: 15,
-                            border: "1px solid rgba(255,255,255,0.1)",
-                            outline: "none",
-                            colorScheme: "dark",
-                          }}
-                          data-testid="input-date-pick"
-                        />
-                      </div>
-                    ) : currentQ.type === "rank_priorities" ? (
-                      <div data-no-deform>
-                        <Reorder.Group
-                          axis="y"
-                          values={answers[currentQ.id] || currentQ.options}
-                          onReorder={(newOrder) => handleReorder(currentQ.id, newOrder)}
-                          style={{ listStyle: "none", padding: 0, margin: 0 }}
-                        >
-                          {(answers[currentQ.id] || currentQ.options).map((option, index) => (
-                            <Reorder.Item
-                              key={option}
-                              value={option}
-                              whileDrag={{
-                                scale: 1.03,
-                                boxShadow: "0 6px 20px rgba(0,0,0,0.5)",
-                                cursor: "grabbing",
-                              }}
-                              transition={{ duration: 0.2 }}
-                              style={{
-                                cursor: "grab",
-                                touchAction: "none",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 16,
-                                padding: "14px 0",
-                                borderBottom: index < (answers[currentQ.id] || currentQ.options).length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
-                                userSelect: "none",
-                              }}
-                              data-testid={`rank-item-${option}`}
-                            >
-                              <span
-                                style={{
-                                  fontSize: 16,
-                                  fontWeight: 500,
-                                  color: "rgba(255,255,255,0.4)",
-                                  width: 24,
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {index + 1}
-                              </span>
-                              <span
-                                style={{
-                                  flex: 1,
-                                  fontSize: 16,
-                                  color: "rgba(255,255,255,0.9)",
-                                }}
-                              >
-                                {option}
-                              </span>
-                              <GripVertical
-                                size={16}
-                                style={{ color: "rgba(255,255,255,0.2)", flexShrink: 0 }}
-                              />
-                            </Reorder.Item>
-                          ))}
-                        </Reorder.Group>
-                      </div>
-                    ) : (
-                      <div>
-                        {currentQ.options.map((option, index) => {
-                          const selected = isSelected(option);
-                          return (
-                            <button
-                              key={option}
-                              onClick={() => handleOptionClick(option)}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 16,
-                                width: "100%",
-                                padding: "14px 0",
-                                background: selected ? "rgba(255,255,255,0.08)" : "transparent",
-                                border: "none",
-                                borderBottom: index < currentQ.options.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
-                                borderRadius: selected ? 8 : 0,
-                                cursor: "pointer",
-                                textAlign: "left",
-                                transition: "background 120ms ease",
-                                position: "relative",
-                                overflow: "hidden",
-                              }}
-                              tabIndex={0}
-                              data-testid={`option-chip-${currentQ.id}-${option}`}
-                            >
-                              <span
-                                style={{
-                                  fontSize: 16,
-                                  color: "rgba(255,255,255,0.4)",
-                                  width: 24,
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {index + 1}
-                              </span>
-                              <span
-                                style={{
-                                  flex: 1,
-                                  fontSize: 16,
-                                  color: "rgba(255,255,255,0.9)",
-                                }}
-                              >
-                                {option}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              </AnimatePresence>
-            </div>
-
-            {(currentQ.type === "multi_select" || currentQ.type === "rank_priorities") && (
-              <div style={{ padding: "6px 20px 10px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                <button
-                  onClick={handleConfirmCurrent}
-                  disabled={!canSubmitCurrent}
-                  style={{
-                    width: "100%",
-                    padding: "11px 0",
-                    borderRadius: 10,
-                    border: "none",
-                    fontSize: 15,
-                    fontWeight: 500,
-                    cursor: canSubmitCurrent ? "pointer" : "not-allowed",
-                    background: canSubmitCurrent ? "rgba(212,184,150,0.15)" : "rgba(255,255,255,0.04)",
-                    color: canSubmitCurrent ? "#D4B896" : "rgba(255,255,255,0.2)",
-                    transition: "all 150ms ease",
-                  }}
-                  data-testid="btn-confirm-selection"
-                >
-                  {currentPage < totalPages - 1 ? "下一题" : "确认"}
-                </button>
-              </div>
-            )}
-
-            {currentQ.type !== "rank_priorities" && currentQ.type !== "confirm" && currentQ.type !== "date_pick" && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "10px 20px 14px",
-                  borderTop: "1px solid rgba(255,255,255,0.08)",
-                }}
-              >
-                <Paperclip size={16} style={{ color: "rgba(255,255,255,0.3)", flexShrink: 0 }} />
-                <input
-                  type="text"
-                  value={customText}
-                  onChange={(e) => setCustomText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && customText.trim()) {
-                      e.preventDefault();
-                      handleCustomSubmit();
-                    }
-                  }}
-                  placeholder="Type your answer..."
-                  style={{
-                    flex: 1,
-                    background: "transparent",
-                    border: "none",
-                    outline: "none",
-                    fontSize: 15,
-                    color: "rgba(255,255,255,0.4)",
-                    lineHeight: 1.4,
-                    padding: 0,
-                  }}
-                  data-testid="interactive-custom-input"
-                />
-              </div>
-            )}
           </div>
+
+          <div style={{ overflow: "hidden", position: "relative", minHeight: 120 }}>
+            <AnimatePresence initial={false} custom={direction} mode="popLayout">
+              <motion.div
+                key={currentPage}
+                custom={direction}
+                variants={cardVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                drag={totalPages > 1 ? "x" : false}
+                dragConstraints={{ left: 0, right: 0 }}
+                dragElastic={0.8}
+                onDragEnd={handleDragEnd}
+                style={{ touchAction: totalPages > 1 ? "pan-y" : "auto" }}
+              >
+                <div style={{ padding: "4px 20px 14px" }}>
+                  <h3
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 600,
+                      color: "#ffffff",
+                      margin: "0 0 16px 0",
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {currentQ.question}
+                  </h3>
+
+                  {currentQ.type === "confirm" ? (
+                    <div style={{ display: "flex", gap: 12, justifyContent: "center", padding: "4px 0 8px" }}>
+                      <button
+                        onClick={() => {
+                          const updated = { ...answers, [currentQ.id]: ["确认"] };
+                          setAnswers(updated);
+                          setTimeout(() => onSubmit(updated), 200);
+                        }}
+                        style={{
+                          padding: "12px 28px",
+                          borderRadius: 12,
+                          background: "#ae5630",
+                          color: "#fff",
+                          fontSize: 15,
+                          fontWeight: 500,
+                          border: "none",
+                          cursor: "pointer",
+                          transition: "all 150ms ease",
+                        }}
+                        onMouseDown={e => (e.currentTarget.style.transform = "scale(0.97)")}
+                        onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
+                        onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")}
+                        data-testid="btn-confirm-yes"
+                      >
+                        确认
+                      </button>
+                      <button
+                        onClick={() => {
+                          const updated = { ...answers, [currentQ.id]: ["取消"] };
+                          setAnswers(updated);
+                          setTimeout(() => onSubmit(updated), 200);
+                        }}
+                        style={{
+                          padding: "12px 28px",
+                          borderRadius: 12,
+                          background: "rgba(255,255,255,0.08)",
+                          color: "#eee",
+                          fontSize: 15,
+                          fontWeight: 500,
+                          border: "1px solid rgba(255,255,255,0.1)",
+                          cursor: "pointer",
+                          transition: "all 150ms ease",
+                        }}
+                        onMouseDown={e => (e.currentTarget.style.transform = "scale(0.97)")}
+                        onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
+                        onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")}
+                        data-testid="btn-confirm-no"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  ) : currentQ.type === "date_pick" ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "4px 0 8px" }}>
+                      <input
+                        type="date"
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val) {
+                            const updated = { ...answers, [currentQ.id]: [val] };
+                            setAnswers(updated);
+                            setTimeout(() => onSubmit(updated), 300);
+                          }
+                        }}
+                        style={{
+                          width: "100%",
+                          padding: "12px 16px",
+                          borderRadius: 12,
+                          background: "rgba(255,255,255,0.08)",
+                          color: "#eee",
+                          fontSize: 15,
+                          border: "1px solid rgba(255,255,255,0.1)",
+                          outline: "none",
+                          colorScheme: "dark",
+                        }}
+                        data-testid="input-date-pick"
+                      />
+                    </div>
+                  ) : currentQ.type === "rank_priorities" ? (
+                    <div data-no-deform>
+                      <Reorder.Group
+                        axis="y"
+                        values={answers[currentQ.id] || currentQ.options}
+                        onReorder={(newOrder) => handleReorder(currentQ.id, newOrder)}
+                        style={{ listStyle: "none", padding: 0, margin: 0 }}
+                      >
+                        {(answers[currentQ.id] || currentQ.options).map((option, index) => (
+                          <Reorder.Item
+                            key={option}
+                            value={option}
+                            whileDrag={{
+                              scale: 1.03,
+                              boxShadow: "0 6px 20px rgba(0,0,0,0.5)",
+                              cursor: "grabbing",
+                            }}
+                            transition={{ duration: 0.2 }}
+                            style={{
+                              cursor: "grab",
+                              touchAction: "none",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 16,
+                              padding: "14px 0",
+                              borderBottom: index < (answers[currentQ.id] || currentQ.options).length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
+                              userSelect: "none",
+                            }}
+                            data-testid={`rank-item-${option}`}
+                          >
+                            <span
+                              style={{
+                                fontSize: 16,
+                                fontWeight: 500,
+                                color: "rgba(255,255,255,0.4)",
+                                width: 24,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {index + 1}
+                            </span>
+                            <span
+                              style={{
+                                flex: 1,
+                                fontSize: 16,
+                                color: "rgba(255,255,255,0.9)",
+                              }}
+                            >
+                              {option}
+                            </span>
+                            <GripVertical
+                              size={16}
+                              style={{ color: "rgba(255,255,255,0.2)", flexShrink: 0 }}
+                            />
+                          </Reorder.Item>
+                        ))}
+                      </Reorder.Group>
+                    </div>
+                  ) : (
+                    <div>
+                      {currentQ.options.map((option, index) => {
+                        const selected = isSelected(option);
+                        return (
+                          <button
+                            key={option}
+                            onClick={() => handleOptionClick(option)}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 16,
+                              width: "100%",
+                              padding: "14px 0",
+                              background: selected ? "rgba(255,255,255,0.08)" : "transparent",
+                              border: "none",
+                              borderBottom: index < currentQ.options.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
+                              borderRadius: selected ? 8 : 0,
+                              cursor: "pointer",
+                              textAlign: "left",
+                              transition: "background 120ms ease",
+                              position: "relative",
+                              overflow: "hidden",
+                            }}
+                            tabIndex={0}
+                            data-testid={`option-chip-${currentQ.id}-${option}`}
+                          >
+                            <span
+                              style={{
+                                fontSize: 16,
+                                color: "rgba(255,255,255,0.4)",
+                                width: 24,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {index + 1}
+                            </span>
+                            <span
+                              style={{
+                                flex: 1,
+                                fontSize: 16,
+                                color: "rgba(255,255,255,0.9)",
+                              }}
+                            >
+                              {option}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            </AnimatePresence>
+          </div>
+
+          {(currentQ.type === "multi_select" || currentQ.type === "rank_priorities") && (
+            <div style={{ padding: "6px 20px 10px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+              <button
+                onClick={handleConfirmCurrent}
+                disabled={!canSubmitCurrent}
+                style={{
+                  width: "100%",
+                  padding: "11px 0",
+                  borderRadius: 10,
+                  border: "none",
+                  fontSize: 15,
+                  fontWeight: 500,
+                  cursor: canSubmitCurrent ? "pointer" : "not-allowed",
+                  background: canSubmitCurrent ? "rgba(212,184,150,0.15)" : "rgba(255,255,255,0.04)",
+                  color: canSubmitCurrent ? "#D4B896" : "rgba(255,255,255,0.2)",
+                  transition: "all 150ms ease",
+                }}
+                data-testid="btn-confirm-selection"
+              >
+                {currentPage < totalPages - 1 ? "下一题" : "确认"}
+              </button>
+            </div>
+          )}
+
+          {currentQ.type !== "rank_priorities" && currentQ.type !== "confirm" && currentQ.type !== "date_pick" && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "10px 20px 14px",
+                borderTop: "1px solid rgba(255,255,255,0.08)",
+              }}
+            >
+              <Paperclip size={16} style={{ color: "rgba(255,255,255,0.3)", flexShrink: 0 }} />
+              <input
+                type="text"
+                value={customText}
+                onChange={(e) => setCustomText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && customText.trim()) {
+                    e.preventDefault();
+                    handleCustomSubmit();
+                  }
+                }}
+                placeholder="Type your answer..."
+                style={{
+                  flex: 1,
+                  background: "transparent",
+                  border: "none",
+                  outline: "none",
+                  fontSize: 15,
+                  color: "rgba(255,255,255,0.4)",
+                  lineHeight: 1.4,
+                  padding: 0,
+                }}
+                data-testid="interactive-custom-input"
+              />
+            </div>
+          )}
         </div>
-      </motion.div>
-    </>
+      </div>
+    </motion.div>
   );
 }
