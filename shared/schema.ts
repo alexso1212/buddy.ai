@@ -79,6 +79,7 @@ export const users = pgTable('users', {
   authProvider: varchar('auth_provider', { length: 50 }),
   authProviderId: varchar('auth_provider_id', { length: 255 }),
   onboardingCompleted: boolean('onboarding_completed').default(false),
+  isSuperAdmin: boolean('is_super_admin').notNull().default(false),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

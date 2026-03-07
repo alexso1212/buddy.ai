@@ -55,6 +55,13 @@ A 25-table PostgreSQL database schema manages entities such as `organizations`, 
 - **Join Request Auto-Match:** Frontend-only logic in team.tsx matches join request applicant name/email against pending member_profiles. Shows "AI 建议绑定" badge with one-click approve+bind.
 - **Briefing Action Suggestions:** Dashboard daily briefing includes structured `actions` array (reassign, change_priority, remind) with one-click execution buttons. Actions derived from overdue tasks, workload imbalance, and due-today items.
 
+**Super Admin Dashboard:**
+- **Access Control:** `is_super_admin` field on `users` table + `ADMIN_EMAILS` env var. `superAdminMiddleware` in `server/routes/admin.ts` gates all `/api/admin/*` endpoints.
+- **Backend Router:** `server/routes/admin.ts` — mounted at `/api/admin` with authMiddleware + superAdminMiddleware. Endpoints: health, overview, ai/stats, ai/hourly, ai/config, users/trend, users/recent, orgs/list, kb/stats, security/logs, ai-workforce, ai-workforce/:userId.
+- **Frontend Pages:** Independent layout in `client/src/pages/admin/` with 7 pages: AdminOverview (system stats), AdminAI (consumption analytics + API config management), AdminUsers (registration trends), AdminOrgs (org list), AdminKB (knowledge base stats), AdminSecurity (audit logs), AdminWorkforce (AI dependency analysis with risk levels).
+- **API Config Management:** Read-only display of current AI provider configurations (proxy vs direct), base URLs, model mappings, key status. Categorized as "中转" (proxy) or "直连" (direct).
+- **Entry Point:** Settings page shows "管理后台" link for superAdmin users.
+
 **AI Smart Routing Architecture:**
 The AI subsystem uses intelligent task classification (e.g., `quick_reply`, `general_chat`, `code_generation`, `complex_analysis`) to dynamically select AI models, `max_tokens`, `temperature`, and enable Extended Thinking based on the user's message. Context optimization includes trimming conversation history and summarizing older messages.
 

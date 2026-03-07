@@ -1497,6 +1497,25 @@ export default function SettingsPage({ open, onClose, onOpenOrgSwitcher, onClose
               />
             </SettingsGroup>
 
+            {authUser?.isSuperAdmin && (
+              <>
+                <GroupSpacer />
+                <SettingsGroup>
+                  <SettingsItem
+                    icon={Shield}
+                    label="管理后台"
+                    value="Super Admin"
+                    onClick={() => {
+                      onClose();
+                      onCloseSidebar();
+                      window.location.href = '/admin';
+                    }}
+                    testId="settings-nav-admin"
+                  />
+                </SettingsGroup>
+              </>
+            )}
+
             <GroupSpacer />
 
             <SettingsGroup>

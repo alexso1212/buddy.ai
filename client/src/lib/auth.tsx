@@ -10,6 +10,7 @@ interface AuthUser {
   orgName?: string;
   orgType?: string;
   onboardingCompleted?: boolean;
+  isSuperAdmin?: boolean;
 }
 
 interface AuthContextType {

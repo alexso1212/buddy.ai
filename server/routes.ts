@@ -7,6 +7,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { authMiddleware, generateToken, getTokenExpiry } from './middleware/auth';
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
+import adminRouter, { superAdminMiddleware } from './routes/admin';
 import {
   insertOrganizationSchema,
   insertDepartmentSchema,
@@ -39,6 +40,8 @@ export async function registerRoutes(server: Server, app: Express) {
 
   await setupAuth(app);
   registerAuthRoutes(app);
+
+  app.use("/api/admin", authMiddleware, superAdminMiddleware, adminRouter);
 
   app.get("/api/auth/oidc/complete", async (req: any, res) => {
     try {
@@ -315,6 +318,9 @@ export async function registerRoutes(server: Server, app: Express) {
         }
       }
 
+      const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean);
+      const isSuperAdmin = user.isSuperAdmin || adminEmails.includes(user.email);
+
       const userData = {
         id: user.id,
         email: user.email,
@@ -327,6 +333,7 @@ export async function registerRoutes(server: Server, app: Express) {
         orgType: org?.type || 'project',
         orgDescription: org?.description,
         activeInviteCode,
+        isSuperAdmin,
       };
 
       const authHeader = req.headers.authorization;

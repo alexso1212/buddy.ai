@@ -25,6 +25,13 @@ import ChatsPage from "@/pages/chats";
 import OnboardingPage from "@/pages/OnboardingPage";
 import KnowledgeBase from "@/pages/knowledge-base";
 import SettingsPage from "@/components/SettingsPage";
+import AdminOverview from "@/pages/admin/AdminOverview";
+import AdminAI from "@/pages/admin/AdminAI";
+import AdminUsers from "@/pages/admin/AdminUsers";
+import AdminOrgs from "@/pages/admin/AdminOrgs";
+import AdminKB from "@/pages/admin/AdminKB";
+import AdminSecurity from "@/pages/admin/AdminSecurity";
+import AdminWorkforce from "@/pages/admin/AdminWorkforce";
 import { useStreamingConvIds } from "@/stores/chatStreamStore";
 import {
   LayoutDashboard,
@@ -1533,6 +1540,13 @@ function Router() {
       <Route>
         <AuthGuard>
           <Switch>
+            <Route path="/admin" component={AdminOverview} />
+            <Route path="/admin/ai" component={AdminAI} />
+            <Route path="/admin/users" component={AdminUsers} />
+            <Route path="/admin/orgs" component={AdminOrgs} />
+            <Route path="/admin/kb" component={AdminKB} />
+            <Route path="/admin/security" component={AdminSecurity} />
+            <Route path="/admin/workforce" component={AdminWorkforce} />
             <Route path="/onboarding" component={OnboardingPage} />
             <Route path="/"><Redirect to="/agent" /></Route>
             <Route path="/chats" component={ChatsPage} />
@@ -1803,6 +1817,7 @@ function App() {
   const isGraphPage = location === '/graph' || location.startsWith('/graph?');
   const isLoginPage = location === '/login' || location.startsWith('/login?');
   const isOnboardingPage = location === '/onboarding';
+  const isAdminPage = location === '/admin' || location.startsWith('/admin/');
 
   const getPageTitle = () => {
     if (isChatsPage) return 'Chats';
@@ -2068,10 +2083,10 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <OrgThemeSync />
       <div className="flex bg-[var(--bg-primary)]" style={{ height: '100dvh' }}>
-        {!isLoginPage && !isOnboardingPage && <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} sidebarRef={sidebarRef} overlayRef={overlayRef} />}
+        {!isLoginPage && !isOnboardingPage && !isAdminPage && <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} sidebarRef={sidebarRef} overlayRef={overlayRef} />}
 
         <div ref={contentRef} className="flex-1 flex flex-col overflow-hidden relative md:!transform-none">
-          {!isGraphPage && !isLoginPage && !isOnboardingPage && (
+          {!isGraphPage && !isLoginPage && !isOnboardingPage && !isAdminPage && (
           <>
             <div className="md:hidden" style={{
               position: 'absolute',

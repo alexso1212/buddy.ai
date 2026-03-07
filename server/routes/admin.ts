@@ -1,0 +1,433 @@
+import { Router } from 'express';
+import { sql } from 'drizzle-orm';
+import { db, storage } from '../storage';
+
+const adminRouter = Router();
+
+function isSuperAdmin(user: any): boolean {
+  if (user.isSuperAdmin) return true;
+  const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map((e: string) => e.trim()).filter(Boolean);
+  if (adminEmails.includes(user.email)) return true;
+  return false;
+}
+
+export async function superAdminMiddleware(req: any, res: any, next: any) {
+  if (!req.currentUserId) {
+    return res.status(401).json({ error: '未登录' });
+  }
+  const user = await storage.getUserById(req.currentUserId);
+  if (!user || !isSuperAdmin(user)) {
+    return res.status(403).json({ error: '无权访问管理后台' });
+  }
+  req.isSuperAdmin = true;
+  next();
+}
+
+adminRouter.get("/health", async (_req, res) => {
+  let dbOk = false, dbLatency = 0;
+  try {
+    const t = Date.now();
+    await db.execute(sql`SELECT 1`);
+    dbLatency = Date.now() - t;
+    dbOk = true;
+  } catch {}
+
+  const mem = process.memoryUsage();
+  const aiSimple = !!process.env.CLAUDE_SIMPLE_API_KEY;
+  const aiComplex = !!process.env.CLAUDE_COMPLEX_API_KEY;
+  const aiOpenRouter = !!process.env.AI_API_KEY;
+
+  res.json({
+    data: {
+      status: dbOk ? 'healthy' : 'degraded',
+      uptime: Math.floor(process.uptime()),
+      db: { ok: dbOk, latencyMs: dbLatency },
+      ai: {
+        simpleKey: aiSimple,
+        complexKey: aiComplex,
+        openRouterKey: aiOpenRouter,
+      },
+      memory: {
+        heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+        rssMB: Math.round(mem.rss / 1024 / 1024),
+      },
+      nodeVersion: process.version,
+      timestamp: new Date().toISOString(),
+    }
+  });
+});
+
+adminRouter.get("/overview", async (_req, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT
+        (SELECT COUNT(*) FROM users) as total_users,
+        (SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_DATE) as new_users_today,
+        (SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_DATE - INTERVAL '7 days') as new_users_week,
+        (SELECT COUNT(*) FROM organizations) as total_orgs,
+        (SELECT COUNT(DISTINCT user_id) FROM activity_logs WHERE created_at >= CURRENT_DATE) as dau,
+        (SELECT COUNT(DISTINCT user_id) FROM activity_logs WHERE created_at >= CURRENT_DATE - INTERVAL '7 days') as wau,
+        (SELECT COUNT(DISTINCT user_id) FROM activity_logs WHERE created_at >= CURRENT_DATE - INTERVAL '30 days') as mau,
+        (SELECT COUNT(*) FROM tasks) as total_tasks,
+        (SELECT COUNT(*) FROM tasks WHERE status NOT IN ('done','cancelled')) as active_tasks,
+        (SELECT COUNT(*) FROM tasks WHERE due_date IS NOT NULL AND due_date < CURRENT_DATE AND status NOT IN ('done','cancelled')) as overdue_tasks,
+        (SELECT COUNT(*) FROM tasks WHERE created_at >= CURRENT_DATE) as tasks_created_today,
+        (SELECT COUNT(*) FROM kb_documents) as total_kb_docs,
+        (SELECT COUNT(*) FROM kb_documents WHERE status = 'error') as failed_kb_docs,
+        (SELECT COUNT(*) FROM kb_chunks) as total_kb_chunks,
+        (SELECT COALESCE(SUM(total_tokens), 0) FROM token_usage WHERE created_at >= CURRENT_DATE) as tokens_today,
+        (SELECT COALESCE(SUM(total_tokens), 0) FROM token_usage WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE)) as tokens_month,
+        (SELECT COALESCE(SUM(CAST(cost_usd AS NUMERIC)), 0) FROM token_usage WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE)) as cost_month_usd,
+        (SELECT COUNT(*) FROM token_usage WHERE created_at >= CURRENT_DATE) as ai_calls_today,
+        (SELECT COUNT(*) FROM member_profiles WHERE status = 'pending') as pending_profiles,
+        (SELECT COUNT(*) FROM conversations WHERE created_at >= CURRENT_DATE) as conversations_today
+    `);
+    res.json({ data: result.rows[0] });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.get("/ai/stats", async (req, res) => {
+  try {
+    const period = (req.query.period as string) || 'month';
+    let dateCondition: string;
+    switch (period) {
+      case 'today': dateCondition = "created_at >= CURRENT_DATE"; break;
+      case 'week': dateCondition = "created_at >= CURRENT_DATE - INTERVAL '7 days'"; break;
+      default: dateCondition = "created_at >= DATE_TRUNC('month', CURRENT_DATE)";
+    }
+
+    const byModel = await db.execute(sql.raw(`
+      SELECT 
+        model, 
+        COUNT(*) as calls,
+        COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
+        COALESCE(SUM(completion_tokens), 0) as completion_tokens,
+        COALESCE(SUM(total_tokens), 0) as total_tokens,
+        COALESCE(SUM(CAST(cost_usd AS NUMERIC)), 0) as cost_usd
+      FROM token_usage
+      WHERE ${dateCondition}
+      GROUP BY model
+      ORDER BY total_tokens DESC
+    `));
+
+    const byPurpose = await db.execute(sql.raw(`
+      SELECT 
+        purpose, 
+        COUNT(*) as calls,
+        COALESCE(SUM(total_tokens), 0) as total_tokens,
+        COALESCE(SUM(CAST(cost_usd AS NUMERIC)), 0) as cost_usd
+      FROM token_usage
+      WHERE ${dateCondition}
+      GROUP BY purpose
+      ORDER BY total_tokens DESC
+    `));
+
+    const byOrg = await db.execute(sql.raw(`
+      SELECT 
+        tu.org_id,
+        o.name as org_name,
+        COUNT(*) as calls,
+        COALESCE(SUM(tu.total_tokens), 0) as total_tokens,
+        COALESCE(SUM(CAST(tu.cost_usd AS NUMERIC)), 0) as cost_usd
+      FROM token_usage tu
+      LEFT JOIN organizations o ON tu.org_id = o.id
+      WHERE tu.${dateCondition}
+      GROUP BY tu.org_id, o.name
+      ORDER BY total_tokens DESC
+      LIMIT 10
+    `));
+
+    res.json({ data: { byModel: byModel.rows, byPurpose: byPurpose.rows, byOrg: byOrg.rows } });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.get("/ai/hourly", async (_req, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT 
+        DATE_TRUNC('hour', created_at) as hour,
+        COUNT(*) as calls,
+        COALESCE(SUM(total_tokens), 0) as tokens
+      FROM token_usage
+      WHERE created_at >= NOW() - INTERVAL '24 hours'
+      GROUP BY hour
+      ORDER BY hour
+    `);
+    res.json({ data: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.get("/ai/config", async (_req, res) => {
+  try {
+    const config = {
+      providers: [
+        {
+          id: 'claude_simple',
+          label: 'Claude Simple (Haiku/Sonnet)',
+          type: 'proxy' as const,
+          baseUrl: process.env.CLAUDE_SIMPLE_BASE_URL || 'https://vip.aipro.love/v1',
+          keyConfigured: !!process.env.CLAUDE_SIMPLE_API_KEY,
+          keyEnvVar: 'CLAUDE_SIMPLE_API_KEY',
+          models: ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001'],
+          timeout: 90000,
+        },
+        {
+          id: 'claude_complex',
+          label: 'Claude Complex (Opus)',
+          type: 'proxy' as const,
+          baseUrl: process.env.CLAUDE_COMPLEX_BASE_URL || 'https://vip.aipro.love/v1',
+          keyConfigured: !!process.env.CLAUDE_COMPLEX_API_KEY,
+          keyEnvVar: 'CLAUDE_COMPLEX_API_KEY',
+          models: ['claude-opus-4-6'],
+          timeout: 180000,
+        },
+        {
+          id: 'openrouter',
+          label: 'OpenRouter (Fallback)',
+          type: 'direct' as const,
+          baseUrl: process.env.AI_BASE_URL || '',
+          keyConfigured: !!process.env.AI_API_KEY,
+          keyEnvVar: 'AI_API_KEY',
+          models: ['gpt-4o', 'deepseek-v3'],
+          timeout: 30000,
+        },
+      ],
+      taskRouting: {
+        quick_reply: { model: 'claude-haiku-4-5-20251001', provider: 'claude_simple' },
+        title_generation: { model: 'claude-haiku-4-5-20251001', provider: 'claude_simple' },
+        auto_judgment: { model: 'claude-haiku-4-5-20251001', provider: 'claude_simple' },
+        general_chat: { model: 'claude-sonnet-4-6', provider: 'claude_simple' },
+        code_generation: { model: 'claude-sonnet-4-6', provider: 'claude_simple' },
+        complex_analysis: { model: 'claude-sonnet-4-6', provider: 'claude_simple' },
+        document_processing: { model: 'claude-sonnet-4-6', provider: 'claude_simple' },
+        knowledge_qa: { model: 'claude-sonnet-4-6', provider: 'claude_simple' },
+      },
+    };
+    res.json({ data: config });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.get("/users/trend", async (_req, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT DATE(created_at) as date, COUNT(*) as count
+      FROM users
+      WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+      GROUP BY date ORDER BY date
+    `);
+    res.json({ data: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.get("/users/recent", async (_req, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT id, display_name, email, auth_provider, role, created_at
+      FROM users ORDER BY created_at DESC LIMIT 20
+    `);
+    res.json({ data: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.get("/orgs/list", async (_req, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT 
+        o.id, o.name, o.created_at, o.token_budget_usd,
+        (SELECT COUNT(*) FROM org_memberships om WHERE om.org_id = o.id) as member_count,
+        (SELECT COUNT(*) FROM tasks t WHERE t.org_id = o.id) as task_count,
+        (SELECT COUNT(*) FROM kb_documents kd WHERE kd.org_id = o.id) as kb_doc_count,
+        (SELECT COALESCE(SUM(tu.total_tokens), 0) FROM token_usage tu WHERE tu.org_id = o.id AND tu.created_at >= DATE_TRUNC('month', CURRENT_DATE)) as tokens_this_month,
+        (SELECT COALESCE(SUM(CAST(tu.cost_usd AS NUMERIC)), 0) FROM token_usage tu WHERE tu.org_id = o.id AND tu.created_at >= DATE_TRUNC('month', CURRENT_DATE)) as cost_this_month
+      FROM organizations o
+      ORDER BY o.created_at DESC
+    `);
+    res.json({ data: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.get("/kb/stats", async (_req, res) => {
+  try {
+    const overview = await db.execute(sql`
+      SELECT
+        (SELECT COUNT(*) FROM kb_documents) as total_docs,
+        (SELECT COUNT(*) FROM kb_documents WHERE status = 'ready') as ready_docs,
+        (SELECT COUNT(*) FROM kb_documents WHERE status = 'processing') as processing_docs,
+        (SELECT COUNT(*) FROM kb_documents WHERE status = 'error') as error_docs,
+        (SELECT COUNT(*) FROM kb_chunks) as total_chunks,
+        (SELECT COALESCE(SUM(file_size), 0) FROM kb_documents) as total_size_bytes
+    `);
+
+    const byCategory = await db.execute(sql`
+      SELECT category, COUNT(*) as count FROM kb_documents WHERE category IS NOT NULL GROUP BY category ORDER BY count DESC
+    `);
+
+    const byType = await db.execute(sql`
+      SELECT file_type, COUNT(*) as count FROM kb_documents WHERE file_type IS NOT NULL GROUP BY file_type ORDER BY count DESC
+    `);
+
+    const errors = await db.execute(sql`
+      SELECT id, title, file_name, org_id, created_at FROM kb_documents WHERE status = 'error' ORDER BY created_at DESC LIMIT 20
+    `);
+
+    res.json({ data: { overview: overview.rows[0], byCategory: byCategory.rows, byType: byType.rows, errors: errors.rows } });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.get("/security/logs", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const result = await db.execute(sql`
+      SELECT al.*, u.display_name as user_name, u.email as user_email, o.name as org_name
+      FROM activity_logs al
+      LEFT JOIN users u ON al.user_id = u.id
+      LEFT JOIN organizations o ON al.org_id = o.id
+      WHERE al.action IN ('delete', 'update_role', 'smart_setup', 'claim', 'assign_department_role', 'purchase_tokens', 'scrape_url', 'delete_task', 'delete_project', 'update_user')
+      ORDER BY al.created_at DESC
+      LIMIT ${limit}
+    `);
+    res.json({ data: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.get("/ai-workforce", async (req, res) => {
+  try {
+    const period = (req.query.period as string) || 'month';
+    let dateCondition: string;
+    switch (period) {
+      case 'week': dateCondition = ">= CURRENT_DATE - INTERVAL '7 days'"; break;
+      default: dateCondition = ">= DATE_TRUNC('month', CURRENT_DATE)";
+    }
+
+    const userData = await db.execute(sql.raw(`
+      SELECT 
+        u.id as user_id,
+        u.display_name,
+        u.email,
+        (SELECT COUNT(*) FROM token_usage tu WHERE tu.user_id = u.id AND tu.created_at ${dateCondition}) as ai_conversations,
+        (SELECT COALESCE(SUM(tu.total_tokens), 0) FROM token_usage tu WHERE tu.user_id = u.id AND tu.created_at ${dateCondition}) as ai_tokens,
+        (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status = 'done' AND t.updated_at ${dateCondition}) as tasks_completed,
+        (SELECT COUNT(*) FROM task_deliverables td 
+         JOIN tasks t ON td.task_id = t.id 
+         WHERE t.assignee_id = u.id AND td.created_at ${dateCondition}) as total_deliverables,
+        (SELECT COUNT(*) FROM task_deliverables td 
+         JOIN tasks t ON td.task_id = t.id 
+         WHERE t.assignee_id = u.id AND td.created_at ${dateCondition}
+         AND td.description LIKE '%AI%') as ai_deliverables
+      FROM users u
+      WHERE EXISTS (SELECT 1 FROM org_memberships om WHERE om.user_id = u.id)
+      ORDER BY ai_tokens DESC
+    `));
+
+    const results = userData.rows.map((row: any) => {
+      const aiConversations = parseInt(row.ai_conversations) || 0;
+      const aiTokens = parseInt(row.ai_tokens) || 0;
+      const tasksCompleted = parseInt(row.tasks_completed) || 0;
+      const totalDeliverables = parseInt(row.total_deliverables) || 0;
+      const aiDeliverables = parseInt(row.ai_deliverables) || 0;
+
+      const deliveryScore = totalDeliverables > 0 ? (aiDeliverables / totalDeliverables) * 100 : 0;
+      const convRatio = tasksCompleted > 0 ? aiConversations / tasksCompleted : 0;
+      const convScore = Math.min(100, convRatio * 10);
+      const tokenScore = Math.min(100, aiTokens / 5000);
+
+      const index = Math.round(deliveryScore * 0.45 + convScore * 0.35 + tokenScore * 0.20);
+
+      let riskLevel: string;
+      if (index >= 70) riskLevel = 'critical';
+      else if (index >= 50) riskLevel = 'high';
+      else if (index >= 20) riskLevel = 'medium';
+      else riskLevel = 'low';
+
+      return {
+        userId: row.user_id,
+        name: row.display_name,
+        email: row.email,
+        aiDependencyIndex: Math.min(100, index),
+        riskLevel,
+        aiConversations,
+        aiTokens,
+        tasksCompleted,
+        totalDeliverables,
+        aiDeliverables,
+        aiDeliveryRatio: totalDeliverables > 0 ? Math.round(aiDeliverables / totalDeliverables * 100) : 0,
+      };
+    });
+
+    results.sort((a: any, b: any) => b.aiDependencyIndex - a.aiDependencyIndex);
+
+    const validResults = results.filter((r: any) => r.aiConversations > 0 || r.tasksCompleted > 0);
+    const teamIndex = validResults.length > 0
+      ? Math.round(validResults.reduce((sum: number, r: any) => sum + r.aiDependencyIndex, 0) / validResults.length)
+      : 0;
+
+    const distribution = {
+      low: results.filter((r: any) => r.riskLevel === 'low').length,
+      medium: results.filter((r: any) => r.riskLevel === 'medium').length,
+      high: results.filter((r: any) => r.riskLevel === 'high').length,
+      critical: results.filter((r: any) => r.riskLevel === 'critical').length,
+    };
+
+    res.json({ data: { teamIndex, distribution, members: results } });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+adminRouter.get("/ai-workforce/:userId", async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId);
+
+    const trend = await db.execute(sql`
+      SELECT 
+        TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') as month,
+        COUNT(*) as ai_calls,
+        COALESCE(SUM(total_tokens), 0) as tokens
+      FROM token_usage
+      WHERE user_id = ${userId}
+        AND created_at >= CURRENT_DATE - INTERVAL '3 months'
+      GROUP BY month
+      ORDER BY month
+    `);
+
+    const recentChats = await db.execute(sql`
+      SELECT purpose, model, total_tokens, created_at
+      FROM token_usage
+      WHERE user_id = ${userId}
+      ORDER BY created_at DESC
+      LIMIT 20
+    `);
+
+    const byPurpose = await db.execute(sql`
+      SELECT purpose, COUNT(*) as calls, COALESCE(SUM(total_tokens), 0) as tokens
+      FROM token_usage
+      WHERE user_id = ${userId}
+        AND created_at >= DATE_TRUNC('month', CURRENT_DATE)
+      GROUP BY purpose
+    `);
+
+    res.json({ data: { trend: trend.rows, recentChats: recentChats.rows, byPurpose: byPurpose.rows } });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+export default adminRouter;
