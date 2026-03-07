@@ -340,7 +340,9 @@ function BatchAddDialog({
           </div>
 
           <div>
-            <label className="text-xs text-muted-foreground block mb-1">Base URL</label>
+            <label className="text-xs text-muted-foreground block mb-1">
+              Base URL <span className="text-destructive">*</span>
+            </label>
             <input
               className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
               value={form.baseUrl}
@@ -389,19 +391,30 @@ function BatchAddDialog({
             />
           </div>
 
-          <button
-            onClick={handleProbe}
-            disabled={probing || (!form.baseUrl)}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm bg-primary/10 text-primary border border-primary/20 rounded-lg hover:bg-primary/20 transition-colors disabled:opacity-50"
-            data-testid="button-probe-models"
-          >
-            {probing ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Search className="w-4 h-4" />
+          <div>
+            <button
+              onClick={handleProbe}
+              disabled={probing || (!form.baseUrl) || (!form.apiKey && !form.apiKeyEnvVar)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm bg-primary/10 text-primary border border-primary/20 rounded-lg hover:bg-primary/20 transition-colors disabled:opacity-50"
+              data-testid="button-probe-models"
+            >
+              {probing ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Search className="w-4 h-4" />
+              )}
+              {probing ? "正在探测..." : "探测可用模型"}
+            </button>
+            {(!form.baseUrl || (!form.apiKey && !form.apiKeyEnvVar)) && (
+              <p className="text-[11px] text-muted-foreground mt-1.5 text-center">
+                {!form.baseUrl && !form.apiKey && !form.apiKeyEnvVar
+                  ? "请先填写 Base URL 和 API Key"
+                  : !form.baseUrl
+                  ? "请先填写 Base URL"
+                  : "请先填写 API Key 或环境变量名"}
+              </p>
             )}
-            {probing ? "正在探测..." : "探测可用模型"}
-          </button>
+          </div>
 
           {probeError && (
             <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg" data-testid="text-probe-error">
