@@ -1,0 +1,103 @@
+# Task: Buddy AI 聊天界面紧急修复 — 5 项问题
+
+## 说明
+
+当前 Buddy AI 聊天界面有以下 5 个问题需要修复，请按顺序处理。所有样式细节请参照项目根目录的 `BUDDY_CLAUDE_STREAMING_UI_SPEC.md`。
+
+-----
+
+## 1. ACTIONS 标记泄漏（最高优先级）
+
+AI 返回的 `<<<ACTIONS>>>...<<<END_ACTIONS>>>` 原始 JSON 被直接显示在聊天正文里了。必须修复：
+
+- 在渲染消息内容之前，用正则 `<<<ACTIONS>>>([\s\S]*?)<<<END_ACTIONS>>>` 提取其中的 JSON
+- 解析后传给 InteractiveInputWidget 组件渲染为交互式选择 UI
+- 从聊天正文中完全移除这段标记，用户不应该看到任何 `<<<ACTIONS>>>` 文字或 JSON
+
+-----
+
+## 2. Thinking 等待动画替换
+
+当前等待 AI 回复时显示一个肉色石头图标，需要替换为橙色星芒旋转动画：
+
+```svg
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <g transform="translate(12, 12)">
+    <line x1="0" y1="-3" x2="0" y2="-10" stroke="#d4714a" stroke-width="2.2" stroke-linecap="round"/>
+    <line x1="2.6" y1="-1.5" x2="8.7" y2="-5" stroke="#d4714a" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
+    <line x1="3" y1="0" x2="10" y2="0" stroke="#d4714a" stroke-width="2.2" stroke-linecap="round"/>
+    <line x1="2.6" y1="1.5" x2="8.7" y2="5" stroke="#d4714a" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
+    <line x1="0" y1="3" x2="0" y2="10" stroke="#d4714a" stroke-width="2.2" stroke-linecap="round"/>
+    <line x1="-2.6" y1="1.5" x2="-8.7" y2="5" stroke="#d4714a" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
+    <line x1="-3" y1="0" x2="-10" y2="0" stroke="#d4714a" stroke-width="2.2" stroke-linecap="round"/>
+    <line x1="-2.6" y1="-1.5" x2="-8.7" y2="-5" stroke="#d4714a" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
+  </g>
+</svg>
+```
+
+CSS 动画：
+
+- 整体 rotate 360° 周期 3s linear infinite
+- 每条射线 opacity 脉冲 0.4→1.0→0.4 周期 1.5s，每条延迟 0.15s 交错
+- 当第一个文字 token 到达时 fade out 200ms 消失
+
+-----
+
+## 3. 发送按钮颜色
+
+当前发送按钮是白色背景，需要改为：
+
+- 背景色：`#c4613a`（暗橙红）
+- 图标颜色：`#ffffff`（白色上箭头）
+- 大小：36px 圆形
+- 按下效果：transform scale(0.95)
+- 空输入时：隐藏或置灰
+
+-----
+
+## 4. 文件附件预览重做
+
+当前附件只显示一个 60px 小 icon + 文字”pdf”，太小了。改为大预览卡片，位于输入框内部、textarea 上方。
+
+### 不可预览的文件（PDF, DOCX, XLSX 等）
+
+```
+┌────────────────────────┐
+│ [PDF]            [✕]   │
+│                        │
+│                        │
+│ 德湃科技 组织架构      │
+│ 与职能说明书 V3        │
+└────────────────────────┘
+```
+
+- 卡片：约 150px 宽 × 140px 高
+- 背景：`#2a2a2a`，圆角 12px
+- 左上角：文件类型标签 pill，背景 `#3a3a3a`，圆角 6px，padding 4px 8px，font-size 12px，font-weight 600，大写显示扩展名如 “PDF”、“DOCX”
+- 中下方：文件名，font-size 14px，color `#e8e8e8`，font-weight 500，最多 3 行
+- 右上角：✕ 关闭按钮，24px 圆形，背景 `#555`，白色 × icon
+
+### 可预览的文件（JPG, PNG, GIF 等图片）
+
+- 卡片：约 180px 宽 × 140px 高
+- 直接显示图片缩略图，object-fit: cover，圆角 12px
+- 右上角：✕ 关闭按钮（同上）
+
+### 多文件
+
+- 横向排列，gap 8px，可横向滚动
+- 附件区域在输入框 border-radius 20px 容器内部
+
+-----
+
+## 5. 输入框圆角
+
+输入框的 border-radius 必须是 20px（大胶囊形），不是小圆角。确认当前值，如果不是 20px 请修改。
+
+-----
+
+## 执行要求
+
+- 按 1→2→3→4→5 的顺序修复
+- 每修完一项截图确认效果
+- 全部完成后截一张输入区全貌（含文件附件状态）和一条完整对话截图给我验收
