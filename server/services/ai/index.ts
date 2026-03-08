@@ -1546,6 +1546,17 @@ export async function* chatStream(
           } catch {
             fileText = '[无法解析此 .docx 文件]';
           }
+        } else if (ext === 'pdf') {
+          try {
+            const pdfParse = (await import('pdf-parse')).default;
+            const pdfData = await pdfParse(buffer);
+            fileText = pdfData.text;
+            if (fileText.length > 50000) {
+              fileText = fileText.slice(0, 50000) + '\n\n[PDF 内容过长，已截断至前50000字符]';
+            }
+          } catch {
+            fileText = '[无法解析此 PDF 文件，可能是扫描件或加密文件]';
+          }
         } else if (['txt', 'csv', 'json', 'md', 'xml', 'html', 'css', 'js', 'ts', 'py', 'yaml', 'yml', 'log', 'ini', 'cfg', 'env', 'sh', 'bat'].includes(ext)) {
           fileText = buffer.toString('utf-8');
         } else {

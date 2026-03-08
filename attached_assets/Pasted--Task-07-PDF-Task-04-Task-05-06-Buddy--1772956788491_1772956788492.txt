@@ -1,0 +1,149 @@
+# Task-07: 添加 PDF 解析支持（聊天附件 + 知识库）
+
+**优先级**: 在 Task-04 之后执行（不依赖 Task-05/06）
+
+-----
+
+## 问题
+
+当前 Buddy 不支持 PDF 文件解析。用户在聊天中上传 PDF 会显示”不支持直接解析的文件格式: .pdf”，知识库也无法导入 PDF 文档。PDF 是企业场景中最常见的文件格式（合同、报告、制度文件等），必须支持。
+
+-----
+
+## 改动
+
+### 步骤1：安装依赖
+
+```bash
+npm install pdf-parse
+```
+
+如果 TypeScript 需要类型定义：
+
+```bash
+npm install -D @types/pdf-parse
+```
+
+### 步骤2：聊天附件支持 PDF
+
+**文件**: `server/services/ai/index.ts` 的 `chatStream()` 函数
+
+找到处理附件的代码段（大约第 2018-2037 行），在 docx 解析后面添加 PDF 解析：
+
+```typescript
+// 找到这段代码：
+if (ext === 'docx') {
+  try {
+    const result = await mammoth.extractRawText({ buffer });
+    fileText = result.value;
+  } catch {
+    fileText = '[无法解析此 .docx 文件]';
+  }
+}
+```
+
+在它**后面**（`else if` 纯文本格式判断**之前**）添加：
+
+```typescript
+else if (ext === 'pdf') {
+  try {
+    const pdfParse = (await import('pdf-parse')).default;
+    const pdfData = await pdfParse(buffer);
+    fileText = pdfData.text;
+    // 如果 PDF 内容过长，截断并提示
+    if (fileText.length > 50000) {
+      fileText = fileText.slice(0, 50000) + '\n\n[PDF 内容过长，已截断至前50000字符]';
+    }
+  } catch {
+    fileText = '[无法解析此 PDF 文件，可能是扫描件或加密文件]';
+  }
+}
+```
+
+### 步骤3：知识库支持 PDF
+
+**文件**: `server/services/kb/extractText.ts`
+
+找到 `extractText()` 函数中的文件类型判断逻辑，添加 PDF 处理分支。
+
+在 docx 的处理分支后面添加：
+
+```typescript
+case 'pdf': {
+  const pdfParse = (await import('pdf-parse')).default;
+  const buffer = fs.readFileSync(absolutePath);
+  const pdfData = await pdfParse(buffer);
+  return pdfData.text;
+}
+```
+
+如果 `extractText.ts` 用的是 if/else 而不是 switch，就用对应的 if 格式：
+
+```typescript
+if (fileType === 'pdf' || ext === 'pdf') {
+  const pdfParse = (await import('pdf-parse')).default;
+  const buffer = fs.readFileSync(absolutePath);
+  const pdfData = await pdfParse(buffer);
+  return pdfData.text;
+}
+```
+
+### 步骤4：知识库上传接口支持 PDF MIME 类型
+
+**文件**: `server/routes.ts`
+
+搜索知识库文件上传相关的路由（搜索 `processDocument` 或 `kb` 相关的 multer/upload 逻辑），确保文件类型白名单中包含 `application/pdf` 和 `.pdf` 扩展名。
+
+如果有类似这样的白名单校验：
+
+```typescript
+const allowedTypes = ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', ...];
+```
+
+添加：
+
+```typescript
+'application/pdf'
+```
+
+如果有扩展名白名单：
+
+```typescript
+const allowedExtensions = ['docx', 'txt', 'csv', ...];
+```
+
+添加：
+
+```typescript
+'pdf'
+```
+
+-----
+
+## 测试
+
+### 聊天附件测试
+
+1. 上传一个普通文字 PDF（比如公司制度文件），输入”帮我总结这份文件”
+1. 验证：AI 能读取 PDF 内容并给出总结
+1. 上传一个较长的 PDF（超过 50000 字符），验证截断提示正常
+
+### 知识库测试
+
+1. 在知识库管理页面上传一个 PDF 文档
+1. 验证：文档状态变为 ready，chunks 正常生成
+1. 在聊天中开启知识库，提问 PDF 文档中的内容
+1. 验证：AI 能从 PDF 文档中检索到相关信息并回答
+
+### 边界情况
+
+- 上传扫描件 PDF（纯图片无文字层）→ 应返回提示”无法解析”而不是报错
+- 上传加密 PDF → 应返回提示而不是报错
+- 上传空白 PDF → 应正常处理，返回空内容
+
+-----
+
+## 注意事项
+
+- `pdf-parse` 只能提取有文字层的 PDF。纯扫描件（图片 PDF）提取出来是空的，需要 OCR 才能识别。OCR 是后续功能，不在本 task 范围内。
+- 如果后续需要支持扫描件 PDF，可以考虑集成 Tesseract OCR 或者把 PDF 转成图片发给 Claude 视觉识别。
