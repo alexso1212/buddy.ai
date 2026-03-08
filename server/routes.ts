@@ -3060,8 +3060,7 @@ When choosing assigneeId:
         return res.json({ data: [] });
       }
 
-      const { getAiClient } = await import('./services/ai/clientHelper');
-      const claudeSimpleClient = await getAiClient('claude-haiku-4-5-20251001');
+      const { claudeComplete } = await import('./services/ai/index');
 
       const taskListStr = otherTasks.map(t =>
         `- ID: ${t.id}, Title: "${t.title}", Status: ${t.status}, Description: "${t.description || 'N/A'}"`
@@ -3086,13 +3085,13 @@ Return a JSON array of suggested dependencies. Each element should have:
 Only suggest tasks that logically should be completed before the target task. If no dependencies are needed, return an empty array.
 Return ONLY the JSON array, no other text.`;
 
-      const completion = await claudeSimpleClient.chat.completions.create({
+      const completion = await claudeComplete({
         model: 'claude-haiku-4-5-20251001',
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 2000,
       });
 
-      const raw = completion.choices?.[0]?.message?.content || '[]';
+      const raw = completion.content || '[]';
       let suggestions: Array<{ taskId: number; taskTitle: string; reason: string; confidence: number }> = [];
       try {
         const jsonMatch = raw.match(/\[[\s\S]*\]/);
@@ -3183,16 +3182,15 @@ Please evaluate and return a JSON object with:
 
 Return ONLY the JSON object, no other text.`;
 
-      const { getAiClient } = await import('./services/ai/clientHelper');
-      const reviewClient = await getAiClient('claude-haiku-4-5-20251001');
+      const { claudeComplete } = await import('./services/ai/index');
 
-      const completion = await reviewClient.chat.completions.create({
+      const completion = await claudeComplete({
         model: 'claude-haiku-4-5-20251001',
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 2000,
       });
 
-      const raw = completion.choices?.[0]?.message?.content || '{}';
+      const raw = completion.content || '{}';
       let result: { summary: string; relevanceScore: number; qualityAssessment: string; suggestions: string[] };
       try {
         const jsonMatch = raw.match(/\{[\s\S]*\}/);

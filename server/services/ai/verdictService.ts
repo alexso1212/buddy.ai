@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import { storage } from '../../storage';
 import type { AiProvider } from '@shared/schema';
 
@@ -26,6 +27,45 @@ async function getVerdictClient(): Promise<OpenAI> {
   }
   const apiKey = process.env.CLAUDE_SIMPLE_API_KEY || process.env.AI_API_KEY || '';
   return new OpenAI({ baseURL: 'https://vip.aipro.love/v1', apiKey, timeout: 30000 });
+}
+
+async function verdictComplete(params: { model: string; max_tokens: number; temperature?: number; messages: { role: string; content: string }[] }): Promise<{ content: string; usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }> {
+  if (process.env.ANTHROPIC_API_KEY) {
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const systemMsg = params.messages.find(m => m.role === 'system');
+    const nonSystem = params.messages.filter(m => m.role !== 'system');
+    const resp = await client.messages.create({
+      model: params.model,
+      max_tokens: params.max_tokens,
+      temperature: params.temperature ?? 0,
+      ...(systemMsg ? { system: systemMsg.content } : {}),
+      messages: nonSystem.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+    });
+    const text = resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('');
+    return {
+      content: text,
+      usage: {
+        prompt_tokens: resp.usage?.input_tokens ?? 0,
+        completion_tokens: resp.usage?.output_tokens ?? 0,
+        total_tokens: (resp.usage?.input_tokens ?? 0) + (resp.usage?.output_tokens ?? 0),
+      },
+    };
+  }
+  const client = await getVerdictClient();
+  const resp = await client.chat.completions.create({
+    model: params.model,
+    max_tokens: params.max_tokens,
+    temperature: params.temperature,
+    messages: params.messages as any,
+  });
+  return {
+    content: resp.choices[0]?.message?.content || '{}',
+    usage: resp.usage ? {
+      prompt_tokens: resp.usage.prompt_tokens ?? 0,
+      completion_tokens: resp.usage.completion_tokens ?? 0,
+      total_tokens: resp.usage.total_tokens ?? 0,
+    } : undefined,
+  };
 }
 
 const VERDICT_SYSTEM_PROMPT = `你是一个企业权责判定专家。你的职责是客观、公正地判断一个任务分配给某个员工是否合理。
@@ -286,8 +326,7 @@ export async function judgeTaskAssignment(
   const prompt = buildVerdictPrompt(task, targetUser, allUsers);
   
   const modelName = 'claude-sonnet-4-6';
-  const client = await getVerdictClient();
-  const response = await client.chat.completions.create({
+  const response = await verdictComplete({
     model: modelName,
     max_tokens: 2048,
     temperature: 0.1,
@@ -297,17 +336,14 @@ export async function judgeTaskAssignment(
     ],
   });
   
-  const content = response.choices[0]?.message?.content || '{}';
-  
-  const result: VerdictResultWithUsage = robustJsonParse(content);
+  const result: VerdictResultWithUsage = robustJsonParse(response.content);
 
-  const usage = response.usage;
-  if (usage) {
+  if (response.usage) {
     result.tokenUsage = {
       model: modelName,
-      promptTokens: usage.prompt_tokens ?? 0,
-      completionTokens: usage.completion_tokens ?? 0,
-      totalTokens: usage.total_tokens ?? 0,
+      promptTokens: response.usage.prompt_tokens ?? 0,
+      completionTokens: response.usage.completion_tokens ?? 0,
+      totalTokens: response.usage.total_tokens ?? 0,
     };
   }
 

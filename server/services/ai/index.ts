@@ -77,6 +77,58 @@ function resolveModelId(model: string): string {
   return MODEL_ALIAS_MAP[model] || model;
 }
 
+export async function claudeComplete(params: {
+  model: string;
+  max_tokens: number;
+  temperature?: number;
+  messages: { role: string; content: string }[];
+}): Promise<{ content: string; usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }> {
+  const officialKey = process.env.ANTHROPIC_API_KEY;
+  const resolved = resolveModelId(params.model);
+  const isClaudeModel = resolved.startsWith('claude-');
+
+  if (isClaudeModel && officialKey) {
+    const client = new Anthropic({ apiKey: officialKey });
+    const systemMsg = params.messages.find(m => m.role === 'system');
+    const nonSystemMsgs = params.messages.filter(m => m.role !== 'system');
+    const response = await client.messages.create({
+      model: resolved,
+      max_tokens: params.max_tokens,
+      temperature: params.temperature ?? 0,
+      ...(systemMsg ? { system: systemMsg.content } : {}),
+      messages: nonSystemMsgs.map(m => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      })),
+    });
+    const text = response.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('');
+    return {
+      content: text,
+      usage: {
+        prompt_tokens: response.usage?.input_tokens ?? 0,
+        completion_tokens: response.usage?.output_tokens ?? 0,
+        total_tokens: (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0),
+      },
+    };
+  }
+
+  const aiClient = await getClientForModel(params.model);
+  const response = await aiClient.chat.completions.create({
+    model: resolved,
+    max_tokens: params.max_tokens,
+    temperature: params.temperature ?? 0,
+    messages: params.messages.map(m => ({ role: m.role as 'user' | 'assistant' | 'system', content: m.content })),
+  });
+  return {
+    content: response.choices[0]?.message?.content || '',
+    usage: response.usage ? {
+      prompt_tokens: response.usage.prompt_tokens ?? 0,
+      completion_tokens: response.usage.completion_tokens ?? 0,
+      total_tokens: response.usage.total_tokens ?? 0,
+    } : undefined,
+  };
+}
+
 function getDefaultBaseUrl(modelId: string): string {
   const resolved = resolveModelId(modelId);
   if (resolved.startsWith('claude')) return 'https://vip.aipro.love/v1';
@@ -307,8 +359,7 @@ async function classifyTask(userMessage: string, hasAttachments?: boolean): Prom
   }
 
   try {
-    const client = await getClientForModel('claude-haiku-4-5-20251001');
-    const response = await client.chat.completions.create({
+    const response = await claudeComplete({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 30,
       temperature: 0,
@@ -326,7 +377,7 @@ Categories:
         { role: 'user', content: userMessage.slice(0, 500) }
       ],
     });
-    const result = (response.choices[0]?.message?.content || '').trim().toLowerCase();
+    const result = (response.content || '').trim().toLowerCase();
     const validCategories: TaskCategory[] = ['quick_reply', 'general_chat', 'code_generation', 'complex_analysis', 'document_processing'];
     if (validCategories.includes(result as TaskCategory)) return result as TaskCategory;
     return 'general_chat';
@@ -367,8 +418,7 @@ async function buildOptimizedContext(
       .map(m => `${m.role}: ${typeof m.content === 'string' ? m.content.slice(0, 200) : '[附件内容]'}`)
       .join('\n');
 
-    const client = await getClientForModel('claude-haiku-4-5-20251001');
-    const response = await client.chat.completions.create({
+    const response = await claudeComplete({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 500,
       temperature: 0,
@@ -381,7 +431,7 @@ async function buildOptimizedContext(
       ],
     });
 
-    const summary = response.choices[0]?.message?.content || '';
+    const summary = response.content || '';
 
     const firstRecent = recentMessages[0];
     if (firstRecent && firstRecent.role === 'user') {
@@ -1280,26 +1330,66 @@ export async function chat(
   };
 
   const isClaudeModel = apiModelName.startsWith('claude-');
-  if (config.thinking.type === 'enabled' && isClaudeModel) {
-    requestParams.extra_body = {
-      thinking: {
-        type: 'enabled',
-        budget_tokens: config.thinking.budget_tokens,
-      }
+  const officialAnthropicKeyChat = process.env.ANTHROPIC_API_KEY;
+
+  let aiText = '';
+  let tokenInfo: ChatResponse['tokenUsage'] | undefined;
+
+  if (isClaudeModel && officialAnthropicKeyChat) {
+    const nativeClient = new Anthropic({ apiKey: officialAnthropicKeyChat });
+    const anthropicMsgs: Anthropic.MessageParam[] = [
+      ...optimizedHistory
+        .filter(msg => msg.content && (typeof msg.content === 'string' ? msg.content.trim() !== '' : true))
+        .map(msg => ({
+          role: msg.role as 'user' | 'assistant',
+          content: msg.content as string,
+        })),
+      { role: 'user', content: message },
+    ];
+
+    const nativeParams: any = {
+      model: apiModelName,
+      max_tokens: config.max_tokens,
+      system: systemPrompt,
+      messages: anthropicMsgs,
     };
+
+    if (config.thinking.type === 'enabled') {
+      nativeParams.thinking = { type: 'enabled', budget_tokens: config.thinking.budget_tokens };
+    } else {
+      nativeParams.temperature = config.temperature;
+    }
+
+    console.log(`[AI] Using official Anthropic API for non-streaming model=${apiModelName}`);
+    const nativeResp = await nativeClient.messages.create(nativeParams);
+    const textBlocks = nativeResp.content.filter((b: any) => b.type === 'text');
+    aiText = textBlocks.map((b: any) => b.text).join('');
+    tokenInfo = {
+      model: modelName,
+      promptTokens: nativeResp.usage?.input_tokens ?? 0,
+      completionTokens: nativeResp.usage?.output_tokens ?? 0,
+      totalTokens: (nativeResp.usage?.input_tokens ?? 0) + (nativeResp.usage?.output_tokens ?? 0),
+    };
+  } else {
+    if (config.thinking.type === 'enabled' && isClaudeModel) {
+      requestParams.extra_body = {
+        thinking: {
+          type: 'enabled',
+          budget_tokens: config.thinking.budget_tokens,
+        }
+      };
+    }
+
+    const response = await aiClient.chat.completions.create(requestParams);
+    const usage = response.usage;
+    tokenInfo = usage ? {
+      model: modelName,
+      promptTokens: usage.prompt_tokens ?? 0,
+      completionTokens: usage.completion_tokens ?? 0,
+      totalTokens: usage.total_tokens ?? 0,
+    } : undefined;
+    aiText = response.choices[0]?.message?.content || '';
   }
-
-  const response = await aiClient.chat.completions.create(requestParams);
-
-  const usage = response.usage;
-  const tokenInfo: ChatResponse['tokenUsage'] = usage ? {
-    model: modelName,
-    promptTokens: usage.prompt_tokens ?? 0,
-    completionTokens: usage.completion_tokens ?? 0,
-    totalTokens: usage.total_tokens ?? 0,
-  } : undefined;
-
-  let aiText = response.choices[0]?.message?.content || '';
 
   const codeBlockMatch = aiText.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (codeBlockMatch) {
@@ -1532,6 +1622,87 @@ export async function* chatStream(
   }
 
   const apiModelName = resolveModelId(modelName);
+  const isClaudeModel = apiModelName.startsWith('claude-');
+  const officialAnthropicKey = process.env.ANTHROPIC_API_KEY;
+
+  if (isClaudeModel && officialAnthropicKey) {
+    const nativeClient = new Anthropic({
+      apiKey: officialAnthropicKey,
+    });
+
+    const anthropicMessages: Anthropic.MessageParam[] = [
+      ...optimizedHistory
+        .filter(msg => msg.content && (typeof msg.content === 'string' ? msg.content.trim() !== '' : true))
+        .map(msg => ({
+          role: msg.role as 'user' | 'assistant',
+          content: msg.content as string,
+        })),
+      { role: 'user', content: userContent as string },
+    ];
+
+    const streamParams: any = {
+      model: apiModelName,
+      max_tokens: config.max_tokens,
+      system: systemPrompt,
+      messages: anthropicMessages,
+      stream: true,
+    };
+
+    if (config.thinking.type === 'enabled') {
+      streamParams.thinking = {
+        type: 'enabled',
+        budget_tokens: config.thinking.budget_tokens,
+      };
+      delete streamParams.temperature;
+    } else {
+      streamParams.temperature = config.temperature;
+    }
+
+    try {
+      console.log(`[AI] Using official Anthropic API for model=${apiModelName}`);
+      const stream = nativeClient.messages.stream(streamParams);
+      let totalPromptTokens = 0;
+      let totalCompletionTokens = 0;
+
+      for await (const event of stream) {
+        if (event.type === 'content_block_delta') {
+          const delta = event.delta as any;
+          if (delta.type === 'thinking_delta' && delta.thinking) {
+            yield { type: 'thinking' as const, content: delta.thinking };
+          } else if (delta.type === 'text_delta' && delta.text) {
+            yield { type: 'token' as const, content: delta.text };
+          }
+        } else if (event.type === 'message_delta') {
+          const usage = (event as any).usage;
+          if (usage) {
+            totalCompletionTokens = usage.output_tokens ?? 0;
+          }
+        } else if (event.type === 'message_start') {
+          const usage = (event as any).message?.usage;
+          if (usage) {
+            totalPromptTokens = usage.input_tokens ?? 0;
+          }
+        }
+      }
+
+      yield {
+        type: 'done' as const,
+        tokenUsage: {
+          model: modelName,
+          promptTokens: totalPromptTokens,
+          completionTokens: totalCompletionTokens,
+          totalTokens: totalPromptTokens + totalCompletionTokens,
+        }
+      };
+    } catch (err: any) {
+      const statusCode = err.status || err.statusCode || '';
+      const detail = err.error?.error?.message || err.message || 'Stream error';
+      console.error(`[AI Stream Error] model=${modelName} status=${statusCode} message=${detail}`);
+      yield { type: 'error' as const, content: detail };
+    }
+    return;
+  }
+
   const requestParams: any = {
     model: apiModelName,
     max_tokens: config.max_tokens,
@@ -1546,8 +1717,6 @@ export async function* chatStream(
       { role: 'user', content: userContent },
     ],
   };
-
-  const isClaudeModel = apiModelName.startsWith('claude-');
 
   if (!isClaudeModel) {
     requestParams.stream_options = { include_usage: true };
@@ -1605,8 +1774,7 @@ export async function generateProjectTasks(
   context: { currentUserId: number; currentUserName: string }
 ): Promise<{ tasks: { title: string; description?: string; priority: string; type: string }[]; tokenUsage?: ChatResponse['tokenUsage'] }> {
   const genModel = 'claude-sonnet-4-6';
-  const genClient = await getClientForModel(genModel);
-  const response = await genClient.chat.completions.create({
+  const response = await claudeComplete({
     model: genModel,
     max_tokens: 2048,
     messages: [
@@ -1637,16 +1805,15 @@ export async function generateProjectTasks(
     ],
   });
 
-  const usage = response.usage;
   const modelName = 'claude-sonnet-4-6';
-  const tokenInfo = usage ? {
+  const tokenInfo = response.usage ? {
     model: modelName,
-    promptTokens: usage.prompt_tokens ?? 0,
-    completionTokens: usage.completion_tokens ?? 0,
-    totalTokens: usage.total_tokens ?? 0,
+    promptTokens: response.usage.prompt_tokens ?? 0,
+    completionTokens: response.usage.completion_tokens ?? 0,
+    totalTokens: response.usage.total_tokens ?? 0,
   } : undefined;
 
-  let aiText = response.choices[0]?.message?.content || '';
+  let aiText = response.content || '';
   const codeBlockMatch = aiText.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (codeBlockMatch) {
     aiText = codeBlockMatch[1].trim();
@@ -1668,14 +1835,13 @@ export async function extractMemories(
   if (conversationMessages.length < 2) return;
 
   const model = 'claude-haiku-4-5-20251001';
-  const client = await getClientForModel(model);
 
   const conversationText = conversationMessages
     .map(m => `${m.role}: ${m.content}`)
     .join('\n');
 
   try {
-    const response = await client.chat.completions.create({
+    const response = await claudeComplete({
       model,
       max_tokens: 1024,
       messages: [
@@ -1705,7 +1871,7 @@ category 说明：
       ],
     });
 
-    let aiText = response.choices[0]?.message?.content || '';
+    let aiText = response.content || '';
     const codeBlockMatch = aiText.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (codeBlockMatch) {
       aiText = codeBlockMatch[1].trim();
@@ -1734,11 +1900,10 @@ export async function generateConversationTitle(
   userMessage: string,
   assistantReply: string
 ): Promise<string> {
-  const client = await getClientForModel('claude-haiku-4-5-20251001');
   const truncatedUser = userMessage.slice(0, 500);
   const truncatedAssistant = assistantReply.slice(0, 500);
 
-  const response = await client.chat.completions.create({
+  const response = await claudeComplete({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 60,
     messages: [
@@ -1753,13 +1918,13 @@ export async function generateConversationTitle(
     ],
   });
 
-  const title = (response.choices[0]?.message?.content || '').trim().slice(0, 50);
+  const title = (response.content || '').trim().slice(0, 50);
   return title || userMessage.slice(0, 30);
 }
 
 const anthropicClient = new Anthropic({
-  apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
-  baseURL: 'https://vip.aipro.love',
+  apiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_SIMPLE_API_KEY,
+  ...(process.env.ANTHROPIC_API_KEY ? {} : { baseURL: 'https://vip.aipro.love' }),
 });
 
 export async function* codeToolChatStream(

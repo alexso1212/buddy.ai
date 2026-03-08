@@ -18,7 +18,7 @@ The application is built with an Express.js backend, a React (TypeScript) fronte
 - **Multi-Tenant Isolation:** `orgIsolation` middleware ensures data segregation.
 - **Knowledge Base Pipeline:** Supports file upload, text extraction from 13 formats, chunking, and AI auto-classification of documents.
 - **Daily Briefing Service:** AI-generated personalized daily briefings.
-- **AI Subsystem:** Utilizes Anthropic and OpenRouter models, featuring contextual prompts, cross-conversation memory, Zod schema-defined AI actions, an AI-powered verdict service, and web search integration. Includes a "Code Context Mode" for AI interaction with project code.
+- **AI Subsystem:** Utilizes Anthropic and OpenRouter models. When `ANTHROPIC_API_KEY` is set, all Claude model calls (streaming, non-streaming, utility functions) use the official Anthropic SDK directly (`api.anthropic.com`). Falls back to proxy (`vip.aipro.love/v1`) with `CLAUDE_SIMPLE_API_KEY`/`CLAUDE_COMPLEX_API_KEY` when official key is unavailable. Features contextual prompts, cross-conversation memory, Zod schema-defined AI actions, an AI-powered verdict service, and web search integration. Includes a "Code Context Mode" for AI interaction with project code.
 - **AI Auto-Decision Resolution System:** Automates the creation and resolution of decision tasks using AI.
 
 **Frontend (UI/UX):**

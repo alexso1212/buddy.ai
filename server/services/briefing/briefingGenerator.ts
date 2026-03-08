@@ -1,12 +1,35 @@
 import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import { storage } from '../../storage';
 import { aggregateBriefingData, BriefingData } from './dataAggregator';
 
-const aiClient = new OpenAI({
-  baseURL: 'https://vip.aipro.love/v1',
-  apiKey: process.env.CLAUDE_SIMPLE_API_KEY || '',
-  timeout: 30000,
-});
+async function briefingComplete(params: { model: string; max_tokens: number; temperature?: number; messages: { role: string; content: string }[] }): Promise<string> {
+  if (process.env.ANTHROPIC_API_KEY) {
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const systemMsg = params.messages.find(m => m.role === 'system');
+    const nonSystem = params.messages.filter(m => m.role !== 'system');
+    const resp = await client.messages.create({
+      model: params.model,
+      max_tokens: params.max_tokens,
+      temperature: params.temperature ?? 0,
+      ...(systemMsg ? { system: systemMsg.content } : {}),
+      messages: nonSystem.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+    });
+    return resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('');
+  }
+  const aiClient = new OpenAI({
+    baseURL: 'https://vip.aipro.love/v1',
+    apiKey: process.env.CLAUDE_SIMPLE_API_KEY || '',
+    timeout: 30000,
+  });
+  const resp = await aiClient.chat.completions.create({
+    model: params.model,
+    max_tokens: params.max_tokens,
+    temperature: params.temperature,
+    messages: params.messages as any,
+  });
+  return resp.choices[0]?.message?.content || '';
+}
 
 export interface BriefingAction {
   type: 'reassign' | 'change_priority' | 'remind';
@@ -137,7 +160,7 @@ ${data.tasksCompletedYesterday.length > 0 ? data.tasksCompletedYesterday.map(t =
 `.trim();
 
   try {
-    const response = await aiClient.chat.completions.create({
+    const content = await briefingComplete({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1000,
       temperature: 0.6,
@@ -166,7 +189,7 @@ ${data.tasksCompletedYesterday.length > 0 ? data.tasksCompletedYesterday.map(t =
       ],
     });
 
-    return response.choices[0]?.message?.content || generateFallbackBriefing(data, dateStr, weekday);
+    return content || generateFallbackBriefing(data, dateStr, weekday);
   } catch (err: any) {
     console.error('[Briefing] AI generation failed:', err.message);
     return generateFallbackBriefing(data, dateStr, weekday);
