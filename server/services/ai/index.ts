@@ -1,7 +1,6 @@
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import mammoth from 'mammoth';
-import { SYSTEM_PROMPT } from './prompts';
 import { ACTION_SCHEMAS } from './actionSchemas';
 import { storage } from '../../storage';
 import { CODE_TOOLS, executeCodeTool } from './codeTools';
@@ -360,25 +359,25 @@ async function classifyTask(userMessage: string, hasAttachments?: boolean): Prom
   if (hasAttachments) return 'document_processing';
 
   const lowerMsg = userMessage.toLowerCase();
+  const trimmedMsg = userMessage.trim();
 
-  if (/^(hi|hello|hey|你好|嗨|谢谢|ok|好的|thanks|thank you|再见|bye|哈哈|嗯|对|是的|没错|ok了|收到|明白|知道了)$/i.test(userMessage.trim())) {
+  if (/^(hi|hello|hey|你好|嗨|谢谢|ok|好的|thanks|thank you|再见|bye|哈哈|嗯|对|是的|没错|ok了|收到|明白|知道了)$/i.test(trimmedMsg)) {
     return 'quick_reply';
   }
 
-  if (/代码|code|function|实现|写一个|debug|bug|error|fix|修复|编程|script|api|接口|import|export|class|component|变量|variable/.test(lowerMsg)) {
+  if (/代码|code|function|debug|bug|error|fix|修复|编程|script|import|export|class|component|变量|variable/.test(lowerMsg)
+      && !/(创建任务|任务进度|项目进展|任务状态)/.test(lowerMsg)) {
     return 'code_generation';
   }
 
-  if (/分析|analyze|analysis|对比|比较|evaluate|评估|report|报告|策略|strategy|规划|plan|深度|详细分析|root cause/.test(lowerMsg)) {
+  if (/深度分析|详细分析|对比分析|root cause|评估报告|策略规划|战略分析|分析.*效率|分析.*架构|分析.*风险/.test(lowerMsg)
+      && !/(有什么|有多少|列表|查看|查询)/.test(lowerMsg)) {
     return 'complex_analysis';
   }
 
-  if (/总结|summarize|summary|文档|document|摘要|extract|提取|归纳|概括/.test(lowerMsg)) {
+  if (/(总结|summarize).*(文档|文件|document|附件|report)/.test(lowerMsg)
+      || /摘要|extract.*文档|提取.*关键/.test(lowerMsg)) {
     return 'document_processing';
-  }
-
-  if (userMessage.length < 50) {
-    return 'quick_reply';
   }
 
   try {
@@ -988,7 +987,7 @@ ${tasksFormatted}
 
 export async function buildContextualSystemPrompt(
   context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; orgId?: number },
-  mode: 'streaming' | 'json' = 'streaming'
+  mode: 'streaming' = 'streaming'
 ): Promise<{ prompt: string; allUsers: any[]; allProjects: any[]; allTasks: any[]; allDepartments: any[]; allJobRoles: any[]; jobRoleMap: Map<number, any>; activeTasks: any[] }> {
   const orgId = context.orgId || 1;
   const { allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks, doneTasks, overdueTasks, teamMembers } = await loadBusinessContext(orgId);
@@ -1004,148 +1003,54 @@ export async function buildContextualSystemPrompt(
   const contextBlock = buildContextBlock(contextWithOrg, allUsers, allProjects, activeTasks, allTasks, doneTasks, overdueTasks, teamMembers);
   const modelName = context.model || 'claude-sonnet-4-6';
 
-  let prompt: string;
-
-  if (mode === 'streaming') {
-    prompt = `你是 Buddy，${orgName} 的智能助手。你熟悉公司的团队、项目和任务情况，能以自然对话的方式帮助团队成员了解工作进展、回答问题、提供建议。
+  let prompt = `你是 Buddy，${orgName} 的智能助手。
 
 ${contextBlock}
 
 ## 回复规则
-- 用自然语言回复，使用 Markdown 格式让内容更易读（标题、列表、粗体等）
-- 使用与用户相同的语言回复（用户用中文就用中文，用英文就用英文）
-- 基于上面的团队、项目、任务数据来回答问题，不要编造不存在的数据
-- 当用户问"你是什么模型"时，如实告知你运行在 ${modelName} 上
-- 回答要简洁专业，必要时引用具体的任务、项目或人员信息
-- 你可以帮助分析任务进度、工作负荷、项目风险等
+- 用自然语言 Markdown 回复，语言跟用户一致
+- 基于上面的数据回答，不编造
+- 简洁专业，必要时引用具体数据
+- 用户问模型时如实告知运行在 ${modelName} 上
 
 ## 操作能力
-你具备在系统中创建任务、更新任务、创建项目、添加评论的能力。当用户要求你执行这些操作时（比如"帮我创建任务"、"把这些写入系统"、"从会议纪要提取任务"），你应该：
-
-1. 先用自然语言描述你要做什么
-2. 然后在回复末尾输出一个操作块，格式如下：
+当用户要求创建/更新/删除时，先用自然语言说明，然后在末尾输出操作块：
 
 <<<ACTIONS>>>
-{"type":"confirm","action":{"actionType":"create_task","data":{"title":"任务标题","projectId":1},"summary":"创建任务「任务标题」","confidence":0.9}}
+{"type":"confirm","action":{"actionType":"create_task","data":{...},"summary":"...","confidence":0.9}}
 <<<END_ACTIONS>>>
 
-批量操作用 multi_confirm（支持依赖关系）：
+可用 actionType 及必填字段：
+- create_task: title*, projectId* (可选: assigneeId, dueDate, priority, description, weight, parentTaskId, type, tags, warnings[], ref, dependsOn[], dependsOnRef[])
+- update_task: taskId* (可选: title, status, priority, assigneeId, dueDate, weight, progress, description)
+- create_project: name* (可选: description, deptId, startDate, targetDate)
+- add_comment: taskId*, content*
+- create_user: displayName*, email* (可选: role, deptId, jobRoleId)
+- update_user: userId* (可选: displayName, role, deptId, jobRoleId, isActive)
+- create_department: name* (可选: description, color, parentDeptId)
+
+批量操作用 multi_confirm，支持 ref/dependsOnRef 做批次内依赖。
+
+## Widget 规则
+需要用户选择/确认时，输出 interactive_input 块（与 confirm 不同时出现）：
 <<<ACTIONS>>>
-{"type":"multi_confirm","actions":[{"actionType":"create_task","data":{"title":"设计用户界面","projectId":1,"ref":"T1"},"summary":"创建任务「设计用户界面」","confidence":0.9},{"actionType":"create_task","data":{"title":"实现前端页面","projectId":1,"ref":"T2","dependsOnRef":["T1"]},"summary":"创建任务「实现前端页面」（依赖 T1）","confidence":0.9}]}
+{"type":"interactive_input","questions":[{"id":"q1","question":"...","type":"single_select","options":["A","B","C"]}]}
 <<<END_ACTIONS>>>
+type 可选: single_select, multi_select, confirm, date_pick, rank_priorities
+**宁可多弹 Widget 也不要让用户打字确认。**
 
-批量创建中的依赖关系字段：
-- ref: 当前任务在本批次中的临时标识（如 "T1", "T2"），用于同批次内其他任务引用
-- dependsOn: 依赖的数据库中已存在任务的 ID 列表
-- dependsOnRef: 依赖同批次内其他任务的 ref 标识列表（如 ["T1"]）
-
-可用的 actionType：
-- create_task: 需要 title(必填), projectId(必填), 可选 description, type(task/subtask/milestone/bug/request), status(todo), priority(critical/high/medium/low), assigneeId, dueDate, weight(1-10), parentTaskId, tags, warnings(数组), ref, dependsOn, dependsOnRef
-- update_task: 需要 taskId(必填), 可选 title, status, priority, assigneeId, dueDate, weight, progress, description
-- create_project: 需要 name(必填), 可选 description, deptId, startDate, targetDate
-- add_comment: 需要 taskId(必填), content(必填)
-- create_user: 需要 displayName(必填), email(必填), 可选 role(owner/admin/head/member, 默认member), deptId, jobRoleId
-- update_user: 需要 userId(必填), 可选 displayName, role, deptId, jobRoleId, isActive
-- create_department: 需要 name(必填), 可选 description, color(hex如#FF5733), parentDeptId
-
-重要规则：
-- projectId 必须是上面项目列表中存在的项目ID，不要编造
-- assigneeId 必须是上面团队成员中存在的用户ID
-- deptId、jobRoleId、parentDeptId 必须是系统中已存在的ID
-- 创建成员时 email 必须唯一，如果用户没指定邮箱可以用姓名拼音@组织域名的格式
-- 如果用户没有指定项目，你需要先问用户要放到哪个项目
-- 从会议纪要等文档提取任务时，对信息不确定的字段添加 warnings 数组（如 "负责人未明确，已暂分给当前用户"）
-- confidence: 信息完整≥0.9，有推测0.7-0.8，严重缺失0.5-0.6
-- 操作块必须放在回复的最末尾，<<<ACTIONS>>> 和 <<<END_ACTIONS>>> 各占一行
-- 绝对不要对查询类请求（如"有什么任务"）输出操作块
-
-## 交互式选择 Widget（极其重要）
-
-**核心原则：宁可多弹 Widget 也不要让用户打字确认。** 当你的回复需要用户做任何确认、选择或决策时，必须在回复末尾附带 interactive_input 操作块，让用户通过点击按钮回应。
-
-### 必须弹出 Widget 的场景：
-
-1. **确认类**：任何需要用户说"确认""好的""可以"的地方 → 弹出 [确认] [取消] 或选项按钮
-2. **选择类**：任何"你想要A还是B"的地方 → 弹出选项按钮
-3. **是否类**：任何"需要我帮你xxx吗？"的地方 → 弹出 [好的] [不用了] 按钮
-4. **澄清类**：任何"你是指xxx还是yyy？"的地方 → 弹出对应选项
-5. **下一步类**：完成一个操作后询问后续 → 弹出 [继续] [就到这里] 按钮
-6. **批量确认类**：整理完任务清单后 → 弹出 [全部确认创建] [我要修改几个] [先不创建]
-
-### 格式（放在回复末尾的操作块中）：
-
-先用自然语言描述内容，然后在末尾输出：
-
-<<<ACTIONS>>>
-{"type":"interactive_input","questions":[{"id":"q1","question":"是否创建这些任务？","type":"single_select","options":["全部确认创建","我要修改几个","先不创建"]}]}
-<<<END_ACTIONS>>>
-
-又比如完成操作后：
-<<<ACTIONS>>>
-{"type":"interactive_input","questions":[{"id":"q1","question":"接下来？","type":"single_select","options":["继续创建下一个任务","查看所有待办","就到这里"]}]}
-<<<END_ACTIONS>>>
-
-又比如需要确认分配：
-<<<ACTIONS>>>
-{"type":"interactive_input","questions":[{"id":"q1","question":"分配给谁？","type":"single_select","options":["张三（销售经理）","李四（销售专员）","先不分配"]}]}
-<<<END_ACTIONS>>>
-
-又比如简单的是/否确认：
-<<<ACTIONS>>>
-{"type":"interactive_input","questions":[{"id":"q1","question":"确认创建这个任务吗？","type":"confirm"}]}
-<<<END_ACTIONS>>>
-
-### 可用的 question type：
-- single_select: 单选（用户点一个选项），需要 options 数组
-- multi_select: 多选（用户可选多个），需要 options 数组
-- confirm: 简单确认（自动渲染为 [确认] [取消] 两个按钮），不需要 options
-- date_pick: 日期选择（自动渲染日期选择器），不需要 options
-- rank_priorities: 排序（拖拽排列优先级），需要 options 数组
-
-### 重要规则：
-- 如果你不确定某个回复是否需要 Widget，就加上
-- Widget 的选项要简洁明了，通常 2-4 个选项
-- 每次回复最多输出1个 interactive_input 操作块
-- 纯信息展示（如查询结果）不需要 Widget
-- 选项应基于系统中的真实数据（如真实的部门名、项目名）
-- interactive_input 操作块和 confirm/multi_confirm 操作块不要在同一个回复中同时出现
-
-## 创建前自检（防止重复）
-
-在创建任务之前，检查「当前活跃任务」列表：
-1. 如果发现语义高度相似的已有任务（即使措辞不同），**不要直接创建**
-2. 在回复中列出疑似重复项，用 interactive_input Widget 让用户选择：
-
-<<<ACTIONS>>>
-{"type":"interactive_input","questions":[{"id":"dup_check","question":"系统中已有相似任务，如何处理？","type":"single_select","options":["这是同一个任务，不用创建","这是不同的任务，继续创建"]}]}
-<<<END_ACTIONS>>>
-
-3. 从会议纪要批量提取任务时，在任务清单中标注哪些和已有任务重复：用 [新] 标记新任务，[疑似重复] 标记疑似重复
-
-## 会议纪要/批量任务处理流程（极其重要）
-当用户发送会议纪要、工作计划、或包含多个待办事项的文本时，必须遵循"两步确认"流程：
-1. **第一步（先整理）**：用自然语言列出你从文本中提取的任务清单，用表格展示：序号、标题、负责人、截止日期、所属项目、依赖关系。如有需要确认的问题（如项目归属、负责人不明确等），用编号列出。然后在末尾附带 interactive_input Widget 让用户点选确认，例如：
-
-<<<ACTIONS>>>
-{"type":"interactive_input","questions":[{"id":"q1","question":"以上任务清单是否正确？","type":"single_select","options":["全部确认，批量创建","我要修改几个","先不创建"]}]}
-<<<END_ACTIONS>>>
-
-2. **第二步（用户确认后）**：用户点击确认或回复确认后，再输出 multi_confirm 的 <<<ACTIONS>>> 块进行批量创建。如果系统中已有类似标题的活跃任务，在 summary 中标注提醒。
-
-绝对不要在第一步就直接输出 multi_confirm 操作块，必须先让用户审核清单。`;
-  } else {
-    prompt = SYSTEM_PROMPT
-      .replace(/\{\{orgName\}\}/g, orgName)
-      .replace('{{currentUserId}}', String(context.currentUserId))
-      .replace('{{currentUserName}}', context.currentUserName)
-      .replace('{{currentTime}}', new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }))
-      .replace('{{teamMembers}}', formatTeamMembers(teamMembers))
-      .replace('{{projectList}}', formatProjectList(allProjects))
-      .replace('{{taskList}}', formatTaskList(activeTasks, allUsers))
-      .replace('{{totalTasks}}', String(allTasks.length))
-      .replace('{{doneTasks}}', String(doneTasks.length))
-      .replace('{{overdueTasks}}', String(overdueTasks.length));
-  }
+## 核心规则
+- 查询请求绝不输出操作块
+- 创建前检查已有任务是否重复，疑似重复时用 Widget 让用户选择
+- 会议纪要先用表格整理清单让用户确认（附 Widget），用户确认后再 multi_confirm
+- projectId/assigneeId 必须是系统中存在的 ID，不要编造
+- 信息不足时用 Widget 让用户点选，不要让用户打字
+- confidence: 完整≥0.9, 有推测0.7-0.8, 严重缺失0.5-0.6
+- 创建成员时若无邮箱可用姓名拼音@组织域名格式
+- 从文档提取任务时对不确定字段添加 warnings 数组（如"负责人未明确，已暂分给当前用户"）
+- resolve_decision: 系统上下文有待确认决策任务时，用户回复确认信息则输出 confirm/multi_confirm，actionType 为 resolve_decision，data 格式: {"decisionTaskId":123,"updates":{"assigneeId":5}}
+- judge_assignment: 用户问"合不合理"等 → confirm，actionType="judge_assignment"，data: {taskId, userId}
+- 会议纪要/批量任务必须两步：第1步用表格整理+Widget确认，第2步用户确认后才输出 multi_confirm`;
 
   if (memories.length > 0) {
     const memoryLines = memories.map(m => `- [${m.category}] ${m.content}`).join('\n');
@@ -1280,14 +1185,16 @@ function formatTaskList(tasks: any[], users: any[], currentUserId?: number): str
   const myTasks = currentUserId ? tasks.filter(t => t.assigneeId === currentUserId) : [];
   const otherTasks = currentUserId ? tasks.filter(t => t.assigneeId !== currentUserId) : tasks;
 
-  const urgentOthers = otherTasks.filter(t =>
-    t.priority === 'critical' || t.priority === 'high' ||
-    t.status === 'blocked' ||
-    (t.dueDate && new Date(t.dueDate) < now)
+  const overdueTasks = otherTasks.filter(t => t.dueDate && new Date(t.dueDate) < now);
+  const criticalHighTasks = otherTasks.filter(t =>
+    (t.priority === 'critical' || t.priority === 'high' || t.status === 'blocked') &&
+    !overdueTasks.includes(t)
   );
-  const normalOthers = otherTasks.filter(t => !urgentOthers.includes(t));
+  const normalOthers = otherTasks.filter(t =>
+    !overdueTasks.includes(t) && !criticalHighTasks.includes(t)
+  );
 
-  const formatOne = (t: any) => {
+  const formatDetailed = (t: any) => {
     const assignee = t.assigneeId ? userMap.get(t.assigneeId) || `ID:${t.assigneeId}` : '未分配';
     const due = t.dueDate ? new Date(t.dueDate).toLocaleDateString('zh-CN') : '';
     return `- ID:${t.id}「${t.title}」状态:${t.status} 优先级:${t.priority} 负责人:${assignee}${due ? ' 截止:' + due : ''} 进度:${t.progress}%`;
@@ -1295,32 +1202,79 @@ function formatTaskList(tasks: any[], users: any[], currentUserId?: number): str
 
   const formatCompact = (t: any) => {
     const assignee = t.assigneeId ? userMap.get(t.assigneeId) || `${t.assigneeId}` : '-';
-    return `- ${t.id}:${t.title}|${t.status}|${t.priority}|${assignee}`;
+    return `- ${t.id}:${t.title}|${assignee}`;
   };
 
   const parts: string[] = [];
 
   if (myTasks.length > 0) {
     parts.push(`### 你的任务 (${myTasks.length})`);
-    parts.push(...myTasks.map(formatOne));
+    parts.push(...myTasks.map(formatDetailed));
   }
 
-  if (urgentOthers.length > 0) {
-    parts.push(`### 重要/紧急任务 (${urgentOthers.length})`);
-    parts.push(...urgentOthers.map(formatOne));
+  if (overdueTasks.length > 0) {
+    parts.push(`### 逾期任务 (${overdueTasks.length})`);
+    parts.push(...overdueTasks.map(formatDetailed));
   }
 
-  const MAX_NORMAL = 40;
+  if (criticalHighTasks.length > 0) {
+    parts.push(`### 重要/紧急任务 (${criticalHighTasks.length})`);
+    parts.push(...criticalHighTasks.map(formatDetailed));
+  }
+
+  const MAX_COMPACT = 30;
   if (normalOthers.length > 0) {
-    const shown = normalOthers.slice(0, MAX_NORMAL);
-    parts.push(`### 其他任务 (${normalOthers.length}${normalOthers.length > MAX_NORMAL ? `，显示前${MAX_NORMAL}` : ''})`);
+    const shown = normalOthers.slice(0, MAX_COMPACT);
+    parts.push(`### 其他任务 (${normalOthers.length})`);
     parts.push(...shown.map(formatCompact));
-    if (normalOthers.length > MAX_NORMAL) {
-      parts.push(`...（还有 ${normalOthers.length - MAX_NORMAL} 个任务未列出，需要时可通过 query_tasks 查询）`);
+    if (normalOthers.length > MAX_COMPACT) {
+      parts.push(`...还有 ${normalOthers.length - MAX_COMPACT} 个任务，需要时可查询`);
     }
   }
 
   return parts.join('\n');
+}
+
+function parseStreamingResponse(aiText: string, allUsers: any[], allProjects: any[]): any {
+  const actionsMatch = aiText.match(/<<<ACTIONS>>>\s*([\s\S]*?)\s*<<<END_ACTIONS>>>/);
+
+  if (!actionsMatch) {
+    return { type: 'text', message: aiText.trim() };
+  }
+
+  const textBefore = aiText.substring(0, aiText.indexOf('<<<ACTIONS>>>')).trim();
+
+  try {
+    const parsed = JSON.parse(actionsMatch[1].trim());
+
+    if (parsed.type === 'confirm' && parsed.action) {
+      return {
+        type: 'confirm',
+        message: textBefore || parsed.action.summary || '',
+        action: parsed.action,
+      };
+    }
+
+    if (parsed.type === 'multi_confirm' && parsed.actions) {
+      return {
+        type: 'multi_confirm',
+        message: textBefore || '',
+        actions: parsed.actions,
+      };
+    }
+
+    if (parsed.type === 'interactive_input' && parsed.questions) {
+      return {
+        type: 'text',
+        message: textBefore || '',
+        interactiveInput: parsed.questions,
+      };
+    }
+
+    return { type: 'text', message: aiText.trim() };
+  } catch {
+    return { type: 'text', message: textBefore || aiText.trim() };
+  }
 }
 
 export async function chat(
@@ -1328,7 +1282,7 @@ export async function chat(
   conversationHistory: { role: string; content: string }[],
   context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean; orgId?: number }
 ): Promise<ChatResponse> {
-  const { prompt: systemPrompt, allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks } = await buildContextualSystemPrompt(context, 'json');
+  const { prompt: systemPrompt, allUsers, allProjects, allTasks, allDepartments, allJobRoles, jobRoleMap, activeTasks } = await buildContextualSystemPrompt(context, 'streaming');
 
   const taskCategory = await classifyTask(message);
   const config = getConfigForTask(taskCategory, context.model, context.extendedThinking);
@@ -1414,146 +1368,96 @@ export async function chat(
     aiText = response.choices[0]?.message?.content || '';
   }
 
-  const codeBlockMatch = aiText.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (codeBlockMatch) {
-    aiText = codeBlockMatch[1].trim();
-  }
+  const result = parseStreamingResponse(aiText, allUsers, allProjects);
+  result.tokenUsage = tokenInfo;
 
-  try {
-    const parsed = JSON.parse(aiText);
-
-    if (!parsed.type || !['text', 'confirm', 'multi_confirm', 'follow_up'].includes(parsed.type)) {
-      if (parsed.message && typeof parsed.message === 'string') {
-        return { type: 'text', message: parsed.message, tokenUsage: tokenInfo };
-      }
-      return { type: 'text', message: aiText, tokenUsage: tokenInfo };
+  if (result.type === 'confirm' && result.action) {
+    if (result.action.actionType?.startsWith('query_')) {
+      const queryResult = await executeQuery(result.action.actionType, result.action.data || {}, context.orgId);
+      return { type: 'text', message: queryResult, tokenUsage: tokenInfo };
     }
 
-    if (parsed.type === 'follow_up') {
-      const ct = parsed.creationType || 'task';
-      const pd = parsed.partialData || {};
-      const mf = parsed.missingFields || ['projectId', 'assigneeId', 'dueDate'];
-      const result = buildGuidedSteps(ct, pd, mf, parsed.message || '需要确认几个信息：', allUsers, allProjects, allTasks, context.currentUserId, allDepartments, jobRoleMap);
-      result.tokenUsage = tokenInfo;
-      return result;
-    }
-
-    if (parsed.type === 'confirm' && parsed.action) {
-      if (parsed.action.actionType && parsed.action.actionType.startsWith('query_')) {
-        const result = await executeQuery(parsed.action.actionType, parsed.action.data || {}, context.orgId);
-        return { type: 'text', message: result, tokenUsage: tokenInfo };
-      }
-
-      if (parsed.action.actionType === 'create_task') {
-        const schema = ACTION_SCHEMAS['create_task'];
-        if (schema) {
-          const validation = schema.safeParse(parsed.action.data);
-          if (!validation.success) {
-            const actionData = parsed.action.data || {};
-            if (actionData.title) {
-              const missingFields: string[] = [];
-              if (!actionData.projectId) missingFields.push('projectId');
-              if (!actionData.assigneeId) missingFields.push('assigneeId');
-              if (!actionData.dueDate) missingFields.push('dueDate');
-              const result = buildGuidedSteps(
-                'task',
-                actionData,
-                missingFields,
-                `好的，帮你创建「${actionData.title}」的任务，需要确认几个信息：`,
-                allUsers, allProjects, allTasks, context.currentUserId, allDepartments, jobRoleMap
-              );
-              result.tokenUsage = tokenInfo;
-              return result;
-            }
-            return {
-              type: 'text',
-              message: '抱歉，我生成的操作数据有误。请重新描述一下你的需求。',
-            };
-          }
-        }
-
-        if (parsed.action.confidence < 0.7) {
-          const actionData = parsed.action.data || {};
-          const missingKey = ['projectId', 'assigneeId', 'dueDate'].some(f => !actionData[f]);
-          if (missingKey && actionData.title) {
+    if (result.action.actionType === 'create_task') {
+      const schema = ACTION_SCHEMAS['create_task'];
+      if (schema) {
+        const validation = schema.safeParse(result.action.data);
+        if (!validation.success) {
+          const actionData = result.action.data || {};
+          if (actionData.title) {
             const missingFields: string[] = [];
             if (!actionData.projectId) missingFields.push('projectId');
             if (!actionData.assigneeId) missingFields.push('assigneeId');
             if (!actionData.dueDate) missingFields.push('dueDate');
-            const result = buildGuidedSteps(
-              'task',
-              actionData,
-              missingFields,
+            const guided = buildGuidedSteps(
+              'task', actionData, missingFields,
               `好的，帮你创建「${actionData.title}」的任务，需要确认几个信息：`,
               allUsers, allProjects, allTasks, context.currentUserId, allDepartments, jobRoleMap
             );
-            result.tokenUsage = tokenInfo;
-            return result;
+            guided.tokenUsage = tokenInfo;
+            return guided;
           }
+          return { type: 'text', message: '抱歉，我生成的操作数据有误。请重新描述一下你的需求。' };
         }
       }
 
-      const schema = ACTION_SCHEMAS[parsed.action.actionType];
-      if (schema && parsed.action.actionType !== 'create_task') {
-        const validation = schema.safeParse(parsed.action.data);
-        if (!validation.success) {
-          return {
-            type: 'text',
-            message: '抱歉，我生成的操作数据有误。请重新描述一下你的需求。',
-          };
-        }
-      }
-    }
-
-    if (parsed.type === 'multi_confirm' && parsed.actions) {
-      const queryActions = parsed.actions.filter((a: any) => a.actionType?.startsWith('query_'));
-      const writeActions = parsed.actions.filter((a: any) => !a.actionType?.startsWith('query_'));
-
-      if (queryActions.length > 0) {
-        const queryResults = await Promise.all(
-          queryActions.map((a: any) => executeQuery(a.actionType, a.data || {}, context.orgId))
-        );
-        const queryText = queryResults.join('\n\n');
-
-        if (writeActions.length === 0) {
-          return { type: 'text', message: queryText };
-        }
-
-        return {
-          type: 'multi_confirm',
-          message: queryText,
-          actions: writeActions,
-        };
-      }
-
-      for (const action of parsed.actions) {
-        const schema = ACTION_SCHEMAS[action.actionType];
-        if (schema) {
-          const validation = schema.safeParse(action.data);
-          if (!validation.success) {
-            return {
-              type: 'text',
-              message: '抱歉，批量操作中有数据验证失败。请重新描述一下你的需求。',
-            };
-          }
+      if (result.action.confidence < 0.7) {
+        const actionData = result.action.data || {};
+        const missingKey = ['projectId', 'assigneeId', 'dueDate'].some(f => !actionData[f]);
+        if (missingKey && actionData.title) {
+          const missingFields: string[] = [];
+          if (!actionData.projectId) missingFields.push('projectId');
+          if (!actionData.assigneeId) missingFields.push('assigneeId');
+          if (!actionData.dueDate) missingFields.push('dueDate');
+          const guided = buildGuidedSteps(
+            'task', actionData, missingFields,
+            `好的，帮你创建「${actionData.title}」的任务，需要确认几个信息：`,
+            allUsers, allProjects, allTasks, context.currentUserId, allDepartments, jobRoleMap
+          );
+          guided.tokenUsage = tokenInfo;
+          return guided;
         }
       }
     }
 
-    if (parsed.type === 'confirm' && parsed.action) {
-      parsed.action.displayData = buildDisplayData(parsed.action.data, allUsers, allProjects);
-    }
-    if (parsed.type === 'multi_confirm' && parsed.actions) {
-      for (const action of parsed.actions) {
-        action.displayData = buildDisplayData(action.data, allUsers, allProjects);
+    const schema = ACTION_SCHEMAS[result.action.actionType];
+    if (schema && result.action.actionType !== 'create_task') {
+      const validation = schema.safeParse(result.action.data);
+      if (!validation.success) {
+        return { type: 'text', message: '抱歉，我生成的操作数据有误。请重新描述一下你的需求。' };
       }
     }
 
-    parsed.tokenUsage = tokenInfo;
-    return parsed;
-  } catch {
-    return { type: 'text', message: aiText, tokenUsage: tokenInfo };
+    result.action.displayData = buildDisplayData(result.action.data, allUsers, allProjects);
   }
+
+  if (result.type === 'multi_confirm' && result.actions) {
+    const queryActions = result.actions.filter((a: any) => a.actionType?.startsWith('query_'));
+    const writeActions = result.actions.filter((a: any) => !a.actionType?.startsWith('query_'));
+
+    if (queryActions.length > 0) {
+      const queryResults = await Promise.all(
+        queryActions.map((a: any) => executeQuery(a.actionType, a.data || {}, context.orgId))
+      );
+      const queryText = queryResults.join('\n\n');
+      if (writeActions.length === 0) {
+        return { type: 'text', message: queryText, tokenUsage: tokenInfo };
+      }
+      return { type: 'multi_confirm', message: queryText, actions: writeActions, tokenUsage: tokenInfo } as any;
+    }
+
+    for (const action of result.actions) {
+      const schema = ACTION_SCHEMAS[action.actionType];
+      if (schema) {
+        const validation = schema.safeParse(action.data);
+        if (!validation.success) {
+          return { type: 'text', message: '抱歉，批量操作中有数据验证失败。请重新描述一下你的需求。' };
+        }
+      }
+      action.displayData = buildDisplayData(action.data, allUsers, allProjects);
+    }
+  }
+
+  return result;
 }
 
 export async function* chatStream(
@@ -1565,15 +1469,14 @@ export async function* chatStream(
   const hasAttachments = !!(attachments && attachments.length > 0);
   let taskCategory = await classifyTask(message, hasAttachments);
 
-  if (context.knowledgeBaseEnabled) {
-    taskCategory = 'knowledge_qa';
-  }
+  const shouldInjectKB = context.knowledgeBaseEnabled &&
+    ['quick_reply', 'general_chat', 'knowledge_qa', 'complex_analysis'].includes(taskCategory);
 
   const config = getConfigForTask(taskCategory, context.model, context.extendedThinking);
   const modelName = config.model;
   let { prompt: systemPrompt } = await buildContextualSystemPrompt({ ...context, model: modelName }, 'streaming');
 
-  if (context.knowledgeBaseEnabled && context.orgId) {
+  if (shouldInjectKB && context.orgId) {
     try {
       const { searchKnowledge } = await import('../kb/search');
       const { buildKnowledgePrompt } = await import('./prompts');

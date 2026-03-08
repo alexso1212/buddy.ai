@@ -19,6 +19,10 @@ The application is built with an Express.js backend, a React (TypeScript) fronte
 - **Knowledge Base Pipeline:** Supports file upload, text extraction from 13 formats, chunking, and AI auto-classification of documents.
 - **Daily Briefing Service:** AI-generated personalized daily briefings.
 - **AI Subsystem:** Utilizes Anthropic and OpenRouter models. When `ANTHROPIC_API_KEY` is set, all Claude model calls (streaming, non-streaming, utility functions) use the official Anthropic SDK directly (`api.anthropic.com`). Falls back to proxy (`vip.aipro.love/v1`) with `CLAUDE_SIMPLE_API_KEY`/`CLAUDE_COMPLEX_API_KEY` when official key is unavailable. Features contextual prompts, cross-conversation memory, Zod schema-defined AI actions, an AI-powered verdict service, and web search integration. Includes a "Code Context Mode" for AI interaction with project code.
+- **Unified Prompt Architecture:** Both `chat()` and `chatStream()` use a single streaming-format system prompt with `<<<ACTIONS>>>` block output. The legacy JSON-mode prompt (`SYSTEM_PROMPT` in prompts.ts) has been deprecated and removed. `chat()` uses `parseStreamingResponse()` to convert AI output into structured response objects.
+- **Smart Task Classification:** `classifyTask()` uses regex with exclusion guards to avoid false positives (e.g., "修复项目里的API error" → code_generation, not general_chat), with LLM fallback for ambiguous messages.
+- **KB Mutual Exclusion:** Knowledge Base chunks are only injected for Q&A-type intents (quick_reply, general_chat, knowledge_qa, complex_analysis), not for action intents like task creation.
+- **Smart Task List Trimming:** `formatTaskList()` separates tasks into tiers: user's own tasks (detailed), overdue (detailed), critical/high priority (detailed), and others (compact ID+title+assignee, max 30).
 - **AI Auto-Decision Resolution System:** Automates the creation and resolution of decision tasks using AI.
 
 **Frontend (UI/UX):**

@@ -1,0 +1,346 @@
+# Buddy AI Agent 全面审核报告与优化方案
+
+**审核日期**: 2026-03-08
+**审核范围**: 16个核心文件，约12,000行代码
+**审核标准**: Claude Chat 级别的 AI 交互体验
+
+-----
+
+## 一、现状评估：你已经做到的（比几周前强很多）
+
+|模块               |状态  |说明                                                    |
+|-----------------|----|------------------------------------------------------|
+|多模型支持            |✅ 完善|Claude Opus/Sonnet/Haiku + GPT + DeepSeek，带 fallback 链|
+|任务分类器            |✅ 有 |classifyTask() 8个类别，regex + AI 双层分类                   |
+|知识库 RAG          |✅ 有 |pgvector 向量搜索 + 全文搜索，带权限控制                            |
+|流式输出             |✅ 有 |原生 Anthropic API + OpenAI 兼容层双通道                      |
+|Extended Thinking|✅ 有 |按 task category 自动启用                                  |
+|交互式 Widget       |✅ 有 |single_select, multi_select, confirm, date_pick, rank |
+|权责判定             |✅ 有 |独立 prompt + 岗位职责匹配                                    |
+|记忆系统             |✅ 有 |自动提取对话记忆，注入 system prompt                             |
+|每日简报             |✅ 有 |AI 生成 + 缓存 + action 建议                                |
+|文件附件             |✅ 有 |图片视觉 + docx/txt 等文本提取                                 |
+|上下文压缩            |✅ 有 |超长对话用 Haiku 摘要压缩                                      |
+|重复任务检测           |✅ 有 |创建前自动查重                                               |
+|Code Tools       |✅ 有 |多轮工具调用 + 结果截断                                         |
+|Provider 管理      |✅ 有 |数据库配置 + 缓存 + 优先级排序                                    |
+
+**结论：功能层面已经很完整，问题主要在架构设计和 prompt 质量上。**
+
+-----
+
+## 二、关键问题（按优先级排序）
+
+### 🔴 问题1：双 Prompt 体系导致体验割裂
+
+`buildContextualSystemPrompt()` 有两套完全不同的 prompt：
+
+- **streaming 模式**（`mode='streaming'`）：自然语言回复 + `<<<ACTIONS>>>` 操作块，这套 prompt 很好
+- **json 模式**（`mode='json'`）：纯 JSON 输出，用的是旧的 `SYSTEM_PROMPT` 模板
+
+**后果**：
+
+- `chat()` 函数（非流式）用 json 模式 → 输出格式为纯 JSON，规则复杂且容易出错
+- `chatStream()` 函数（流式）用 streaming 模式 → 输出自然语言 + 操作块，体验好很多
+- 两套 prompt 的规则不完全一致，比如 interactiveInput 的格式就不同
+
+**建议**：统一为 streaming 模式的 prompt 架构。废弃 json 模式。所有对话走 `chatStream()`，后端解析 `<<<ACTIONS>>>` 块来提取操作。
+
+-----
+
+### 🔴 问题2：知识库与任务操作互斥
+
+```typescript
+// chatStream() 第1964行
+if (context.knowledgeBaseEnabled) {
+  taskCategory = 'knowledge_qa';  // 直接覆盖分类结果！
+}
+```
+
+当用户开启知识库模式后，**所有消息**都被强制分类为 `knowledge_qa`，意味着：
+
+- 用户说”帮我创建一个任务” → 仍然走 knowledge_qa 配置
+- model 选择、max_tokens、temperature 全被 knowledge_qa 的配置覆盖
+- 任务创建的上下文（团队成员、项目列表）虽然在 prompt 里，但 AI 的行为模式被知识库模式影响
+
+**建议**：知识库应该是数据层增强，不应该覆盖意图分类。正确逻辑是：
+
+1. 先做意图分类（classifyTask）
+1. 如果 knowledgeBaseEnabled 且意图是问答类，则注入 KB chunks
+1. 如果意图是操作类（创建/更新），不注入 KB chunks，走正常操作流程
+
+-----
+
+### 🔴 问题3：classifyTask 的分类质量不够
+
+当前的 regex 分类有几个坑：
+
+```typescript
+// "帮我分析一下有什么任务" → 命中 "分析" → complex_analysis ❌ (应该是查询)
+// "总结一下这周的工作" → 命中 "总结" → document_processing ❌ (应该是查询)
+// "写一个报告" → 命中不了任何 regex → 消息长度 < 50 → quick_reply ❌
+```
+
+另外，分类结果只影响**模型选择和 token 配额**，不影响**AI 的行为模式**。也就是说，不管分到哪个类别，AI 收到的 prompt 规则都一样，都需要自己判断返回 text/confirm/follow_up。
+
+**建议**：
+
+- regex 分类只用于模型/配额选择（保留但优化关键词）
+- 在 prompt 里不要给 AI 太多格式规则让它自己判断；而是后端根据 AI 输出智能解析
+- streaming 模式已经用 `<<<ACTIONS>>>` 分隔了文本和操作，这是正确方向
+
+-----
+
+### 🟡 问题4：System Prompt 过长
+
+streaming 模式的 prompt 包含：
+
+- 角色定义（~50 words）
+- 完整的业务上下文（团队、项目、任务列表）（~2000-5000 tokens 取决于数据量）
+- 操作能力说明 + 所有 actionType 的字段定义（~800 words）
+- Widget 交互规则 + 6种场景 + 示例（~600 words）
+- 重复检测规则（~200 words）
+- 会议纪要处理流程（~300 words）
+- 记忆数据
+- 待确认决策
+- 模型风格提示
+
+估算 prompt 总长度在 **4000-8000 tokens** 之间（不含任务列表数据），这已经不小了。
+
+**建议**：
+
+- 把操作字段定义移到简洁的参考格式，不要用长段文字描述
+- Widget 规则压缩为一个简表
+- 记忆数据限制最多注入5条最相关的
+- 任务列表按”我的任务”优先展示，其他任务只展示 critical/overdue 的
+
+-----
+
+### 🟡 问题5：模型别名映射有误导
+
+```typescript
+const MODEL_ALIAS_MAP: Record<string, string> = {
+  'gpt-5.4': 'gpt-4o',
+  'gpt-5.4-pro': 'gpt-4o',
+  'gpt-5.2': 'gpt-4o',
+};
+```
+
+用户选择 “GPT-5.4” 以为在用更新的模型，实际调的是 gpt-4o。这在商业产品中不太合适。
+
+**建议**：如果中转不支持真正的 GPT-5 系列，应该在前端显示真实模型名称，或者在 UI 上标注”由 gpt-4o 提供”。
+
+-----
+
+### 🟡 问题6：上下文压缩的额外 API 调用
+
+```typescript
+// buildOptimizedContext() 
+// 当对话历史超过 limit 时，调用 Haiku 做摘要压缩
+const response = await claudeComplete({
+  model: 'claude-haiku-4-5-20251001',
+  max_tokens: 500,
+  ...
+});
+```
+
+每次聊天如果历史较长，会先调一次 Haiku 做压缩，再调主模型做回复。这意味着：
+
+- 额外的 API 费用和延迟
+- 如果 Haiku 摘要丢了关键信息，主模型的回复质量会下降
+
+**建议**：
+
+- 短期：把压缩阈值调高（比如 general_chat 从20调到30），减少不必要的压缩调用
+- 中期：改为本地截断策略（保留最近N条 + 第一条），省掉压缩调用
+- 长期：实现 sliding window + 重要消息标记的机制
+
+-----
+
+## 三、优化方案（Replit 可执行的 task 文档）
+
+### Task-01: 统一 Prompt 架构，废弃 JSON 模式
+
+**文件**: `server/services/ai/index.ts`, `server/services/ai/prompts.ts`
+
+**改动**:
+
+1. 删除 `chat()` 函数（非流式），所有对话统一走 `chatStream()`
+1. 删除 `buildContextualSystemPrompt()` 中 `mode='json'` 分支
+1. 删除 `prompts.ts` 中的 `SYSTEM_PROMPT` 模板（json 模式用的那个）
+1. 调用方如果用了 `chat()`，改为调用 `chatStream()` 并收集完整输出后解析
+
+**验证**: 在 Buddy 里测试”创建一个任务”、“查看进行中的任务”、“帮我分析团队效率”三个场景，确保都走流式输出且功能正常。
+
+-----
+
+### Task-02: 修复知识库与任务操作互斥
+
+**文件**: `server/services/ai/index.ts` 的 `chatStream()` 函数
+
+**改动**:
+将第1964-1966行：
+
+```typescript
+if (context.knowledgeBaseEnabled) {
+  taskCategory = 'knowledge_qa';
+}
+```
+
+改为：
+
+```typescript
+// 知识库开启时，只在问答类场景注入 KB chunks，不覆盖意图分类
+const shouldInjectKB = context.knowledgeBaseEnabled && 
+  ['quick_reply', 'general_chat', 'knowledge_qa', 'complex_analysis'].includes(taskCategory);
+```
+
+然后在后面的 KB 注入逻辑中，把 `if (context.knowledgeBaseEnabled && context.orgId)` 改为 `if (shouldInjectKB && context.orgId)`。
+
+**验证**: 开启知识库模式后，测试”帮我创建一个任务”是否仍然弹出正常的操作确认卡片。
+
+-----
+
+### Task-03: 优化 classifyTask 关键词
+
+**文件**: `server/services/ai/index.ts` 的 `classifyTask()` 函数
+
+**改动**: 优化 regex 模式，增加排除逻辑：
+
+```typescript
+// "分析任务" "分析有什么" 不应该走 complex_analysis
+// 只有 "深度分析" "详细分析" "对比分析" 才走
+if (/深度分析|详细分析|对比分析|root cause|evaluate|评估报告|策略规划/.test(lowerMsg) 
+    && !/(有什么|多少|进展|状态|列表)/.test(lowerMsg)) {
+  return 'complex_analysis';
+}
+
+// "总结项目进展" 是查询，不是 document_processing
+// 只有 "总结这份文档" "提取关键信息" 才走
+if (/(总结|summarize).*(文档|文件|document|附件|report)/.test(lowerMsg) || hasAttachments) {
+  return 'document_processing';
+}
+```
+
+**验证**: 测试以下输入的分类结果：
+
+- “分析一下有什么任务” → 应该是 general_chat
+- “帮我总结这周的工作” → 应该是 general_chat
+- “深度分析团队的工作效率问题” → 应该是 complex_analysis
+- “总结一下这份会议纪要” (带附件) → 应该是 document_processing
+
+-----
+
+### Task-04: 精简 Streaming System Prompt
+
+**文件**: `server/services/ai/index.ts` 的 `buildContextualSystemPrompt()` streaming 分支
+
+**改动**: 把操作字段定义和 Widget 规则压缩。以下是优化后的 prompt 结构（替换现有的 streaming prompt）：
+
+```
+你是 Buddy，{orgName} 的智能助手。
+
+{contextBlock} // 团队、项目、任务数据 — 保持不变
+
+## 回复规则
+- 用自然语言 Markdown 回复，语言跟用户一致
+- 基于上面的数据回答，不编造
+- 简洁专业，必要时引用具体数据
+
+## 操作能力
+当用户要求创建/更新/删除时，先用自然语言说明，然后在末尾输出操作块：
+
+<<<ACTIONS>>>
+{"type":"confirm","action":{"actionType":"create_task","data":{...},"summary":"...","confidence":0.9}}
+<<<END_ACTIONS>>>
+
+可用 actionType 及必填字段：
+- create_task: title*, projectId* (可选: assigneeId, dueDate, priority, description, weight, parentTaskId, type, tags, warnings[], ref, dependsOn[], dependsOnRef[])
+- update_task: taskId* (可选: title, status, priority, assigneeId, dueDate, weight, progress, description)
+- create_project: name* (可选: description, deptId, startDate, targetDate)
+- add_comment: taskId*, content*
+- create_user: displayName*, email* (可选: role, deptId, jobRoleId)
+- create_department: name* (可选: description, color, parentDeptId)
+
+批量操作用 multi_confirm，支持 ref/dependsOnRef 做批次内依赖。
+
+## Widget 规则
+需要用户选择/确认时，输出 interactive_input 块（与 confirm 不同时出现）：
+<<<ACTIONS>>>
+{"type":"interactive_input","questions":[{"id":"q1","question":"...","type":"single_select","options":["A","B","C"]}]}
+<<<END_ACTIONS>>>
+type 可选: single_select, multi_select, confirm, date_pick, rank_priorities
+
+## 核心规则
+- 查询请求绝不输出操作块
+- 创建前检查已有任务是否重复
+- 会议纪要先整理清单让用户确认，再 multi_confirm
+- projectId/assigneeId 必须是系统中存在的 ID
+- 信息不足时用 Widget 让用户点选，不要让用户打字
+- confidence: 完整≥0.9, 有推测0.7-0.8, 严重缺失0.5-0.6
+```
+
+这把 prompt 从 ~2000 words 压缩到 ~500 words，AI 更容易遵守。
+
+**验证**: 对比优化前后，测试 5 个常见场景（查询、创建任务、会议纪要、知识库问答、权责判定）的回复质量。
+
+-----
+
+### Task-05: 任务列表智能裁剪
+
+**文件**: `server/services/ai/index.ts` 的 `formatTaskList()` 函数
+
+当前问题：所有活跃任务全部塞进 prompt，如果有 50+ 个任务，光任务列表就占几千 tokens。
+
+**改动**: 按优先级裁剪
+
+```typescript
+function formatTaskList(tasks, users, currentUserId) {
+  // 永远展示的：
+  // 1. 当前用户的所有任务（完整信息）
+  // 2. 逾期任务（完整信息）
+  // 3. critical/high 优先级任务（完整信息）
+  
+  // 简略展示的：
+  // 4. 其他任务只显示 ID + 标题 + 负责人（一行一个，最多30个）
+  
+  // 不展示的：
+  // 5. 超过30个的普通任务，标注"还有 N 个任务，需要时可查询"
+}
+```
+
+**验证**: 检查 system prompt 的 token 数，目标是总 prompt 控制在 3000 tokens 以内（不含对话历史）。
+
+-----
+
+## 四、不需要改的（已经做得好的部分）
+
+1. **Provider fallback 链** — 设计很好，缓存 + 优先级 + 自动降级
+1. **权责判定 prompt** — 结构清晰、评分标准明确
+1. **流式输出双通道** — 原生 Anthropic + OpenAI 兼容层的分路逻辑正确
+1. **buildGuidedSteps** — QA 引导流程的步骤生成器很完善
+1. **每日简报** — 数据聚合 + AI 生成 + fallback 模板的三层保障
+1. **文件分析器（aiExtractor）** — Haiku 快速分类 + Opus 深度提取的两阶段设计
+
+-----
+
+## 五、后续可以做但不急的
+
+1. **Embedding 模型升级**: 当前用 OpenAI 的 text-embedding-3-small，如果中文文档为主，可以考虑 bge-m3 或 bge-large-zh-v1.5，中文检索效果更好
+1. **意图路由前置**: 未来可以加一个轻量级的意图识别层（用 Haiku），在主模型调用前就确定是”操作”还是”问答”，这样 prompt 可以按意图裁剪（操作类不需要注入 KB chunks，问答类不需要详细的操作格式说明）
+1. **Token 用量追踪看板**: 你已经有 tokenUsage 回传，可以做一个管理后台图表，看哪些功能消耗最多
+1. **对话摘要改为本地截断**: 用 sliding window 替代 Haiku 压缩调用，省 API 费用
+
+-----
+
+## 六、执行建议
+
+按以下顺序执行，每完成一个 task 测试通过后再开始下一个：
+
+1. **Task-02**（修复 KB 互斥）— 改动最小，1行核心代码
+1. **Task-03**（优化分类器）— 改动小，影响模型选择准确性
+1. **Task-04**（精简 prompt）— 改动中等，直接提升 AI 回复质量
+1. **Task-05**（任务列表裁剪）— 改动中等，减少 token 消耗
+1. **Task-01**（统一 prompt 架构）— 改动最大，需要仔细测试
+
+每个 task 做完后在 Buddy 里跑一遍完整测试（查询、创建、批量创建、知识库问答、权责判定），截图发给我确认。
