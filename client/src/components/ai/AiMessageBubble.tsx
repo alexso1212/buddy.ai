@@ -107,6 +107,38 @@ function extractArtifactExtension(content: string): string {
   return 'md';
 }
 
+function StarburstSpinner({ visible }: { visible?: boolean }) {
+  const [fadingOut, setFadingOut] = useState(false);
+  const [hidden, setHidden] = useState(false);
+
+  useEffect(() => {
+    if (!visible && !fadingOut && !hidden) {
+      setFadingOut(true);
+      const t = setTimeout(() => { setHidden(true); setFadingOut(false); }, 200);
+      return () => clearTimeout(t);
+    }
+    if (visible) { setHidden(false); setFadingOut(false); }
+  }, [visible]);
+
+  if (hidden) return null;
+  return (
+    <div style={{ width: 24, height: 24, flexShrink: 0, opacity: fadingOut ? 0 : 1, transition: 'opacity 200ms ease' }}>
+      <svg className="starburst-spin" width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <g transform="translate(12, 12)">
+          <line x1="0" y1="-3" x2="0" y2="-10" stroke="#d4714a" strokeWidth="2.2" strokeLinecap="round" style={{ animation: 'starburstPulse 1.5s ease-in-out infinite', animationDelay: '0s' }} />
+          <line x1="2.6" y1="-1.5" x2="8.7" y2="-5" stroke="#d4714a" strokeWidth="2" strokeLinecap="round" style={{ animation: 'starburstPulse 1.5s ease-in-out infinite', animationDelay: '0.15s' }} />
+          <line x1="3" y1="0" x2="10" y2="0" stroke="#d4714a" strokeWidth="2.2" strokeLinecap="round" style={{ animation: 'starburstPulse 1.5s ease-in-out infinite', animationDelay: '0.3s' }} />
+          <line x1="2.6" y1="1.5" x2="8.7" y2="5" stroke="#d4714a" strokeWidth="2" strokeLinecap="round" style={{ animation: 'starburstPulse 1.5s ease-in-out infinite', animationDelay: '0.45s' }} />
+          <line x1="0" y1="3" x2="0" y2="10" stroke="#d4714a" strokeWidth="2.2" strokeLinecap="round" style={{ animation: 'starburstPulse 1.5s ease-in-out infinite', animationDelay: '0.6s' }} />
+          <line x1="-2.6" y1="1.5" x2="-8.7" y2="5" stroke="#d4714a" strokeWidth="2" strokeLinecap="round" style={{ animation: 'starburstPulse 1.5s ease-in-out infinite', animationDelay: '0.75s' }} />
+          <line x1="-3" y1="0" x2="-10" y2="0" stroke="#d4714a" strokeWidth="2.2" strokeLinecap="round" style={{ animation: 'starburstPulse 1.5s ease-in-out infinite', animationDelay: '0.9s' }} />
+          <line x1="-2.6" y1="-1.5" x2="-8.7" y2="-5" stroke="#d4714a" strokeWidth="2" strokeLinecap="round" style={{ animation: 'starburstPulse 1.5s ease-in-out infinite', animationDelay: '1.05s' }} />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
 function BrandLogo({ breathing }: { breathing?: boolean }) {
   return (
     <div
@@ -1057,7 +1089,11 @@ export default function AiMessageBubble({
     >
       <div className="max-w-3xl min-w-0" style={{ maxWidth: 'min(768px, calc(100vw - 40px))' }}>
         <div className="mb-1 flex items-center gap-2">
-          <BrandLogo breathing={!!message.isStreaming} />
+          {message.isStreaming && !message.content ? (
+            <StarburstSpinner visible={true} />
+          ) : (
+            <BrandLogo />
+          )}
         </div>
         {message.thinking && (
           <ThinkingBlock

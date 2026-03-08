@@ -1353,14 +1353,21 @@ export default function Agent() {
 
         let tokenBuffer = '';
         let tokenFlushTimer: ReturnType<typeof setTimeout> | null = null;
+        const stripActionsFromDisplay = (text: string): string => {
+          const actionsIdx = text.indexOf('<<<ACTIONS>>>');
+          if (actionsIdx !== -1) return text.slice(0, actionsIdx).trim();
+          return text;
+        };
+
         const flushTokenBuffer = () => {
           if (!tokenBuffer) return;
           tokenBuffer = '';
           if (!isActiveStream()) return;
+          const displayText = stripActionsFromDisplay(fullText);
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantMsgId
-                ? { ...m, content: fullText, isThinking: false }
+                ? { ...m, content: displayText, isThinking: false }
                 : m
             )
           );
@@ -1479,6 +1486,8 @@ export default function Agent() {
                     flushTokenBuffer();
                   }, 50);
                 }
+              } else if (event.type === 'actions' && event.actions) {
+                pendingAction = { type: 'action', actions: event.actions };
               } else if (event.type === 'interactive_input' && event.questions) {
                 if (isActiveStream()) {
                   setInteractiveInput(event.questions);

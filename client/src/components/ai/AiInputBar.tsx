@@ -667,7 +667,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
         <div
           ref={composerWrapRef}
           style={{
-            borderRadius: 24,
+            borderRadius: 20,
             position: 'relative' as const,
             background: 'transparent',
             border: '1px solid rgba(255,255,255,0.15)',
@@ -687,7 +687,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
         >
           <div style={{
             background: 'transparent',
-            borderRadius: 23,
+            borderRadius: 19,
             overflow: 'hidden',
             position: 'relative',
           }}>
@@ -734,73 +734,90 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
               style={{
                 display: 'flex',
                 gap: 8,
-                padding: '4px 16px 8px 16px',
+                padding: '8px 16px 8px 16px',
                 overflowX: 'auto',
               }}
               data-testid="attachment-previews"
             >
-              {attachments.map((att, i) => (
-                <div
-                  key={i}
-                  style={{
-                    position: 'relative',
-                    flexShrink: 0,
-                  }}
-                  data-testid={`attachment-preview-${i}`}
-                >
-                  {att.type === 'image' ? (
-                    <img
-                      src={att.previewUrl || `data:${att.mimeType};base64,${att.base64}`}
-                      alt={att.name}
+              {attachments.map((att, i) => {
+                const ext = (att.name.split('.').pop() || '').toUpperCase();
+                const isImage = att.type === 'image';
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      position: 'relative',
+                      flexShrink: 0,
+                      width: isImage ? 180 : 150,
+                      height: 140,
+                      borderRadius: 12,
+                      overflow: 'hidden',
+                      background: isImage ? 'transparent' : '#2a2a2a',
+                    }}
+                    data-testid={`attachment-preview-${i}`}
+                  >
+                    {isImage ? (
+                      <img
+                        src={att.previewUrl || `data:${att.mimeType};base64,${att.base64}`}
+                        alt={att.name}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                        }}
+                      />
+                    ) : (
+                      <div style={{ padding: 12, display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <div style={{
+                          background: '#3a3a3a',
+                          borderRadius: 6,
+                          padding: '4px 8px',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: '#e8e8e8',
+                          alignSelf: 'flex-start',
+                        }}>
+                          {ext}
+                        </div>
+                        <div style={{ flex: 1 }} />
+                        <div style={{
+                          fontSize: 14,
+                          fontWeight: 500,
+                          color: '#e8e8e8',
+                          lineHeight: 1.3,
+                          overflow: 'hidden',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: 'vertical',
+                          wordBreak: 'break-word',
+                        }}>
+                          {att.name.replace(/\.[^/.]+$/, '')}
+                        </div>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => setAttachments(prev => prev.filter((_, idx) => idx !== i))}
                       style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: 8,
-                        objectFit: 'cover',
-                      }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: 8,
-                        background: 'rgba(255,255,255,0.08)',
+                        position: 'absolute',
+                        top: 6,
+                        right: 6,
+                        width: 24,
+                        height: 24,
+                        borderRadius: 12,
+                        background: '#555',
+                        border: 'none',
                         display: 'flex',
-                        flexDirection: 'column',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: 2,
+                        cursor: 'pointer',
                       }}
+                      data-testid={`remove-attachment-${i}`}
                     >
-                      <FileText className="w-4 h-4 text-[var(--text-secondary)]" />
-                      <span style={{ fontSize: 8, color: 'var(--text-secondary)', maxWidth: 44, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
-                        {att.name.split('.').pop()}
-                      </span>
-                    </div>
-                  )}
-                  <button
-                    onClick={() => setAttachments(prev => prev.filter((_, idx) => idx !== i))}
-                    style={{
-                      position: 'absolute',
-                      top: -6,
-                      right: -6,
-                      width: 18,
-                      height: 18,
-                      borderRadius: 9,
-                      background: '#444',
-                      border: 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                    }}
-                    data-testid={`remove-attachment-${i}`}
-                  >
-                    <X className="w-3 h-3 text-white" />
-                  </button>
-                </div>
-              ))}
+                      <X className="w-3.5 h-3.5 text-white" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -885,7 +902,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
               style={{
                 width: 36,
                 height: 36,
-                background: loading ? 'var(--bg-tertiary)' : 'var(--text-primary)',
+                background: loading ? 'var(--bg-tertiary)' : '#c4613a',
                 borderRadius: '50%',
                 border: 'none',
                 display: 'flex',
@@ -905,7 +922,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
                 </svg>
               ) : (
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ transition: 'opacity 200ms ease' }}>
-                  <path d="M3 13L13.5 8L3 3V6.5L9 8L3 9.5V13Z" fill="#1a1a1a" />
+                  <path d="M8 2L8 14M8 2L3 7M8 2L13 7" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               )}
             </button>

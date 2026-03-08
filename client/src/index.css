@@ -722,6 +722,20 @@ html, body {
   animation: logo-breathe 2s ease-in-out infinite;
 }
 
+.starburst-spin {
+  animation: starburstRotate 3s linear infinite;
+}
+
+@keyframes starburstRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes starburstPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
 @keyframes artifactSlideUp {
   from { transform: translateY(12px); opacity: 0; }
   to   { transform: translateY(0); opacity: 1; }

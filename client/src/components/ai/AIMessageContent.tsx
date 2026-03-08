@@ -451,7 +451,12 @@ function transformChildrenWithCitations(children: ReactNode, searchResults?: Sea
   return children;
 }
 
+function stripActionsTags(text: string): string {
+  return text.replace(/<<<ACTIONS>>>([\s\S]*?)<<<END_ACTIONS>>>/g, '').replace(/<<<ACTIONS>>>[\s\S]*$/, '').trim();
+}
+
 export default function AIMessageContent({ content, searchResults }: AIMessageContentProps) {
+  const cleanContent = stripActionsTags(content);
   return (
     <div
       style={{
@@ -560,7 +565,7 @@ export default function AIMessageContent({ content, searchResults }: AIMessageCo
           ),
         }}
       >
-        {content}
+        {cleanContent}
       </ReactMarkdown>
     </div>
   );
