@@ -458,11 +458,38 @@ adminRouter.post("/ai/model-providers/:id/test", requireSuperAdmin, async (req, 
     const id = parseInt(req.params.id);
     const provider = await storage.getModelProvider(id);
     if (!provider) return res.status(404).json({ error: 'Provider not found' });
-    const apiKey = provider.apiKey || (provider.apiKeyEnvVar ? process.env[provider.apiKeyEnvVar] : null);
+    let apiKey = provider.apiKey || (provider.apiKeyEnvVar ? process.env[provider.apiKeyEnvVar] : null);
+    if (!apiKey && provider.apiKeyEnvVar && provider.apiKeyEnvVar.startsWith('sk-')) {
+      apiKey = provider.apiKeyEnvVar;
+    }
     if (!apiKey) {
       return res.json({ data: { success: false, error: provider.apiKeyEnvVar ? `环境变量 ${provider.apiKeyEnvVar} 未配置` : 'API Key 未配置' } });
     }
-    const defaultBaseUrl = provider.modelId.startsWith('claude')
+
+    const isClaudeModel = provider.modelId.startsWith('claude');
+    const isAnthropicKey = apiKey.startsWith('sk-ant-');
+    const hasProxyUrl = provider.baseUrl && !provider.baseUrl.includes('anthropic.com');
+
+    if (isClaudeModel && isAnthropicKey && !hasProxyUrl) {
+      const Anthropic = (await import('@anthropic-ai/sdk')).default;
+      const client = new Anthropic({ apiKey, timeout: 15000 });
+      const startTime = Date.now();
+      try {
+        await client.messages.create({
+          model: provider.modelId,
+          messages: [{ role: 'user', content: 'Hi' }],
+          max_tokens: 5,
+        });
+        const latency = Date.now() - startTime;
+        res.json({ data: { success: true, latency, model: provider.modelId } });
+      } catch (apiErr: any) {
+        const latency = Date.now() - startTime;
+        res.json({ data: { success: false, error: apiErr.message, latency } });
+      }
+      return;
+    }
+
+    const defaultBaseUrl = isClaudeModel
       ? 'https://vip.aipro.love/v1'
       : provider.modelId === 'deepseek-chat'
         ? 'https://openrouter.ai/api/v1'

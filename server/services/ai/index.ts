@@ -83,9 +83,9 @@ export async function claudeComplete(params: {
   temperature?: number;
   messages: { role: string; content: string }[];
 }): Promise<{ content: string; usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }> {
-  const officialKey = process.env.ANTHROPIC_API_KEY;
   const resolved = resolveModelId(params.model);
   const isClaudeModel = resolved.startsWith('claude-');
+  const officialKey = isClaudeModel ? await findAnthropicKey(resolved) : null;
 
   if (isClaudeModel && officialKey) {
     const client = new Anthropic({ apiKey: officialKey });
@@ -138,13 +138,36 @@ function getDefaultBaseUrl(modelId: string): string {
 
 function resolveApiKey(mp: AiModelProvider): string | null {
   if (mp.apiKey) return mp.apiKey;
-  if (mp.apiKeyEnvVar) return process.env[mp.apiKeyEnvVar] || null;
+  if (mp.apiKeyEnvVar) {
+    const envVal = process.env[mp.apiKeyEnvVar];
+    if (envVal) return envVal;
+    if (mp.apiKeyEnvVar.startsWith('sk-')) return mp.apiKeyEnvVar;
+  }
+  return null;
+}
+
+async function findAnthropicKey(modelId?: string): Promise<string | null> {
+  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
+  if (!modelId) return null;
+  try {
+    const modelProviders = await loadModelProviders();
+    const resolved = resolveModelId(modelId);
+    for (const mp of modelProviders) {
+      if (!mp.isActive) continue;
+      if (mp.modelId !== modelId && mp.modelId !== resolved) continue;
+      const key = resolveApiKey(mp);
+      if (key && key.startsWith('sk-ant-')) return key;
+    }
+  } catch {}
   return null;
 }
 
 function getClientForModelProvider(mp: AiModelProvider): OpenAI | null {
   const apiKey = resolveApiKey(mp);
   if (!apiKey) return null;
+  const isAnthropicKey = apiKey.startsWith('sk-ant-');
+  const hasProxyUrl = mp.baseUrl && !mp.baseUrl.includes('anthropic.com');
+  if (isAnthropicKey && !hasProxyUrl) return null;
   const baseUrl = mp.baseUrl || getDefaultBaseUrl(mp.modelId);
   const cacheKey = `mp_${mp.id}_${baseUrl}`;
   let client = clientCache.get(cacheKey);
@@ -1330,7 +1353,7 @@ export async function chat(
   };
 
   const isClaudeModel = apiModelName.startsWith('claude-');
-  const officialAnthropicKeyChat = process.env.ANTHROPIC_API_KEY;
+  const officialAnthropicKeyChat = isClaudeModel ? await findAnthropicKey(apiModelName) : null;
 
   let aiText = '';
   let tokenInfo: ChatResponse['tokenUsage'] | undefined;
@@ -1623,7 +1646,7 @@ export async function* chatStream(
 
   const apiModelName = resolveModelId(modelName);
   const isClaudeModel = apiModelName.startsWith('claude-');
-  const officialAnthropicKey = process.env.ANTHROPIC_API_KEY;
+  const officialAnthropicKey = isClaudeModel ? await findAnthropicKey(apiModelName) : null;
 
   if (isClaudeModel && officialAnthropicKey) {
     const nativeClient = new Anthropic({
