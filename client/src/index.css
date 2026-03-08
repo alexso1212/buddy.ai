@@ -882,3 +882,58 @@ html, body {
   opacity: 0;
   animation: actionButtonsFadeIn 300ms ease 200ms forwards;
 }
+
+.widget-option {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #e8e8e8;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+  animation: slideUpFade 300ms cubic-bezier(0.22, 1.0, 0.36, 1.0) backwards;
+}
+.widget-option:hover {
+  background: #333;
+  border-color: #7ab5e0;
+}
+.widget-option.selected {
+  border-color: #7ab5e0;
+  background: rgba(122, 181, 224, 0.08);
+}
+.widget-option:nth-child(1) { animation-delay: 0ms; }
+.widget-option:nth-child(2) { animation-delay: 80ms; }
+.widget-option:nth-child(3) { animation-delay: 160ms; }
+.widget-option:nth-child(4) { animation-delay: 240ms; }
+.widget-option:nth-child(5) { animation-delay: 320ms; }
+.widget-option:nth-child(6) { animation-delay: 400ms; }
+
+.widget-collapsed {
+  animation: streamFadeIn 200ms ease forwards;
+}
+
+@keyframes citationPopoverIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.citation-popover {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  padding: 8px 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  max-width: 300px;
+  animation: citationPopoverIn 150ms ease forwards;
+  z-index: 50;
+}

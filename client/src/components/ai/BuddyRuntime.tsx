@@ -82,6 +82,11 @@ export interface BuddyMessage {
   retryCount?: number;
   cooldownUntil?: number;
   partialContent?: string;
+  inlineWidget?: {
+    type: "single_select" | "multi_select" | "rank_priorities";
+    question: string;
+    options: { label: string; value: string; description?: string }[];
+  };
 }
 
 export interface BuddyCallbacks {
@@ -98,6 +103,7 @@ export interface BuddyCallbacks {
   onNewConversation?: () => void;
   onTrimAndRetry?: (messageId: string) => void;
   onOpenArtifact?: (content: string, title: string) => void;
+  onWidgetSubmit?: (summary: string) => void;
 }
 
 const CallbacksContext = createContext<BuddyCallbacks>({});

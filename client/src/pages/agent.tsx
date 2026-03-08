@@ -2252,7 +2252,8 @@ export default function Agent() {
     onNewConversation: handleNewConversation,
     onTrimAndRetry: handleTrimAndRetry,
     onOpenArtifact: handleOpenArtifact,
-  }), [handleConfirm, handleReject, handleSkip, handleConfirmAll, handleFollowUpSubmit, handleStepAnswer, handleRegenerate, handleEditMessage, handleRetry, handleContinueGeneration, handleNewConversation, handleTrimAndRetry, handleOpenArtifact]);
+    onWidgetSubmit: (summary: string) => handleSend(summary),
+  }), [handleConfirm, handleReject, handleSkip, handleConfirmAll, handleFollowUpSubmit, handleStepAnswer, handleRegenerate, handleEditMessage, handleRetry, handleContinueGeneration, handleNewConversation, handleTrimAndRetry, handleOpenArtifact, handleSend]);
 
   const showWelcome = !activeConvId && messages.length === 0 && !showChat;
 

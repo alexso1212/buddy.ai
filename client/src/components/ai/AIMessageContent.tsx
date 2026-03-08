@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useState, useRef, useMemo, useCallback, type ReactNode } from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect, type ReactNode } from 'react';
 import hljs from 'highlight.js/lib/core';
 import javascript from 'highlight.js/lib/languages/javascript';
 import typescript from 'highlight.js/lib/languages/typescript';
@@ -41,8 +41,143 @@ hljs.registerLanguage('go', go);
 hljs.registerLanguage('java', java);
 hljs.registerLanguage('rust', rust);
 
+interface SearchResult {
+  title: string;
+  url: string;
+  content: string;
+}
+
 interface AIMessageContentProps {
   content: string;
+  searchResults?: SearchResult[];
+}
+
+function CitationPopover({ source, onClose, flipAbove }: { source: SearchResult; onClose: () => void; flipAbove: boolean }) {
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [onClose]);
+
+  const caretStyle: React.CSSProperties = {
+    position: "absolute",
+    left: 8,
+    width: 0,
+    height: 0,
+    borderLeft: "6px solid transparent",
+    borderRight: "6px solid transparent",
+  };
+
+  return (
+    <div
+      ref={popoverRef}
+      className="citation-popover"
+      style={{
+        position: "absolute",
+        left: 0,
+        ...(flipAbove
+          ? { bottom: "100%", marginBottom: 6 }
+          : { top: "100%", marginTop: 6 }),
+      }}
+      data-testid="citation-popover"
+    >
+      <div
+        style={{
+          ...caretStyle,
+          ...(flipAbove
+            ? { bottom: -6, borderTop: "6px solid #3a3a3a" }
+            : { top: -6, borderBottom: "6px solid #3a3a3a" }),
+        }}
+      />
+      <div style={{ fontSize: 13, color: "#e8e8e8", fontWeight: 500, marginBottom: 4, lineHeight: 1.3 }}>
+        {source.title}
+      </div>
+      <a
+        href={source.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          fontSize: 12,
+          color: "#7ab5e0",
+          textDecoration: "none",
+          display: "block",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+        data-testid="citation-link"
+      >
+        {source.url}
+      </a>
+    </div>
+  );
+}
+
+function CitationSuperscript({ num, source }: { num: number; source?: SearchResult }) {
+  const [open, setOpen] = useState(false);
+  const [flipAbove, setFlipAbove] = useState(false);
+  const wrapperRef = useRef<HTMLSpanElement>(null);
+
+  const toggle = useCallback(() => {
+    if (!source) return;
+    if (!open && wrapperRef.current) {
+      const rect = wrapperRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      setFlipAbove(spaceBelow < 120);
+    }
+    setOpen(prev => !prev);
+  }, [source, open]);
+
+  if (!source) {
+    return <sup style={{ fontSize: 12, color: "#7ab5e0", fontWeight: 500, padding: "0 2px" }}>{num}</sup>;
+  }
+
+  return (
+    <span ref={wrapperRef} style={{ position: "relative", display: "inline" }}>
+      <sup
+        onClick={toggle}
+        style={{
+          fontSize: 12,
+          color: "#7ab5e0",
+          fontWeight: 500,
+          cursor: "pointer",
+          padding: "0 2px",
+        }}
+        className="hover:underline"
+        data-testid={`citation-${num}`}
+      >
+        {num}
+      </sup>
+      {open && <CitationPopover source={source} onClose={() => setOpen(false)} flipAbove={flipAbove} />}
+    </span>
+  );
+}
+
+function processTextWithCitations(text: string, searchResults?: SearchResult[]): ReactNode[] {
+  if (!searchResults || searchResults.length === 0) return [text];
+  const parts: ReactNode[] = [];
+  const regex = /\[(\d+)\]/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    const num = parseInt(match[1], 10);
+    const source = searchResults[num - 1];
+    parts.push(<CitationSuperscript key={`cite-${match.index}`} num={num} source={source} />);
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  return parts.length > 0 ? parts : [text];
 }
 
 function copyText(text: string) {
@@ -298,7 +433,25 @@ function TableBlock({ children }: { children: ReactNode }) {
   );
 }
 
-export default function AIMessageContent({ content }: AIMessageContentProps) {
+function transformChildrenWithCitations(children: ReactNode, searchResults?: SearchResult[]): ReactNode {
+  if (!searchResults || searchResults.length === 0) return children;
+  if (typeof children === "string") {
+    const parts = processTextWithCitations(children, searchResults);
+    return parts.length === 1 && typeof parts[0] === "string" ? parts[0] : <>{parts}</>;
+  }
+  if (Array.isArray(children)) {
+    return children.map((child, i) => {
+      if (typeof child === "string") {
+        const parts = processTextWithCitations(child, searchResults);
+        return parts.length === 1 && typeof parts[0] === "string" ? parts[0] : <span key={i}>{parts}</span>;
+      }
+      return child;
+    });
+  }
+  return children;
+}
+
+export default function AIMessageContent({ content, searchResults }: AIMessageContentProps) {
   return (
     <div
       style={{
@@ -318,16 +471,16 @@ export default function AIMessageContent({ content }: AIMessageContentProps) {
         remarkPlugins={[remarkGfm]}
         components={{
           p: ({ children }) => (
-            <p style={{ marginBottom: 16, marginTop: 0 }}>{children}</p>
+            <p style={{ marginBottom: 16, marginTop: 0 }}>{transformChildrenWithCitations(children, searchResults)}</p>
           ),
           h1: ({ children }) => (
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-bright)', margin: '28px 0 14px', fontFamily: 'inherit' }}>{children}</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-bright)', margin: '28px 0 14px', fontFamily: 'inherit' }}>{transformChildrenWithCitations(children, searchResults)}</h1>
           ),
           h2: ({ children }) => (
-            <h2 style={{ fontSize: 19, fontWeight: 700, color: 'var(--text-bright)', margin: '24px 0 12px', fontFamily: 'inherit' }}>{children}</h2>
+            <h2 style={{ fontSize: 19, fontWeight: 700, color: 'var(--text-bright)', margin: '24px 0 12px', fontFamily: 'inherit' }}>{transformChildrenWithCitations(children, searchResults)}</h2>
           ),
           h3: ({ children }) => (
-            <h3 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-bright)', margin: '24px 0 12px', fontFamily: 'inherit' }}>{children}</h3>
+            <h3 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-bright)', margin: '24px 0 12px', fontFamily: 'inherit' }}>{transformChildrenWithCitations(children, searchResults)}</h3>
           ),
           strong: ({ children }) => (
             <strong style={{ fontWeight: 700, color: 'var(--text-bright)' }}>{children}</strong>
@@ -342,7 +495,7 @@ export default function AIMessageContent({ content }: AIMessageContentProps) {
             <ol style={{ paddingLeft: 20, marginBottom: 16, marginTop: 0 }}>{children}</ol>
           ),
           li: ({ children }) => (
-            <li style={{ marginBottom: 8, color: 'var(--text-primary)' }}>{children}</li>
+            <li style={{ marginBottom: 8, color: 'var(--text-primary)' }}>{transformChildrenWithCitations(children, searchResults)}</li>
           ),
           a: ({ children, href }) => (
             <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--brand-icon)', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
@@ -403,7 +556,7 @@ export default function AIMessageContent({ content }: AIMessageContentProps) {
               borderBottom: '1px solid var(--border-subtle)',
               padding: '8px 12px',
               whiteSpace: 'nowrap',
-            }}>{children}</td>
+            }}>{transformChildrenWithCitations(children, searchResults)}</td>
           ),
         }}
       >

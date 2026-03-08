@@ -20,6 +20,7 @@ import AgentLogo from "@/components/AgentLogo";
 import ThinkingBlock from "./ThinkingBlock";
 import { isLongContent, extractArtifactTitle } from "./ArtifactPanel";
 import ArtifactCard from "./ArtifactCard";
+import InlineWidgetSelect from "./InlineWidgetSelect";
 
 function BrandLogo({ breathing }: { breathing?: boolean }) {
   return (
@@ -856,7 +857,7 @@ function extractArtifactExtension(content: string): string {
 }
 
 function DefaultAssistantMessage({ message, isLastAssistant }: { message: BuddyMessage; isLastAssistant: boolean }) {
-  const { onRegenerate, onOpenArtifact } = useBuddyCallbacks();
+  const { onRegenerate, onOpenArtifact, onWidgetSubmit } = useBuddyCallbacks();
 
   const hasLongContent = isLongContent(message.content);
   const showArtifactCard = hasLongContent;
@@ -918,7 +919,7 @@ function DefaultAssistantMessage({ message, isLastAssistant }: { message: BuddyM
             ))}
           </div>
         )}
-        <AIMessageContent content={displayContent} />
+        <AIMessageContent content={displayContent} searchResults={message.searchResults} />
         {isLongMessage && !contentExpanded && (
           <div style={{ position: 'relative' }}>
             <div style={{
@@ -956,6 +957,13 @@ function DefaultAssistantMessage({ message, isLastAssistant }: { message: BuddyM
             extension={extractArtifactExtension(message.content)}
             onClick={handleArtifactClick}
             isGenerating={!!message.isStreaming}
+            messageId={message.id}
+          />
+        )}
+        {message.inlineWidget && !message.isStreaming && (
+          <InlineWidgetSelect
+            data={message.inlineWidget}
+            onSubmit={onWidgetSubmit ? onWidgetSubmit : () => {}}
             messageId={message.id}
           />
         )}
