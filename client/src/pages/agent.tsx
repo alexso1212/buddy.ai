@@ -741,6 +741,7 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const rafId = useRef(0);
   const lastOffset = useRef(0);
+  const initialHeight = useRef(window.innerHeight);
 
   const updateMask = useCallback(() => {
     const container = containerRef.current;
@@ -791,7 +792,8 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
       const handleViewportResize = () => {
         cancelAnimationFrame(rafId.current);
         rafId.current = requestAnimationFrame(() => {
-          const offset = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+          const stableHeight = initialHeight.current;
+          const offset = Math.max(0, Math.round(stableHeight - vv.height - vv.offsetTop));
           if (Math.abs(offset - lastOffset.current) < 2) return;
           lastOffset.current = offset;
           setKeyboardOffset(offset);
