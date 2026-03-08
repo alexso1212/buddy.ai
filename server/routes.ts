@@ -737,11 +737,21 @@ export async function registerRoutes(server: Server, app: Express) {
           onboardingCompleted: true,
         } as any);
 
-        await storage.createOrgMembership({
-          userId: joinRequest.userId,
-          orgId,
-          role: assignedRole,
-        });
+        // Check for existing membership to prevent duplicates
+        const existingMembership = await storage.getOrgMembershipByUserAndOrg(joinRequest.userId, orgId);
+        if (existingMembership) {
+          // Reactivate if inactive, update role
+          await storage.updateOrgMembership(orgId, joinRequest.userId, {
+            role: assignedRole,
+            isActive: true,
+          });
+        } else {
+          await storage.createOrgMembership({
+            userId: joinRequest.userId,
+            orgId,
+            role: assignedRole,
+          });
+        }
 
         await storage.cancelOtherPendingJoinRequests(joinRequest.userId, orgId, requestId);
 
@@ -4466,6 +4476,18 @@ ${existingBlock}`
       }
 
       if (!forceUpload) {
+        // Check content hash first (strongest dedup signal)
+        const existingByHash = await storage.findKbDocByHash(orgId, contentHash);
+        if (existingByHash) {
+          try { fsKb.unlinkSync(file.path); } catch {}
+          return res.status(409).json({
+            error: 'duplicate_detected',
+            duplicateType: 'same_content',
+            existingDoc: { id: existingByHash.id, title: existingByHash.title, fileName: existingByHash.fileName, createdAt: existingByHash.createdAt },
+            message: `知识库中已有内容完全相同的文件「${existingByHash.title}」`,
+          });
+        }
+
         const existingByName = await storage.findKbDocByFileName(orgId, file.originalname);
         if (existingByName) {
           try { fsKb.unlinkSync(file.path); } catch {}
@@ -4485,17 +4507,6 @@ ${existingBlock}`
             });
           }
         }
-
-        const existingByHash = await storage.findKbDocByHash(orgId, contentHash);
-        if (existingByHash) {
-          try { fsKb.unlinkSync(file.path); } catch {}
-          return res.status(409).json({
-            error: 'duplicate_detected',
-            duplicateType: 'same_content',
-            existingDoc: { id: existingByHash.id, title: existingByHash.title, fileName: existingByHash.fileName, createdAt: existingByHash.createdAt },
-            message: `知识库中已有内容完全相同的文件「${existingByHash.title}」`,
-          });
-        }
       }
 
       const docData = {
@@ -4514,7 +4525,23 @@ ${existingBlock}`
         contentHash,
       };
 
-      const doc = await storage.createKbDocument(docData);
+      let doc;
+      try {
+        doc = await storage.createKbDocument(docData);
+      } catch (dbErr: any) {
+        // Handle race condition: unique constraint violation on content_hash
+        if (dbErr.code === '23505' && dbErr.constraint?.includes('content_hash')) {
+          try { fsKb.unlinkSync(file.path); } catch {}
+          const existingByHash = await storage.findKbDocByHash(orgId, contentHash);
+          return res.status(409).json({
+            error: 'duplicate_detected',
+            duplicateType: 'same_content',
+            existingDoc: existingByHash ? { id: existingByHash.id, title: existingByHash.title, fileName: existingByHash.fileName } : null,
+            message: '该文件内容已存在（并发上传检测）',
+          });
+        }
+        throw dbErr;
+      }
 
       await storage.createActivityLog({
         orgId,
