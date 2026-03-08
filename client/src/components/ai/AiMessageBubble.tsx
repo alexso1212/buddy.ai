@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { Check, Copy, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink, FileText, RefreshCw, WifiOff, Clock, MessageSquarePlus, Scissors, ServerCrash, PlayCircle, AlertCircle } from "lucide-react";
+import { Check, Copy, ThumbsUp, ThumbsDown, RotateCcw, Pencil, X, Globe, ChevronDown, ChevronUp, ExternalLink, FileText, RefreshCw, WifiOff, Clock, MessageSquarePlus, Scissors, ServerCrash, PlayCircle, AlertCircle, FolderOpen } from "lucide-react";
 import AiConfirmCard from "./AiConfirmCard";
 import AiGuidedCreation from "./AiGuidedCreation";
 import AIMessageContent from "./AIMessageContent";
@@ -1075,7 +1075,7 @@ export default function AiMessageBubble({
             style={{ background: 'rgba(59,130,246,0.1)', color: '#93C5FD' }}
             data-testid="code-files-info"
           >
-            <span style={{ fontSize: 14 }}>📂</span>
+            <FolderOpen size={14} />
             <span>已加载 {message.codeFiles.length} 个代码文件</span>
             {message.codeFilesFailed && message.codeFilesFailed.length > 0 && (
               <span style={{ color: '#FCA5A5' }}>· {message.codeFilesFailed.length} 个未找到</span>

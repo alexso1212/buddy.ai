@@ -1405,7 +1405,7 @@ export default function Agent() {
                 }
               } else if (event.type === 'code_files' && event.files) {
                 if (isActiveStream()) {
-                  const codeInfo = `📂 已加载 ${event.files.length} 个代码文件` +
+                  const codeInfo = `[Code] 已加载 ${event.files.length} 个代码文件` +
                     (event.failedFiles?.length ? `，${event.failedFiles.length} 个文件未找到` : '');
                   setMessages((prev) =>
                     prev.map((m) =>
@@ -1954,7 +1954,7 @@ export default function Agent() {
 
         let systemContent = result.message;
         if (result.duplicateWarning) {
-          systemContent += `\n⚠️ ${result.duplicateWarning}`;
+          systemContent += `\n[Warning] ${result.duplicateWarning}`;
         }
 
         setMessages((prev) =>
@@ -2036,7 +2036,7 @@ export default function Agent() {
         const summaryParts: string[] = [];
         for (const r of batchResult.results) {
           let line = r.message;
-          if (r.duplicateWarning) line += ` ⚠️ ${r.duplicateWarning}`;
+          if (r.duplicateWarning) line += ` [Warning] ${r.duplicateWarning}`;
           summaryParts.push(line);
         }
 
