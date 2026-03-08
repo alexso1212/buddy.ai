@@ -827,7 +827,6 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
         bottom: 0,
         transform: `translateY(${-keyboardOffset}px)`,
         willChange: 'transform',
-        transition: 'transform 80ms ease-out',
       }}
       data-testid="agent-input"
     >
@@ -841,7 +840,7 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
       >
         <div style={{
           height: 40,
-          background: 'linear-gradient(to top, rgba(26,25,24,0.85) 0%, transparent 100%)',
+          background: 'linear-gradient(to top, var(--bg-primary, #1A1918) 0%, transparent 100%)',
         }} />
         <div style={{
           position: 'absolute',
@@ -849,7 +848,7 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(26,25,24,0.85)',
+          background: 'var(--bg-primary, #1A1918)',
         }} />
       </div>
 
@@ -2431,6 +2430,7 @@ export default function Agent() {
         />
       )}
 
+      <div className="absolute left-0 right-0 bottom-0" style={{ height: 200, background: 'var(--bg-primary, #1A1918)', zIndex: 9, pointerEvents: 'none' }} />
       <BottomInputArea
         onSend={handleSend}
         loading={loading}

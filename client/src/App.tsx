@@ -2086,7 +2086,7 @@ function App() {
     <ThemeProvider>
     <QueryClientProvider client={queryClient}>
       <OrgThemeSync />
-      <div className="flex bg-[var(--bg-primary)]" style={{ height: '100%', position: 'fixed', inset: 0 }}>
+      <div className="flex bg-[var(--bg-primary)]" style={{ height: 'var(--app-height, 100%)', position: 'fixed', top: 0, left: 0, right: 0, overflow: 'hidden' }}>
         {!isLoginPage && !isOnboardingPage && !isAdminPage && <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} sidebarRef={sidebarRef} overlayRef={overlayRef} />}
 
         <div ref={contentRef} className="flex-1 flex flex-col overflow-hidden relative md:!transform-none">

@@ -18,6 +18,19 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (function(){
+        var h = window.innerHeight;
+        document.documentElement.style.setProperty('--app-height', h + 'px');
+        var last = screen.orientation ? screen.orientation.angle : window.orientation;
+        function onOrient(){
+          var cur = screen.orientation ? screen.orientation.angle : window.orientation;
+          if(cur !== last){ last = cur; setTimeout(function(){ document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px'); }, 150); }
+        }
+        window.addEventListener('orientationchange', onOrient);
+        if(screen.orientation) screen.orientation.addEventListener('change', onOrient);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
