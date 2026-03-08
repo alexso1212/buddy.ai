@@ -631,7 +631,7 @@ function ConversationListView({
 
   return (
     <div className="relative h-full" data-testid="conversation-list-view">
-      <div className="absolute inset-0 overflow-y-auto overflow-x-hidden" style={{ paddingTop: 16, paddingBottom: 'calc(16px + 3.33vh)', overscrollBehavior: 'contain', touchAction: 'pan-y' }} data-testid="conversation-list">
+      <div className="absolute inset-0 overflow-y-auto overflow-x-hidden" style={{ paddingTop: 16, paddingBottom: 46, overscrollBehavior: 'contain', touchAction: 'pan-y' }} data-testid="conversation-list">
         {isLoading || searching ? (
           <div className="flex items-center justify-center py-16" data-testid="conversations-loading">
             <ThinkingAnimation size={36} label={searching ? "搜索中" : "加载中"} />
@@ -726,7 +726,7 @@ function ConversationListView({
           </button>
         </div>
         <div style={{
-          height: 'calc(3.33vh + env(safe-area-inset-bottom, 0px))',
+          height: 'calc(30px + env(safe-area-inset-bottom, 0px))',
           pointerEvents: 'none',
         }} />
       </div>
@@ -776,10 +776,15 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
 
   useEffect(() => {
     updateMask();
-    const observer = new ResizeObserver(updateMask);
+    let maskRaf = 0;
+    const debouncedMask = () => {
+      cancelAnimationFrame(maskRaf);
+      maskRaf = requestAnimationFrame(updateMask);
+    };
+    const observer = new ResizeObserver(debouncedMask);
     if (containerRef.current) observer.observe(containerRef.current);
     if (composerRef.current) observer.observe(composerRef.current);
-    window.addEventListener('resize', updateMask);
+    window.addEventListener('resize', debouncedMask);
 
     const vv = window.visualViewport;
     if (vv) {
@@ -790,23 +795,25 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
           if (Math.abs(offset - lastOffset.current) < 2) return;
           lastOffset.current = offset;
           setKeyboardOffset(offset);
-          updateMask();
+          debouncedMask();
         });
       };
       vv.addEventListener('resize', handleViewportResize);
       vv.addEventListener('scroll', handleViewportResize);
       return () => {
         cancelAnimationFrame(rafId.current);
+        cancelAnimationFrame(maskRaf);
         observer.disconnect();
-        window.removeEventListener('resize', updateMask);
+        window.removeEventListener('resize', debouncedMask);
         vv.removeEventListener('resize', handleViewportResize);
         vv.removeEventListener('scroll', handleViewportResize);
       };
     }
 
     return () => {
+      cancelAnimationFrame(maskRaf);
       observer.disconnect();
-      window.removeEventListener('resize', updateMask);
+      window.removeEventListener('resize', debouncedMask);
     };
   }, [updateMask]);
 
@@ -871,7 +878,7 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
         </div>
       </div>
       <div style={{
-        height: keyboardOffset > 0 ? 4 : 'calc(3.33vh + env(safe-area-inset-bottom, 0px))',
+        height: keyboardOffset > 0 ? 4 : 'calc(30px + env(safe-area-inset-bottom, 0px))',
         pointerEvents: 'none',
       }} />
     </div>
@@ -2326,7 +2333,7 @@ export default function Agent() {
               ref={scrollRef as any}
               onScroll={handleScrollEvent}
               data-testid="agent-messages"
-              style={{ paddingTop: 54, paddingBottom: 'calc(160px + 3.33vh)', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', touchAction: 'pan-y' }}
+              style={{ paddingTop: 54, paddingBottom: 190, WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', touchAction: 'pan-y' }}
             >
               <div className="max-w-3xl mx-auto">
                 <ThreadPrimitive.Messages
@@ -2344,7 +2351,7 @@ export default function Agent() {
             </ThreadPrimitive.Viewport>
 
             {messages.some(m => m.isStreaming) && (
-              <div className="absolute z-30 flex justify-center" style={{ bottom: 'calc(170px + 3.33vh)', left: 0, right: 0, pointerEvents: 'none' }}>
+              <div className="absolute z-30 flex justify-center" style={{ bottom: 200, left: 0, right: 0, pointerEvents: 'none' }}>
                 <button
                   onClick={handleStop}
                   className="flex items-center gap-2 transition-all hover:scale-105"
@@ -2373,7 +2380,7 @@ export default function Agent() {
               <button
                 className={`absolute z-30 flex items-center justify-center hover:scale-105 transition-all duration-200 ease-out ${showScrollBtn ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                 style={{
-                  bottom: 'calc(160px + 3.33vh)',
+                  bottom: 190,
                   left: '50%',
                   transform: 'translateX(-50%)',
                   width: 36,

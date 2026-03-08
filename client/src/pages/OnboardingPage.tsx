@@ -379,7 +379,7 @@ export default function OnboardingPage() {
   };
 
   const pageStyle: React.CSSProperties = {
-    minHeight: '100dvh',
+    minHeight: '100%',
     background: 'var(--bg-sidebar)',
     display: 'flex',
     flexDirection: 'column',

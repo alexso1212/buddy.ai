@@ -267,7 +267,7 @@ export default function LoginPage() {
     return (
       <div
         style={{
-          minHeight: '100dvh',
+          minHeight: '100%',
           background: 'var(--bg-sidebar)',
           display: 'flex',
           flexDirection: 'column',
