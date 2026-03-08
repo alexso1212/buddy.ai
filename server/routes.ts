@@ -1,7 +1,10 @@
 import type { Express } from "express";
 import { type Server } from "http";
+import path from 'path';
+import fs from 'fs';
 import { storage } from "./storage";
 import { chat as aiChat, chatStream as aiChatStream, codeToolChatStream, generateProjectTasks, extractMemories, generateConversationTitle } from "./services/ai/index";
+import { generateDocx } from "./services/ai/documentGenerator";
 import { executeAction, executeBatchActions } from "./services/ai/actionExecutor";
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
@@ -40,6 +43,20 @@ export async function registerRoutes(server: Server, app: Express) {
 
   await setupAuth(app);
   registerAuthRoutes(app);
+
+  app.get('/api/documents/:fileName', authMiddleware, (req: any, res) => {
+    const fileName = req.params.fileName;
+    if (fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    const filePath = path.join(process.cwd(), 'uploads', 'documents', fileName);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+    res.sendFile(filePath);
+  });
 
   app.use("/api/admin", authMiddleware, adminOrOwnerMiddleware, adminRouter);
 
@@ -3706,6 +3723,30 @@ ${existingBlock}`
               }
             } catch (parseErr) {
               console.error('Failed to parse action block:', parseErr);
+            }
+          }
+
+          const docMatch = displayText.match(/<<<DOCUMENT>>>\s*([\s\S]*?)\s*<<<END_DOCUMENT>>>/);
+          if (docMatch) {
+            displayText = displayText.replace(/<<<DOCUMENT>>>\s*[\s\S]*?\s*<<<END_DOCUMENT>>>/g, '').trim();
+            try {
+              const docData = JSON.parse(docMatch[1]);
+              let orgName = '';
+              try { const org = await storage.getOrganizationById(orgId); if (org) orgName = org.name; } catch {}
+              const { fileName } = await generateDocx({
+                title: docData.title,
+                content: docData.content,
+                orgName,
+                author: userName,
+              });
+              res.write(`data: ${JSON.stringify({
+                type: 'document',
+                title: docData.title,
+                fileName,
+                downloadUrl: `/api/documents/${fileName}`,
+              })}\n\n`);
+            } catch (docErr) {
+              console.error('[Document] Generation failed:', docErr);
             }
           }
 

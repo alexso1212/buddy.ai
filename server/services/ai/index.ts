@@ -359,25 +359,30 @@ async function classifyTask(userMessage: string, hasAttachments?: boolean): Prom
   if (hasAttachments) return 'document_processing';
 
   const lowerMsg = userMessage.toLowerCase();
-  const trimmedMsg = userMessage.trim();
+  const trimmed = userMessage.trim();
 
-  if (/^(hi|hello|hey|你好|嗨|谢谢|ok|好的|thanks|thank you|再见|bye|哈哈|嗯|对|是的|没错|ok了|收到|明白|知道了)$/i.test(trimmedMsg)) {
+  if (/^(hi|hello|hey|你好|嗨|谢谢|ok|好的|thanks|thank you|再见|bye|哈哈|嗯|对|是的|没错|ok了|收到|明白|知道了|确认|可以|没问题|好|行)$/i.test(trimmed)) {
     return 'quick_reply';
   }
 
-  if (/代码|code|function|debug|bug|error|fix|修复|编程|script|import|export|class|component|变量|variable/.test(lowerMsg)
-      && !/(创建任务|任务进度|项目进展|任务状态)/.test(lowerMsg)) {
+  if (/有什么(任务|项目)|多少个?(任务|项目)|进展|状态|列表|到期|逾期|概览|负载|工作量|谁在做/.test(lowerMsg)) {
+    return lowerMsg.length < 50 ? 'quick_reply' : 'general_chat';
+  }
+
+  if (/代码|code|function|实现一个|写一个.*(函数|组件|脚本)|debug|bug|error|fix|修复|编程|script|api接口|import|export|class\s|component|变量|variable/.test(lowerMsg)) {
     return 'code_generation';
   }
 
-  if (/深度分析|详细分析|对比分析|root cause|评估报告|策略规划|战略分析|分析.*效率|分析.*架构|分析.*风险/.test(lowerMsg)
-      && !/(有什么|有多少|列表|查看|查询)/.test(lowerMsg)) {
+  if (/深度分析|详细分析|对比分析|根因分析|root cause|评估报告|策略规划|战略分析|SWOT|竞品分析/.test(lowerMsg)) {
     return 'complex_analysis';
   }
 
-  if (/(总结|summarize).*(文档|文件|document|附件|report)/.test(lowerMsg)
-      || /摘要|extract.*文档|提取.*关键/.test(lowerMsg)) {
+  if (/(总结|summarize|摘要|提取).*(文档|文件|document|附件|报告|report|纪要|合同)/.test(lowerMsg)) {
     return 'document_processing';
+  }
+
+  if (trimmed.length < 50) {
+    return 'quick_reply';
   }
 
   try {
@@ -390,11 +395,11 @@ async function classifyTask(userMessage: string, hasAttachments?: boolean): Prom
           role: 'system',
           content: `Classify the user message into exactly one category. Reply with ONLY the category name, nothing else.
 Categories:
-- quick_reply: greetings, simple yes/no questions, short casual chat
-- general_chat: normal conversation, task descriptions, general discussion
+- quick_reply: greetings, simple yes/no, short casual chat, simple task queries
+- general_chat: normal conversation, task management requests, general discussion
 - code_generation: code writing, debugging, technical implementation
-- complex_analysis: deep reasoning, multi-step analysis, strategic planning
-- document_processing: long document reading, summarization, data extraction`
+- complex_analysis: deep multi-step reasoning, strategic planning, comparative analysis
+- document_processing: long document reading, summarization, data extraction from files`
         },
         { role: 'user', content: userMessage.slice(0, 500) }
       ],
@@ -1003,51 +1008,68 @@ export async function buildContextualSystemPrompt(
   const contextBlock = buildContextBlock(contextWithOrg, allUsers, allProjects, activeTasks, allTasks, doneTasks, overdueTasks, teamMembers);
   const modelName = context.model || 'claude-sonnet-4-6';
 
-  let prompt = `你是 Buddy，${orgName} 的智能助手。
+  let prompt = `你是 Buddy，${orgName} 的智能助手。你熟悉公司的团队、项目和任务情况，能以自然对话的方式帮助团队成员。
 
 ${contextBlock}
 
 ## 回复规则
 - 用自然语言 Markdown 回复，语言跟用户一致
-- 基于上面的数据回答，不编造
-- 简洁专业，必要时引用具体数据
-- 用户问模型时如实告知运行在 ${modelName} 上
+- 基于上面的团队、项目、任务数据回答，不要编造不存在的数据
+- 当用户问"你是什么模型"时，如实告知运行在 ${modelName} 上
+- 回答简洁专业，必要时引用具体的任务、项目或人员信息
 
 ## 操作能力
-当用户要求创建/更新/删除时，先用自然语言说明，然后在末尾输出操作块：
+当用户要求创建/更新/删除时，先用自然语言说明你要做什么，然后在回复末尾输出操作块：
 
 <<<ACTIONS>>>
-{"type":"confirm","action":{"actionType":"create_task","data":{...},"summary":"...","confidence":0.9}}
+{"type":"confirm","action":{"actionType":"create_task","data":{"title":"任务标题","projectId":1},"summary":"创建任务「任务标题」","confidence":0.9}}
 <<<END_ACTIONS>>>
 
-可用 actionType 及必填字段：
-- create_task: title*, projectId* (可选: assigneeId, dueDate, priority, description, weight, parentTaskId, type, tags, warnings[], ref, dependsOn[], dependsOnRef[])
-- update_task: taskId* (可选: title, status, priority, assigneeId, dueDate, weight, progress, description)
-- create_project: name* (可选: description, deptId, startDate, targetDate)
+批量操作用 multi_confirm（支持 ref/dependsOnRef 做批次内依赖）：
+<<<ACTIONS>>>
+{"type":"multi_confirm","actions":[{"actionType":"create_task","data":{"title":"任务A","projectId":1,"ref":"T1"},"summary":"创建「任务A」","confidence":0.9},{"actionType":"create_task","data":{"title":"任务B","projectId":1,"ref":"T2","dependsOnRef":["T1"]},"summary":"创建「任务B」（依赖T1）","confidence":0.9}]}
+<<<END_ACTIONS>>>
+
+可用 actionType 及字段（*为必填）：
+- create_task: title*, projectId*, assigneeId, dueDate, priority(critical/high/medium/low), description, weight(1-10), parentTaskId, type(task/subtask/milestone/bug/request), tags, warnings[], ref, dependsOn[], dependsOnRef[]
+- update_task: taskId*, title, status, priority, assigneeId, dueDate, weight, progress, description
+- create_project: name*, description, deptId, startDate, targetDate
 - add_comment: taskId*, content*
-- create_user: displayName*, email* (可选: role, deptId, jobRoleId)
-- update_user: userId* (可选: displayName, role, deptId, jobRoleId, isActive)
-- create_department: name* (可选: description, color, parentDeptId)
+- create_user: displayName*, email*, role(owner/admin/head/member), deptId, jobRoleId
+- update_user: userId*, displayName, role, deptId, jobRoleId, isActive
+- create_department: name*, description, color(hex), parentDeptId
 
-批量操作用 multi_confirm，支持 ref/dependsOnRef 做批次内依赖。
-
-## Widget 规则
-需要用户选择/确认时，输出 interactive_input 块（与 confirm 不同时出现）：
+## Widget 交互
+需要用户选择/确认时，在回复末尾输出（不要与 confirm/multi_confirm 同时出现）：
 <<<ACTIONS>>>
-{"type":"interactive_input","questions":[{"id":"q1","question":"...","type":"single_select","options":["A","B","C"]}]}
+{"type":"interactive_input","questions":[{"id":"q1","question":"问题","type":"single_select","options":["选项A","选项B"]}]}
 <<<END_ACTIONS>>>
-type 可选: single_select, multi_select, confirm, date_pick, rank_priorities
-**宁可多弹 Widget 也不要让用户打字确认。**
+
+type 可选：single_select（单选）、multi_select（多选）、confirm（确认/取消）、date_pick（日期）、rank_priorities（排序）
+
+必须弹 Widget 的场景：确认操作、选择选项、是/否判断、澄清歧义、完成后问下一步、批量确认清单。宁可多弹 Widget 也不要让用户打字确认。
+
+## 文档生成
+当你生成的内容同时满足以下全部条件时，使用 DOCUMENT 块输出可下载文档：
+1. 内容超过 300 字且有明确结构（标题、章节、分段）
+2. 内容用途是保存、分享、或作为正式文档（报告、方案、计划、总结、邮件草稿等）
+3. 用户的意图是"产出一份东西"而不是"聊聊看法"
+
+格式（放在回复末尾，与 ACTIONS 块不冲突，可同时存在）：
+<<<DOCUMENT>>>
+{"title":"文档标题","content":"完整的 Markdown 格式内容..."}
+<<<END_DOCUMENT>>>
+
+不用 DOCUMENT 块的场景：简短回答、查询结果、讨论性对话、任务操作确认、列表展示。
 
 ## 核心规则
-- 查询请求绝不输出操作块
-- 创建前检查已有任务是否重复，疑似重复时用 Widget 让用户选择
-- 会议纪要先用表格整理清单让用户确认（附 Widget），用户确认后再 multi_confirm
-- projectId/assigneeId 必须是系统中存在的 ID，不要编造
-- 信息不足时用 Widget 让用户点选，不要让用户打字
-- confidence: 完整≥0.9, 有推测0.7-0.8, 严重缺失0.5-0.6
-- 创建成员时若无邮箱可用姓名拼音@组织域名格式
-- 从文档提取任务时对不确定字段添加 warnings 数组（如"负责人未明确，已暂分给当前用户"）
+- 查询请求绝不输出 ACTIONS 操作块
+- 创建前检查已有任务是否重复，重复时用 Widget 让用户选择
+- 会议纪要先用表格整理清单 + Widget 确认，用户确认后再 multi_confirm
+- projectId/assigneeId 必须是上面系统数据中存在的 ID，不要编造
+- 信息不足时用 Widget 引导用户点选补充
+- confidence: 信息完整≥0.9, 有推测0.7-0.8, 严重缺失0.5-0.6
+- 从会议纪要提取任务时对不确定的字段添加 warnings 数组
 - resolve_decision: 系统上下文有待确认决策任务时，用户回复确认信息则输出 confirm/multi_confirm，actionType 为 resolve_decision，data 格式: {"decisionTaskId":123,"updates":{"assigneeId":5}}
 - judge_assignment: 用户问"合不合理"等 → confirm，actionType="judge_assignment"，data: {taskId, userId}
 - 会议纪要/批量任务必须两步：第1步用表格整理+Widget确认，第2步用户确认后才输出 multi_confirm`;
@@ -1182,53 +1204,45 @@ function formatTaskList(tasks: any[], users: any[], currentUserId?: number): str
   if (tasks.length === 0) return '（暂无任务）';
 
   const now = new Date();
-  const myTasks = currentUserId ? tasks.filter(t => t.assigneeId === currentUserId) : [];
-  const otherTasks = currentUserId ? tasks.filter(t => t.assigneeId !== currentUserId) : tasks;
-
-  const overdueTasks = otherTasks.filter(t => t.dueDate && new Date(t.dueDate) < now);
-  const criticalHighTasks = otherTasks.filter(t =>
-    (t.priority === 'critical' || t.priority === 'high' || t.status === 'blocked') &&
-    !overdueTasks.includes(t)
-  );
-  const normalOthers = otherTasks.filter(t =>
-    !overdueTasks.includes(t) && !criticalHighTasks.includes(t)
-  );
-
-  const formatDetailed = (t: any) => {
-    const assignee = t.assigneeId ? userMap.get(t.assigneeId) || `ID:${t.assigneeId}` : '未分配';
-    const due = t.dueDate ? new Date(t.dueDate).toLocaleDateString('zh-CN') : '';
-    return `- ID:${t.id}「${t.title}」状态:${t.status} 优先级:${t.priority} 负责人:${assignee}${due ? ' 截止:' + due : ''} 进度:${t.progress}%`;
-  };
-
-  const formatCompact = (t: any) => {
-    const assignee = t.assigneeId ? userMap.get(t.assigneeId) || `${t.assigneeId}` : '-';
-    return `- ${t.id}:${t.title}|${assignee}`;
-  };
-
   const parts: string[] = [];
 
+  const myTasks = currentUserId ? tasks.filter(t => t.assigneeId === currentUserId) : [];
   if (myTasks.length > 0) {
-    parts.push(`### 你的任务 (${myTasks.length})`);
-    parts.push(...myTasks.map(formatDetailed));
+    parts.push(`### 我的任务 (${myTasks.length}个)`);
+    for (const t of myTasks) {
+      const due = t.dueDate ? new Date(t.dueDate).toLocaleDateString('zh-CN') : '';
+      const overdue = t.dueDate && new Date(t.dueDate) < now && t.status !== 'done' ? ' ⚠️逾期' : '';
+      parts.push(`- ID:${t.id}「${t.title}」状态:${t.status} 优先级:${t.priority}${due ? ' 截止:' + due : ''}${overdue} 进度:${t.progress}%`);
+    }
   }
 
-  if (overdueTasks.length > 0) {
-    parts.push(`### 逾期任务 (${overdueTasks.length})`);
-    parts.push(...overdueTasks.map(formatDetailed));
+  const otherTasks = tasks.filter(t => !currentUserId || t.assigneeId !== currentUserId);
+  const urgentOthers = otherTasks.filter(t =>
+    t.priority === 'critical' || t.priority === 'high' ||
+    t.status === 'blocked' ||
+    (t.dueDate && new Date(t.dueDate) < now && t.status !== 'done' && t.status !== 'cancelled')
+  );
+  if (urgentOthers.length > 0) {
+    parts.push(`### 需关注的任务 (${urgentOthers.length}个)`);
+    for (const t of urgentOthers) {
+      const assignee = t.assigneeId ? userMap.get(t.assigneeId) || `ID:${t.assigneeId}` : '未分配';
+      const due = t.dueDate ? new Date(t.dueDate).toLocaleDateString('zh-CN') : '';
+      const overdue = t.dueDate && new Date(t.dueDate) < now && t.status !== 'done' ? ' ⚠️逾期' : '';
+      parts.push(`- ID:${t.id}「${t.title}」${assignee} ${t.status} ${t.priority}${due ? ' 截止:' + due : ''}${overdue}`);
+    }
   }
 
-  if (criticalHighTasks.length > 0) {
-    parts.push(`### 重要/紧急任务 (${criticalHighTasks.length})`);
-    parts.push(...criticalHighTasks.map(formatDetailed));
-  }
-
-  const MAX_COMPACT = 30;
+  const normalOthers = otherTasks.filter(t => !urgentOthers.includes(t));
+  const MAX_NORMAL = 25;
   if (normalOthers.length > 0) {
-    const shown = normalOthers.slice(0, MAX_COMPACT);
-    parts.push(`### 其他任务 (${normalOthers.length})`);
-    parts.push(...shown.map(formatCompact));
-    if (normalOthers.length > MAX_COMPACT) {
-      parts.push(`...还有 ${normalOthers.length - MAX_COMPACT} 个任务，需要时可查询`);
+    const shown = normalOthers.slice(0, MAX_NORMAL);
+    parts.push(`### 其他任务 (${normalOthers.length}个${normalOthers.length > MAX_NORMAL ? `，显示前${MAX_NORMAL}` : ''})`);
+    for (const t of shown) {
+      const assignee = t.assigneeId ? userMap.get(t.assigneeId) || `${t.assigneeId}` : '-';
+      parts.push(`ID:${t.id} ${t.title} | ${assignee} | ${t.status}`);
+    }
+    if (normalOthers.length > MAX_NORMAL) {
+      parts.push(`...还有 ${normalOthers.length - MAX_NORMAL} 个任务，需要时可询问`);
     }
   }
 
@@ -1469,8 +1483,8 @@ export async function* chatStream(
   const hasAttachments = !!(attachments && attachments.length > 0);
   let taskCategory = await classifyTask(message, hasAttachments);
 
-  const shouldInjectKB = context.knowledgeBaseEnabled &&
-    ['quick_reply', 'general_chat', 'knowledge_qa', 'complex_analysis'].includes(taskCategory);
+  const isQueryIntent = ['quick_reply', 'general_chat', 'knowledge_qa', 'complex_analysis', 'document_processing'].includes(taskCategory);
+  const shouldInjectKB = context.knowledgeBaseEnabled && isQueryIntent;
 
   const config = getConfigForTask(taskCategory, context.model, context.extendedThinking);
   const modelName = config.model;

@@ -1,0 +1,990 @@
+# Buddy AI Agent 优化指令 — 给 Replit Agent 执行
+
+**重要：按顺序执行 Task-01 到 Task-06，每完成一个 task 停下来测试，确认通过后再执行下一个。**
+
+-----
+
+## Task-01: 修复知识库与任务操作互斥 Bug
+
+### 问题
+
+当用户开启知识库模式后，`chatStream()` 会把所有消息强制分类为 `knowledge_qa`，导致”创建任务”等操作也走了知识库配置，行为异常。
+
+### 改动文件
+
+`server/services/ai/index.ts`
+
+### 具体改动
+
+找到 `chatStream()` 函数中这段代码（大约第 1964 行附近）：
+
+```typescript
+if (context.knowledgeBaseEnabled) {
+  taskCategory = 'knowledge_qa';
+}
+```
+
+替换为：
+
+```typescript
+// 知识库开启时，只影响问答类场景的 KB 注入，不覆盖意图分类
+// 操作类意图（用户要创建/更新任务）仍然走正常流程
+const isQueryIntent = ['quick_reply', 'general_chat', 'knowledge_qa', 'complex_analysis', 'document_processing'].includes(taskCategory);
+const shouldInjectKB = context.knowledgeBaseEnabled && isQueryIntent;
+```
+
+然后找到后面的 KB 注入逻辑（大约第 1972 行附近）：
+
+```typescript
+if (context.knowledgeBaseEnabled && context.orgId) {
+```
+
+替换为：
+
+```typescript
+if (shouldInjectKB && context.orgId) {
+```
+
+### 测试
+
+1. 开启知识库模式
+1. 输入”帮我创建一个任务叫测试文档”
+1. 验证：应该正常弹出操作确认卡片或 follow_up 引导流程，而不是当成知识库问答处理
+1. 输入”公司的考勤制度是什么”
+1. 验证：应该从知识库检索到相关文档并回答
+
+-----
+
+## Task-02: 优化 classifyTask 关键词匹配
+
+### 问题
+
+当前的 regex 分类有误判。“分析一下有什么任务”会命中”分析”被分到 `complex_analysis`，但它其实是一个简单查询。“总结这周的工作”会被分到 `document_processing`，但也只是查询。
+
+### 改动文件
+
+`server/services/ai/index.ts` 的 `classifyTask()` 函数
+
+### 具体改动
+
+找到 `classifyTask()` 函数中的 regex 分类逻辑（大约第 755-806 行），将整个 regex 分类部分替换为：
+
+```typescript
+async function classifyTask(userMessage: string, hasAttachments?: boolean): Promise<TaskCategory> {
+  if (hasAttachments) return 'document_processing';
+
+  const lowerMsg = userMessage.toLowerCase();
+  const trimmed = userMessage.trim();
+
+  // 1. 简短寒暄/确认
+  if (/^(hi|hello|hey|你好|嗨|谢谢|ok|好的|thanks|thank you|再见|bye|哈哈|嗯|对|是的|没错|ok了|收到|明白|知道了|确认|可以|没问题|好|行)$/i.test(trimmed)) {
+    return 'quick_reply';
+  }
+
+  // 2. 查询类优先判断 — 这些关键词出现时，即使同时有"分析""总结"等词也应该走查询
+  if (/有什么(任务|项目)|多少个?(任务|项目)|进展|状态|列表|到期|逾期|概览|负载|工作量|谁在做/.test(lowerMsg)) {
+    return lowerMsg.length < 50 ? 'quick_reply' : 'general_chat';
+  }
+
+  // 3. 代码类
+  if (/代码|code|function|实现一个|写一个.*(函数|组件|脚本)|debug|bug|error|fix|修复|编程|script|api接口|import|export|class\s|component|变量|variable/.test(lowerMsg)) {
+    return 'code_generation';
+  }
+
+  // 4. 深度分析类 — 必须是明确的分析请求，不是简单查询
+  if (/深度分析|详细分析|对比分析|根因分析|root cause|评估报告|策略规划|战略分析|SWOT|竞品分析/.test(lowerMsg)) {
+    return 'complex_analysis';
+  }
+
+  // 5. 文档处理类 — 必须涉及具体文档/文件
+  if (/(总结|summarize|摘要|提取).*(文档|文件|document|附件|报告|report|纪要|合同)/.test(lowerMsg)) {
+    return 'document_processing';
+  }
+
+  // 6. 短消息默认 quick_reply
+  if (trimmed.length < 50) {
+    return 'quick_reply';
+  }
+
+  // 7. 中等长度消息用 AI 分类
+  try {
+    const response = await claudeComplete({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 30,
+      temperature: 0,
+      messages: [
+        {
+          role: 'system',
+          content: `Classify the user message into exactly one category. Reply with ONLY the category name, nothing else.
+Categories:
+- quick_reply: greetings, simple yes/no, short casual chat, simple task queries
+- general_chat: normal conversation, task management requests, general discussion
+- code_generation: code writing, debugging, technical implementation
+- complex_analysis: deep multi-step reasoning, strategic planning, comparative analysis
+- document_processing: long document reading, summarization, data extraction from files`
+        },
+        { role: 'user', content: userMessage.slice(0, 500) }
+      ],
+    });
+    const result = (response.content || '').trim().toLowerCase();
+    const validCategories: TaskCategory[] = ['quick_reply', 'general_chat', 'code_generation', 'complex_analysis', 'document_processing'];
+    if (validCategories.includes(result as TaskCategory)) return result as TaskCategory;
+    return 'general_chat';
+  } catch {
+    return 'general_chat';
+  }
+}
+```
+
+### 测试
+
+在 Buddy 聊天中依次输入以下内容，检查 server console 日志中的分类结果：
+
+- “分析一下有什么任务” → 应该是 quick_reply 或 general_chat（不是 complex_analysis）
+- “帮我总结这周的工作” → 应该是 general_chat（不是 document_processing）
+- “深度分析一下团队的工作效率问题” → 应该是 complex_analysis
+- “帮我写一个 React 组件” → 应该是 code_generation
+- “嗯” → 应该是 quick_reply
+
+-----
+
+## Task-03: 精简 Streaming System Prompt
+
+### 问题
+
+当前 streaming 模式的 prompt 过长（~2000 words 的规则说明），AI 难以同时遵守所有规则。需要压缩到 ~500 words 的核心规则。
+
+### 改动文件
+
+`server/services/ai/index.ts` 的 `buildContextualSystemPrompt()` 函数
+
+### 具体改动
+
+找到 `if (mode === 'streaming')` 分支内的 prompt 字符串（大约第 1405 行开始），将 `prompt = \`你是 Buddy…` 整段替换为以下内容：
+
+```typescript
+    prompt = `你是 Buddy，${orgName} 的智能助手。你熟悉公司的团队、项目和任务情况，能以自然对话的方式帮助团队成员。
+
+${contextBlock}
+
+## 回复规则
+- 用自然语言 Markdown 回复，语言跟用户一致
+- 基于上面的团队、项目、任务数据回答，不要编造不存在的数据
+- 当用户问"你是什么模型"时，如实告知运行在 ${modelName} 上
+- 回答简洁专业，必要时引用具体的任务、项目或人员信息
+
+## 操作能力
+当用户要求创建/更新/删除时，先用自然语言说明你要做什么，然后在回复末尾输出操作块：
+
+<<<ACTIONS>>>
+{"type":"confirm","action":{"actionType":"create_task","data":{"title":"任务标题","projectId":1},"summary":"创建任务「任务标题」","confidence":0.9}}
+<<<END_ACTIONS>>>
+
+批量操作用 multi_confirm（支持 ref/dependsOnRef 做批次内依赖）：
+<<<ACTIONS>>>
+{"type":"multi_confirm","actions":[{"actionType":"create_task","data":{"title":"任务A","projectId":1,"ref":"T1"},"summary":"创建「任务A」","confidence":0.9},{"actionType":"create_task","data":{"title":"任务B","projectId":1,"ref":"T2","dependsOnRef":["T1"]},"summary":"创建「任务B」（依赖T1）","confidence":0.9}]}
+<<<END_ACTIONS>>>
+
+可用 actionType 及字段（*为必填）：
+- create_task: title*, projectId*, assigneeId, dueDate, priority(critical/high/medium/low), description, weight(1-10), parentTaskId, type(task/subtask/milestone/bug/request), tags, warnings[], ref, dependsOn[], dependsOnRef[]
+- update_task: taskId*, title, status, priority, assigneeId, dueDate, weight, progress, description
+- create_project: name*, description, deptId, startDate, targetDate
+- add_comment: taskId*, content*
+- create_user: displayName*, email*, role(owner/admin/head/member), deptId, jobRoleId
+- update_user: userId*, displayName, role, deptId, jobRoleId, isActive
+- create_department: name*, description, color(hex), parentDeptId
+
+## Widget 交互
+需要用户选择/确认时，在回复末尾输出（不要与 confirm/multi_confirm 同时出现）：
+<<<ACTIONS>>>
+{"type":"interactive_input","questions":[{"id":"q1","question":"问题","type":"single_select","options":["选项A","选项B"]}]}
+<<<END_ACTIONS>>>
+
+type 可选：single_select（单选）、multi_select（多选）、confirm（确认/取消）、date_pick（日期）、rank_priorities（排序）
+
+必须弹 Widget 的场景：确认操作、选择选项、是/否判断、澄清歧义、完成后问下一步、批量确认清单。宁可多弹 Widget 也不要让用户打字确认。
+
+## 文档生成
+当你生成的内容同时满足以下全部条件时，使用 DOCUMENT 块输出可下载文档：
+1. 内容超过 300 字且有明确结构（标题、章节、分段）
+2. 内容用途是保存、分享、或作为正式文档（报告、方案、计划、总结、邮件草稿等）
+3. 用户的意图是"产出一份东西"而不是"聊聊看法"
+
+格式（放在回复末尾，与 ACTIONS 块不冲突，可同时存在）：
+<<<DOCUMENT>>>
+{"title":"文档标题","content":"完整的 Markdown 格式内容..."}
+<<<END_DOCUMENT>>>
+
+不用 DOCUMENT 块的场景：简短回答、查询结果、讨论性对话、任务操作确认、列表展示。
+
+## 核心规则
+- 查询请求绝不输出 ACTIONS 操作块
+- 创建前检查已有任务是否重复，重复时用 Widget 让用户选择
+- 会议纪要先用表格整理清单 + Widget 确认，用户确认后再 multi_confirm
+- projectId/assigneeId 必须是上面系统数据中存在的 ID，不要编造
+- 信息不足时用 Widget 引导用户点选补充
+- confidence: 信息完整≥0.9, 有推测0.7-0.8, 严重缺失0.5-0.6
+- 从会议纪要提取任务时对不确定的字段添加 warnings 数组`;
+```
+
+### 测试
+
+依次测试以下场景，确保行为正常：
+
+1. “帮我创建一个任务叫整理Q2数据” → 应弹出确认卡片或 follow_up
+1. “现在有什么进行中的任务” → 应直接用文字回答
+1. “帮我写一份本周工作总结” → 应生成 DOCUMENT 块（Task-06 实现后才能验证）
+1. “这个任务给 Michael 合不合理” → 应正常触发权责判定
+1. 发送一段会议纪要文字 → 应先整理清单 + Widget 确认
+
+-----
+
+## Task-04: 任务列表智能裁剪（减少 Token 消耗）
+
+### 问题
+
+`formatTaskList()` 把所有活跃任务全塞进 prompt。如果有 50+ 个任务，光任务列表就占几千 tokens，浪费钱且降低 AI 回复质量。
+
+### 改动文件
+
+`server/services/ai/index.ts` 的 `formatTaskList()` 函数
+
+### 具体改动
+
+找到 `formatTaskList()` 函数（大约第 1671 行），整个替换为：
+
+```typescript
+function formatTaskList(tasks: any[], users: any[], currentUserId?: number): string {
+  const userMap = new Map(users.map(u => [u.id, u.displayName]));
+  if (tasks.length === 0) return '（暂无任务）';
+
+  const now = new Date();
+  const parts: string[] = [];
+
+  // 第一优先级：当前用户的所有任务（完整信息）
+  const myTasks = currentUserId ? tasks.filter(t => t.assigneeId === currentUserId) : [];
+  if (myTasks.length > 0) {
+    parts.push(`### 我的任务 (${myTasks.length}个)`);
+    for (const t of myTasks) {
+      const due = t.dueDate ? new Date(t.dueDate).toLocaleDateString('zh-CN') : '';
+      const overdue = t.dueDate && new Date(t.dueDate) < now && t.status !== 'done' ? ' ⚠️逾期' : '';
+      parts.push(`- ID:${t.id}「${t.title}」状态:${t.status} 优先级:${t.priority}${due ? ' 截止:' + due : ''}${overdue} 进度:${t.progress}%`);
+    }
+  }
+
+  // 第二优先级：其他人的紧急/逾期任务（完整信息）
+  const otherTasks = tasks.filter(t => !currentUserId || t.assigneeId !== currentUserId);
+  const urgentOthers = otherTasks.filter(t =>
+    t.priority === 'critical' || t.priority === 'high' ||
+    t.status === 'blocked' ||
+    (t.dueDate && new Date(t.dueDate) < now && t.status !== 'done' && t.status !== 'cancelled')
+  );
+  if (urgentOthers.length > 0) {
+    parts.push(`### 需关注的任务 (${urgentOthers.length}个)`);
+    for (const t of urgentOthers) {
+      const assignee = t.assigneeId ? userMap.get(t.assigneeId) || `ID:${t.assigneeId}` : '未分配';
+      const due = t.dueDate ? new Date(t.dueDate).toLocaleDateString('zh-CN') : '';
+      const overdue = t.dueDate && new Date(t.dueDate) < now && t.status !== 'done' ? ' ⚠️逾期' : '';
+      parts.push(`- ID:${t.id}「${t.title}」${assignee} ${t.status} ${t.priority}${due ? ' 截止:' + due : ''}${overdue}`);
+    }
+  }
+
+  // 第三优先级：其他普通任务（精简格式，最多显示 25 个）
+  const normalOthers = otherTasks.filter(t => !urgentOthers.includes(t));
+  const MAX_NORMAL = 25;
+  if (normalOthers.length > 0) {
+    const shown = normalOthers.slice(0, MAX_NORMAL);
+    parts.push(`### 其他任务 (${normalOthers.length}个${normalOthers.length > MAX_NORMAL ? `，显示前${MAX_NORMAL}` : ''})`);
+    for (const t of shown) {
+      const assignee = t.assigneeId ? userMap.get(t.assigneeId) || `${t.assigneeId}` : '-';
+      parts.push(`ID:${t.id} ${t.title} | ${assignee} | ${t.status}`);
+    }
+    if (normalOthers.length > MAX_NORMAL) {
+      parts.push(`...还有 ${normalOthers.length - MAX_NORMAL} 个任务，需要时可询问`);
+    }
+  }
+
+  return parts.join('\n');
+}
+```
+
+### 测试
+
+1. 检查 server 日志，看 system prompt 的大致长度是否减少
+1. 输入”现在有什么任务” → AI 应该能正常列出任务
+1. 输入”Michael 有什么任务” → AI 应该能从任务列表中筛选出 Michael 的任务
+
+-----
+
+## Task-05: 前端 Markdown 渲染增强
+
+### 问题
+
+确保前端能正确渲染 AI 回复中的 Markdown 格式（表格、代码块、层级列表、粗体等），达到 Claude Chat 级别的排版效果。
+
+### 改动
+
+#### 步骤1：安装依赖
+
+```bash
+npm install react-markdown remark-gfm remark-breaks rehype-highlight
+```
+
+#### 步骤2：创建 Markdown 渲染组件
+
+创建文件 `client/src/components/ai/MarkdownRenderer.tsx`：
+
+```tsx
+import React, { memo } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
+
+interface MarkdownRendererProps {
+  content: string;
+}
+
+const MarkdownRenderer = memo(({ content }: MarkdownRendererProps) => {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkBreaks]}
+      components={{
+        // 表格样式
+        table: ({ children }) => (
+          <div className="overflow-x-auto my-3">
+            <table className="min-w-full border-collapse text-sm">
+              {children}
+            </table>
+          </div>
+        ),
+        thead: ({ children }) => (
+          <thead className="bg-gray-50 dark:bg-gray-800">
+            {children}
+          </thead>
+        ),
+        th: ({ children }) => (
+          <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">
+            {children}
+          </th>
+        ),
+        td: ({ children }) => (
+          <td className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/50">
+            {children}
+          </td>
+        ),
+        // 代码块
+        code: ({ className, children, ...props }) => {
+          const isInline = !className;
+          if (isInline) {
+            return (
+              <code className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-sm font-mono text-pink-600 dark:text-pink-400" {...props}>
+                {children}
+              </code>
+            );
+          }
+          return (
+            <div className="my-3 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+              <div className="bg-gray-50 dark:bg-gray-800 px-4 py-1.5 text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                {className?.replace('language-', '') || 'code'}
+              </div>
+              <pre className="p-4 overflow-x-auto bg-gray-50/50 dark:bg-gray-900/50">
+                <code className={`text-sm font-mono ${className || ''}`} {...props}>
+                  {children}
+                </code>
+              </pre>
+            </div>
+          );
+        },
+        // 列表
+        ul: ({ children }) => (
+          <ul className="list-disc pl-6 my-2 space-y-1">{children}</ul>
+        ),
+        ol: ({ children }) => (
+          <ol className="list-decimal pl-6 my-2 space-y-1">{children}</ol>
+        ),
+        // 标题
+        h1: ({ children }) => (
+          <h1 className="text-xl font-bold mt-4 mb-2">{children}</h1>
+        ),
+        h2: ({ children }) => (
+          <h2 className="text-lg font-bold mt-3 mb-2">{children}</h2>
+        ),
+        h3: ({ children }) => (
+          <h3 className="text-base font-semibold mt-3 mb-1">{children}</h3>
+        ),
+        // 粗体
+        strong: ({ children }) => (
+          <strong className="font-semibold">{children}</strong>
+        ),
+        // 引用块
+        blockquote: ({ children }) => (
+          <blockquote className="border-l-3 border-blue-400 pl-4 my-3 text-gray-600 dark:text-gray-400 italic">
+            {children}
+          </blockquote>
+        ),
+        // 分割线
+        hr: () => (
+          <hr className="my-4 border-gray-200 dark:border-gray-700" />
+        ),
+        // 链接
+        a: ({ href, children }) => (
+          <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
+            {children}
+          </a>
+        ),
+        // 段落
+        p: ({ children }) => (
+          <p className="my-1.5 leading-relaxed">{children}</p>
+        ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+});
+
+MarkdownRenderer.displayName = 'MarkdownRenderer';
+export default MarkdownRenderer;
+```
+
+#### 步骤3：替换现有的消息渲染
+
+在 AI 聊天的消息气泡组件中（查找当前渲染 assistant 消息文本内容的地方），将直接显示文本的逻辑替换为使用 `<MarkdownRenderer content={message.content} />`。
+
+具体来说，搜索项目中渲染 AI 回复内容的组件，把类似这样的代码：
+
+```tsx
+<p>{message.content}</p>
+// 或
+<div dangerouslySetInnerHTML=... />
+// 或
+<div>{message.content}</div>
+```
+
+替换为：
+
+```tsx
+import MarkdownRenderer from './MarkdownRenderer';
+// ...
+<MarkdownRenderer content={message.content} />
+```
+
+如果项目已经在用 react-markdown，只需要把上面的 components 配置合并进去即可，不需要创建新文件。
+
+### 测试
+
+1. 让 AI 回复包含表格的内容，比如输入”用表格列出所有项目的状态”
+1. 让 AI 回复包含代码块，比如输入”给我一段 Python 示例代码”
+1. 让 AI 回复包含层级列表，比如输入”列出项目的任务分解”
+1. 验证：表格有边框和表头高亮、代码块有语法高亮背景、列表有正确缩进
+
+-----
+
+## Task-06: 文档生成能力（AI 自动判断 + 可下载 .docx）
+
+### 功能说明
+
+让 Buddy 像 Claude Chat 一样，当 AI 判断输出内容适合做成文档时，自动生成可下载的 .docx Word 文件。AI 不需要用户显式说”生成文档”，而是根据内容的长度、结构和用途自动判断。
+
+### 改动
+
+#### 步骤1：安装后端依赖
+
+```bash
+npm install docx
+```
+
+#### 步骤2：创建文档生成服务
+
+创建文件 `server/services/ai/documentGenerator.ts`：
+
+```typescript
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, LevelFormat, BorderStyle, Table, TableRow, TableCell, WidthType, ShadingType } from 'docx';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+
+interface DocumentRequest {
+  title: string;
+  content: string; // Markdown 格式
+  orgName?: string;
+  author?: string;
+}
+
+/**
+ * 将 Markdown 内容转换为 .docx 文件
+ * 返回文件路径和文件名
+ */
+export async function generateDocx(request: DocumentRequest): Promise<{ filePath: string; fileName: string }> {
+  const { title, content, orgName, author } = request;
+
+  const children: any[] = [];
+
+  // 解析 Markdown 为 docx 元素
+  const lines = content.split('\n');
+  let inCodeBlock = false;
+  let codeBlockContent: string[] = [];
+  let inTable = false;
+  let tableRows: string[][] = [];
+
+  for (const line of lines) {
+    // 代码块处理
+    if (line.startsWith('```')) {
+      if (inCodeBlock) {
+        // 结束代码块
+        children.push(
+          new Paragraph({
+            border: {
+              top: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' },
+              bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' },
+              left: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' },
+              right: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' },
+            },
+            shading: { type: ShadingType.CLEAR, fill: 'F5F5F5' },
+            children: [
+              new TextRun({
+                text: codeBlockContent.join('\n'),
+                font: 'Courier New',
+                size: 20,
+              }),
+            ],
+          })
+        );
+        codeBlockContent = [];
+        inCodeBlock = false;
+      } else {
+        inCodeBlock = true;
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeBlockContent.push(line);
+      continue;
+    }
+
+    // 表格处理
+    if (line.includes('|') && line.trim().startsWith('|')) {
+      const cells = line.split('|').filter(c => c.trim()).map(c => c.trim());
+      // 跳过分隔行
+      if (cells.every(c => /^[-:]+$/.test(c))) continue;
+      tableRows.push(cells);
+      inTable = true;
+      continue;
+    } else if (inTable) {
+      // 表格结束，生成表格
+      if (tableRows.length > 0) {
+        const colCount = Math.max(...tableRows.map(r => r.length));
+        const colWidth = Math.floor(9360 / colCount);
+        const border = { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' };
+        const borders = { top: border, bottom: border, left: border, right: border };
+
+        const rows = tableRows.map((row, rowIndex) =>
+          new TableRow({
+            children: Array.from({ length: colCount }, (_, i) =>
+              new TableCell({
+                borders,
+                width: { size: colWidth, type: WidthType.DXA },
+                shading: rowIndex === 0 ? { type: ShadingType.CLEAR, fill: 'E8F0FE' } : undefined,
+                margins: { top: 60, bottom: 60, left: 100, right: 100 },
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: row[i] || '',
+                        bold: rowIndex === 0,
+                        size: 20,
+                        font: 'Arial',
+                      }),
+                    ],
+                  }),
+                ],
+              })
+            ),
+          })
+        );
+
+        children.push(
+          new Table({
+            width: { size: 9360, type: WidthType.DXA },
+            columnWidths: Array(colCount).fill(colWidth),
+            rows,
+          })
+        );
+        // 表格后加空行
+        children.push(new Paragraph({ children: [] }));
+      }
+      tableRows = [];
+      inTable = false;
+    }
+
+    // 空行
+    if (line.trim() === '') {
+      children.push(new Paragraph({ children: [] }));
+      continue;
+    }
+
+    // 标题
+    const h1Match = line.match(/^# (.+)/);
+    const h2Match = line.match(/^## (.+)/);
+    const h3Match = line.match(/^### (.+)/);
+
+    if (h1Match) {
+      children.push(new Paragraph({
+        heading: HeadingLevel.HEADING_1,
+        spacing: { before: 240, after: 120 },
+        children: [new TextRun({ text: h1Match[1], bold: true, size: 32, font: 'Arial' })],
+      }));
+      continue;
+    }
+    if (h2Match) {
+      children.push(new Paragraph({
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 200, after: 100 },
+        children: [new TextRun({ text: h2Match[1], bold: true, size: 28, font: 'Arial' })],
+      }));
+      continue;
+    }
+    if (h3Match) {
+      children.push(new Paragraph({
+        heading: HeadingLevel.HEADING_3,
+        spacing: { before: 160, after: 80 },
+        children: [new TextRun({ text: h3Match[1], bold: true, size: 24, font: 'Arial' })],
+      }));
+      continue;
+    }
+
+    // 无序列表
+    if (line.match(/^[\s]*[-*] /)) {
+      const indent = (line.match(/^(\s*)/)?.[1].length || 0) / 2;
+      const text = line.replace(/^[\s]*[-*] /, '');
+      children.push(new Paragraph({
+        indent: { left: 360 + indent * 360 },
+        children: parseInlineFormatting('• ' + text),
+      }));
+      continue;
+    }
+
+    // 有序列表
+    const olMatch = line.match(/^[\s]*(\d+)\. (.+)/);
+    if (olMatch) {
+      children.push(new Paragraph({
+        indent: { left: 360 },
+        children: parseInlineFormatting(olMatch[1] + '. ' + olMatch[2]),
+      }));
+      continue;
+    }
+
+    // 分割线
+    if (/^[-*_]{3,}$/.test(line.trim())) {
+      children.push(new Paragraph({
+        border: { bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' } },
+        spacing: { before: 120, after: 120 },
+        children: [],
+      }));
+      continue;
+    }
+
+    // 普通段落
+    children.push(new Paragraph({
+      spacing: { after: 80 },
+      children: parseInlineFormatting(line),
+    }));
+  }
+
+  // 处理文件末尾还在表格中的情况
+  if (inTable && tableRows.length > 0) {
+    const colCount = Math.max(...tableRows.map(r => r.length));
+    const colWidth = Math.floor(9360 / colCount);
+    const border = { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' };
+    const borders = { top: border, bottom: border, left: border, right: border };
+    const rows = tableRows.map((row, rowIndex) =>
+      new TableRow({
+        children: Array.from({ length: colCount }, (_, i) =>
+          new TableCell({
+            borders,
+            width: { size: colWidth, type: WidthType.DXA },
+            shading: rowIndex === 0 ? { type: ShadingType.CLEAR, fill: 'E8F0FE' } : undefined,
+            margins: { top: 60, bottom: 60, left: 100, right: 100 },
+            children: [new Paragraph({ children: [new TextRun({ text: row[i] || '', bold: rowIndex === 0, size: 20, font: 'Arial' })] })],
+          })
+        ),
+      })
+    );
+    children.push(new Table({
+      width: { size: 9360, type: WidthType.DXA },
+      columnWidths: Array(colCount).fill(colWidth),
+      rows,
+    }));
+  }
+
+  // 构建文档
+  const doc = new Document({
+    creator: author || 'Buddy AI',
+    title,
+    description: `Generated by Buddy AI for ${orgName || 'organization'}`,
+    styles: {
+      default: {
+        document: {
+          run: { font: 'Arial', size: 22 }, // 11pt
+        },
+      },
+    },
+    sections: [{
+      properties: {
+        page: {
+          size: { width: 12240, height: 15840 },
+          margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+        },
+      },
+      children: [
+        // 文档标题
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 400 },
+          children: [new TextRun({ text: title, bold: true, size: 36, font: 'Arial' })],
+        }),
+        // 元信息
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 300 },
+          children: [
+            new TextRun({ text: `${orgName || ''} · ${new Date().toLocaleDateString('zh-CN')} · Buddy AI 生成`, size: 18, color: '888888', font: 'Arial' }),
+          ],
+        }),
+        new Paragraph({
+          border: { bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' } },
+          spacing: { after: 300 },
+          children: [],
+        }),
+        ...children,
+      ],
+    }],
+  });
+
+  // 生成文件
+  const buffer = await Packer.toBuffer(doc);
+  const uploadsDir = path.join(process.cwd(), 'uploads', 'documents');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+
+  const fileId = crypto.randomBytes(8).toString('hex');
+  const safeTitle = title.replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '_').slice(0, 50);
+  const fileName = `${safeTitle}_${fileId}.docx`;
+  const filePath = path.join(uploadsDir, fileName);
+
+  fs.writeFileSync(filePath, buffer);
+
+  return { filePath, fileName };
+}
+
+/**
+ * 解析行内 Markdown 格式（粗体、斜体、行内代码）
+ */
+function parseInlineFormatting(text: string): TextRun[] {
+  const runs: TextRun[] = [];
+  const regex = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(`(.+?)`)|([^*`]+)/g;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match[2]) {
+      // 粗体
+      runs.push(new TextRun({ text: match[2], bold: true, size: 22, font: 'Arial' }));
+    } else if (match[4]) {
+      // 斜体
+      runs.push(new TextRun({ text: match[4], italics: true, size: 22, font: 'Arial' }));
+    } else if (match[6]) {
+      // 行内代码
+      runs.push(new TextRun({ text: match[6], font: 'Courier New', size: 20, shading: { type: ShadingType.CLEAR, fill: 'F0F0F0' } }));
+    } else if (match[7]) {
+      // 普通文本
+      runs.push(new TextRun({ text: match[7], size: 22, font: 'Arial' }));
+    }
+  }
+
+  if (runs.length === 0) {
+    runs.push(new TextRun({ text, size: 22, font: 'Arial' }));
+  }
+
+  return runs;
+}
+```
+
+#### 步骤3：在流式响应处理中解析 DOCUMENT 块
+
+在 `server/routes.ts` 中处理 `/api/ai/chat/stream` 的地方（或者在 `chatStream` 的调用方），需要在流式输出完成后检测 `<<<DOCUMENT>>>` 块。
+
+找到处理流式聊天的路由（搜索 `chatStream` 的调用处），在流式输出收集完成后（`type === 'done'` 时），添加以下逻辑：
+
+```typescript
+import { generateDocx } from './services/ai/documentGenerator';
+
+// 在流式输出完成后，检查是否有 DOCUMENT 块
+const docMatch = fullResponseText.match(/<<<DOCUMENT>>>\s*([\s\S]*?)\s*<<<END_DOCUMENT>>>/);
+if (docMatch) {
+  try {
+    const docData = JSON.parse(docMatch[1]);
+    const { filePath, fileName } = await generateDocx({
+      title: docData.title,
+      content: docData.content,
+      orgName: orgName,
+      author: currentUserName,
+    });
+
+    // 发送一个额外的 SSE 事件通知前端有文档可下载
+    res.write(`data: ${JSON.stringify({
+      type: 'document',
+      title: docData.title,
+      fileName,
+      downloadUrl: `/api/documents/${fileName}`,
+    })}\n\n`);
+  } catch (err) {
+    console.error('[Document] Generation failed:', err);
+  }
+}
+```
+
+#### 步骤4：添加文档下载路由
+
+在 `server/routes.ts` 中添加一个静态文件下载路由：
+
+```typescript
+import path from 'path';
+import fs from 'fs';
+
+// 文档下载
+app.get('/api/documents/:fileName', (req, res) => {
+  const fileName = req.params.fileName;
+  // 安全检查：防止路径遍历
+  if (fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+
+  const filePath = path.join(process.cwd(), 'uploads', 'documents', fileName);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Document not found' });
+  }
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+  res.sendFile(filePath);
+});
+```
+
+#### 步骤5：前端渲染文档下载卡片
+
+在前端聊天组件中，监听 SSE 流中 `type === 'document'` 的事件，渲染一个下载卡片。
+
+创建文件 `client/src/components/ai/DocumentCard.tsx`：
+
+```tsx
+import React from 'react';
+
+interface DocumentCardProps {
+  title: string;
+  fileName: string;
+  downloadUrl: string;
+}
+
+export default function DocumentCard({ title, fileName, downloadUrl }: DocumentCardProps) {
+  return (
+    <div className="mt-3 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden bg-white dark:bg-gray-800 shadow-sm">
+      <div className="flex items-center gap-3 p-4">
+        {/* Word 图标 */}
+        <div className="w-10 h-10 bg-blue-50 dark:bg-blue-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
+          <svg className="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
+            {title}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Word 文档 · .docx
+          </p>
+        </div>
+        <a
+          href={downloadUrl}
+          download={fileName}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors flex-shrink-0"
+        >
+          下载
+        </a>
+      </div>
+    </div>
+  );
+}
+```
+
+在聊天消息组件中，当检测到消息包含文档信息时，渲染这个卡片：
+
+```tsx
+import DocumentCard from './DocumentCard';
+
+// 在 assistant 消息渲染的地方，检查是否有附带的文档
+{message.document && (
+  <DocumentCard
+    title={message.document.title}
+    fileName={message.document.fileName}
+    downloadUrl={message.document.downloadUrl}
+  />
+)}
+```
+
+同时，在流式 SSE 事件处理中，当收到 `type: 'document'` 事件时，将文档信息存到对应消息上：
+
+```typescript
+// 在处理 SSE stream 的 onmessage 中
+if (data.type === 'document') {
+  // 将文档信息附加到当前 assistant 消息
+  setMessages(prev => {
+    const updated = [...prev];
+    const lastMsg = updated[updated.length - 1];
+    if (lastMsg && lastMsg.role === 'assistant') {
+      lastMsg.document = {
+        title: data.title,
+        fileName: data.fileName,
+        downloadUrl: data.downloadUrl,
+      };
+    }
+    return updated;
+  });
+}
+```
+
+#### 步骤6：清理显示文本中的 DOCUMENT 块
+
+在前端显示 AI 回复时，需要把 `<<<DOCUMENT>>>...<<<END_DOCUMENT>>>` 块从显示文本中移除（用户看到的是下载卡片，不需要看到原始 JSON）。
+
+在渲染 assistant 消息之前：
+
+```typescript
+const displayContent = message.content
+  .replace(/<<<DOCUMENT>>>[\s\S]*?<<<END_DOCUMENT>>>/g, '')
+  .trim();
+```
+
+### 测试
+
+1. 输入”帮我写一份本周工作总结报告” → AI 应该在聊天中回复概要，同时在末尾生成一个文档下载卡片
+1. 输入”帮我写一份 Q1 销售策略方案” → 应生成可下载的 Word 文档
+1. 输入”现在有什么任务” → 不应该生成文档，只在聊天中回复
+1. 下载生成的 .docx 文件，用 Word 或 WPS 打开验证格式正确
+1. 验证文档包含：标题、公司名、日期、正文内容、正确的标题层级和表格
+
+-----
+
+## 执行顺序总结
+
+|顺序|Task               |改动量   |核心文件             |
+|--|-------------------|------|-----------------|
+|1 |Task-01 修复 KB 互斥   |极小（2行）|index.ts         |
+|2 |Task-02 优化分类器      |小     |index.ts         |
+|3 |Task-03 精简 Prompt  |中     |index.ts         |
+|4 |Task-04 任务列表裁剪     |中     |index.ts         |
+|5 |Task-05 Markdown 渲染|中     |前端新组件            |
+|6 |Task-06 文档生成       |大     |新文件 + routes + 前端|
+
+**每完成一个 Task 后，运行上面列出的测试用例，全部通过后再进入下一个 Task。**

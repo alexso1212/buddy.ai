@@ -87,6 +87,11 @@ export interface BuddyMessage {
     question: string;
     options: { label: string; value: string; description?: string }[];
   };
+  document?: {
+    title: string;
+    fileName: string;
+    downloadUrl: string;
+  };
 }
 
 export interface BuddyCallbacks {

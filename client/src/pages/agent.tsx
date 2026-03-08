@@ -1512,6 +1512,16 @@ export default function Agent() {
                 }
               } else if (event.type === 'action') {
                 pendingAction = event;
+              } else if (event.type === 'document') {
+                if (isActiveStream()) {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? { ...m, document: { title: event.title, fileName: event.fileName, downloadUrl: event.downloadUrl } }
+                        : m
+                    )
+                  );
+                }
               } else if (event.type === 'done') {
                 if (tokenFlushTimer) {
                   clearTimeout(tokenFlushTimer);

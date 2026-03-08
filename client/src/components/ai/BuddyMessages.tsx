@@ -16,6 +16,7 @@ import {
 import AiConfirmCard from "./AiConfirmCard";
 import AiGuidedCreation from "./AiGuidedCreation";
 import AIMessageContent from "./AIMessageContent";
+import DocumentCard from "./DocumentCard";
 import AgentLogo from "@/components/AgentLogo";
 import ThinkingBlock from "./ThinkingBlock";
 import { isLongContent, extractArtifactTitle } from "./ArtifactPanel";
@@ -1001,6 +1002,13 @@ function DefaultAssistantMessage({ message, isLastAssistant }: { message: BuddyM
             data={message.inlineWidget}
             onSubmit={onWidgetSubmit ? onWidgetSubmit : () => {}}
             messageId={message.id}
+          />
+        )}
+        {message.document && (
+          <DocumentCard
+            title={message.document.title}
+            fileName={message.document.fileName}
+            downloadUrl={message.document.downloadUrl}
           />
         )}
         {!message.isStreaming && (

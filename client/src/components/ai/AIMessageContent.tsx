@@ -452,7 +452,12 @@ function transformChildrenWithCitations(children: ReactNode, searchResults?: Sea
 }
 
 function stripActionsTags(text: string): string {
-  return text.replace(/<<<ACTIONS>>>([\s\S]*?)<<<END_ACTIONS>>>/g, '').replace(/<<<ACTIONS>>>[\s\S]*$/, '').trim();
+  return text
+    .replace(/<<<ACTIONS>>>([\s\S]*?)<<<END_ACTIONS>>>/g, '')
+    .replace(/<<<ACTIONS>>>[\s\S]*$/, '')
+    .replace(/<<<DOCUMENT>>>([\s\S]*?)<<<END_DOCUMENT>>>/g, '')
+    .replace(/<<<DOCUMENT>>>[\s\S]*$/, '')
+    .trim();
 }
 
 export default function AIMessageContent({ content, searchResults }: AIMessageContentProps) {
