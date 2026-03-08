@@ -739,6 +739,8 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
   const composerRef = useRef<HTMLDivElement>(null);
   const bgRef = useRef<HTMLDivElement>(null);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
+  const rafId = useRef(0);
+  const lastOffset = useRef(0);
 
   const updateMask = useCallback(() => {
     const container = containerRef.current;
@@ -782,13 +784,19 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
     const vv = window.visualViewport;
     if (vv) {
       const handleViewportResize = () => {
-        const offset = window.innerHeight - vv.height - vv.offsetTop;
-        setKeyboardOffset(Math.max(0, offset));
-        updateMask();
+        cancelAnimationFrame(rafId.current);
+        rafId.current = requestAnimationFrame(() => {
+          const offset = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+          if (Math.abs(offset - lastOffset.current) < 2) return;
+          lastOffset.current = offset;
+          setKeyboardOffset(offset);
+          updateMask();
+        });
       };
       vv.addEventListener('resize', handleViewportResize);
       vv.addEventListener('scroll', handleViewportResize);
       return () => {
+        cancelAnimationFrame(rafId.current);
         observer.disconnect();
         window.removeEventListener('resize', updateMask);
         vv.removeEventListener('resize', handleViewportResize);
@@ -809,8 +817,10 @@ function BottomInputArea({ onSend, loading, onStop, webSearchEnabled, onWebSearc
       style={{
         zIndex: 10,
         pointerEvents: 'none',
-        bottom: keyboardOffset,
-        transition: keyboardOffset > 0 ? 'none' : 'bottom 250ms ease-out',
+        bottom: 0,
+        transform: `translateY(${-keyboardOffset}px)`,
+        willChange: 'transform',
+        transition: 'transform 80ms ease-out',
       }}
       data-testid="agent-input"
     >
