@@ -9,7 +9,7 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
 function getRedirectUri(req: any): string {
-  const protocol = req.protocol;
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol;
   const host = req.get('host');
   return `${protocol}://${host}/api/auth/google/callback`;
 }
