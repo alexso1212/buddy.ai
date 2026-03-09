@@ -12,6 +12,8 @@ import { authMiddleware, generateToken, getTokenExpiry } from './middleware/auth
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { setupGoogleAuth } from "./services/googleAuth";
 import adminRouter, { adminOrOwnerMiddleware } from './routes/admin';
+import { loginLimiter, registerLimiter, passwordResetLimiter } from './middleware/rateLimiter';
+import { isAccountLocked, recordFailedLogin, clearFailedLogins } from './middleware/accountLockout';
 import {
   insertOrganizationSchema,
   insertDepartmentSchema,
@@ -247,7 +249,7 @@ export async function registerRoutes(server: Server, app: Express) {
   }
 
   // ===================== Auth =====================
-  app.post("/api/auth/register", async (req, res) => {
+  app.post("/api/auth/register", registerLimiter, async (req, res) => {
     try {
       const { email, password, displayName } = req.body;
 
@@ -280,6 +282,19 @@ export async function registerRoutes(server: Server, app: Express) {
 
       await storage.createOrgMembership({ userId: user.id, orgId: org.id, role: 'owner', isActive: true });
 
+      // Audit log: new registration
+      try {
+        await storage.createActivityLog({
+          orgId: org.id,
+          userId: user.id,
+          entityType: 'auth',
+          entityId: user.id,
+          action: 'register',
+          changes: JSON.stringify({ ip: req.ip, userAgent: req.headers['user-agent'] }),
+          source: 'system',
+        });
+      } catch {}
+
       const token = generateToken({ userId: user.id, orgId: user.orgId, role: user.role });
       return res.status(201).json({
         token,
@@ -290,12 +305,24 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", loginLimiter, async (req, res) => {
     try {
       const { email, password } = req.body;
 
+      if (!email || !password) {
+        return res.status(400).json({ error: '请输入邮箱和密码' });
+      }
+
+      // Check account lockout
+      const lockStatus = isAccountLocked(email);
+      if (lockStatus.locked) {
+        const minutes = Math.ceil((lockStatus.remainingMs || 0) / 60000);
+        return res.status(429).json({ error: `账号已被临时锁定，请${minutes}分钟后再试` });
+      }
+
       const user = await storage.getUserByEmail(email);
       if (!user) {
+        recordFailedLogin(email);
         return res.status(401).json({ error: '邮箱或密码错误' });
       }
 
@@ -305,10 +332,30 @@ export async function registerRoutes(server: Server, app: Express) {
 
       const valid = await bcrypt.compare(password, user.passwordHash);
       if (!valid) {
-        return res.status(401).json({ error: '邮箱或密码错误' });
+        const result = recordFailedLogin(email);
+        if (result.locked) {
+          return res.status(429).json({ error: '登录失败次数过多，账号已被临时锁定15分钟' });
+        }
+        return res.status(401).json({ error: `邮箱或密码错误（还剩${result.attemptsRemaining}次尝试机会）` });
       }
 
+      // Successful login — clear lockout counter
+      clearFailedLogins(email);
+
       await storage.updateUser(user.id, { lastLoginAt: new Date() } as any);
+
+      // Audit log: successful login
+      try {
+        await storage.createActivityLog({
+          orgId: user.orgId,
+          userId: user.id,
+          entityType: 'auth',
+          entityId: user.id,
+          action: 'login',
+          changes: JSON.stringify({ ip: req.ip, userAgent: req.headers['user-agent'] }),
+          source: 'system',
+        });
+      } catch {}
 
       const token = generateToken({ userId: user.id, orgId: user.orgId, role: user.role });
       return res.json({
@@ -421,7 +468,185 @@ export async function registerRoutes(server: Server, app: Express) {
       const passwordHash = await bcrypt.hash(newPassword, 10);
       await storage.updateUser(req.currentUserId, { passwordHash } as any);
 
+      // Audit log: password change
+      try {
+        await storage.createActivityLog({
+          orgId: user.orgId,
+          userId: user.id,
+          entityType: 'auth',
+          entityId: user.id,
+          action: 'password_change',
+          changes: JSON.stringify({ ip: req.ip }),
+          source: 'system',
+        });
+      } catch {}
+
       return res.json({ message: '密码修改成功' });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== Email Verification =====================
+
+  app.post("/api/auth/verify-email/send", authMiddleware, async (req: any, res) => {
+    try {
+      const user = await storage.getUserById(req.currentUserId);
+      if (!user) return res.status(404).json({ error: '用户不存在' });
+
+      if ((user as any).emailVerified) {
+        return res.json({ message: '邮箱已验证' });
+      }
+
+      const token = crypto.randomBytes(32).toString('hex');
+      const expires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+      await storage.updateUser(user.id, {
+        emailVerifyToken: token,
+        emailVerifyExpires: expires,
+      } as any);
+
+      // TODO: Integrate actual email service (SendGrid/SES/Resend)
+      const verifyUrl = `${req.protocol}://${req.get('host')}/api/auth/verify-email/${token}`;
+      console.log(`[Email Verify] User ${user.email} → ${verifyUrl}`);
+
+      return res.json({ message: '验证邮件已发送，请查收邮箱' });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/auth/verify-email/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      if (!token) return res.status(400).json({ error: '无效的验证链接' });
+
+      const user = await storage.getUserByVerifyToken(token);
+      if (!user) {
+        return res.status(400).json({ error: '无效或已过期的验证链接' });
+      }
+
+      const expires = (user as any).emailVerifyExpires;
+      if (expires && new Date(expires) < new Date()) {
+        return res.status(400).json({ error: '验证链接已过期，请重新发送' });
+      }
+
+      await storage.updateUser(user.id, {
+        emailVerified: true,
+        emailVerifyToken: null,
+        emailVerifyExpires: null,
+      } as any);
+
+      return res.redirect('/login?verified=true');
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ===================== Password Reset =====================
+
+  app.post("/api/auth/forgot-password", passwordResetLimiter, async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ error: '请输入邮箱地址' });
+
+      // Always return success to prevent email enumeration
+      const successMsg = { message: '如果该邮箱已注册，重置链接将发送到邮箱' };
+
+      const user = await storage.getUserByEmail(email);
+      if (!user) return res.json(successMsg);
+
+      const token = crypto.randomBytes(32).toString('hex');
+      const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      await storage.updateUser(user.id, {
+        passwordResetToken: token,
+        passwordResetExpires: expires,
+      } as any);
+
+      // TODO: Integrate actual email service (SendGrid/SES/Resend)
+      const resetUrl = `${req.protocol}://${req.get('host')}/reset-password?token=${token}`;
+      console.log(`[Password Reset] User ${user.email} → ${resetUrl}`);
+
+      try {
+        await storage.createActivityLog({
+          orgId: user.orgId,
+          userId: user.id,
+          entityType: 'auth',
+          entityId: user.id,
+          action: 'password_reset_request',
+          changes: JSON.stringify({ ip: req.ip }),
+          source: 'system',
+        });
+      } catch {}
+
+      return res.json(successMsg);
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/auth/reset-password/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const user = await storage.getUserByResetToken(token);
+      if (!user) {
+        return res.status(400).json({ error: '无效或已过期的重置链接' });
+      }
+
+      const expires = (user as any).passwordResetExpires;
+      if (expires && new Date(expires) < new Date()) {
+        return res.status(400).json({ error: '重置链接已过期，请重新申请' });
+      }
+
+      return res.json({ valid: true, email: user.email });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/auth/reset-password", passwordResetLimiter, async (req, res) => {
+    try {
+      const { token, newPassword } = req.body;
+      if (!token || !newPassword) {
+        return res.status(400).json({ error: '缺少必要参数' });
+      }
+      if (newPassword.length < 8) {
+        return res.status(400).json({ error: '密码至少需要8个字符' });
+      }
+
+      const user = await storage.getUserByResetToken(token);
+      if (!user) {
+        return res.status(400).json({ error: '无效或已过期的重置链接' });
+      }
+
+      const expires = (user as any).passwordResetExpires;
+      if (expires && new Date(expires) < new Date()) {
+        return res.status(400).json({ error: '重置链接已过期，请重新申请' });
+      }
+
+      const passwordHash = await bcrypt.hash(newPassword, 10);
+      await storage.updateUser(user.id, {
+        passwordHash,
+        passwordResetToken: null,
+        passwordResetExpires: null,
+      } as any);
+
+      clearFailedLogins(user.email);
+
+      try {
+        await storage.createActivityLog({
+          orgId: user.orgId,
+          userId: user.id,
+          entityType: 'auth',
+          entityId: user.id,
+          action: 'password_reset_complete',
+          changes: JSON.stringify({ ip: req.ip }),
+          source: 'system',
+        });
+      } catch {}
+
+      return res.json({ message: '密码重置成功，请使用新密码登录' });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }

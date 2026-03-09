@@ -3,17 +3,26 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { orgIsolation } from "./middleware/orgIsolation";
+import { securityHeaders, csrfCheck } from "./middleware/security";
+import { apiLimiter } from "./middleware/rateLimiter";
 import { migrateOnboarding } from "./migrations/onboardingMigration";
 import { seedAiProviders } from "./migrations/seedAiProviders";
+import { migrateAuthSecurity } from "./migrations/authSecurityMigration";
 
 const app = express();
 const httpServer = createServer(app);
+
+// Trust proxy for rate limiting behind reverse proxy
+app.set('trust proxy', 1);
 
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
   }
 }
+
+// Security headers (helmet)
+app.use(securityHeaders);
 
 app.use(
   express.json({
@@ -24,6 +33,13 @@ app.use(
   }),
 );
 app.use(express.urlencoded({ extended: false, limit: '5mb' }));
+
+// CSRF protection for session-based routes
+app.use(csrfCheck);
+
+// General API rate limiting
+app.use('/api', apiLimiter);
+
 app.use(orgIsolation);
 
 export function log(message: string, source = "express") {
@@ -74,6 +90,12 @@ app.use((req, res, next) => {
     await seedAiProviders();
   } catch (err) {
     console.error("Migration: ai_providers seed failed:", err);
+  }
+
+  try {
+    await migrateAuthSecurity();
+  } catch (err) {
+    console.error("Migration: auth security migration failed:", err);
   }
 
   await registerRoutes(httpServer, app);

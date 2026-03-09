@@ -168,6 +168,16 @@ export class DatabaseStorage {
     return result;
   }
 
+  async getUserByVerifyToken(token: string): Promise<User | undefined> {
+    const [result] = await db.select().from(users).where(eq(users.emailVerifyToken, token));
+    return result;
+  }
+
+  async getUserByResetToken(token: string): Promise<User | undefined> {
+    const [result] = await db.select().from(users).where(eq(users.passwordResetToken, token));
+    return result;
+  }
+
   async getProjects(): Promise<Project[]> {
     return db.select().from(projects);
   }

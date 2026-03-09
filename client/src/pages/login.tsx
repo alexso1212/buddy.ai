@@ -179,6 +179,13 @@ export default function LoginPage() {
       return;
     }
 
+    if (params.get('verified') === 'true') {
+      toast({ title: '邮箱验证成功', description: '请使用您的账号登录' });
+      window.history.replaceState({}, '', '/login');
+      setView('login');
+      return;
+    }
+
     if (token) {
       window.history.replaceState({}, '', '/login');
       loginWithToken(token)
@@ -385,21 +392,38 @@ export default function LoginPage() {
           </form>
 
           {view === 'login' && (
-            <button
-              onClick={() => setView('register')}
-              style={{
-                marginTop: 20,
-                background: 'none',
-                border: 'none',
-                color: 'rgba(255,255,255,0.5)',
-                fontSize: '13px',
-                cursor: 'pointer',
-              }}
-              data-testid="link-to-register"
-              {...tapMotionProps}
-            >
-              没有账户？<span style={{ color: '#D4A27F', textDecoration: 'underline' }}>注册</span>
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+              <button
+                onClick={() => navigate('/forgot-password')}
+                style={{
+                  marginTop: 16,
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(255,255,255,0.4)',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                }}
+                data-testid="link-forgot-password"
+                {...tapMotionProps}
+              >
+                忘记密码？
+              </button>
+              <button
+                onClick={() => setView('register')}
+                style={{
+                  marginTop: 4,
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(255,255,255,0.5)',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                }}
+                data-testid="link-to-register"
+                {...tapMotionProps}
+              >
+                没有账户？<span style={{ color: '#D4A27F', textDecoration: 'underline' }}>注册</span>
+              </button>
+            </div>
           )}
           {view === 'register' && (
             <button
