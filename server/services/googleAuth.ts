@@ -13,69 +13,71 @@ export function setupGoogleAuth(app: Express) {
     return;
   }
 
-  app.get('/api/auth/google', (req, res, next) => {
-    const callbackURL = `${req.protocol}://${req.hostname}/api/auth/google/callback`;
+  const verifyCallback = async (
+    _accessToken: string,
+    _refreshToken: string,
+    profile: any,
+    done: any
+  ) => {
+    try {
+      const googleSub = profile.id;
+      const email = profile.emails?.[0]?.value ?? null;
+      const displayName = profile.displayName || email || 'Google User';
+      const avatarUrl = profile.photos?.[0]?.value ?? null;
 
-    const strategy = new GoogleStrategy(
-      {
-        clientID,
-        clientSecret,
-        callbackURL,
-        scope: ['profile', 'email'],
-      },
-      async (_accessToken, _refreshToken, profile, done) => {
-        try {
-          const googleSub = profile.id;
-          const email = profile.emails?.[0]?.value ?? null;
-          const displayName = profile.displayName || email || 'Google User';
-          const avatarUrl = profile.photos?.[0]?.value ?? null;
+      let user = await storage.getUserByProvider('google', googleSub);
 
-          let user = await storage.getUserByProvider('google', googleSub);
-
-          if (!user && email) {
-            user = await storage.getUserByEmail(email);
-            if (user) {
-              await storage.updateUser(user.id, {
-                authProvider: 'google',
-                authProviderId: googleSub,
-                avatarUrl: avatarUrl || user.avatarUrl,
-              } as any);
-            }
-          }
-
-          if (!user) {
-            const org = await storage.createOrganization({ name: displayName + '的团队' });
-            user = await storage.createUser({
-              orgId: org.id,
-              email: email || `google_${googleSub}@placeholder.local`,
-              displayName,
-              avatarUrl,
-              role: 'owner',
-              isActive: true,
-              authProvider: 'google',
-              authProviderId: googleSub,
-            } as any);
-            await storage.createOrgMembership({
-              userId: user.id,
-              orgId: org.id,
-              role: 'owner',
-              isActive: true,
-            });
-          }
-
+      if (!user && email) {
+        user = await storage.getUserByEmail(email);
+        if (user) {
           await storage.updateUser(user.id, {
-            lastLoginAt: new Date(),
+            authProvider: 'google',
+            authProviderId: googleSub,
             avatarUrl: avatarUrl || user.avatarUrl,
           } as any);
-
-          return done(null, user);
-        } catch (err) {
-          return done(err as Error);
         }
       }
-    );
 
+      if (!user) {
+        const org = await storage.createOrganization({ name: displayName + '的团队' });
+        user = await storage.createUser({
+          orgId: org.id,
+          email: email || `google_${googleSub}@placeholder.local`,
+          displayName,
+          avatarUrl,
+          role: 'owner',
+          isActive: true,
+          authProvider: 'google',
+          authProviderId: googleSub,
+        } as any);
+        await storage.createOrgMembership({
+          userId: user.id,
+          orgId: org.id,
+          role: 'owner',
+          isActive: true,
+        });
+      }
+
+      await storage.updateUser(user.id, {
+        lastLoginAt: new Date(),
+        avatarUrl: avatarUrl || user.avatarUrl,
+      } as any);
+
+      return done(null, user);
+    } catch (err) {
+      return done(err as Error);
+    }
+  };
+
+  app.get('/api/auth/google', (req, res, next) => {
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    const callbackURL = `${protocol}://${req.hostname}/api/auth/google/callback`;
     const strategyName = `google:${req.hostname}`;
+
+    const strategy = new GoogleStrategy(
+      { clientID, clientSecret, callbackURL },
+      verifyCallback
+    );
     passport.use(strategyName, strategy);
 
     passport.authenticate(strategyName, {
@@ -85,7 +87,15 @@ export function setupGoogleAuth(app: Express) {
   });
 
   app.get('/api/auth/google/callback', (req, res, next) => {
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    const callbackURL = `${protocol}://${req.hostname}/api/auth/google/callback`;
     const strategyName = `google:${req.hostname}`;
+
+    const strategy = new GoogleStrategy(
+      { clientID, clientSecret, callbackURL },
+      verifyCallback
+    );
+    passport.use(strategyName, strategy);
 
     passport.authenticate(strategyName, { session: false }, (err: any, user: any) => {
       if (err || !user) {
