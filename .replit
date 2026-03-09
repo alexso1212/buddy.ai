@@ -45,8 +45,6 @@ waitForPort = 5000
 AI_BASE_URL = "https://new.pumpkinai.vip/v1"
 TELEGRAM_BOT_USERNAME = "Deltapex_Alex_Bot"
 VITE_TELEGRAM_BOT_USERNAME = "Deltapex_Alex_Bot"
-GOOGLE_CLIENT_ID = "845192879346-092jiitotssrv46tiuqmqbqs0ofmvgrb.apps.googleusercontent.com"
-GOOGLE_CLIENT_SECRET = "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"
 
 [agent]
 integrations = ["javascript_log_in_with_replit:2.0.0"]
