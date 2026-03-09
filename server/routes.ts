@@ -12,6 +12,7 @@ import { authMiddleware, generateToken, getTokenExpiry } from './middleware/auth
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { setupGoogleAuth } from "./services/googleAuth";
 import adminRouter, { adminOrOwnerMiddleware } from './routes/admin';
+import googleAuthRouter from './routes/googleAuth';
 import { loginLimiter, registerLimiter, passwordResetLimiter } from './middleware/rateLimiter';
 import { isAccountLocked, recordFailedLogin, clearFailedLogins } from './middleware/accountLockout';
 import {
@@ -63,6 +64,9 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   app.use("/api/admin", authMiddleware, adminOrOwnerMiddleware, adminRouter);
+
+  // Google OAuth
+  app.use("/api/auth", googleAuthRouter);
 
   app.get("/api/auth/oidc/complete", async (req: any, res) => {
     try {
