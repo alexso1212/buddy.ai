@@ -219,7 +219,15 @@ export default function LoginPage() {
     }
   }, [loginWithToken, navigate, toast]);
 
-  const handleSocialLogin = () => {
+  const handleGoogleLogin = () => {
+    window.location.href = '/api/auth/google';
+  };
+
+  const handleAppleLogin = () => {
+    window.location.href = '/api/login';
+  };
+
+  const handleGithubLogin = () => {
     window.location.href = '/api/login';
   };
 
@@ -487,7 +495,7 @@ export default function LoginPage() {
       >
         <div style={{ width: '100%', maxWidth: 360, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <button
-            onClick={handleSocialLogin}
+            onClick={handleAppleLogin}
             data-testid="button-apple-login"
             {...tapMotionProps}
             style={{
@@ -513,7 +521,7 @@ export default function LoginPage() {
           </button>
 
           <button
-            onClick={handleSocialLogin}
+            onClick={handleGoogleLogin}
             data-testid="button-google-login"
             {...tapMotionProps}
             style={{
@@ -576,7 +584,7 @@ export default function LoginPage() {
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginTop: 4 }}>
             <button
-              onClick={handleSocialLogin}
+              onClick={handleGithubLogin}
               data-testid="button-github-login"
               title="GitHub"
               {...tapMotionProps}
