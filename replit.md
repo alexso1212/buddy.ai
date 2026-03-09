@@ -68,3 +68,4 @@ The application is built with an Express.js backend, a React (TypeScript) fronte
 - **Zod:** TypeScript-first schema declaration and validation library.
 - **@assistant-ui/react:** UI components for AI chat interfaces.
 - **Tavily API:** AI-native web search for AI models.
+- **Google OAuth 2.0:** Social login via `passport-google-oauth20`. Credentials stored as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` env vars. Route: `GET /api/auth/google` initiates flow; `GET /api/auth/google/callback` handles callback, creates/links user, and issues a JWT redirected to `/login?token=...`. Logic lives in `server/services/googleAuth.ts`.
