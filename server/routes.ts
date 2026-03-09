@@ -10,6 +10,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { authMiddleware, generateToken, getTokenExpiry } from './middleware/auth';
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
+import { setupGoogleAuth } from "./services/googleAuth";
 import adminRouter, { adminOrOwnerMiddleware } from './routes/admin';
 import googleAuthRouter from './routes/googleAuth';
 import { loginLimiter, registerLimiter, passwordResetLimiter } from './middleware/rateLimiter';
@@ -46,6 +47,7 @@ export async function registerRoutes(server: Server, app: Express) {
 
   await setupAuth(app);
   registerAuthRoutes(app);
+  setupGoogleAuth(app);
 
   app.get('/api/documents/:fileName', authMiddleware, (req: any, res) => {
     const fileName = req.params.fileName;

@@ -56,8 +56,8 @@ The application is built with an Express.js backend, a React (TypeScript) fronte
 
 ## External Dependencies
 - **PostgreSQL:** Primary relational database.
-- **Anthropic Claude API:** AI model access (via proxy).
-- **OpenAI API (via OpenRouter):** For GPT-4o and DeepSeek V3 models.
+- **Anthropic Claude API:** Direct access via `ANTHROPIC_API_KEY` (official SDK). Used in chat, verdicts, briefings, and document extraction. Falls back to proxy when key is absent.
+- **OpenAI API:** Direct access via `OPENAI_API_KEY` for GPT-4o, GPT-4.1, o3-mini etc. Registered as "OpenAI (Direct)" provider in `ai_providers` table (priority 10). Falls back to OpenRouter proxy.
 - **Drizzle ORM:** TypeScript ORM for database interaction.
 - **Express.js:** Backend web application framework.
 - **React:** Frontend JavaScript library for building user interfaces.
@@ -68,3 +68,4 @@ The application is built with an Express.js backend, a React (TypeScript) fronte
 - **Zod:** TypeScript-first schema declaration and validation library.
 - **@assistant-ui/react:** UI components for AI chat interfaces.
 - **Tavily API:** AI-native web search for AI models.
+- **Google OAuth 2.0:** Social login via `passport-google-oauth20`. Credentials stored as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` env vars. Route: `GET /api/auth/google` initiates flow; `GET /api/auth/google/callback` handles callback, creates/links user, and issues a JWT redirected to `/login?token=...`. Logic lives in `server/services/googleAuth.ts`.
