@@ -114,28 +114,51 @@ export async function confirmAndSetup(params: {
   }
 
   const deptNameToId: Record<string, number> = {};
+  let departmentsUpdated = 0;
 
   for (const dept of profile.departments) {
     try {
-      const created = await storage.createDepartment({
-        orgId,
-        name: dept.name,
-        description: dept.description || null,
-      });
-      deptNameToId[dept.name] = created.id;
-      departmentsCreated++;
+      // Check if department already exists by name
+      const existing = await storage.findDepartmentByName(orgId, dept.name);
+      if (existing) {
+        deptNameToId[dept.name] = existing.id;
+        // Update description if changed
+        if (dept.description && dept.description !== existing.description) {
+          await storage.updateDepartment(existing.id, { description: dept.description });
+          departmentsUpdated++;
+        }
+      } else {
+        const created = await storage.createDepartment({
+          orgId,
+          name: dept.name,
+          description: dept.description || null,
+        });
+        deptNameToId[dept.name] = created.id;
+        departmentsCreated++;
+      }
 
       if (dept.children && dept.children.length > 0) {
+        const parentId = deptNameToId[dept.name];
         for (const child of dept.children) {
           try {
-            const childCreated = await storage.createDepartment({
-              orgId,
-              name: child.name,
-              description: child.description || null,
-              parentDeptId: created.id,
-            });
-            deptNameToId[child.name] = childCreated.id;
-            departmentsCreated++;
+            const existingChild = await storage.findDepartmentByName(orgId, child.name);
+            if (existingChild) {
+              deptNameToId[child.name] = existingChild.id;
+              // Update parentDeptId if not set
+              if (!existingChild.parentDeptId && parentId) {
+                await storage.updateDepartment(existingChild.id, { parentDeptId: parentId });
+                departmentsUpdated++;
+              }
+            } else {
+              const childCreated = await storage.createDepartment({
+                orgId,
+                name: child.name,
+                description: child.description || null,
+                parentDeptId: parentId,
+              });
+              deptNameToId[child.name] = childCreated.id;
+              departmentsCreated++;
+            }
           } catch (err: any) {
             console.warn(`[Setup] Failed to create child dept ${child.name}:`, err.message);
           }
@@ -146,27 +169,34 @@ export async function confirmAndSetup(params: {
     }
   }
 
-  console.log(`[Setup] Created ${departmentsCreated} departments`);
+  console.log(`[Setup] Departments: ${departmentsCreated} created, ${departmentsUpdated} updated`);
 
+  let jobRolesUpdated = 0;
   for (const role of profile.jobRoles) {
     try {
       const deptId = deptNameToId[role.departmentName] || null;
-      await storage.createJobRole({
-        orgId,
-        deptId,
-        title: role.title,
-        responsibilities: role.responsibilities || '',
-        boundaries: role.boundaries || null,
-        requiredSkills: role.requiredSkills || null,
-        description: null,
-      });
-      jobRolesCreated++;
+      // Check if role already exists by title
+      const existing = await storage.findJobRoleByTitle(orgId, role.title);
+      if (existing) {
+        jobRolesUpdated++;
+      } else {
+        await storage.createJobRole({
+          orgId,
+          deptId,
+          title: role.title,
+          responsibilities: role.responsibilities || '',
+          boundaries: role.boundaries || null,
+          requiredSkills: role.requiredSkills || null,
+          description: null,
+        });
+        jobRolesCreated++;
+      }
     } catch (err: any) {
       console.warn(`[Setup] Failed to create role ${role.title}:`, err.message);
     }
   }
 
-  console.log(`[Setup] Created ${jobRolesCreated} job roles`);
+  console.log(`[Setup] Job roles: ${jobRolesCreated} created, ${jobRolesUpdated} skipped (already exist)`);
 
   const roleNameToId: Record<string, number> = {};
   const allJobRoles = await storage.getJobRolesByOrg(orgId);
@@ -174,33 +204,64 @@ export async function confirmAndSetup(params: {
     roleNameToId[jr.title] = jr.id;
   }
 
+  let membersUpdated = 0;
   if (profile.members && profile.members.length > 0) {
     for (const member of profile.members) {
       if (!member.fullName) continue;
       try {
         const deptId = deptNameToId[member.departmentName] || null;
         const jobRoleId = roleNameToId[member.jobRoleTitle] || null;
-        await storage.createMemberProfile({
-          orgId,
-          fullName: member.fullName,
-          aliases: member.aliases && member.aliases.length > 0 ? JSON.stringify(member.aliases) : null,
-          deptId,
-          jobRoleId,
-          employeeId: member.employeeId || null,
-          phone: member.phone || null,
-          email: member.email || null,
-          title: member.title || null,
-          hireDate: member.hireDate || null,
-          contractInfo: member.contractHighlights || null,
-          status: 'pending',
-          sourceDocument: null,
-        });
-        membersCreated++;
+
+        // Dedup: check by email first, then employeeId, then fullName
+        let existingProfile = null;
+        if (member.email) {
+          existingProfile = await storage.findMemberProfileByEmail(orgId, member.email);
+        }
+        if (!existingProfile && member.employeeId) {
+          existingProfile = await storage.findMemberProfileByEmployeeId(orgId, member.employeeId);
+        }
+        if (!existingProfile) {
+          existingProfile = await storage.findMemberProfileByName(orgId, member.fullName);
+        }
+
+        if (existingProfile) {
+          // Update existing profile with new data (only non-null fields)
+          const updates: Record<string, any> = {};
+          if (deptId && deptId !== existingProfile.deptId) updates.deptId = deptId;
+          if (jobRoleId && jobRoleId !== existingProfile.jobRoleId) updates.jobRoleId = jobRoleId;
+          if (member.phone && member.phone !== existingProfile.phone) updates.phone = member.phone;
+          if (member.title && member.title !== existingProfile.title) updates.title = member.title;
+          if (member.employeeId && member.employeeId !== existingProfile.employeeId) updates.employeeId = member.employeeId;
+          if (member.email && member.email !== existingProfile.email) updates.email = member.email;
+          if (member.hireDate && member.hireDate !== existingProfile.hireDate) updates.hireDate = member.hireDate;
+
+          if (Object.keys(updates).length > 0) {
+            await storage.updateMemberProfile(existingProfile.id, updates);
+          }
+          membersUpdated++;
+        } else {
+          await storage.createMemberProfile({
+            orgId,
+            fullName: member.fullName,
+            aliases: member.aliases && member.aliases.length > 0 ? JSON.stringify(member.aliases) : null,
+            deptId,
+            jobRoleId,
+            employeeId: member.employeeId || null,
+            phone: member.phone || null,
+            email: member.email || null,
+            title: member.title || null,
+            hireDate: member.hireDate || null,
+            contractInfo: member.contractHighlights || null,
+            status: 'pending',
+            sourceDocument: null,
+          });
+          membersCreated++;
+        }
       } catch (err: any) {
-        console.warn(`[Setup] Failed to create member profile ${member.fullName}:`, err.message);
+        console.warn(`[Setup] Failed to create/update member profile ${member.fullName}:`, err.message);
       }
     }
-    console.log(`[Setup] Created ${membersCreated} member profiles`);
+    console.log(`[Setup] Member profiles: ${membersCreated} created, ${membersUpdated} updated`);
   }
 
   let duplicatesSkipped = 0;

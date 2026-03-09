@@ -118,6 +118,15 @@ export class DatabaseStorage {
   }
 
   async deleteDepartment(id: number): Promise<void> {
+    // Cascade: clear deptId on users belonging to this department
+    await db.update(users).set({ deptId: null }).where(eq(users.deptId, id));
+    // Cascade: clear deptId on org_memberships referencing this department
+    await db.update(orgMemberships).set({ deptId: null }).where(eq(orgMemberships.deptId, id));
+    // Cascade: clear deptId on member_profiles referencing this department
+    await db.update(memberProfiles).set({ deptId: null }).where(eq(memberProfiles.deptId, id));
+    // Cascade: reparent child departments to null
+    await db.update(departments).set({ parentDeptId: null }).where(eq(departments.parentDeptId, id));
+    // Now safe to delete
     await db.delete(departments).where(eq(departments.id, id));
   }
 
@@ -146,6 +155,8 @@ export class DatabaseStorage {
   }
 
   async deleteUser(id: number): Promise<User | undefined> {
+    // Sync: deactivate all org memberships for this user
+    await db.update(orgMemberships).set({ isActive: false }).where(eq(orgMemberships.userId, id));
     const [result] = await db.update(users).set({ isActive: false }).where(eq(users.id, id)).returning();
     return result;
   }
@@ -1155,6 +1166,41 @@ export class DatabaseStorage {
     await db.delete(memberProfiles).where(eq(memberProfiles.id, id));
   }
 
+  async findMemberProfileByEmail(orgId: number, email: string): Promise<MemberProfile | undefined> {
+    const [result] = await db.select().from(memberProfiles).where(
+      and(eq(memberProfiles.orgId, orgId), eq(memberProfiles.email, email))
+    );
+    return result;
+  }
+
+  async findMemberProfileByEmployeeId(orgId: number, employeeId: string): Promise<MemberProfile | undefined> {
+    const [result] = await db.select().from(memberProfiles).where(
+      and(eq(memberProfiles.orgId, orgId), eq(memberProfiles.employeeId, employeeId))
+    );
+    return result;
+  }
+
+  async findMemberProfileByName(orgId: number, fullName: string): Promise<MemberProfile | undefined> {
+    const [result] = await db.select().from(memberProfiles).where(
+      and(eq(memberProfiles.orgId, orgId), eq(memberProfiles.fullName, fullName))
+    );
+    return result;
+  }
+
+  async findDepartmentByName(orgId: number, name: string): Promise<Department | undefined> {
+    const [result] = await db.select().from(departments).where(
+      and(eq(departments.orgId, orgId), eq(departments.name, name))
+    );
+    return result;
+  }
+
+  async findJobRoleByTitle(orgId: number, title: string): Promise<JobRole | undefined> {
+    const [result] = await db.select().from(jobRoles).where(
+      and(eq(jobRoles.orgId, orgId), eq(jobRoles.title, title))
+    );
+    return result;
+  }
+
   async migrateTasksFromProfile(profileId: number, userId: number): Promise<number> {
     const result = await db.update(tasks)
       .set({ assigneeId: userId, memberProfileId: null })
@@ -1163,7 +1209,7 @@ export class DatabaseStorage {
     return result.length;
   }
 
-  async updateOrgMembership(orgId: number, userId: number, data: { deptId?: number | null; jobRoleId?: number | null; role?: string }): Promise<OrgMembership | undefined> {
+  async updateOrgMembership(orgId: number, userId: number, data: { deptId?: number | null; jobRoleId?: number | null; role?: string; isActive?: boolean }): Promise<OrgMembership | undefined> {
     const [result] = await db.update(orgMemberships)
       .set(data)
       .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.userId, userId)))
