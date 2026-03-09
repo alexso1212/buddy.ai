@@ -80,6 +80,11 @@ export const users = pgTable('users', {
   authProviderId: varchar('auth_provider_id', { length: 255 }),
   onboardingCompleted: boolean('onboarding_completed').default(false),
   isSuperAdmin: boolean('is_super_admin').notNull().default(false),
+  emailVerified: boolean('email_verified').default(false),
+  emailVerifyToken: varchar('email_verify_token', { length: 255 }),
+  emailVerifyExpires: timestamp('email_verify_expires'),
+  passwordResetToken: varchar('password_reset_token', { length: 255 }),
+  passwordResetExpires: timestamp('password_reset_expires'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
