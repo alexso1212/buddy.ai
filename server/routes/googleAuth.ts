@@ -145,21 +145,14 @@ function sendAuthResult(res: any, token: string | null, error: string | null) {
 (function() {
   var token = ${token ? JSON.stringify(token) : 'null'};
   var error = ${error ? JSON.stringify(error) : 'null'};
-  var target = token ? '/login?token=' + encodeURIComponent(token) : '/login?error=' + (error || 'auth_failed');
 
   try {
     localStorage.setItem('google_auth_result', JSON.stringify({ token: token, error: error, ts: Date.now() }));
   } catch(e) {}
 
-  try {
-    if (window.opener && !window.opener.closed) {
-      window.opener.location.href = target;
-      setTimeout(function() { window.close(); }, 300);
-      return;
-    }
-  } catch(e) {}
+  try { window.close(); } catch(e) {}
 
-  window.location.href = target;
+  document.getElementById('msg').textContent = '登录完成，请关闭此窗口返回应用。';
 })();
 </script>
 </body></html>`;
