@@ -167,8 +167,20 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [googleLoginPending, setGoogleLoginPending] = useState(false);
-  const googleCheckingRef = useRef(false);
+  const authCheckRef = useRef(false);
+
+  const tryAutoLogin = useCallback(async () => {
+    if (authCheckRef.current) return;
+    const token = localStorage.getItem('buddy_token');
+    if (!token) return;
+    authCheckRef.current = true;
+    try {
+      await loginWithToken(token);
+      navigate('/agent');
+    } catch {
+      authCheckRef.current = false;
+    }
+  }, [loginWithToken, navigate]);
 
   useEffect(() => {
     const params = new URLSearchParams(searchString);
@@ -200,27 +212,26 @@ export default function LoginPage() {
         });
       return;
     }
+
+    tryAutoLogin();
   }, []);
 
   useEffect(() => {
-    if (!googleLoginPending) return;
-    const interval = setInterval(async () => {
-      if (googleCheckingRef.current) return;
-      try {
-        const token = localStorage.getItem('buddy_token');
-        if (token) {
-          googleCheckingRef.current = true;
-          await loginWithToken(token);
-          setGoogleLoginPending(false);
-          toast({ title: '登录成功', description: '正在跳转...' });
-          navigate('/agent');
-        }
-      } catch {
-        googleCheckingRef.current = false;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        tryAutoLogin();
       }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [googleLoginPending, loginWithToken, navigate, toast]);
+    };
+    const onFocus = () => tryAutoLogin();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onFocus);
+    const interval = setInterval(tryAutoLogin, 2000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onFocus);
+      clearInterval(interval);
+    };
+  }, [tryAutoLogin]);
 
   const handleTelegramAuth = useCallback(async (telegramUser: any) => {
     try {
@@ -245,17 +256,8 @@ export default function LoginPage() {
   const handleGoogleLogin = () => {
     localStorage.removeItem('buddy_token');
     localStorage.removeItem('buddy_user');
-    googleCheckingRef.current = false;
-    const popup = window.open('/api/auth/google', '_blank');
-    if (!popup) {
-      toast({ title: '弹窗被阻止', description: '请允许浏览器弹窗后重试', variant: 'destructive' });
-      return;
-    }
-    setGoogleLoginPending(true);
-    setTimeout(() => {
-      setGoogleLoginPending(false);
-      googleCheckingRef.current = false;
-    }, 120000);
+    authCheckRef.current = false;
+    window.location.href = '/api/auth/google';
   };
 
   const handleAppleLogin = () => {
