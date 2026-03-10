@@ -196,7 +196,30 @@ export default function LoginPage() {
         .catch(() => {
           toast({ title: '登录失败', description: '令牌验证失败', variant: 'destructive' });
         });
+      return;
     }
+
+    try {
+      const stored = localStorage.getItem('google_auth_result');
+      if (stored) {
+        localStorage.removeItem('google_auth_result');
+        const result = JSON.parse(stored);
+        if (result.ts && Date.now() - result.ts < 60000) {
+          if (result.token) {
+            loginWithToken(result.token)
+              .then(() => {
+                toast({ title: '登录成功', description: '正在跳转...' });
+                navigate('/agent');
+              })
+              .catch(() => {
+                toast({ title: '登录失败', description: '令牌验证失败', variant: 'destructive' });
+              });
+          } else if (result.error) {
+            toast({ title: '登录失败', description: '第三方认证失败，请重试', variant: 'destructive' });
+          }
+        }
+      }
+    } catch {}
   }, []);
 
   const handleTelegramAuth = useCallback(async (telegramUser: any) => {
