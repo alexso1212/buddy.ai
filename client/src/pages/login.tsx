@@ -119,7 +119,7 @@ function TypingSlogan() {
         style={{
           fontSize: '28px',
           fontWeight: 600,
-          color: '#F5A0B5',
+          color: '#E8C5A8',
           letterSpacing: '0.02em',
         }}
       >
@@ -130,7 +130,7 @@ function TypingSlogan() {
           display: 'inline-block',
           width: '3px',
           height: '32px',
-          background: '#F5A0B5',
+          background: '#D4A27F',
           marginLeft: '2px',
           opacity: showCursor ? 1 : 0,
           transition: 'opacity 0.1s',
@@ -502,7 +502,7 @@ export default function LoginPage() {
               width: '100%',
               height: 50,
               borderRadius: 9999,
-              background: '#FFFFFF',
+              background: '#D4B896',
               color: '#1E1D1A',
               fontSize: '15px',
               fontWeight: 600,
