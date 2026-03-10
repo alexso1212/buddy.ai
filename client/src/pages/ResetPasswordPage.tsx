@@ -77,7 +77,7 @@ export default function ResetPasswordPage() {
   if (verifying) {
     return (
       <div style={{ minHeight: '100dvh', background: 'var(--bg-sidebar)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#D4B896' }} />
+        <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#E8A0B5' }} />
       </div>
     );
   }
@@ -116,7 +116,7 @@ export default function ResetPasswordPage() {
 
       {done ? (
         <div style={{ textAlign: 'center', maxWidth: 360 }}>
-          <CheckCircle size={48} color="#D4B896" style={{ margin: '0 auto 16px' }} />
+          <CheckCircle size={48} color="#E8A0B5" style={{ margin: '0 auto 16px' }} />
           <h2 style={{ color: 'white', fontSize: '20px', fontWeight: 600, marginBottom: 12 }}>
             密码已重置
           </h2>
@@ -129,7 +129,7 @@ export default function ResetPasswordPage() {
             style={{
               height: 44,
               borderRadius: 9999,
-              background: '#D4B896',
+              background: '#E8A0B5',
               color: '#1E1D1A',
               fontSize: '14px',
               fontWeight: 600,
@@ -156,7 +156,7 @@ export default function ResetPasswordPage() {
             style={{
               height: 44,
               borderRadius: 9999,
-              background: '#D4B896',
+              background: '#E8A0B5',
               color: '#1E1D1A',
               fontSize: '14px',
               fontWeight: 600,
@@ -206,7 +206,7 @@ export default function ResetPasswordPage() {
                 width: '100%',
                 height: 48,
                 borderRadius: 9999,
-                background: '#D4B896',
+                background: '#E8A0B5',
                 color: '#1E1D1A',
                 fontSize: '15px',
                 fontWeight: 600,

@@ -119,7 +119,7 @@ function TypingSlogan() {
         style={{
           fontSize: '28px',
           fontWeight: 600,
-          color: '#E8C5A8',
+          color: '#F0B8C8',
           letterSpacing: '0.02em',
         }}
       >
@@ -130,7 +130,7 @@ function TypingSlogan() {
           display: 'inline-block',
           width: '3px',
           height: '32px',
-          background: '#D4A27F',
+          background: '#D4829A',
           marginLeft: '2px',
           opacity: showCursor ? 1 : 0,
           transition: 'opacity 0.1s',
@@ -148,7 +148,7 @@ function BuddyLogo() {
         width: 32,
         height: 32,
         borderRadius: '50%',
-        background: '#D4B896',
+        background: '#E8A0B5',
       }}
       data-testid="buddy-logo"
     />
@@ -407,7 +407,7 @@ export default function LoginPage() {
                 width: '100%',
                 height: 48,
                 borderRadius: 9999,
-                background: '#D4B896',
+                background: '#E8A0B5',
                 color: '#1E1D1A',
                 fontSize: '15px',
                 fontWeight: 600,
@@ -462,7 +462,7 @@ export default function LoginPage() {
                 data-testid="link-to-register"
                 {...tapMotionProps}
               >
-                没有账户？<span style={{ color: '#D4A27F', textDecoration: 'underline' }}>注册</span>
+                没有账户？<span style={{ color: '#D4829A', textDecoration: 'underline' }}>注册</span>
               </button>
             </div>
           )}
@@ -480,7 +480,7 @@ export default function LoginPage() {
               data-testid="link-to-login"
               {...tapMotionProps}
             >
-              已有账户？<span style={{ color: '#D4A27F', textDecoration: 'underline' }}>登录</span>
+              已有账户？<span style={{ color: '#D4829A', textDecoration: 'underline' }}>登录</span>
             </button>
           )}
         </div>
@@ -539,7 +539,7 @@ export default function LoginPage() {
               width: '100%',
               height: 50,
               borderRadius: 9999,
-              background: '#D4B896',
+              background: '#E8A0B5',
               color: '#1E1D1A',
               fontSize: '15px',
               fontWeight: 600,

@@ -76,7 +76,7 @@ export default function ForgotPasswordPage() {
 
       {sent ? (
         <div style={{ textAlign: 'center', maxWidth: 360 }}>
-          <CheckCircle size={48} color="#D4B896" style={{ margin: '0 auto 16px' }} />
+          <CheckCircle size={48} color="#E8A0B5" style={{ margin: '0 auto 16px' }} />
           <h2 style={{ color: 'white', fontSize: '20px', fontWeight: 600, marginBottom: 12 }}>
             邮件已发送
           </h2>
@@ -89,7 +89,7 @@ export default function ForgotPasswordPage() {
             style={{
               height: 44,
               borderRadius: 9999,
-              background: '#D4B896',
+              background: '#E8A0B5',
               color: '#1E1D1A',
               fontSize: '14px',
               fontWeight: 600,
@@ -129,7 +129,7 @@ export default function ForgotPasswordPage() {
                 width: '100%',
                 height: 48,
                 borderRadius: 9999,
-                background: '#D4B896',
+                background: '#E8A0B5',
                 color: '#1E1D1A',
                 fontSize: '15px',
                 fontWeight: 600,
