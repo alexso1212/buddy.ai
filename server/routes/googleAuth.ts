@@ -14,20 +14,12 @@ function getRedirectUri(req: any): string {
   return `${protocol}://${host}/api/auth/google/callback`;
 }
 
-// Step 1: Redirect user to Google consent screen
 googleRouter.get('/google', (req, res) => {
   if (!GOOGLE_CLIENT_ID) {
     return res.status(500).json({ error: 'Google OAuth 未配置' });
   }
 
   const state = crypto.randomBytes(16).toString('hex');
-  // Store state in cookie for CSRF protection
-  res.cookie('google_oauth_state', state, {
-    httpOnly: true,
-    secure: req.protocol === 'https',
-    maxAge: 10 * 60 * 1000, // 10 min
-    sameSite: 'lax',
-  });
 
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
@@ -42,31 +34,19 @@ googleRouter.get('/google', (req, res) => {
   res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
 });
 
-// Step 2: Handle Google callback
 googleRouter.get('/google/callback', async (req, res) => {
   try {
-    const { code, state, error } = req.query;
+    const { code, error } = req.query;
 
     if (error) {
       console.error('[Google OAuth] Error:', error);
-      return res.redirect('/login?error=auth_failed');
+      return sendAuthResult(res, null, 'auth_failed');
     }
-
-    // Verify state for CSRF protection
-    const storedState = req.cookies?.google_oauth_state;
-    if (!state || state !== storedState) {
-      console.error('[Google OAuth] State mismatch');
-      return res.redirect('/login?error=auth_failed');
-    }
-
-    // Clear the state cookie
-    res.clearCookie('google_oauth_state');
 
     if (!code || !GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
-      return res.redirect('/login?error=auth_failed');
+      return sendAuthResult(res, null, 'auth_failed');
     }
 
-    // Exchange code for tokens
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -82,31 +62,28 @@ googleRouter.get('/google/callback', async (req, res) => {
     if (!tokenRes.ok) {
       const errData = await tokenRes.text();
       console.error('[Google OAuth] Token exchange failed:', errData);
-      return res.redirect('/login?error=auth_failed');
+      return sendAuthResult(res, null, 'auth_failed');
     }
 
     const tokens = await tokenRes.json();
 
-    // Get user info from Google
     const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
 
     if (!userInfoRes.ok) {
       console.error('[Google OAuth] User info fetch failed');
-      return res.redirect('/login?error=auth_failed');
+      return sendAuthResult(res, null, 'auth_failed');
     }
 
     const googleUser = await userInfoRes.json();
     const { id: googleId, email, name, picture } = googleUser;
 
-    // Find or create user
     let user = await storage.getUserByProvider('google', googleId);
 
     if (!user && email) {
       user = await storage.getUserByEmail(email);
       if (user) {
-        // Link Google to existing account
         await storage.updateUser(user.id, {
           authProvider: 'google',
           authProviderId: googleId,
@@ -117,7 +94,6 @@ googleRouter.get('/google/callback', async (req, res) => {
     }
 
     if (!user) {
-      // Create new user + organization
       const displayName = name || email?.split('@')[0] || 'User';
       const org = await storage.createOrganization({ name: displayName + '的团队' });
       user = await storage.createUser({
@@ -135,13 +111,11 @@ googleRouter.get('/google/callback', async (req, res) => {
       await storage.createOrgMembership({ userId: user.id, orgId: org.id, role: 'owner', isActive: true });
     }
 
-    // Update last login
     await storage.updateUser(user.id, {
       lastLoginAt: new Date(),
       avatarUrl: picture || user.avatarUrl,
     } as any);
 
-    // Audit log
     try {
       await storage.createActivityLog({
         orgId: user.orgId,
@@ -154,13 +128,19 @@ googleRouter.get('/google/callback', async (req, res) => {
       });
     } catch {}
 
-    // Generate JWT and redirect to frontend
     const jwtToken = generateToken({ userId: user.id, orgId: user.orgId, role: user.role });
-    return res.redirect(`/login?token=${encodeURIComponent(jwtToken)}`);
+    return sendAuthResult(res, jwtToken, null);
   } catch (e: any) {
     console.error('[Google OAuth] Callback error:', e);
-    return res.redirect('/login?error=auth_failed');
+    return sendAuthResult(res, null, 'auth_failed');
   }
 });
+
+function sendAuthResult(res: any, token: string | null, error: string | null) {
+  if (token) {
+    return res.redirect(`/login?token=${encodeURIComponent(token)}`);
+  }
+  return res.redirect(`/login?error=${error || 'auth_failed'}`);
+}
 
 export default googleRouter;

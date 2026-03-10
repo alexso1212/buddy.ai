@@ -119,7 +119,7 @@ function TypingSlogan() {
         style={{
           fontSize: '28px',
           fontWeight: 600,
-          color: '#F5A0B5',
+          color: '#E8C5A8',
           letterSpacing: '0.02em',
         }}
       >
@@ -130,7 +130,7 @@ function TypingSlogan() {
           display: 'inline-block',
           width: '3px',
           height: '32px',
-          background: '#F5A0B5',
+          background: '#D4A27F',
           marginLeft: '2px',
           opacity: showCursor ? 1 : 0,
           transition: 'opacity 0.1s',
@@ -167,6 +167,20 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const authCheckRef = useRef(false);
+
+  const tryAutoLogin = useCallback(async () => {
+    if (authCheckRef.current) return;
+    const token = localStorage.getItem('buddy_token');
+    if (!token) return;
+    authCheckRef.current = true;
+    try {
+      await loginWithToken(token);
+      navigate('/agent');
+    } catch {
+      authCheckRef.current = false;
+    }
+  }, [loginWithToken, navigate]);
 
   useEffect(() => {
     const params = new URLSearchParams(searchString);
@@ -196,8 +210,28 @@ export default function LoginPage() {
         .catch(() => {
           toast({ title: '登录失败', description: '令牌验证失败', variant: 'destructive' });
         });
+      return;
     }
+
+    tryAutoLogin();
   }, []);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        tryAutoLogin();
+      }
+    };
+    const onFocus = () => tryAutoLogin();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onFocus);
+    const interval = setInterval(tryAutoLogin, 2000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onFocus);
+      clearInterval(interval);
+    };
+  }, [tryAutoLogin]);
 
   const handleTelegramAuth = useCallback(async (telegramUser: any) => {
     try {
@@ -220,6 +254,9 @@ export default function LoginPage() {
   }, [loginWithToken, navigate, toast]);
 
   const handleGoogleLogin = () => {
+    localStorage.removeItem('buddy_token');
+    localStorage.removeItem('buddy_user');
+    authCheckRef.current = false;
     window.location.href = '/api/auth/google';
   };
 
@@ -502,7 +539,7 @@ export default function LoginPage() {
               width: '100%',
               height: 50,
               borderRadius: 9999,
-              background: '#FFFFFF',
+              background: '#D4B896',
               color: '#1E1D1A',
               fontSize: '15px',
               fontWeight: 600,
