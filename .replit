@@ -48,6 +48,8 @@ outputType = "webview"
 AI_BASE_URL = "https://new.pumpkinai.vip/v1"
 TELEGRAM_BOT_USERNAME = "Deltapex_Alex_Bot"
 VITE_TELEGRAM_BOT_USERNAME = "Deltapex_Alex_Bot"
+GOOGLE_CLIENT_ID = "845192879346-a5nsqi84dohbkf9b37g5a4brung5q007.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET = "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"
 
 [agent]
 integrations = ["javascript_log_in_with_replit:2.0.0"]
