@@ -167,6 +167,8 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [googleLoginPending, setGoogleLoginPending] = useState(false);
+  const googleCheckingRef = useRef(false);
 
   useEffect(() => {
     const params = new URLSearchParams(searchString);
@@ -201,21 +203,24 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
+    if (!googleLoginPending) return;
     const interval = setInterval(async () => {
+      if (googleCheckingRef.current) return;
       try {
         const token = localStorage.getItem('buddy_token');
         if (token) {
-          const res = await fetch('/api/auth/me', {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (res.ok) {
-            navigate('/agent');
-          }
+          googleCheckingRef.current = true;
+          await loginWithToken(token);
+          setGoogleLoginPending(false);
+          toast({ title: '登录成功', description: '正在跳转...' });
+          navigate('/agent');
         }
-      } catch {}
-    }, 1500);
+      } catch {
+        googleCheckingRef.current = false;
+      }
+    }, 1000);
     return () => clearInterval(interval);
-  }, [navigate]);
+  }, [googleLoginPending, loginWithToken, navigate, toast]);
 
   const handleTelegramAuth = useCallback(async (telegramUser: any) => {
     try {
@@ -238,7 +243,19 @@ export default function LoginPage() {
   }, [loginWithToken, navigate, toast]);
 
   const handleGoogleLogin = () => {
-    window.location.href = '/api/auth/google';
+    localStorage.removeItem('buddy_token');
+    localStorage.removeItem('buddy_user');
+    googleCheckingRef.current = false;
+    const popup = window.open('/api/auth/google', '_blank');
+    if (!popup) {
+      toast({ title: '弹窗被阻止', description: '请允许浏览器弹窗后重试', variant: 'destructive' });
+      return;
+    }
+    setGoogleLoginPending(true);
+    setTimeout(() => {
+      setGoogleLoginPending(false);
+      googleCheckingRef.current = false;
+    }, 120000);
   };
 
   const handleAppleLogin = () => {

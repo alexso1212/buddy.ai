@@ -34,6 +34,7 @@ The application is built with an Express.js backend, a React (TypeScript) fronte
 - **Unified Knowledge Base with AI Organization Analysis:** An admin-only page for document management where AI auto-classifies uploaded documents and can perform a 3-stage funnel to extract departments, roles, and members from high-value documents. Supports a 17-category taxonomy for classification.
 - **Member Profiles:** AI-extracted or manually created employee profiles with a claim mechanism.
 - **Onboarding Flow:** Multi-step process for new users to create or join an organization.
+- **Google OAuth Flow:** Uses `window.open()` to open Google login in a new tab (B window). B window completes OAuth, redirects to `/login?token=JWT`, stores `buddy_token` in localStorage. The preview (A window) polls localStorage every 1s, calls `loginWithToken()` to update auth context, then navigates to `/agent`. Server callback in `server/routes/googleAuth.ts`, client handling in `client/src/pages/login.tsx`.
 - **Claude-Style Streaming UI:** Implemented in phases, including redesigned indicators, message bubbles, action buttons, thinking blocks, code blocks, tool call cards, artifact cards, side panels, bottom sheets, inline widgets, and citation superscripts, all utilizing CSS variables for theme compatibility.
 
 **AI-Assisted Workflows:**
