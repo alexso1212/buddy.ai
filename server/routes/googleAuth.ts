@@ -140,7 +140,7 @@ function sendAuthResult(res: any, token: string | null, error: string | null) {
   const html = `<!DOCTYPE html>
 <html><head><title>登录中...</title></head>
 <body>
-<p style="text-align:center;margin-top:40vh;font-family:sans-serif;color:#666;">正在完成登录...</p>
+<p id="msg" style="text-align:center;margin-top:40vh;font-family:sans-serif;color:#666;">正在完成登录...</p>
 <script>
 (function() {
   var token = ${token ? JSON.stringify(token) : 'null'};
@@ -151,12 +151,15 @@ function sendAuthResult(res: any, token: string | null, error: string | null) {
     localStorage.setItem('google_auth_result', JSON.stringify({ token: token, error: error, ts: Date.now() }));
   } catch(e) {}
 
-  if (window.opener) {
-    window.opener.location.href = target;
-    window.close();
-  } else {
-    window.location.href = target;
-  }
+  try {
+    if (window.opener && !window.opener.closed) {
+      window.opener.location.href = target;
+      setTimeout(function() { window.close(); }, 300);
+      return;
+    }
+  } catch(e) {}
+
+  window.location.href = target;
 })();
 </script>
 </body></html>`;
