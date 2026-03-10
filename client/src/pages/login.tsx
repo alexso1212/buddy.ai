@@ -167,7 +167,6 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isGooglePending, setIsGooglePending] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(searchString);
@@ -199,57 +198,24 @@ export default function LoginPage() {
         });
       return;
     }
-
-    try {
-      const stored = localStorage.getItem('google_auth_result');
-      if (stored) {
-        localStorage.removeItem('google_auth_result');
-        const result = JSON.parse(stored);
-        if (result.ts && Date.now() - result.ts < 60000) {
-          if (result.token) {
-            loginWithToken(result.token)
-              .then(() => {
-                toast({ title: '登录成功', description: '正在跳转...' });
-                navigate('/agent');
-              })
-              .catch(() => {
-                toast({ title: '登录失败', description: '令牌验证失败', variant: 'destructive' });
-              });
-          } else if (result.error) {
-            toast({ title: '登录失败', description: '第三方认证失败，请重试', variant: 'destructive' });
-          }
-        }
-      }
-    } catch {}
   }, []);
 
   useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'google_auth_result' && e.newValue) {
-        try {
-          localStorage.removeItem('google_auth_result');
-          const result = JSON.parse(e.newValue);
-          if (result.ts && Date.now() - result.ts < 60000) {
-            if (result.token) {
-              loginWithToken(result.token)
-                .then(() => {
-                  toast({ title: '登录成功', description: '正在跳转...' });
-                  navigate('/agent');
-                })
-                .catch(() => {
-                  toast({ title: '登录失败', description: '令牌验证失败', variant: 'destructive' });
-                });
-            } else if (result.error) {
-              toast({ title: '登录失败', description: '第三方认证失败，请重试', variant: 'destructive' });
-            }
+    const interval = setInterval(async () => {
+      try {
+        const token = localStorage.getItem('buddy_token');
+        if (token) {
+          const res = await fetch('/api/auth/me', {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            navigate('/agent');
           }
-        } catch {}
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [loginWithToken, navigate, toast]);
+        }
+      } catch {}
+    }, 1500);
+    return () => clearInterval(interval);
+  }, [navigate]);
 
   const handleTelegramAuth = useCallback(async (telegramUser: any) => {
     try {
@@ -271,46 +237,8 @@ export default function LoginPage() {
     }
   }, [loginWithToken, navigate, toast]);
 
-  useEffect(() => {
-    if (!isGooglePending) return;
-    const interval = setInterval(() => {
-      try {
-        const stored = localStorage.getItem('google_auth_result');
-        if (stored) {
-          localStorage.removeItem('google_auth_result');
-          setIsGooglePending(false);
-          const result = JSON.parse(stored);
-          if (result.ts && Date.now() - result.ts < 120000) {
-            if (result.token) {
-              loginWithToken(result.token)
-                .then(() => {
-                  toast({ title: '登录成功', description: '正在跳转...' });
-                  navigate('/agent');
-                })
-                .catch(() => {
-                  toast({ title: '登录失败', description: '令牌验证失败', variant: 'destructive' });
-                });
-            } else if (result.error) {
-              toast({ title: '登录失败', description: '第三方认证失败，请重试', variant: 'destructive' });
-            }
-          }
-        }
-      } catch {}
-    }, 500);
-    return () => clearInterval(interval);
-  }, [isGooglePending, loginWithToken, navigate, toast]);
-
   const handleGoogleLogin = () => {
-    localStorage.removeItem('google_auth_result');
-    setIsGooglePending(true);
-    const w = 500, h = 600;
-    const left = window.screenX + (window.outerWidth - w) / 2;
-    const top = window.screenY + (window.outerHeight - h) / 2;
-    window.open(
-      '/api/auth/google',
-      'google_login',
-      `width=${w},height=${h},left=${left},top=${top},toolbar=no,menubar=no`
-    );
+    window.location.href = '/api/auth/google';
   };
 
   const handleAppleLogin = () => {

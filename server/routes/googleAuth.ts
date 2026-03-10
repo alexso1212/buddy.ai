@@ -137,26 +137,10 @@ googleRouter.get('/google/callback', async (req, res) => {
 });
 
 function sendAuthResult(res: any, token: string | null, error: string | null) {
-  const html = `<!DOCTYPE html>
-<html><head><title>登录中...</title></head>
-<body>
-<p id="msg" style="text-align:center;margin-top:40vh;font-family:sans-serif;color:#666;">正在完成登录...</p>
-<script>
-(function() {
-  var token = ${token ? JSON.stringify(token) : 'null'};
-  var error = ${error ? JSON.stringify(error) : 'null'};
-
-  try {
-    localStorage.setItem('google_auth_result', JSON.stringify({ token: token, error: error, ts: Date.now() }));
-  } catch(e) {}
-
-  try { window.close(); } catch(e) {}
-
-  document.getElementById('msg').textContent = '登录完成，请关闭此窗口返回应用。';
-})();
-</script>
-</body></html>`;
-  res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+  if (token) {
+    return res.redirect(`/login?token=${encodeURIComponent(token)}`);
+  }
+  return res.redirect(`/login?error=${error || 'auth_failed'}`);
 }
 
 export default googleRouter;
