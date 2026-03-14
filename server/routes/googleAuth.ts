@@ -19,7 +19,16 @@ googleRouter.get('/google', (req, res) => {
     return res.status(500).json({ error: 'Google OAuth 未配置' });
   }
 
-  const state = crypto.randomBytes(16).toString('hex');
+  const state = crypto.randomBytes(32).toString('hex');
+
+  // 将 state 存入 httpOnly cookie 用于 callback 验证
+  res.cookie('oauth_state', state, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 10 * 60 * 1000, // 10 分钟
+    path: '/api/auth',
+  });
 
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
@@ -36,12 +45,22 @@ googleRouter.get('/google', (req, res) => {
 
 googleRouter.get('/google/callback', async (req, res) => {
   try {
-    const { code, error } = req.query;
+    const { code, error, state } = req.query;
 
     if (error) {
       console.error('[Google OAuth] Error:', error);
       return sendAuthResult(res, null, 'auth_failed');
     }
+
+    // 验证 state 参数防止 CSRF 攻击
+    const storedState = (req as any).cookies?.oauth_state;
+    if (!state || !storedState || state !== storedState) {
+      console.error('[Google OAuth] State mismatch - possible CSRF attack');
+      res.clearCookie('oauth_state', { path: '/api/auth' });
+      return sendAuthResult(res, null, 'auth_failed');
+    }
+    // state 验证通过，清除 cookie
+    res.clearCookie('oauth_state', { path: '/api/auth' });
 
     if (!code || !GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
       return sendAuthResult(res, null, 'auth_failed');

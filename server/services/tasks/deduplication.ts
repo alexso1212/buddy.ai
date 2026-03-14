@@ -43,7 +43,7 @@ function extractKeywords(text: string): string[] {
   const en = text.match(/[a-zA-Z0-9]+/g) || [];
   const stopEn = new Set(['the', 'a', 'an', 'is', 'are', 'to', 'of', 'in', 'for', 'and', 'or', 'not', 'this', 'that', 'it', 'be', 'do', 'have']);
   words.push(...en.filter(w => w.length > 1 && !stopEn.has(w.toLowerCase())).map(w => w.toLowerCase()));
-  const cn = text.replace(/[a-zA-Z0-9\s\p{P}]/gu, '');
+  const cn = text.replace(/[a-zA-Z0-9\s.,;?!'"()\[\]{}<>:，。；？！‘’“”（）《》【】]/g, '');
   const stopCn = new Set(['的', '了', '和', '是', '在', '有', '这', '那', '个', '中', '为', '与', '等', '一', '不', '人', '我', '他', '她', '你', '们', '会', '要', '就', '也', '能', '把', '到', '上', '下', '被', '让', '给', '从', '很', '都', '才', '又']);
   for (let i = 0; i < cn.length - 1; i++) {
     const bigram = cn.slice(i, i + 2);

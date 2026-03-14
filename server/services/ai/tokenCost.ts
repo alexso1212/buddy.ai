@@ -35,12 +35,16 @@ const MODEL_PRICING: Record<string, { promptPer1k: number; completionPer1k: numb
 
 const DEFAULT_PRICING = { promptPer1k: 0.003, completionPer1k: 0.015 };
 
+function normalizeModelName(model: string): string {
+  return model.replace(/^(anthropic|openai|google|deepseek)\//, '').replace(/\./g, '-');
+}
+
 export function calculateCost(
   model: string,
   promptTokens: number,
   completionTokens: number
 ): string {
-  const pricing = MODEL_PRICING[model] || DEFAULT_PRICING;
+  const pricing = MODEL_PRICING[model] || MODEL_PRICING[normalizeModelName(model)] || DEFAULT_PRICING;
   const cost =
     (promptTokens / 1000) * pricing.promptPer1k +
     (completionTokens / 1000) * pricing.completionPer1k;

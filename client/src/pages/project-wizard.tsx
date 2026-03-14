@@ -31,8 +31,8 @@ export default function ProjectWizard() {
   const [objective, setObjective] = useState("");
   const [criteria, setCriteria] = useState("");
   const [deadline, setDeadline] = useState("");
-  const [ownerId, setOwnerId] = useState(user?.id ?? "");
-  const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [ownerId, setOwnerId] = useState<number | null>(user?.id ?? null);
+  const [memberIds, setMemberIds] = useState<number[]>([]);
   const [animDir, setAnimDir] = useState<"next" | "prev">("next");
   const [animating, setAnimating] = useState(false);
 
@@ -41,7 +41,7 @@ export default function ProjectWizard() {
 
   const canAdvance = () => {
     if (step === 0) return title.trim().length > 0;
-    if (step === 4) return ownerId.length > 0;
+    if (step === 4) return ownerId !== null;
     return true;
   };
 
@@ -72,31 +72,29 @@ export default function ProjectWizard() {
   const createMut = useMutation({
     mutationFn: async () => {
       const body: Record<string, any> = {
-        title: title.trim(),
-        owner_id: ownerId,
+        name: title.trim(),
+        ownerId: ownerId,
       };
-      if (objective.trim()) body.objective = objective.trim();
-      if (criteria.trim()) body.acceptance_criteria = criteria.trim();
-      if (deadline) body.deadline = deadline;
-      if (memberIds.length > 0) body.member_ids = memberIds;
+      if (objective.trim()) body.description = objective.trim();
+      if (deadline) body.targetDate = deadline;
       const res = await apiRequest("POST", "/api/projects", body);
       return res.json();
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       toast({ title: "项目已创建" });
-      setLocation(`/project/${data.id}`);
+      setLocation(`/project/${data.data?.id || data.id}`);
     },
     onError: (err: Error) => toast({ title: "创建失败", description: err.message, variant: "destructive" }),
   });
 
   if (!user) { setLocation("/"); return null; }
-  if (user.role !== "ceo" && user.role !== "admin") { setLocation("/projects"); return null; }
+  if (user.role !== "owner" && user.role !== "admin") { setLocation("/projects"); return null; }
 
   const ownerUser = users.find((u) => u.id === ownerId);
   const progress = ((step + 1) / TOTAL_STEPS) * 100;
 
-  const toggleMember = (userId: string) => {
+  const toggleMember = (userId: number) => {
     setMemberIds((prev) =>
       prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
     );
@@ -168,7 +166,7 @@ export default function ProjectWizard() {
               <h3 className="text-sm font-medium mb-3 text-muted-foreground">负责人</h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
                 {users
-                  .filter((u) => u.is_active !== false)
+                  .filter((u) => u.isActive !== false)
                   .map((u) => (
                     <div
                       key={u.id}
@@ -182,11 +180,11 @@ export default function ProjectWizard() {
                     >
                       <span
                         className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-xs text-white font-medium"
-                        style={{ backgroundColor: u.color ?? "#888" }}
+                        style={{ backgroundColor: "#888" }}
                       >
-                        {(u.name ?? "?")[0]}
+                        {(u.displayName ?? "?")[0]}
                       </span>
-                      <span className="text-sm truncate">{u.name}</span>
+                      <span className="text-sm truncate">{u.displayName}</span>
                     </div>
                   ))}
               </div>
@@ -202,11 +200,11 @@ export default function ProjectWizard() {
                     >
                       <span
                         className="w-4 h-4 rounded-full shrink-0 flex items-center justify-center text-[10px] text-white"
-                        style={{ backgroundColor: u.color ?? "#888" }}
+                        style={{ backgroundColor: "#888" }}
                       >
-                        {(u.name ?? "?")[0]}
+                        {(u.displayName ?? "?")[0]}
                       </span>
-                      {u.name}
+                      {u.displayName}
                       <button
                         className="ml-1 text-muted-foreground"
                         onClick={(e) => { e.stopPropagation(); toggleMember(u.id); }}
@@ -219,7 +217,7 @@ export default function ProjectWizard() {
               )}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
                 {users
-                  .filter((u) => u.is_active !== false && u.id !== ownerId)
+                  .filter((u) => u.isActive !== false && u.id !== ownerId)
                   .map((u) => (
                     <div
                       key={u.id}
@@ -233,11 +231,11 @@ export default function ProjectWizard() {
                     >
                       <span
                         className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-xs text-white font-medium"
-                        style={{ backgroundColor: u.color ?? "#888" }}
+                        style={{ backgroundColor: "#888" }}
                       >
-                        {(u.name ?? "?")[0]}
+                        {(u.displayName ?? "?")[0]}
                       </span>
-                      <span className="text-sm truncate">{u.name}</span>
+                      <span className="text-sm truncate">{u.displayName}</span>
                     </div>
                   ))}
               </div>
@@ -276,12 +274,12 @@ export default function ProjectWizard() {
                   {ownerUser && (
                     <span
                       className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[10px] text-white"
-                      style={{ backgroundColor: ownerUser.color ?? "#888" }}
+                      style={{ backgroundColor: "#888" }}
                     >
-                      {(ownerUser.name ?? "?")[0]}
+                      {(ownerUser.displayName ?? "?")[0]}
                     </span>
                   )}
-                  <span className="text-sm font-medium">{ownerUser?.name ?? "未指定"}</span>
+                  <span className="text-sm font-medium">{ownerUser?.displayName ?? "未指定"}</span>
                 </div>
               </div>
               {selectedMembers.length > 0 && (
@@ -292,11 +290,11 @@ export default function ProjectWizard() {
                       <div key={u.id} className="flex items-center gap-1">
                         <span
                           className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[10px] text-white"
-                          style={{ backgroundColor: u.color ?? "#888" }}
+                          style={{ backgroundColor: "#888" }}
                         >
-                          {(u.name ?? "?")[0]}
+                          {(u.displayName ?? "?")[0]}
                         </span>
-                        <span className="text-sm">{u.name}</span>
+                        <span className="text-sm">{u.displayName}</span>
                       </div>
                     ))}
                   </div>

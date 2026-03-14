@@ -90,7 +90,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (!res.ok) {
       const text = (await res.text()) || res.statusText;
-      throw new Error(text);
+      let errorMsg = text;
+      try {
+        const json = JSON.parse(text);
+        errorMsg = json.error || json.message || text;
+      } catch {}
+      throw new Error(errorMsg);
     }
 
     const data = await res.json();
@@ -128,7 +133,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (!res.ok) {
       const text = (await res.text()) || res.statusText;
-      throw new Error(text);
+      let errorMsg = text;
+      try {
+        const json = JSON.parse(text);
+        errorMsg = json.error || json.message || text;
+      } catch {}
+      throw new Error(errorMsg);
     }
 
     const data = await res.json();

@@ -42,7 +42,7 @@ export function optionalAuthMiddleware(req: Request, _res: Response, next: NextF
 }
 
 export function generateToken(payload: { userId: number; orgId: number; role: string }): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
 }
 
 export function getTokenExpiry(token: string): number | null {

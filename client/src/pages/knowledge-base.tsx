@@ -618,7 +618,7 @@ export default function KnowledgeBase() {
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={resetUploadForm} data-testid="button-cancel-upload">取消</Button>
               <Button
-                onClick={handleUpload}
+                onClick={() => handleUpload()}
                 disabled={!selectedFile || uploadMutation.isPending}
                 data-testid="button-confirm-upload"
               >

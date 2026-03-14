@@ -72,9 +72,7 @@ import { tapMotionProps, elasticDeformSmallProps, elasticDeformProps } from '@/h
 
 const BUDDY_AI_NAV = [
   { label: 'Chats', icon: MessageSquare, path: '/chats' },
-  { label: 'Projects', icon: FolderClosed, path: null },
   { label: 'Artifacts', icon: Settings2, path: '/artifacts' },
-  { label: 'Code', icon: Code2, path: null },
 ];
 
 const ENTERPRISE_NAV = [

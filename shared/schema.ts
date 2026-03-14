@@ -1,4 +1,4 @@
-import { pgTable, serial, varchar, text, integer, boolean, timestamp, numeric, jsonb, customType, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, serial, varchar, text, integer, boolean, timestamp, numeric, jsonb, customType, type AnyPgColumn, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -10,8 +10,8 @@ const vector = customType<{ data: number[]; driverParam: string }>({
   toDriver(value: number[]): string {
     return `[${value.join(',')}]`;
   },
-  fromDriver(value: string): number[] {
-    return JSON.parse(value);
+  fromDriver(value: unknown): number[] {
+    return JSON.parse(String(value));
   },
 });
 
@@ -87,7 +87,12 @@ export const users = pgTable('users', {
   passwordResetExpires: timestamp('password_reset_expires'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => [
+  index('idx_users_org_id').on(table.orgId),
+  index('idx_users_auth_provider').on(table.authProvider, table.authProviderId),
+  index('idx_users_password_reset_token').on(table.passwordResetToken),
+  index('idx_users_email_verify_token').on(table.emailVerifyToken),
+]);
 
 // ============================================================
 // org_memberships（组织成员关系）
@@ -101,7 +106,10 @@ export const orgMemberships = pgTable('org_memberships', {
   jobRoleId: integer('job_role_id').references(() => jobRoles.id),
   isActive: boolean('is_active').default(true).notNull(),
   joinedAt: timestamp('joined_at').defaultNow().notNull(),
-});
+}, (table) => [
+  index('idx_org_memberships_user_id').on(table.userId),
+  index('idx_org_memberships_org_id').on(table.orgId),
+]);
 
 // ============================================================
 // invitations（组织邀请）

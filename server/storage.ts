@@ -130,13 +130,22 @@ export class DatabaseStorage {
     await db.delete(departments).where(eq(departments.id, id));
   }
 
-  async getUsers(): Promise<User[]> {
-    return db.select().from(users);
+  // 从用户对象中移除敏感字段（密码哈希、重置令牌等）
+  private stripSensitive<T extends Record<string, any>>(user: T): T {
+    const { passwordHash, passwordResetToken, passwordResetExpires, emailVerifyToken, emailVerifyExpires, ...safe } = user;
+    return safe as T;
+  }
+
+  async getUsers(orgId?: number): Promise<User[]> {
+    const result = orgId
+      ? await db.select().from(users).where(eq(users.orgId, orgId))
+      : await db.select().from(users);
+    return result.map(u => this.stripSensitive(u));
   }
 
   async getUserById(id: number): Promise<User | undefined> {
     const [result] = await db.select().from(users).where(eq(users.id, id));
-    return result;
+    return result ? this.stripSensitive(result) : undefined;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
@@ -178,8 +187,10 @@ export class DatabaseStorage {
     return result;
   }
 
-  async getProjects(): Promise<Project[]> {
-    return db.select().from(projects);
+  async getProjects(orgId?: number): Promise<Project[]> {
+    return orgId
+      ? db.select().from(projects).where(eq(projects.orgId, orgId))
+      : db.select().from(projects);
   }
 
   async getProjectById(id: number): Promise<Project | undefined> {
@@ -201,16 +212,14 @@ export class DatabaseStorage {
     await db.delete(projects).where(eq(projects.id, id));
   }
 
-  async getTasks(filters?: { projectId?: number; assigneeId?: number; status?: string[]; parentTaskId?: number | null }): Promise<Task[]> {
-    if (!filters) {
-      return db.select().from(tasks);
-    }
+  async getTasks(filters?: { projectId?: number; assigneeId?: number; status?: string[]; parentTaskId?: number | null; orgId?: number }): Promise<Task[]> {
     const conditions = [];
-    if (filters.projectId) conditions.push(eq(tasks.projectId, filters.projectId));
-    if (filters.assigneeId) conditions.push(eq(tasks.assigneeId, filters.assigneeId));
-    if (filters.status?.length) conditions.push(inArray(tasks.status, filters.status));
-    if (filters.parentTaskId === null) conditions.push(sql`${tasks.parentTaskId} IS NULL`);
-    else if (filters.parentTaskId) conditions.push(eq(tasks.parentTaskId, filters.parentTaskId));
+    if (filters?.orgId) conditions.push(eq(tasks.orgId, filters.orgId));
+    if (filters?.projectId) conditions.push(eq(tasks.projectId, filters.projectId));
+    if (filters?.assigneeId) conditions.push(eq(tasks.assigneeId, filters.assigneeId));
+    if (filters?.status?.length) conditions.push(inArray(tasks.status, filters.status));
+    if (filters?.parentTaskId === null) conditions.push(sql`${tasks.parentTaskId} IS NULL`);
+    else if (filters?.parentTaskId) conditions.push(eq(tasks.parentTaskId, filters.parentTaskId));
 
     if (conditions.length === 0) {
       return db.select().from(tasks);
@@ -1002,7 +1011,7 @@ export class DatabaseStorage {
   }
 
   async createSubmission(data: InsertTaskSubmission): Promise<TaskSubmission> {
-    const [submission] = await db.insert(taskSubmissions).values(data).returning();
+    const [submission] = await db.insert(taskSubmissions).values(data as any).returning();
     return submission;
   }
 

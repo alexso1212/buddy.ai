@@ -43,7 +43,7 @@ interface Message {
   errorType?: 'network' | 'timeout' | 'rate_limit' | 'unknown';
   retryPayload?: { text: string; attachments?: Attachment[] };
   timestamp?: number;
-  toolCalls?: { toolName: string; label: string }[];
+  toolCalls?: { toolName: string; label: string; status: 'running' | 'complete' | 'error'; detail?: string; type?: string; completedLabel?: string }[];
 }
 
 interface GraphChatFloatProps {
@@ -531,7 +531,7 @@ export default function GraphChatFloat({ open, onClose, graphRef }: GraphChatFlo
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantMsgId
-                    ? { ...m, toolCalls: [...(m.toolCalls || []), { toolName: event.toolName, label: event.label }] }
+                    ? { ...m, toolCalls: [...(m.toolCalls || []), { toolName: event.toolName, label: event.label, status: 'running' as const }] }
                     : m
                 )
               );

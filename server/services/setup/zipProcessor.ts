@@ -1,4 +1,5 @@
-import AdmZip from 'adm-zip';
+import * as AdmZipModule from 'adm-zip';
+const AdmZip = (AdmZipModule as any).default || AdmZipModule;
 import fs from 'fs';
 import path from 'path';
 import { extractText } from '../kb/extractText';

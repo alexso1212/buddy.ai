@@ -5,6 +5,7 @@ import { ACTION_SCHEMAS } from './actionSchemas';
 import { storage } from '../../storage';
 import { CODE_TOOLS, executeCodeTool } from './codeTools';
 import type { AiProvider, AiModelProvider } from '@shared/schema';
+import { AI_BASE_URL, AI_BASE_URL_ROOT, AI_API_KEY, AI_COMPLEX_API_KEY, AI_DEFAULT_TIMEOUT, AI_COMPLEX_TIMEOUT } from './config';
 
 let cachedProviders: AiProvider[] | null = null;
 let cachedModelProviders: AiModelProvider[] | null = null;
@@ -13,7 +14,7 @@ let modelProvidersCacheTime = 0;
 const PROVIDER_CACHE_TTL = 60000;
 const clientCache = new Map<string, OpenAI>();
 
-async function loadProviders(): Promise<AiProvider[]> {
+export async function loadProviders(): Promise<AiProvider[]> {
   const now = Date.now();
   if (cachedProviders && now - providersCacheTime < PROVIDER_CACHE_TTL) {
     return cachedProviders;
@@ -30,8 +31,8 @@ async function loadProviders(): Promise<AiProvider[]> {
 
 function getHardcodedFallbackProviders(): AiProvider[] {
   return [
-    { id: -1, name: 'Claude Simple', type: 'proxy', baseUrl: 'https://vip.aipro.love/v1', apiKeyEnvVar: 'CLAUDE_SIMPLE_API_KEY', models: ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-haiku-4-5'], timeout: 90000, priority: 0, isActive: true, createdAt: new Date(), updatedAt: new Date() },
-    { id: -2, name: 'Claude Complex', type: 'proxy', baseUrl: 'https://vip.aipro.love/v1', apiKeyEnvVar: 'CLAUDE_COMPLEX_API_KEY', models: ['claude-opus-4-6'], timeout: 180000, priority: 1, isActive: true, createdAt: new Date(), updatedAt: new Date() },
+    { id: -1, name: 'Claude Simple', type: 'proxy', baseUrl: AI_BASE_URL, apiKeyEnvVar: 'CLAUDE_SIMPLE_API_KEY', models: ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-haiku-4-5'], timeout: AI_DEFAULT_TIMEOUT, priority: 0, isActive: true, createdAt: new Date(), updatedAt: new Date() },
+    { id: -2, name: 'Claude Complex', type: 'proxy', baseUrl: AI_BASE_URL, apiKeyEnvVar: 'CLAUDE_COMPLEX_API_KEY', models: ['claude-opus-4-6'], timeout: AI_COMPLEX_TIMEOUT, priority: 1, isActive: true, createdAt: new Date(), updatedAt: new Date() },
     { id: -3, name: 'OpenRouter', type: 'direct', baseUrl: process.env.AI_BASE_URL || '', apiKeyEnvVar: 'AI_API_KEY', models: ['gpt-4o', 'gpt-5.4', 'gpt-5.4-pro', 'gpt-5.2', 'deepseek-chat'], timeout: 30000, priority: 2, isActive: true, createdAt: new Date(), updatedAt: new Date() },
   ];
 }
@@ -130,7 +131,7 @@ export async function claudeComplete(params: {
 
 function getDefaultBaseUrl(modelId: string): string {
   const resolved = resolveModelId(modelId);
-  if (resolved.startsWith('claude')) return 'https://vip.aipro.love/v1';
+  if (resolved.startsWith('claude')) return AI_BASE_URL;
   if (resolved === 'deepseek-chat') return 'https://openrouter.ai/api/v1';
   return 'https://api.openai.com/v1';
 }
@@ -226,7 +227,7 @@ async function getClientForModel(model: string): Promise<OpenAI> {
   const entries = await getProvidersForModel(model);
   if (entries.length > 0) return entries[0].client;
   const apiKey = process.env.CLAUDE_SIMPLE_API_KEY || process.env.CLAUDE_COMPLEX_API_KEY || process.env.AI_API_KEY;
-  return new OpenAI({ baseURL: 'https://vip.aipro.love/v1', apiKey: apiKey || '', timeout: 90000 });
+  return new OpenAI({ baseURL: AI_BASE_URL, apiKey: apiKey || '', timeout: AI_DEFAULT_TIMEOUT });
 }
 
 async function callWithFallback<T>(
@@ -405,7 +406,7 @@ Categories:
       ],
     });
     const result = (response.content || '').trim().toLowerCase();
-    const validCategories: TaskCategory[] = ['quick_reply', 'general_chat', 'code_generation', 'complex_analysis', 'document_processing'];
+    const validCategories: TaskCategory[] = ['quick_reply', 'general_chat', 'code_generation', 'complex_analysis', 'document_processing', 'knowledge_qa'];
     if (validCategories.includes(result as TaskCategory)) return result as TaskCategory;
     return 'general_chat';
   } catch {
@@ -875,25 +876,30 @@ interface TeamMemberEntry {
   jobTitle?: string;
 }
 
+function sanitizeForPrompt(text: string): string {
+  return text.replace(/[<>{}[\]]/g, '').slice(0, 200);
+}
+
 function formatTeamMembers(members: TeamMemberEntry[]): string {
   return members.map(m => {
-    const aliasStr = m.aliases && m.aliases.length > 0 ? `（${m.aliases.join('/')}）` : '';
+    const name = sanitizeForPrompt(m.displayName);
+    const aliasStr = m.aliases && m.aliases.length > 0 ? `（${m.aliases.map(a => sanitizeForPrompt(a)).join('/')}）` : '';
     const deptRole = m.deptName || m.jobTitle
-      ? ` [${m.deptName || '未分配'}·${m.jobTitle || '未分配'}]`
+      ? ` [${sanitizeForPrompt(m.deptName || '未分配')}·${sanitizeForPrompt(m.jobTitle || '未分配')}]`
       : '';
     const status = m.idType === 'memberProfileId' ? '（待认领）' : '';
-    return `- ${m.displayName}${aliasStr}${deptRole}${status} → 分配任务时用 ${m.idType}: ${m.id}`;
+    return `- ${name}${aliasStr}${deptRole}${status} → 分配任务时用 ${m.idType}: ${m.id}`;
   }).join('\n');
 }
 
 function formatProjectList(projects: { id: number; name: string; status: string; description?: string | null }[]): string {
-  return projects.map(p => `- ID:${p.id} ${p.name}（${p.status}）${p.description || ''}`).join('\n');
+  return projects.map(p => `- ID:${p.id} ${sanitizeForPrompt(p.name)}（${p.status}）${p.description ? sanitizeForPrompt(p.description) : ''}`).join('\n');
 }
 
 async function loadBusinessContext(orgId?: number) {
   const allUsersRaw = await storage.getUsers();
   const allProjectsRaw = await storage.getProjects();
-  const allTasksRaw = await storage.getTasks({});
+  const allTasksRaw = await storage.getTasks(orgId ? { orgId } : {});
   const allDepartmentsRaw = await storage.getDepartments();
   const allJobRoles = await storage.getJobRoles();
 
@@ -971,7 +977,7 @@ function buildContextBlock(
   return `## 当前系统上下文
 - 组织: ${orgDisplayName}
 - 当前用户ID: ${ctx.currentUserId}
-- 当前用户名: ${ctx.currentUserName}
+- 当前用户名: ${sanitizeForPrompt(ctx.currentUserName)}
 - 当前时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
 - 运行模型: ${modelName}
 
@@ -1075,14 +1081,14 @@ type 可选：single_select（单选）、multi_select（多选）、confirm（�
 - 会议纪要/批量任务必须两步：第1步用表格整理+Widget确认，第2步用户确认后才输出 multi_confirm`;
 
   if (memories.length > 0) {
-    const memoryLines = memories.map(m => `- [${m.category}] ${m.content}`).join('\n');
+    const memoryLines = memories.map(m => `- [${m.category}] ${sanitizeForPrompt(m.content)}`).join('\n');
     prompt += `\n\n## 关于当前用户的记忆
 以下是你通过之前对话了解到的关于当前用户的信息：
 ${memoryLines}`;
   }
 
   try {
-    const pendingDecisions = await storage.getPendingDecisionTasksForUser(context.currentUserId, context.orgId);
+    const pendingDecisions = context.orgId ? await storage.getPendingDecisionTasksForUser(context.currentUserId, context.orgId) : [];
     if (pendingDecisions.length > 0) {
       const decisionLines = await Promise.all(pendingDecisions.map(async (d, i) => {
         const originalTask = d.decisionForTaskId ? await storage.getTaskById(d.decisionForTaskId) : null;
@@ -1179,7 +1185,7 @@ async function executeQuery(actionType: string, data: Record<string, any>, orgId
       return `共${verdicts.length}条判定记录：\n${lines.join('\n')}`;
     }
     case 'query_overview': {
-      const allTasksRaw = await storage.getTasks({});
+      const allTasksRaw = await storage.getTasks(orgId ? { orgId } : {});
       const allTasks = orgId ? allTasksRaw.filter((t: any) => t.orgId === orgId) : allTasksRaw;
       const total = allTasks.length;
       const byStatus: Record<string, number> = {};
@@ -1212,7 +1218,7 @@ function formatTaskList(tasks: any[], users: any[], currentUserId?: number): str
     for (const t of myTasks) {
       const due = t.dueDate ? new Date(t.dueDate).toLocaleDateString('zh-CN') : '';
       const overdue = t.dueDate && new Date(t.dueDate) < now && t.status !== 'done' ? ' ⚠️逾期' : '';
-      parts.push(`- ID:${t.id}「${t.title}」状态:${t.status} 优先级:${t.priority}${due ? ' 截止:' + due : ''}${overdue} 进度:${t.progress}%`);
+      parts.push(`- ID:${t.id}「${sanitizeForPrompt(t.title)}」状态:${t.status} 优先级:${t.priority}${due ? ' 截止:' + due : ''}${overdue} 进度:${t.progress}%`);
     }
   }
 
@@ -1225,10 +1231,10 @@ function formatTaskList(tasks: any[], users: any[], currentUserId?: number): str
   if (urgentOthers.length > 0) {
     parts.push(`### 需关注的任务 (${urgentOthers.length}个)`);
     for (const t of urgentOthers) {
-      const assignee = t.assigneeId ? userMap.get(t.assigneeId) || `ID:${t.assigneeId}` : '未分配';
+      const assignee = t.assigneeId ? sanitizeForPrompt(userMap.get(t.assigneeId) || `ID:${t.assigneeId}`) : '未分配';
       const due = t.dueDate ? new Date(t.dueDate).toLocaleDateString('zh-CN') : '';
       const overdue = t.dueDate && new Date(t.dueDate) < now && t.status !== 'done' ? ' ⚠️逾期' : '';
-      parts.push(`- ID:${t.id}「${t.title}」${assignee} ${t.status} ${t.priority}${due ? ' 截止:' + due : ''}${overdue}`);
+      parts.push(`- ID:${t.id}「${sanitizeForPrompt(t.title)}」${assignee} ${t.status} ${t.priority}${due ? ' 截止:' + due : ''}${overdue}`);
     }
   }
 
@@ -1479,7 +1485,7 @@ export async function* chatStream(
   conversationHistory: { role: string; content: string | any[] }[],
   context: { currentUserId: number; currentUserName: string; customSystemPrompt?: string; model?: string; extendedThinking?: boolean; orgId?: number; knowledgeBaseEnabled?: boolean; userRole?: string; userDeptId?: number | null },
   attachments?: { type: string; name: string; mimeType: string; base64: string }[]
-): AsyncGenerator<{ type: 'token' | 'done' | 'error'; content?: string; tokenUsage?: ChatResponse['tokenUsage'] }> {
+): AsyncGenerator<{ type: 'token' | 'done' | 'error' | 'thinking' | 'action'; content?: string; tokenUsage?: ChatResponse['tokenUsage']; data?: any }> {
   const hasAttachments = !!(attachments && attachments.length > 0);
   let taskCategory = await classifyTask(message, hasAttachments);
 
@@ -1548,8 +1554,9 @@ export async function* chatStream(
           }
         } else if (ext === 'pdf') {
           try {
-            const pdfParse = (await import('pdf-parse')).default;
-            const pdfData = await pdfParse(buffer);
+            const pdfParseModule = (await import('pdf-parse'));
+            const pdfParseFn = (pdfParseModule as any).default || pdfParseModule;
+            const pdfData = await pdfParseFn(buffer);
             fileText = pdfData.text;
             if (fileText.length > 50000) {
               fileText = fileText.slice(0, 50000) + '\n\n[PDF 内容过长，已截断至前50000字符]';
@@ -1831,15 +1838,22 @@ category 说明：
     const parsed = JSON.parse(aiText);
     const memories = parsed.memories || [];
 
+    const existingMemories = await storage.getUserMemories(userId, orgId);
     for (const mem of memories) {
       if (mem.category && mem.content) {
-        await storage.createUserMemory({
-          userId,
-          orgId,
-          category: mem.category,
-          content: mem.content,
-          source: 'auto',
-        });
+        const isDuplicate = existingMemories.some(m =>
+          m.category === mem.category &&
+          m.content.toLowerCase().includes(mem.content.toLowerCase().slice(0, 50))
+        );
+        if (!isDuplicate) {
+          await storage.createUserMemory({
+            userId,
+            orgId,
+            category: mem.category,
+            content: mem.content,
+            source: 'auto',
+          });
+        }
       }
     }
   } catch (err) {
@@ -1875,7 +1889,7 @@ export async function generateConversationTitle(
 
 const anthropicClient = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_SIMPLE_API_KEY,
-  ...(process.env.ANTHROPIC_API_KEY ? {} : { baseURL: 'https://vip.aipro.love' }),
+  ...(process.env.ANTHROPIC_API_KEY ? {} : { baseURL: AI_BASE_URL_ROOT }),
 });
 
 export async function* codeToolChatStream(

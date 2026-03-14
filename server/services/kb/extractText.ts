@@ -11,14 +11,18 @@ export async function extractText(filePath: string, fileType: string): Promise<s
 
   switch (fileType.toLowerCase()) {
     case 'pdf': {
-      const pdfParse = (await import('pdf-parse')).default;
+      const pdfParseModule = (await import('pdf-parse'));
+      const pdfParseFn = (pdfParseModule as any).default || pdfParseModule;
       const dataBuffer = fs.readFileSync(absolutePath);
-      const data = await pdfParse(dataBuffer);
+      const data = await pdfParseFn(dataBuffer);
       return data.text || '';
     }
 
-    case 'docx':
     case 'doc': {
+      return '[不支持旧版 .doc 格式，请转换为 .docx 后重新上传]';
+    }
+
+    case 'docx': {
       const result = await mammoth.extractRawText({ path: absolutePath });
       return result.value || '';
     }
@@ -45,23 +49,24 @@ export async function extractText(filePath: string, fileType: string): Promise<s
     }
 
     case 'pptx': {
-      const AdmZip = (await import('adm-zip')).default;
-      const zip = new AdmZip(absolutePath);
+      const AdmZipModule = (await import('adm-zip')) as any;
+      const AdmZip = AdmZipModule.default || AdmZipModule;
+      const zip = new (AdmZip as any)(absolutePath);
       const texts: string[] = [];
       const entries = zip.getEntries();
       const slideEntries = entries
-        .filter(e => e.entryName.startsWith('ppt/slides/slide') && e.entryName.endsWith('.xml'))
-        .sort((a, b) => {
+        .filter((e: any) => e.entryName.startsWith('ppt/slides/slide') && e.entryName.endsWith('.xml'))
+        .sort((a: any, b: any) => {
           const numA = parseInt(a.entryName.match(/slide(\d+)/)?.[1] || '0');
           const numB = parseInt(b.entryName.match(/slide(\d+)/)?.[1] || '0');
           return numA - numB;
         });
       for (const entry of slideEntries) {
-        const xml = entry.getData().toString('utf-8');
-        const matches = xml.match(/<a:t>(.*?)<\/a:t>/g) || [];
-        const slideText = matches.map(m => m.replace(/<\/?a:t>/g, '')).join(' ');
-        if (slideText.trim()) {
-          texts.push(slideText);
+        const content = entry.getData().toString('utf8');
+        const matchResult = content.matchAll(/<a:t>(.*?)<\/a:t>/g);
+        const slideTextResult = Array.from(matchResult).map((m: any) => m[1]).join(' ');
+        if (slideTextResult.trim()) {
+          texts.push(slideTextResult);
         }
       }
       return texts.join('\n\n');

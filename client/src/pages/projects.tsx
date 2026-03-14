@@ -12,17 +12,17 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { FolderKanban, Plus, ArrowLeft, Calendar, User as UserIcon, Bell, Check, X } from "lucide-react";
-import type { Project, User, TaskClaim } from "@shared/schema";
+import type { Project, User } from "@shared/schema";
 
-type PendingClaim = TaskClaim & { project: Project; ownerName: string };
+type PendingClaim = { id: number; project_id: string; ownerName: string; project: Project };
 
 function getProjectStatus(project: Project): { label: string; color: string } {
   if (project.status === "completed") {
     return { label: "已完成", color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" };
   }
-  if (project.deadline) {
+  if (project.targetDate) {
     const now = new Date();
-    const dl = new Date(project.deadline);
+    const dl = new Date(project.targetDate);
     if (dl < now && project.status !== "completed") {
       return { label: "已逾期", color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" };
     }
@@ -79,12 +79,12 @@ function PendingClaimsSection() {
     },
   });
 
-  const formatDeadline = (deadline: string | null) => {
+  const formatDeadline = (deadline: Date | string | null) => {
     if (!deadline) return null;
     try {
       return new Date(deadline).toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
     } catch {
-      return deadline;
+      return null;
     }
   };
 
@@ -108,7 +108,7 @@ function PendingClaimsSection() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {pendingClaims.map((claim) => {
-            const deadline = formatDeadline(claim.project.deadline);
+            const deadline = formatDeadline(claim.project.targetDate);
             return (
               <Card
                 key={claim.id}
@@ -117,12 +117,12 @@ function PendingClaimsSection() {
               >
                 <div className="p-3 md:p-4">
                   <h3 className="text-sm font-medium truncate mb-1" data-testid={`text-claim-title-${claim.project_id}`}>
-                    {claim.project.title}
+                    {claim.project.name}
                   </h3>
 
-                  {claim.project.objective && (
+                  {claim.project.description && (
                     <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
-                      {claim.project.objective}
+                      {claim.project.description}
                     </p>
                   )}
 
@@ -215,31 +215,31 @@ export default function ProjectsPage() {
     queryKey: ["/api/users"],
   });
 
-  const isCeoOrAdmin = user?.role === "ceo" || user?.role === "admin";
+  const isCeoOrAdmin = user?.role === "owner" || user?.role === "admin";
 
   const sortedProjects = useMemo(() => {
     if (!projects) return [];
     const active = projects
       .filter((p) => p.status !== "completed")
-      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     const completed = projects
       .filter((p) => p.status === "completed")
-      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     return [...active, ...completed];
   }, [projects]);
 
-  const getUserName = (userId: string | null) => {
+  const getUserName = (userId: number | null) => {
     if (!userId || !users) return "未指定";
     const u = users.find((u) => u.id === userId);
-    return u?.name ?? "未知";
+    return u?.displayName ?? "未知";
   };
 
-  const formatDeadline = (deadline: string | null) => {
+  const formatDeadline = (deadline: Date | string | null) => {
     if (!deadline) return null;
     try {
       return new Date(deadline).toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
     } catch {
-      return deadline;
+      return null;
     }
   };
 
@@ -298,8 +298,8 @@ export default function ProjectsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {sortedProjects.map((p) => {
                 const status = getProjectStatus(p);
-                const ownerName = getUserName(p.owner_id);
-                const deadline = formatDeadline(p.deadline);
+                const ownerName = getUserName(p.ownerId);
+                const deadline = formatDeadline(p.targetDate);
 
                 return (
                   <Link key={p.id} href={`/project/${p.id}`}>
@@ -308,10 +308,10 @@ export default function ProjectsPage() {
                       data-testid={`card-project-${p.id}`}
                     >
                       <div className="flex">
-                        <div className="w-1 shrink-0 rounded-l-md" style={{ backgroundColor: p.color ?? "#6366f1" }} />
+                        <div className="w-1 shrink-0 rounded-l-md" style={{ backgroundColor: "#6366f1" }} />
                         <div className="flex-1 p-3 md:p-4">
                       <div className="flex items-start justify-between gap-2 mb-2 flex-wrap">
-                        <h3 className="text-sm font-medium truncate flex-1">{p.title}</h3>
+                        <h3 className="text-sm font-medium truncate flex-1">{p.name}</h3>
                         <Badge
                           variant="secondary"
                           className={`text-xs shrink-0 border-0 ${status.color}`}

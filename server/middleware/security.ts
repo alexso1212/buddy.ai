@@ -3,7 +3,16 @@ import { Request, Response, NextFunction } from 'express';
 
 // Helmet with config suitable for SPA
 export const securityHeaders = helmet({
-  contentSecurityPolicy: false, // SPA needs inline scripts; configure properly in production
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https://vip.aipro.love", "https://api.anthropic.com", "https://api.openai.com"],
+      fontSrc: ["'self'", "data:"],
+    },
+  },
   crossOriginEmbedderPolicy: false, // Allow loading external resources (avatars, etc.)
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   hsts: {
@@ -45,11 +54,6 @@ export function csrfCheck(req: Request, res: Response, next: NextFunction) {
     } catch {}
   }
 
-  // Allow requests with Content-Type: application/json (custom headers not sent by simple forms)
-  const contentType = req.headers['content-type'];
-  if (contentType && contentType.includes('application/json')) {
-    return next();
-  }
-
+  // No valid Origin/Referer matched — block the request
   return res.status(403).json({ error: 'CSRF validation failed' });
 }

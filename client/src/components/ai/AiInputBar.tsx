@@ -678,7 +678,7 @@ export default function AiInputBar({ onSend, loading, onStop, webSearchEnabled =
           }}
           onPointerDown={handleComposerPointerDown}
           onPointerUp={handleComposerPointerUp}
-          onPointerLeave={(e) => { handleComposerPointerUp(e as any); handleDragLeave(e as any); }}
+          onPointerLeave={(e) => { handleComposerPointerUp(); handleDragLeave(e as any); }}
           onPointerCancel={handleComposerPointerUp}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}

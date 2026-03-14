@@ -1,7 +1,9 @@
 import { useMemo, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Department, OrgChange } from "@shared/schema";
+import type { Department } from "@shared/schema";
 import type { DeptTreeNode, SafeUser, DeptStatsMap, UserStatsMap } from "./types";
+
+type OrgChange = any;
 
 export function useOrgData() {
   const { data: departments, isLoading: deptsLoading } = useQuery<Department[]>({ queryKey: ["/api/departments"] });
@@ -17,20 +19,20 @@ export function useOrgData() {
   const deptTree = useMemo(() => {
     const nodes: DeptTreeNode[] = allDepts.map((d) => ({
       dept: d,
-      members: allUsers.filter((u) => u.dept_id === d.id),
+      members: allUsers.filter((u) => u.deptId === d.id),
       children: [],
     }));
     const rootNodes: DeptTreeNode[] = [];
     for (const node of nodes) {
-      if (node.dept.parent_id) {
-        const parent = nodes.find((n) => n.dept.id === node.dept.parent_id);
+      if (node.dept.parentDeptId) {
+        const parent = nodes.find((n) => n.dept.id === node.dept.parentDeptId);
         if (parent) { parent.children.push(node); continue; }
       }
       rootNodes.push(node);
     }
-    const ceoNode = rootNodes.find((n) => n.dept.id === "ceo_office");
+    const ceoNode = rootNodes.find((n) => n.dept.name === "CEO Office");
     if (ceoNode) {
-      const otherRoots = rootNodes.filter((n) => n.dept.id !== "ceo_office");
+      const otherRoots = rootNodes.filter((n) => n.dept.id !== ceoNode.dept.id);
       ceoNode.children = [...otherRoots, ...ceoNode.children];
       return [ceoNode];
     }

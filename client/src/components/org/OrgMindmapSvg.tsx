@@ -36,7 +36,7 @@ interface LayoutNode {
 
 function measureSubtreeHorizontal(
   node: DeptTreeNode,
-  foldedNodes: Set<string>
+  foldedNodes: Set<number>
 ): { w: number; h: number } {
   const isFolded = foldedNodes.has(node.dept.id);
   if (isFolded || node.children.length === 0) {
@@ -59,7 +59,7 @@ function layoutHorizontal(
   node: DeptTreeNode,
   x: number,
   y: number,
-  foldedNodes: Set<string>
+  foldedNodes: Set<number>
 ): LayoutNode {
   const isFolded = foldedNodes.has(node.dept.id);
   const measure = measureSubtreeHorizontal(node, foldedNodes);
@@ -103,7 +103,7 @@ function layoutHorizontal(
 
 function measureSubtreeVertical(
   node: DeptTreeNode,
-  foldedNodes: Set<string>
+  foldedNodes: Set<number>
 ): { w: number; h: number } {
   const isFolded = foldedNodes.has(node.dept.id);
   if (isFolded || node.children.length === 0) {
@@ -126,7 +126,7 @@ function layoutVertical(
   node: DeptTreeNode,
   x: number,
   y: number,
-  foldedNodes: Set<string>
+  foldedNodes: Set<number>
 ): LayoutNode {
   const isFolded = foldedNodes.has(node.dept.id);
   const measure = measureSubtreeVertical(node, foldedNodes);
@@ -185,8 +185,8 @@ export function OrgMindmapSvg({
   isMobile,
   onOpenDetail,
 }: OrgMindmapSvgProps) {
-  const [foldedNodes, setFoldedNodes] = useState<Set<string>>(new Set());
-  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
+  const [foldedNodes, setFoldedNodes] = useState<Set<number>>(new Set());
+  const [focusNodeId, setFocusNodeId] = useState<number | null>(null);
   const [scale, setScale] = useState(1);
   const [tx, setTx] = useState(0);
   const [ty, setTy] = useState(0);
@@ -199,7 +199,7 @@ export function OrgMindmapSvg({
   const lastTouchMid = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
-    const defaultFolded = new Set<string>();
+    const defaultFolded = new Set<number>();
     function markFolded(nodes: DeptTreeNode[], depth: number) {
       for (const n of nodes) {
         if (depth >= 2 && n.children.length > 0) {
@@ -261,7 +261,7 @@ export function OrgMindmapSvg({
 
   const focusBranch = useMemo(() => {
     if (!focusNodeId) return null;
-    const ids = new Set<string>();
+    const ids = new Set<number>();
     const addDescendants = (node: DeptTreeNode) => {
       ids.add(node.dept.id);
       node.children.forEach(addDescendants);
@@ -284,7 +284,7 @@ export function OrgMindmapSvg({
     return ids;
   }, [focusNodeId, tree]);
 
-  const toggleFold = useCallback((deptId: string, e: React.MouseEvent) => {
+  const toggleFold = useCallback((deptId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     setFoldedNodes((prev) => {
       const next = new Set(prev);
@@ -428,7 +428,7 @@ export function OrgMindmapSvg({
     };
   }, []);
 
-  const handleLongPressStart = useCallback((deptId: string) => {
+  const handleLongPressStart = useCallback((deptId: number) => {
     longPressTimer.current = setTimeout(() => {
       setFocusNodeId((prev) => (prev === deptId ? null : deptId));
     }, 400);
@@ -447,8 +447,7 @@ export function OrgMindmapSvg({
       const parentNode = layout.node;
       const childNode = child.node;
       const urgency = getUrgency(deptStats[childNode.dept.id]);
-      const lineColor = getLineColor(urgency, !!childNode.dept.is_planned);
-      const isDashed = !!childNode.dept.is_planned;
+      const lineColor = getLineColor(urgency, false);
       const dimmed =
         focusBranch &&
         (!focusBranch.has(parentNode.dept.id) || !focusBranch.has(childNode.dept.id));
@@ -507,7 +506,6 @@ export function OrgMindmapSvg({
           fill="none"
           stroke={lineColor}
           strokeWidth={1.5}
-          strokeDasharray={isDashed ? "4 3" : undefined}
           style={{
             pointerEvents: "none",
             opacity: dimmed ? 0.15 : 1,
@@ -592,7 +590,6 @@ export function OrgMindmapSvg({
     const dept = node.dept;
     const stats = deptStats[dept.id];
     const urgency = getUrgency(stats);
-    const isPlanned = !!dept.is_planned;
     const dimmed = focusBranch && !focusBranch.has(dept.id);
 
     const total = stats?.total ?? 0;
@@ -601,11 +598,8 @@ export function OrgMindmapSvg({
     const completionColor = getCompletionColor(completionLevel);
     const completionRate = getCompletionRate(total, done);
 
-    const headUser = dept.head_id ? users.find((u) => u.id === dept.head_id) : null;
     const memberCount = node.members.length;
-    const subtitle = headUser
-      ? `${headUser.name} · ${memberCount}人`
-      : `${memberCount}人`;
+    const subtitle = `${memberCount}人`;
 
     elements.push(
       <g
@@ -634,9 +628,8 @@ export function OrgMindmapSvg({
           rx={CORNER_R}
           ry={CORNER_R}
           fill="white"
-          stroke={isPlanned ? "#D1D5DB" : "#E5E7EB"}
+          stroke="#E5E7EB"
           strokeWidth={1}
-          strokeDasharray={isPlanned ? "4 3" : undefined}
           filter="url(#dropShadow)"
         />
 
@@ -677,15 +670,9 @@ export function OrgMindmapSvg({
           y={18}
           fontSize={13}
           fontWeight={500}
-          fill={isPlanned ? "#9CA3AF" : "#1F2937"}
+          fill="#1F2937"
         >
           {dept.name.length > 10 ? dept.name.slice(0, 10) + "..." : dept.name}
-          {isPlanned && (
-            <tspan fontSize={10} fill="#9CA3AF">
-              {" "}
-              (待招)
-            </tspan>
-          )}
         </text>
 
         <text
@@ -697,7 +684,7 @@ export function OrgMindmapSvg({
           {subtitle}
         </text>
 
-        {!isPlanned && total > 0 && (
+        {total > 0 && (
           <>
             <rect
               x={isMobile ? 8 : 12}

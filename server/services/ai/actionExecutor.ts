@@ -110,24 +110,24 @@ export async function executeAction(
       }
 
       const updateData: Record<string, any> = {};
-      if (updateFields.title) updateData.title = updateFields.title;
-      if (updateFields.status) updateData.status = updateFields.status;
-      if (updateFields.priority) updateData.priority = updateFields.priority;
-      if (updateFields.memberProfileId) {
+      if (updateFields.title !== undefined) updateData.title = updateFields.title;
+      if (updateFields.status !== undefined) updateData.status = updateFields.status;
+      if (updateFields.priority !== undefined) updateData.priority = updateFields.priority;
+      if (updateFields.memberProfileId !== undefined) {
         const mp = await storage.getMemberProfileById(updateFields.memberProfileId);
         if (!mp || mp.orgId !== orgId) {
           return { success: false, message: `成员档案 #${updateFields.memberProfileId} 不存在或不属于当前组织` };
         }
         updateData.memberProfileId = updateFields.memberProfileId;
         updateData.assigneeId = null;
-      } else if (updateFields.assigneeId) {
+      } else if (updateFields.assigneeId !== undefined) {
         updateData.assigneeId = updateFields.assigneeId;
         updateData.memberProfileId = null;
       }
-      if (updateFields.dueDate) updateData.dueDate = new Date(updateFields.dueDate);
-      if (updateFields.weight) updateData.weight = updateFields.weight;
+      if (updateFields.dueDate !== undefined) updateData.dueDate = new Date(updateFields.dueDate);
+      if (updateFields.weight !== undefined) updateData.weight = updateFields.weight;
       if (updateFields.progress !== undefined) updateData.progress = updateFields.progress;
-      if (updateFields.description) updateData.description = updateFields.description;
+      if (updateFields.description !== undefined) updateData.description = updateFields.description;
 
       if (updateFields.status === 'done') {
         updateData.completedAt = new Date();

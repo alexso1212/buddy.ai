@@ -6,8 +6,7 @@ const config: CapacitorConfig = {
   webDir: 'dist/public',
 
   server: {
-    // TODO: Replace with your actual deployed domain (check App Store Connect or Replit deployment URL)
-    url: 'https://workspace-s1155035208.replit.app',
+    url: 'https://buddy-ai-app.fly.dev',
     cleartext: true,
   },
 

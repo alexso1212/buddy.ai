@@ -447,7 +447,7 @@ adminRouter.put("/ai/model-providers/reorder", requireSuperAdmin, async (req, re
     await storage.reorderModelProviders(modelId, ids);
     invalidateProviderCache();
     const providers = await storage.getModelProvidersByModel(modelId);
-    res.json({ data: providers.map(p => ({ ...p, keyConfigured: !!process.env[p.apiKeyEnvVar] })) });
+    res.json({ data: providers.map(p => ({ ...p, keyConfigured: !!(p.apiKeyEnvVar ? process.env[p.apiKeyEnvVar] : undefined) })) });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }

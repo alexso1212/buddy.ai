@@ -6,10 +6,12 @@ import { storage } from "./storage";
 import { chat as aiChat, chatStream as aiChatStream, codeToolChatStream, generateProjectTasks, extractMemories, generateConversationTitle } from "./services/ai/index";
 import { generateDocx } from "./services/ai/documentGenerator";
 import { executeAction, executeBatchActions } from "./services/ai/actionExecutor";
+import { AI_BASE_URL, AI_API_KEY, AI_DEFAULT_TIMEOUT } from "./services/ai/config";
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { authMiddleware, generateToken, getTokenExpiry } from './middleware/auth';
-import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
+import { sendPasswordResetEmail, sendEmailVerificationEmail } from './services/email';
+// Replit auth 已移除（仅 Replit 平台可用，Fly.io 部署不需要）
 
 import adminRouter, { adminOrOwnerMiddleware } from './routes/admin';
 import googleAuthRouter from './routes/googleAuth';
@@ -45,8 +47,6 @@ export async function registerRoutes(server: Server, app: Express) {
     res.status(200).json({ status: "ok", timestamp: Date.now() });
   });
 
-  await setupAuth(app);
-  registerAuthRoutes(app);
 
 
   app.get('/api/documents/:fileName', authMiddleware, (req: any, res) => {
@@ -282,6 +282,7 @@ export async function registerRoutes(server: Server, app: Express) {
         displayName,
         role: 'owner',
         isActive: true,
+        onboardingCompleted: true,
       } as any);
 
       await storage.createOrgMembership({ userId: user.id, orgId: org.id, role: 'owner', isActive: true });
@@ -404,6 +405,7 @@ export async function registerRoutes(server: Server, app: Express) {
         orgDescription: org?.description,
         activeInviteCode,
         isSuperAdmin,
+        emailVerified: (user as any).emailVerified ?? false,
       };
 
       const authHeader = req.headers.authorization;
@@ -510,9 +512,8 @@ export async function registerRoutes(server: Server, app: Express) {
         emailVerifyExpires: expires,
       } as any);
 
-      // TODO: Integrate actual email service (SendGrid/SES/Resend)
       const verifyUrl = `${req.protocol}://${req.get('host')}/api/auth/verify-email/${token}`;
-      console.log(`[Email Verify] User ${user.email} → ${verifyUrl}`);
+      await sendEmailVerificationEmail(user.email, verifyUrl);
 
       return res.json({ message: '验证邮件已发送，请查收邮箱' });
     } catch (e: any) {
@@ -561,16 +562,16 @@ export async function registerRoutes(server: Server, app: Express) {
       if (!user) return res.json(successMsg);
 
       const token = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
       const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
       await storage.updateUser(user.id, {
-        passwordResetToken: token,
+        passwordResetToken: tokenHash,
         passwordResetExpires: expires,
       } as any);
 
-      // TODO: Integrate actual email service (SendGrid/SES/Resend)
       const resetUrl = `${req.protocol}://${req.get('host')}/reset-password?token=${token}`;
-      console.log(`[Password Reset] User ${user.email} → ${resetUrl}`);
+      await sendPasswordResetEmail(user.email, resetUrl);
 
       try {
         await storage.createActivityLog({
@@ -593,7 +594,8 @@ export async function registerRoutes(server: Server, app: Express) {
   app.get("/api/auth/reset-password/:token", async (req, res) => {
     try {
       const { token } = req.params;
-      const user = await storage.getUserByResetToken(token);
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const user = await storage.getUserByResetToken(tokenHash);
       if (!user) {
         return res.status(400).json({ error: '无效或已过期的重置链接' });
       }
@@ -619,7 +621,8 @@ export async function registerRoutes(server: Server, app: Express) {
         return res.status(400).json({ error: '密码至少需要8个字符' });
       }
 
-      const user = await storage.getUserByResetToken(token);
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const user = await storage.getUserByResetToken(tokenHash);
       if (!user) {
         return res.status(400).json({ error: '无效或已过期的重置链接' });
       }
@@ -801,7 +804,6 @@ export async function registerRoutes(server: Server, app: Express) {
         createdBy: req.currentUserId,
         isActive: true,
         maxUses: 0,
-        usedCount: 0,
       });
 
       await storage.updateUser(req.currentUserId, {
@@ -1073,7 +1075,6 @@ export async function registerRoutes(server: Server, app: Express) {
         createdBy: req.currentUserId,
         isActive: true,
         maxUses: 0,
-        usedCount: 0,
       });
 
       res.json({ data: { inviteCode } });
@@ -1197,6 +1198,7 @@ export async function registerRoutes(server: Server, app: Express) {
     try {
       const parsed = insertDepartmentSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      parsed.data.orgId = req.orgId;
       const dept = await storage.createDepartment(parsed.data);
       await storage.createActivityLog({
         orgId: dept.orgId,
@@ -1218,6 +1220,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const id = parseInt(req.params.id);
       const existing = await storage.getDepartmentById(id);
       if (!existing) return res.status(404).json({ error: "Department not found" });
+      if (existing.orgId !== req.orgId) return res.status(403).json({ error: "Access denied" });
       const updated = await storage.updateDepartment(id, req.body);
       await storage.createActivityLog({
         orgId: existing.orgId,
@@ -1239,6 +1242,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const id = parseInt(req.params.id);
       const existing = await storage.getDepartmentById(id);
       if (!existing) return res.status(404).json({ error: "Department not found" });
+      if (existing.orgId !== req.orgId) return res.status(403).json({ error: "Access denied" });
       await storage.deleteDepartment(id);
       await storage.createActivityLog({
         orgId: existing.orgId,
@@ -1334,8 +1338,7 @@ export async function registerRoutes(server: Server, app: Express) {
   // ===================== Users =====================
   app.get("/api/users", authMiddleware, async (req: any, res) => {
     try {
-      const all = await storage.getUsers();
-      const data = all.filter((u: any) => u.orgId === req.orgId);
+      const data = await storage.getUsers(req.orgId);
       return res.json({ data });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
@@ -1344,7 +1347,7 @@ export async function registerRoutes(server: Server, app: Express) {
 
   app.post("/api/users", authMiddleware, async (req: any, res) => {
     try {
-      const parsed = insertUserSchema.safeParse(req.body);
+      const parsed = insertUserSchema.safeParse({ ...req.body, orgId: req.orgId });
       if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
       const user = await storage.createUser(parsed.data);
       await storage.createActivityLog({
@@ -1367,6 +1370,14 @@ export async function registerRoutes(server: Server, app: Express) {
       const id = parseInt(req.params.id);
       const existing = await storage.getUserById(id);
       if (!existing) return res.status(404).json({ error: "User not found" });
+
+      // 权限检查：只有超级管理员或用户本人可以修改
+      const currentUser = await storage.getUserById(req.currentUserId);
+      const isSuperAdmin = currentUser?.isSuperAdmin || false;
+      const isOwner = req.currentUserId === id;
+      if (!isSuperAdmin && !isOwner) {
+        return res.status(403).json({ error: "无权修改此用户" });
+      }
       const updated = await storage.updateUser(id, req.body);
       await storage.createActivityLog({
         orgId: existing.orgId,
@@ -1388,6 +1399,14 @@ export async function registerRoutes(server: Server, app: Express) {
       const id = parseInt(req.params.id);
       const existing = await storage.getUserById(id);
       if (!existing) return res.status(404).json({ error: "User not found" });
+
+      // 权限检查：只有超级管理员或用户本人可以删除
+      const currentUser = await storage.getUserById(req.currentUserId);
+      const isSuperAdmin = currentUser?.isSuperAdmin || false;
+      const isOwner = req.currentUserId === id;
+      if (!isSuperAdmin && !isOwner) {
+        return res.status(403).json({ error: "无权删除此用户" });
+      }
       const updated = await storage.deleteUser(id);
       await storage.createActivityLog({
         orgId: existing.orgId,
@@ -1407,11 +1426,10 @@ export async function registerRoutes(server: Server, app: Express) {
   // ===================== Projects =====================
   app.get("/api/projects", authMiddleware, async (req: any, res) => {
     try {
-      const projects = await storage.getProjects();
-      const users = await storage.getUsers();
+      const orgProjects = await storage.getProjects(req.orgId);
+      const users = await storage.getUsers(req.orgId);
       const departments = await storage.getDepartments();
-      const allTasks = await storage.getTasks({});
-      const orgProjects = projects.filter((p: any) => p.orgId === req.orgId);
+      const allTasks = await storage.getTasks({ orgId: req.orgId });
       const data = orgProjects.map(p => {
         const projectTasks = allTasks.filter((t: any) => t.projectId === p.id);
         const taskCount = projectTasks.length;
@@ -1445,7 +1463,7 @@ export async function registerRoutes(server: Server, app: Express) {
 
   app.post("/api/projects", authMiddleware, async (req: any, res) => {
     try {
-      const parsed = insertProjectSchema.safeParse(req.body);
+      const parsed = insertProjectSchema.safeParse({ ...req.body, orgId: req.orgId });
       if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
       const project = await storage.createProject(parsed.data);
       await storage.createActivityLog({
@@ -1468,6 +1486,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const id = parseInt(req.params.id);
       const existing = await storage.getProjectById(id);
       if (!existing) return res.status(404).json({ error: "Project not found" });
+      if (existing.orgId !== req.orgId) return res.status(403).json({ error: "Access denied" });
       const updated = await storage.updateProject(id, req.body);
       await storage.createActivityLog({
         orgId: existing.orgId,
@@ -1503,6 +1522,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const id = parseInt(req.params.id);
       const existing = await storage.getProjectById(id);
       if (!existing) return res.status(404).json({ error: "Project not found" });
+      if (existing.orgId !== req.orgId) return res.status(403).json({ error: "Access denied" });
 
       const triggerUserId = getActivityUserId(req.body, req.currentUserId);
       const recipientIds = new Set<number>();
@@ -1555,7 +1575,7 @@ export async function registerRoutes(server: Server, app: Express) {
   // ===================== Tasks =====================
   app.get("/api/tasks", authMiddleware, async (req: any, res) => {
     try {
-      const filters: { projectId?: number; assigneeId?: number; status?: string[]; parentTaskId?: number | null } = {};
+      const filters: { projectId?: number; assigneeId?: number; status?: string[]; parentTaskId?: number | null; orgId?: number } = {};
 
       if (req.query.projectId) filters.projectId = parseInt(req.query.projectId as string);
       if (req.query.assigneeId) filters.assigneeId = parseInt(req.query.assigneeId as string);
@@ -1565,11 +1585,11 @@ export async function registerRoutes(server: Server, app: Express) {
         filters.parentTaskId = val === "null" ? null : parseInt(val);
       }
 
-      const allTasks = await storage.getTasks(Object.keys(filters).length > 0 ? filters : undefined);
-      const tasksData = allTasks.filter((t: any) => t.orgId === req.orgId);
+      filters.orgId = req.orgId;
+      const tasksData = await storage.getTasks(filters);
       const taskIds = tasksData.map(t => t.id);
       const allParticipants = await storage.getTaskParticipantsByTaskIds(taskIds);
-      const allUsers = await storage.getUsers();
+      const allUsers = await storage.getUsers(req.orgId);
       const data = tasksData.map(t => ({
         ...t,
         participants: allParticipants
@@ -1594,7 +1614,7 @@ export async function registerRoutes(server: Server, app: Express) {
         storage.getTaskComments(id),
         storage.getTaskParticipants(id),
       ]);
-      const allUsers = await storage.getUsers();
+      const allUsers = await storage.getUsers(req.orgId);
       const participants = participantsRaw.map(p => ({
         ...p,
         user: allUsers.find(u => u.id === p.userId) || null,
@@ -1607,7 +1627,7 @@ export async function registerRoutes(server: Server, app: Express) {
 
   app.post("/api/tasks", authMiddleware, async (req: any, res) => {
     try {
-      const parsed = insertTaskSchema.safeParse(req.body);
+      const parsed = insertTaskSchema.safeParse({ ...req.body, orgId: req.orgId });
       if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
       const task = await storage.createTask(parsed.data);
       await storage.createActivityLog({
@@ -1619,6 +1639,27 @@ export async function registerRoutes(server: Server, app: Express) {
         changes: JSON.stringify(parsed.data),
         source: "manual",
       });
+
+      // 通知被分配人
+      if (task.assigneeId && task.assigneeId !== req.currentUserId) {
+        try {
+          const creator = await storage.getUserById(req.currentUserId);
+          await storage.createNotification({
+            orgId: req.orgId,
+            userId: task.assigneeId,
+            type: 'assigned',
+            entityType: 'task',
+            entityId: task.id,
+            entityTitle: task.title,
+            message: `${creator?.displayName || '某人'} 将任务「${task.title}」分配给了你`,
+            triggeredBy: req.currentUserId,
+            isRead: false,
+          });
+        } catch (notifErr) {
+          console.error('Failed to send task assignment notification:', notifErr);
+        }
+      }
+
       return res.status(201).json({ data: task });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
@@ -1630,20 +1671,32 @@ export async function registerRoutes(server: Server, app: Express) {
       const id = parseInt(req.params.id);
       const existing = await storage.getTaskById(id);
       if (!existing) return res.status(404).json({ error: "Task not found" });
-      const updated = await storage.updateTask(id, req.body);
+      if (existing.orgId !== req.orgId) return res.status(403).json({ error: "Access denied" });
+      const allowedFields = ['title', 'description', 'status', 'priority', 'assigneeId', 'dueDate', 'progress', 'weight', 'projectId', 'parentTaskId', 'isStarred', 'needsReview'];
+      const updateData: Record<string, any> = {};
+      for (const key of allowedFields) {
+        if (req.body[key] !== undefined) updateData[key] = req.body[key];
+      }
+      if (updateData.status) {
+        const validStatuses = ['todo', 'in_progress', 'submitted', 'reviewing', 'revision_requested', 'done', 'cancelled'];
+        if (!validStatuses.includes(updateData.status)) {
+          return res.status(400).json({ error: "Invalid status value" });
+        }
+      }
+      const updated = await storage.updateTask(id, updateData);
       await storage.createActivityLog({
         orgId: existing.orgId,
         userId: getActivityUserId(req.body, req.currentUserId),
         entityType: "task",
         entityId: id,
         action: "update",
-        changes: JSON.stringify(req.body),
+        changes: JSON.stringify(updateData),
         source: "manual",
       });
       if (req.body.status && req.body.status !== existing.status) {
         const triggerUserId = getActivityUserId(req.body, req.currentUserId);
         const statusLabels: Record<string, string> = {
-          todo: '待办', in_progress: '进行中', in_review: '审核中', done: '已完成', cancelled: '已取消'
+          todo: '待处理', in_progress: '进行中', submitted: '已提交', reviewing: '审核中', revision_requested: '需修改', done: '已完成', cancelled: '已取消'
         };
         const newStatusLabel = statusLabels[req.body.status] || req.body.status;
         const triggerUser = await storage.getUserById(triggerUserId);
@@ -1665,6 +1718,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const id = parseInt(req.params.id);
       const existing = await storage.getTaskById(id);
       if (!existing) return res.status(404).json({ error: "Task not found" });
+      if (existing.orgId !== req.orgId) return res.status(403).json({ error: "Access denied" });
 
       const triggerUserId = getActivityUserId(req.body, req.currentUserId);
       const participants = await storage.getTaskParticipants(id);
@@ -1866,21 +1920,32 @@ export async function registerRoutes(server: Server, app: Express) {
 
   // ===================== Task Deliverables =====================
   const express = (await import('express')).default;
-  app.use('/uploads', express.static('uploads'));
+  if (!fs.existsSync('uploads')) {
+    fs.mkdirSync('uploads', { recursive: true });
+  }
+  app.use('/uploads', authMiddleware, express.static('uploads'));
 
   const multer = (await import('multer')).default;
   const pathModule = await import('path');
   const uploadStorage = multer.diskStorage({
     destination: (_req: any, _file: any, cb: any) => cb(null, 'uploads/'),
     filename: (_req: any, file: any, cb: any) => {
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+      const uniqueSuffix = crypto.randomUUID();
       const ext = pathModule.extname(file.originalname);
       cb(null, uniqueSuffix + ext);
     },
   });
-  const upload = multer({ storage: uploadStorage, limits: { fileSize: 50 * 1024 * 1024 } });
+  const upload = multer({
+    storage: uploadStorage,
+    limits: { fileSize: 50 * 1024 * 1024 },
+    fileFilter: (_req: any, file: any, cb: any) => {
+      const allowed = /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|md|csv|png|jpg|jpeg|gif|zip|json)$/i;
+      if (allowed.test(file.originalname)) cb(null, true);
+      else cb(new Error('不支持的文件类型'));
+    }
+  });
 
-  app.post("/api/tasks/:taskId/deliverables", upload.single('file'), async (req: any, res) => {
+  app.post("/api/tasks/:taskId/deliverables", authMiddleware, upload.single('file'), async (req: any, res) => {
     try {
       const taskId = parseInt(req.params.taskId);
       const task = await storage.getTaskById(taskId);
@@ -2115,6 +2180,28 @@ export async function registerRoutes(server: Server, app: Express) {
         source: "manual",
       });
 
+      // 通知任务创建者有新提交
+      try {
+        const submitter = await storage.getUserById(userId);
+        const notifRecipients = new Set<number>();
+        if (task.creatorId !== userId) notifRecipients.add(task.creatorId);
+        for (const uid of notifRecipients) {
+          await storage.createNotification({
+            orgId,
+            userId: uid,
+            type: 'submitted',
+            entityType: 'task',
+            entityId: taskId,
+            entityTitle: task.title,
+            message: `${submitter?.displayName || '某人'} 提交了任务「${task.title}」的交付物`,
+            triggeredBy: userId,
+            isRead: false,
+          });
+        }
+      } catch (notifErr) {
+        console.error('Failed to send submission notification:', notifErr);
+      }
+
       return res.json({ data: submission });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
@@ -2156,6 +2243,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const submissionId = parseInt(req.params.submissionId);
       const task = await storage.getTaskById(taskId);
       if (!task) return res.status(404).json({ error: "任务不存在" });
+      if (task.orgId !== req.orgId) return res.status(403).json({ error: "Access denied" });
 
       const userId = req.currentUserId;
       const user = await storage.getUserById(userId);
@@ -2196,6 +2284,26 @@ export async function registerRoutes(server: Server, app: Express) {
         changes: JSON.stringify({ submissionId, status, score: overallScore }),
         source: "manual",
       });
+
+      // 通知提交者审核结果
+      try {
+        if (submission.submittedBy !== userId) {
+          const reviewer = await storage.getUserById(userId);
+          await storage.createNotification({
+            orgId: task.orgId,
+            userId: submission.submittedBy,
+            type: status === 'approved' ? 'approved' : 'revision_requested',
+            entityType: 'task',
+            entityId: taskId,
+            entityTitle: task.title,
+            message: `${reviewer?.displayName || '某人'} ${status === 'approved' ? '通过' : '退回'}了你的提交`,
+            triggeredBy: userId,
+            isRead: false,
+          });
+        }
+      } catch (notifErr) {
+        console.error('Failed to send review notification:', notifErr);
+      }
 
       return res.json({ data: updated });
     } catch (e: any) {
@@ -2487,10 +2595,10 @@ export async function registerRoutes(server: Server, app: Express) {
       const deptMap = new Map(allDepartments.map(d => [d.id, d]));
       const allDeptIds = new Set(allDepartments.map(d => d.id));
 
-      allDeptIds.forEach(id => deptIds.add(id));
+      Array.from(allDeptIds).forEach(id => deptIds.add(id));
 
-      for (const dA of deptIds) {
-        for (const dB of deptIds) {
+      for (const dA of Array.from(deptIds)) {
+        for (const dB of Array.from(deptIds)) {
           if (dA >= dB) continue;
           const key = `${dA}-${dB}`;
           if (!crossDeptPairs.has(key)) {
@@ -2956,7 +3064,7 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
 
   app.post("/api/notifications/mark-all-read", authMiddleware, async (req: any, res) => {
     try {
-      const userId = req.body.userId || req.currentUserId;
+      const userId = req.currentUserId;
       await storage.markAllNotificationsRead(userId);
       return res.json({ data: { success: true } });
     } catch (e: any) {
@@ -3119,6 +3227,8 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   app.patch("/api/conversations/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
+      const conv = await storage.getConversationById(id);
+      if (!conv || conv.orgId !== req.orgId) return res.status(403).json({ error: "Access denied" });
       const data = await storage.updateConversation(id, req.body);
       if (!data) return res.status(404).json({ error: "Conversation not found" });
       return res.json({ data });
@@ -3130,6 +3240,8 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   app.delete("/api/conversations/:id", authMiddleware, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
+      const conv = await storage.getConversationById(id);
+      if (!conv || conv.orgId !== req.orgId) return res.status(403).json({ error: "Access denied" });
       await storage.deleteConversation(id);
       return res.json({ data: { success: true } });
     } catch (e: any) {
@@ -3141,6 +3253,8 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   app.get("/api/conversations/:id/messages", authMiddleware, async (req: any, res) => {
     try {
       const conversationId = parseInt(req.params.id);
+      const conv = await storage.getConversationById(conversationId);
+      if (!conv || conv.orgId !== req.orgId) return res.status(403).json({ error: "Access denied" });
       const data = await storage.getChatMessages(conversationId);
       return res.json({ data });
     } catch (e: any) {
@@ -3151,6 +3265,8 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
   app.post("/api/conversations/:id/messages", authMiddleware, async (req: any, res) => {
     try {
       const conversationId = parseInt(req.params.id);
+      const conv = await storage.getConversationById(conversationId);
+      if (!conv || conv.orgId !== req.orgId) return res.status(403).json({ error: "Access denied" });
       const messageData = { ...req.body, conversationId };
       const parsed = insertChatMessageSchema.parse(messageData);
       const data = await storage.createChatMessage(parsed);
@@ -3233,9 +3349,9 @@ Each array should have 2-5 items. A task can appear in multiple categories. Keep
 
       const OpenAI = (await import('openai')).default;
       const client = new OpenAI({
-        baseURL: 'https://vip.aipro.love/v1',
-        apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
-        timeout: 90000,
+        baseURL: AI_BASE_URL,
+        apiKey: process.env.CLAUDE_SIMPLE_API_KEY || AI_API_KEY,
+        timeout: AI_DEFAULT_TIMEOUT,
       });
 
       const systemPrompt = `You are a project management assistant. Given a task title and team context, suggest appropriate task fields.
@@ -3602,9 +3718,9 @@ Return ONLY the JSON object, no other text.`;
 
       const OpenAI = (await import('openai')).default;
       const claudeClient = new OpenAI({
-        baseURL: 'https://vip.aipro.love/v1',
-        apiKey: process.env.CLAUDE_SIMPLE_API_KEY,
-        timeout: 90000,
+        baseURL: AI_BASE_URL,
+        apiKey: process.env.CLAUDE_SIMPLE_API_KEY || AI_API_KEY,
+        timeout: AI_DEFAULT_TIMEOUT,
       });
       const genModel = 'claude-sonnet-4-6';
 
@@ -3736,7 +3852,7 @@ ${existingBlock}`
 
   app.delete("/api/user-memories/:id", authMiddleware, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       await storage.deleteUserMemory(id);
       return res.json({ data: { success: true } });
     } catch (e: any) {
@@ -3753,7 +3869,7 @@ ${existingBlock}`
       }
 
       const orgId = req.orgId || 1;
-      const userId = currentUserId || req.currentUserId || 1;
+      const userId = req.currentUserId;
       const user = await storage.getUserById(userId);
       const userName = user?.displayName || 'Unknown';
       const msgText = message || '';
@@ -3792,6 +3908,13 @@ ${existingBlock}`
       });
 
       res.write(`data: ${JSON.stringify({ type: 'start', conversationId: activeConvId })}\n\n`);
+
+      // 持久化用户消息
+      await storage.createChatMessage({
+        conversationId: activeConvId,
+        role: 'user',
+        content: msgText,
+      });
 
       let fullText = '';
       let aborted = false;
@@ -3836,6 +3959,24 @@ ${existingBlock}`
           });
         } catch (hashErr) {
           console.error('Attachment hash check failed:', hashErr);
+        }
+      }
+
+      // 预算检查
+      const budgetOrg = await storage.getOrganizationById(orgId);
+      if (budgetOrg?.tokenBudgetUsd) {
+        const budgetLimit = parseFloat(budgetOrg.tokenBudgetUsd);
+        const resetDay = budgetOrg.budgetResetDay || 1;
+        const now = new Date();
+        const cycleStart = now.getDate() >= resetDay
+          ? new Date(now.getFullYear(), now.getMonth(), resetDay)
+          : new Date(now.getFullYear(), now.getMonth() - 1, resetDay);
+        const stats = await storage.getTokenUsageStats(orgId, cycleStart);
+        const totalSpent = parseFloat(stats.totalCostUsd);
+        if (totalSpent >= budgetLimit) {
+          res.write(`data: ${JSON.stringify({ type: 'error', content: 'AI 预算已用尽，请联系管理员' })}\n\n`);
+          res.end();
+          return;
         }
       }
 
@@ -4029,6 +4170,19 @@ ${existingBlock}`
         }
       }
 
+      // 持久化 AI 回复消息
+      if (fullText.trim()) {
+        try {
+          await storage.createChatMessage({
+            conversationId: activeConvId,
+            role: 'assistant',
+            content: fullText,
+          });
+        } catch (msgErr) {
+          console.error('Failed to save assistant message:', msgErr);
+        }
+      }
+
       res.end();
 
       extractMemories(
@@ -4068,7 +4222,7 @@ ${existingBlock}`
       }
 
       const orgId = req.orgId || 1;
-      const userId = currentUserId || req.currentUserId || 1;
+      const userId = req.currentUserId;
       const user = await storage.getUserById(userId);
       const userName = user?.displayName || 'Unknown';
 
@@ -4150,7 +4304,7 @@ ${existingBlock}`
         return res.status(400).json({ error: 'actionType and data are required' });
       }
 
-      const userId = currentUserId || req.currentUserId;
+      const userId = req.currentUserId;
       const orgId = req.orgId || 1;
       const result = await executeAction(actionType, data, userId, orgId, { forceCreate: !!forceCreate });
 
@@ -4219,15 +4373,21 @@ ${existingBlock}`
         return res.status(400).json({ error: 'actions array is required' });
       }
 
-      const userId = currentUserId || req.currentUserId;
+      const userId = req.currentUserId;
       const orgId = req.orgId || 1;
       const batchResult = await executeBatchActions(actions, userId, orgId);
 
+      // executeBatchActions 会先处理 create_task 再处理其他，结果顺序与 actions 不同
+      // 重建正确的 actionType 映射：先是所有 create_task，再是其他
+      const reorderedActions = [
+        ...actions.filter((a: any) => a.actionType === 'create_task'),
+        ...actions.filter((a: any) => a.actionType !== 'create_task'),
+      ];
       for (let i = 0; i < batchResult.results.length; i++) {
         const r = batchResult.results[i];
         if (r.success && r.entity) {
           try {
-            const actionType = actions[i]?.actionType || 'create_task';
+            const actionType = reorderedActions[i]?.actionType || 'create_task';
             if (actionType === 'create_task' || actionType === 'update_task') {
               const notifType = actionType === 'create_task' ? 'task_created' : 'task_updated';
               const notifMsg = actionType === 'create_task'
@@ -4653,7 +4813,7 @@ ${existingBlock}`
   const kbUploadStorage = multer.diskStorage({
     destination: (_req: any, _file: any, cb: any) => cb(null, 'uploads/kb/'),
     filename: (_req: any, file: any, cb: any) => {
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+      const uniqueSuffix = crypto.randomUUID();
       const ext = pathModule.extname(file.originalname);
       cb(null, uniqueSuffix + ext);
     },

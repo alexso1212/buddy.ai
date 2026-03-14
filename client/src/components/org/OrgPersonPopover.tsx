@@ -34,8 +34,8 @@ export function OrgPersonPopover({ person, userStats, isCeoOrAdmin, onEditUser }
   return (
     <div className="p-3 space-y-3" data-testid={`person-popover-${person.id}`}>
       <div>
-        <p className="text-sm font-medium">{person.name}</p>
-        <p className="text-xs text-muted-foreground">{person.title || "无职位"} · {person.dept || ""}</p>
+        <p className="text-sm font-medium">{person.displayName}</p>
+        <p className="text-xs text-muted-foreground">{person.role || "成员"}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">

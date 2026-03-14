@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { storage } from '../../storage';
 
-const EMBEDDING_AVAILABLE = false;
+const EMBEDDING_AVAILABLE = process.env.EMBEDDING_ENABLED !== 'false';
 const EMBEDDING_BASE_URL = process.env.AI_BASE_URL || 'https://vip.aipro.love/v1';
 const EMBEDDING_API_KEY = process.env.CLAUDE_SIMPLE_API_KEY || '';
 const EMBEDDING_MODEL = 'text-embedding-3-small';

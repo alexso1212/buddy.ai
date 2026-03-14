@@ -55,7 +55,7 @@ export function OrgDetailPanel({
   const [visible, setVisible] = useState(false);
   const [shouldRender, setShouldRender] = useState(false);
 
-  const isCeo = currentUser.role === "ceo" || currentUser.role === "admin";
+  const isCeo = currentUser.role === "owner" || currentUser.role === "admin";
 
   useEffect(() => {
     if (node) {
@@ -87,7 +87,6 @@ export function OrgDetailPanel({
   const color = getCompletionColor(level);
   const workload = getWorkloadLevel(active);
   const wl = WORKLOAD_LABELS[workload];
-  const headPerson = members.find((m) => m.id === dept.head_id);
 
   const tabs = [
     { key: "members" as const, label: "人员", icon: Users, testId: "detail-tab-members" },
@@ -107,11 +106,6 @@ export function OrgDetailPanel({
           />
           <div className="min-w-0">
             <h3 className="text-sm font-semibold truncate">{dept.name}</h3>
-            {headPerson && (
-              <p className="text-xs text-muted-foreground truncate">
-                负责人: {headPerson.name}
-              </p>
-            )}
           </div>
         </div>
         <Button
@@ -279,7 +273,7 @@ function MembersTab({
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium truncate">{person.name}</span>
+                    <span className="text-sm font-medium truncate">{person.displayName}</span>
                     {urgency !== "none" && (
                       <span
                         className={`w-2 h-2 rounded-full shrink-0 ${urgencyDot.color}`}
@@ -288,7 +282,7 @@ function MembersTab({
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground truncate">
-                    {person.title || "无职位"}
+                    {person.role || "成员"}
                   </p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
@@ -326,12 +320,6 @@ function KpiTab({ dept }: { dept: Department }) {
           {dept.description || "暂无描述"}
         </p>
       </div>
-      <div>
-        <h4 className="text-xs font-medium text-muted-foreground mb-1.5">KPI 指标</h4>
-        <p className="text-sm leading-relaxed whitespace-pre-wrap">
-          {dept.kpi_description || "暂无 KPI 描述"}
-        </p>
-      </div>
     </div>
   );
 }
@@ -340,15 +328,9 @@ function BenefitsTab({ dept }: { dept: Department }) {
   return (
     <div className="p-4 space-y-4">
       <div>
-        <h4 className="text-xs font-medium text-muted-foreground mb-1.5">薪酬说明</h4>
+        <h4 className="text-xs font-medium text-muted-foreground mb-1.5">部门说明</h4>
         <p className="text-sm leading-relaxed whitespace-pre-wrap">
-          {dept.compensation_note || "暂无薪酬说明"}
-        </p>
-      </div>
-      <div>
-        <h4 className="text-xs font-medium text-muted-foreground mb-1.5">预算说明</h4>
-        <p className="text-sm leading-relaxed whitespace-pre-wrap">
-          {dept.budget_note || "暂无预算说明"}
+          {dept.description || "暂无说明"}
         </p>
       </div>
     </div>

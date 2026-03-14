@@ -10,7 +10,10 @@ declare global {
   }
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key';
+if (!process.env.JWT_SECRET) {
+  throw new Error('[orgIsolation] JWT_SECRET environment variable is required.');
+}
+const JWT_SECRET = process.env.JWT_SECRET;
 
 export function orgIsolation(req: Request, _res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;

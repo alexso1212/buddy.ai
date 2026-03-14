@@ -31,7 +31,7 @@ export function OrgPersonRow({ person, isHead, userStats, isCeoOrAdmin, onEditUs
             className="w-2.5 h-2.5 rounded-full shrink-0 border-2"
             style={{ borderColor: color, backgroundColor: total === 0 ? "transparent" : color }}
           />
-          <span className="text-[13px] font-medium flex-1 min-w-0 truncate">{person.name}</span>
+          <span className="text-[13px] font-medium flex-1 min-w-0 truncate">{person.displayName}</span>
           {total > 0 ? (
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="text-[11px] text-muted-foreground">{active}任务</span>

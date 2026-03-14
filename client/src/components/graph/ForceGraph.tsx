@@ -270,8 +270,8 @@ function buildOrbitTopology(simLinks: SimLink[]): OrbitTopology {
   const childSet = new Set<number>();
 
   for (const link of simLinks) {
-    const srcId = typeof link.source === 'object' ? link.source.id : link.source;
-    const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+    const srcId = Number(typeof link.source === 'object' ? link.source.id : link.source);
+    const tgtId = Number(typeof link.target === 'object' ? link.target.id : link.target);
     if (!parentToChildren.has(srcId)) parentToChildren.set(srcId, []);
     parentToChildren.get(srcId)!.push(tgtId);
     childSet.add(tgtId);
@@ -301,8 +301,8 @@ function buildOrbitTopology(simLinks: SimLink[]): OrbitTopology {
     assignDepth(rootId, 0);
   }
   for (const link of simLinks) {
-    const srcId = typeof link.source === 'object' ? link.source.id : link.source;
-    const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+    const srcId = Number(typeof link.source === 'object' ? link.source.id : link.source);
+    const tgtId = Number(typeof link.target === 'object' ? link.target.id : link.target);
     if (!depthMap.has(srcId)) depthMap.set(srcId, 0);
     if (!depthMap.has(tgtId)) {
       parentMap.set(tgtId, srcId);
@@ -759,7 +759,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
                 .attr("transform", `translate(${d.x},${d.y})`);
               nodeElements.each(function (nd) {
                 const isBr = !!(nd as any).isBridge;
-                d3.select(this).style("opacity", isBr ? "0.4" : null);
+                d3.select(this).style("opacity", isBr ? "0.4" : "1");
               });
               return;
             }
@@ -811,7 +811,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
 
             nodeElements.each(function (nd) {
               const isBr = !!(nd as any).isBridge;
-              d3.select(this).style("opacity", isBr ? "0.4" : null);
+              d3.select(this).style("opacity", isBr ? "0.4" : "1");
             });
 
             if (hasDraggedRef.current) {
@@ -1193,17 +1193,29 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
           done: '已完成', cancelled: '已取消',
         };
 
-        const bridgeTag = isBridge
-          ? `<div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:2px;border:1px solid rgba(255,255,255,0.15);border-radius:3px;display:inline-block;padding:0 4px">${hoveredNode.status === 'done' ? '✓ 已完成' : '✕ 已取消'} · 桥梁节点</div>`
-          : '';
+        tip.textContent = '';
 
-        tip.innerHTML = `
-          ${bridgeTag}
-          <div style="font-weight:600;margin-bottom:3px;color:rgba(255,255,255,${isBridge ? '0.5' : '0.9'});font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${hoveredNode.title}</div>
-          <div style="color:rgba(255,255,255,0.5);font-size:11px;line-height:1.5">
-            ${hoveredNode.assigneeName ? `<span>${hoveredNode.assigneeName}</span> · ` : ''}${STATUS_LABELS[hoveredNode.status] || hoveredNode.status}${hoveredNode.dueDate ? ` · ${hoveredNode.dueDate.slice(0, 10)}${urgencyText}` : ''}${dc > 0 ? ` · ${dc}个下游依赖` : ''}
-          </div>
-        `;
+        if (isBridge) {
+          const bridgeEl = document.createElement('div');
+          Object.assign(bridgeEl.style, { color: 'rgba(255,255,255,0.4)', fontSize: '10px', marginBottom: '2px', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '3px', display: 'inline-block', padding: '0 4px' });
+          bridgeEl.textContent = `${hoveredNode.status === 'done' ? '✓ 已完成' : '✕ 已取消'} · 桥梁节点`;
+          tip.appendChild(bridgeEl);
+        }
+
+        const titleEl = document.createElement('div');
+        Object.assign(titleEl.style, { fontWeight: '600', marginBottom: '3px', color: `rgba(255,255,255,${isBridge ? '0.5' : '0.9'})`, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
+        titleEl.textContent = hoveredNode.title || '';
+        tip.appendChild(titleEl);
+
+        const detailEl = document.createElement('div');
+        Object.assign(detailEl.style, { color: 'rgba(255,255,255,0.5)', fontSize: '11px', lineHeight: '1.5' });
+        let detailText = '';
+        if (hoveredNode.assigneeName) detailText += `${hoveredNode.assigneeName} · `;
+        detailText += STATUS_LABELS[hoveredNode.status] || hoveredNode.status;
+        if (hoveredNode.dueDate) detailText += ` · ${hoveredNode.dueDate.slice(0, 10)}${urgencyText}`;
+        if (dc > 0) detailText += ` · ${dc}个下游依赖`;
+        detailEl.textContent = detailText;
+        tip.appendChild(detailEl);
         const transform = zoomTransformRef.current;
         const sx = transform.x + (hoveredNode.x || 0) * transform.k;
         const sy = transform.y + (hoveredNode.y || 0) * transform.k;
@@ -1219,7 +1231,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       nodeElements.each(function (d) {
         const el = d3.select(this);
         const isBridge = !!(d as any).isBridge;
-        el.style("opacity", isBridge ? "0.4" : null);
+        el.style("opacity", isBridge ? "0.4" : "1");
         el.style("filter", null);
         el.selectAll(".node-glow-ring, .node-glow-halo").style("visibility", null);
       });
@@ -1240,7 +1252,7 @@ const ForceGraph = forwardRef<ForceGraphHandle, ForceGraphProps>(function ForceG
       nodeElements.each(function (d) {
         const el = d3.select(this);
         const isBridge = !!(d as any).isBridge;
-        el.style("opacity", isBridge ? "0.4" : null);
+        el.style("opacity", isBridge ? "0.4" : "1");
         el.style("filter", null);
         el.selectAll(".node-glow-ring, .node-glow-halo").style("visibility", null);
       });

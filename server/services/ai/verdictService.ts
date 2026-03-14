@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { storage } from '../../storage';
 import type { AiProvider } from '@shared/schema';
+import { AI_BASE_URL, AI_API_KEY } from './config';
 
 let _cachedProviders: AiProvider[] | null = null;
 let _cacheTime = 0;
@@ -14,8 +15,7 @@ async function getVerdictClient(): Promise<OpenAI> {
       _cacheTime = now;
     } catch {
       if (!_cachedProviders) {
-        const apiKey = process.env.CLAUDE_SIMPLE_API_KEY || process.env.AI_API_KEY || '';
-        return new OpenAI({ baseURL: 'https://vip.aipro.love/v1', apiKey, timeout: 30000 });
+        return new OpenAI({ baseURL: AI_BASE_URL, apiKey: AI_API_KEY, timeout: 30000 });
       }
     }
   }
@@ -25,8 +25,7 @@ async function getVerdictClient(): Promise<OpenAI> {
     const key = process.env[p.apiKeyEnvVar];
     if (key) return new OpenAI({ baseURL: p.baseUrl, apiKey: key, timeout: p.timeout });
   }
-  const apiKey = process.env.CLAUDE_SIMPLE_API_KEY || process.env.AI_API_KEY || '';
-  return new OpenAI({ baseURL: 'https://vip.aipro.love/v1', apiKey, timeout: 30000 });
+  return new OpenAI({ baseURL: AI_BASE_URL, apiKey: AI_API_KEY, timeout: 30000 });
 }
 
 async function verdictComplete(params: { model: string; max_tokens: number; temperature?: number; messages: { role: string; content: string }[] }): Promise<{ content: string; usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }> {

@@ -4,7 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { User, Department, OrgChange } from "@shared/schema";
+import type { User, Department } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,8 @@ import { OrgDetailPanel } from "@/components/org/OrgDetailPanel";
 import { OrgColorLegend } from "@/components/org/OrgColorLegend";
 import { useOrgData, useIsMobile } from "@/components/org/useOrgData";
 import type { DeptTreeNode, SafeUser } from "@/components/org/types";
+
+type OrgChange = any;
 
 const CHANGE_TYPE_LABELS: Record<string, string> = {
   dept_create: "新建部门",
@@ -53,25 +55,23 @@ function EditDeptDialog({ dept, users, open, onOpenChange }: {
 }) {
   const [name, setName] = useState("");
   const [color, setColor] = useState("");
-  const [headId, setHeadId] = useState("");
   const { toast } = useToast();
 
   const isNew = !dept;
 
   useEffect(() => {
     if (open) {
-      if (dept) { setName(dept.name); setColor(dept.color || "#888"); setHeadId(dept.head_id || ""); }
-      else { setName(""); setColor("#888888"); setHeadId(""); }
+      if (dept) { setName(dept.name); setColor(dept.color || "#888"); }
+      else { setName(""); setColor("#888888"); }
     }
   }, [dept, open]);
 
   const mutation = useMutation({
     mutationFn: async () => {
       if (isNew) {
-        const id = name.toLowerCase().replace(/[^a-z0-9]/g, "_").slice(0, 20) + "_" + Date.now().toString(36);
-        await apiRequest("POST", "/api/departments", { id, name, color, head_id: headId || undefined });
+        await apiRequest("POST", "/api/departments", { name, color });
       } else {
-        await apiRequest("PATCH", `/api/departments/${dept!.id}`, { name, color, head_id: headId || undefined });
+        await apiRequest("PATCH", `/api/departments/${dept!.id}`, { name, color });
       }
     },
     onSuccess: (_, __, ctx) => {
@@ -102,15 +102,6 @@ function EditDeptDialog({ dept, users, open, onOpenChange }: {
               <Input value={color} onChange={(e) => setColor(e.target.value)} className="flex-1" />
             </div>
           </div>
-          <div>
-            <label className="text-sm font-medium">负责人</label>
-            <Select value={headId} onValueChange={setHeadId}>
-              <SelectTrigger data-testid="select-dept-head"><SelectValue placeholder="选择负责人" /></SelectTrigger>
-              <SelectContent>
-                {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name} - {u.title}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
             <Button onClick={() => mutation.mutate()} disabled={!name || mutation.isPending} data-testid="button-save-dept">
@@ -126,18 +117,17 @@ function EditDeptDialog({ dept, users, open, onOpenChange }: {
 function EditUserDialog({ targetUser, departments, open, onOpenChange }: {
   targetUser: SafeUser | null; departments: Department[]; open: boolean; onOpenChange: (v: boolean) => void;
 }) {
-  const [title, setTitle] = useState("");
-  const [color, setColor] = useState("#888");
+  const [displayName, setDisplayName] = useState("");
   const { toast } = useToast();
 
   useEffect(() => {
-    if (open && targetUser) { setTitle(targetUser.title || ""); setColor(targetUser.color || "#888"); }
+    if (open && targetUser) { setDisplayName(targetUser.displayName || ""); }
   }, [targetUser, open]);
 
   const mutation = useMutation({
     mutationFn: async () => {
       if (!targetUser) return;
-      await apiRequest("PATCH", `/api/users/${targetUser.id}`, { title, color });
+      await apiRequest("PATCH", `/api/users/${targetUser.id}`, { displayName });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
@@ -154,20 +144,13 @@ function EditUserDialog({ targetUser, departments, open, onOpenChange }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent data-testid="dialog-edit-user">
         <DialogHeader>
-          <DialogTitle className="text-base font-medium">编辑人员 - {targetUser.name}</DialogTitle>
+          <DialogTitle className="text-base font-medium">编辑人员 - {targetUser.displayName}</DialogTitle>
           <DialogDescription>修改人员信息</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium">职位</label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} data-testid="input-user-title" />
-          </div>
-          <div>
-            <label className="text-sm font-medium">标识颜色</label>
-            <div className="flex items-center gap-2">
-              <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
-              <Input value={color} onChange={(e) => setColor(e.target.value)} className="flex-1" />
-            </div>
+            <label className="text-sm font-medium">显示名称</label>
+            <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} data-testid="input-user-name" />
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
@@ -188,13 +171,13 @@ function MoveUserDialog({ targetUser, departments, open, onOpenChange }: {
   const { toast } = useToast();
 
   useEffect(() => {
-    if (open && targetUser) { setDeptId(targetUser.dept_id || ""); }
+    if (open && targetUser) { setDeptId(targetUser.deptId ? String(targetUser.deptId) : ""); }
   }, [targetUser, open]);
 
   const mutation = useMutation({
     mutationFn: async () => {
       if (!targetUser) return;
-      await apiRequest("PATCH", `/api/users/${targetUser.id}`, { dept_id: deptId });
+      await apiRequest("PATCH", `/api/users/${targetUser.id}`, { deptId: deptId ? Number(deptId) : null });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
@@ -212,8 +195,8 @@ function MoveUserDialog({ targetUser, departments, open, onOpenChange }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent data-testid="dialog-move-user">
         <DialogHeader>
-          <DialogTitle className="text-base font-medium">人员调动 - {targetUser.name}</DialogTitle>
-          <DialogDescription>将 {targetUser.name} 调往其他部门</DialogDescription>
+          <DialogTitle className="text-base font-medium">人员调动 - {targetUser.displayName}</DialogTitle>
+          <DialogDescription>将 {targetUser.displayName} 调往其他部门</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div>
@@ -221,7 +204,7 @@ function MoveUserDialog({ targetUser, departments, open, onOpenChange }: {
             <Select value={deptId} onValueChange={setDeptId}>
               <SelectTrigger data-testid="select-move-dept"><SelectValue placeholder="选择部门" /></SelectTrigger>
               <SelectContent>
-                {departments.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                {departments.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -266,7 +249,7 @@ function ApprovalCard({ change, users, isCeo }: { change: OrgChange; users: Safe
             <span className="text-[13px] font-medium">{CHANGE_TYPE_LABELS[change.change_type] || change.change_type}</span>
           </div>
           <p className="text-xs text-muted-foreground">
-            {requester?.name || change.requested_by} · {change.created_at ? new Date(change.created_at).toLocaleString("zh-CN") : ""}
+            {requester?.displayName || change.requested_by} · {change.created_at ? new Date(change.created_at).toLocaleString("zh-CN") : ""}
           </p>
           {change.new_value != null && (
             <div className="mt-2 text-xs bg-muted/50 rounded p-2">
@@ -275,7 +258,7 @@ function ApprovalCard({ change, users, isCeo }: { change: OrgChange; users: Safe
           )}
           {reviewer && change.status !== "pending" && (
             <p className="text-xs text-muted-foreground mt-1">
-              审批人: {reviewer.name} · {change.reviewed_at ? new Date(change.reviewed_at).toLocaleString("zh-CN") : ""}
+              审批人: {reviewer.displayName} · {change.reviewed_at ? new Date(change.reviewed_at).toLocaleString("zh-CN") : ""}
             </p>
           )}
           {change.review_note && <p className="text-xs mt-1 italic">"{change.review_note}"</p>}
@@ -323,13 +306,13 @@ export default function Organization() {
 
   if (authLoading) return <LoadingSkeleton />;
   if (!user) { navigate("/"); return null; }
-  const isCeo = user.role === "ceo";
+  const isCeo = user.role === "owner";
   const isCeoOrAdmin = isCeo || user.role === "admin";
   if (!isCeoOrAdmin) { navigate("/dashboard"); return null; }
 
   const [activeTab, setActiveTab] = useState(isMobile ? "outline" : "mindmap");
 
-  const sortedChanges = [...allChanges].sort((a, b) => {
+  const sortedChanges = [...allChanges].sort((a: OrgChange, b: OrgChange) => {
     if (a.status === "pending" && b.status !== "pending") return -1;
     if (a.status !== "pending" && b.status === "pending") return 1;
     const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
@@ -420,7 +403,7 @@ export default function Organization() {
                 {changesLoading ? <LoadingSkeleton /> : sortedChanges.length === 0 ? (
                   <p className="text-center text-muted-foreground py-12">暂无变更记录</p>
                 ) : (
-                  sortedChanges.map((c) => <ApprovalCard key={c.id} change={c} users={allUsers} isCeo={isCeo} />)
+                  sortedChanges.map((c: OrgChange) => <ApprovalCard key={c.id} change={c} users={allUsers} isCeo={isCeo} />)
                 )}
               </div>
             </ScrollArea>

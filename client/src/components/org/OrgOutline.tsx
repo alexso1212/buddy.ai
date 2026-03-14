@@ -26,7 +26,7 @@ interface OrgOutlineProps {
   onEditUser: (u: SafeUser) => void;
 }
 
-function findNodeById(nodes: DeptTreeNode[], id: string): DeptTreeNode | null {
+function findNodeById(nodes: DeptTreeNode[], id: number): DeptTreeNode | null {
   for (const node of nodes) {
     if (node.dept.id === id) return node;
     const found = findNodeById(node.children, id);
@@ -35,7 +35,7 @@ function findNodeById(nodes: DeptTreeNode[], id: string): DeptTreeNode | null {
   return null;
 }
 
-function buildBreadcrumb(tree: DeptTreeNode[], targetId: string): DeptTreeNode[] {
+function buildBreadcrumb(tree: DeptTreeNode[], targetId: number): DeptTreeNode[] {
   const path: DeptTreeNode[] = [];
   function walk(nodes: DeptTreeNode[]): boolean {
     for (const node of nodes) {
@@ -60,12 +60,12 @@ export function OrgOutline({
   onOpenDetail,
   onEditUser,
 }: OrgOutlineProps) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [focusId, setFocusId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [focusId, setFocusId] = useState<number | null>(null);
 
-  const isCeoOrAdmin = currentUser.role === "ceo" || currentUser.role === "admin";
+  const isCeoOrAdmin = currentUser.role === "owner" || currentUser.role === "admin";
 
-  const toggleExpand = useCallback((id: string) => {
+  const toggleExpand = useCallback((id: number) => {
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -85,7 +85,7 @@ export function OrgOutline({
     return node ? [node] : tree;
   }, [tree, focusId]);
 
-  const handleFocus = useCallback((id: string) => {
+  const handleFocus = useCallback((id: number) => {
     setFocusId((prev) => (prev === id ? null : id));
   }, []);
 
@@ -150,8 +150,8 @@ export function OrgOutline({
 interface DeptRowProps {
   node: DeptTreeNode;
   depth: number;
-  expanded: Set<string>;
-  toggleExpand: (id: string) => void;
+  expanded: Set<number>;
+  toggleExpand: (id: number) => void;
   deptStats: DeptStatsMap;
   userStats: UserStatsMap;
   users: SafeUser[];
@@ -159,7 +159,7 @@ interface DeptRowProps {
   isCeoOrAdmin: boolean;
   onOpenDetail: (node: DeptTreeNode) => void;
   onEditUser: (u: SafeUser) => void;
-  onFocus: (id: string) => void;
+  onFocus: (id: number) => void;
 }
 
 function DeptRow({
@@ -179,7 +179,6 @@ function DeptRow({
   const { dept, members, children } = node;
   const isExpanded = expanded.has(dept.id);
   const hasChildren = children.length > 0 || members.length > 0;
-  const isPlanned = dept.is_planned === true;
 
   const stats = deptStats[dept.id];
   const total = stats?.total ?? 0;
@@ -189,10 +188,9 @@ function DeptRow({
   const blocked = stats?.blocked ?? 0;
 
   const level = getCompletionLevel(total, done);
-  const color = isPlanned ? "#9CA3AF" : getCompletionColor(level);
+  const color = getCompletionColor(level);
   const rate = getCompletionRate(total, done);
 
-  const headUser = dept.head_id ? users.find((u) => u.id === dept.head_id) : null;
   const memberCount = members.length;
 
   const paddingLeft = depth * 20 + 8;
@@ -201,7 +199,7 @@ function DeptRow({
     <>
       <div
         data-testid={`outline-row-${dept.id}`}
-        className={`group ${isPlanned ? "border-b border-dashed border-muted" : ""}`}
+        className="group"
         style={{ paddingLeft }}
       >
         {isMobile ? (
@@ -209,13 +207,13 @@ function DeptRow({
             node={node}
             isExpanded={isExpanded}
             hasChildren={hasChildren}
-            isPlanned={isPlanned}
+            isPlanned={false}
             color={color}
             rate={rate}
             overdue={overdue}
             dueSoon={dueSoon}
             blocked={blocked}
-            headUser={headUser}
+            headUser={null}
             memberCount={memberCount}
             toggleExpand={toggleExpand}
             onOpenDetail={onOpenDetail}
@@ -226,13 +224,13 @@ function DeptRow({
             node={node}
             isExpanded={isExpanded}
             hasChildren={hasChildren}
-            isPlanned={isPlanned}
+            isPlanned={false}
             color={color}
             rate={rate}
             overdue={overdue}
             dueSoon={dueSoon}
             blocked={blocked}
-            headUser={headUser}
+            headUser={null}
             memberCount={memberCount}
             toggleExpand={toggleExpand}
             onOpenDetail={onOpenDetail}
@@ -288,9 +286,9 @@ interface DeptContentProps {
   blocked: number;
   headUser: SafeUser | null | undefined;
   memberCount: number;
-  toggleExpand: (id: string) => void;
+  toggleExpand: (id: number) => void;
   onOpenDetail: (node: DeptTreeNode) => void;
-  onFocus: (id: string) => void;
+  onFocus: (id: number) => void;
 }
 
 function DesktopDeptContent({
@@ -339,15 +337,11 @@ function DesktopDeptContent({
         onClick={() => onOpenDetail(node)}
       >
         {dept.name}
-        {isPlanned && (
-          <span className="text-xs text-muted-foreground ml-1">(待招)</span>
-        )}
       </button>
 
       {headUser && (
         <span className="text-xs text-muted-foreground truncate shrink-0">
-          {headUser.name}
-          {headUser.title ? ` · ${headUser.title}` : ""}
+          {headUser.displayName}
         </span>
       )}
 
@@ -417,9 +411,6 @@ function MobileDeptContent({
           onClick={() => onOpenDetail(node)}
         >
           {dept.name}
-          {isPlanned && (
-            <span className="text-xs text-muted-foreground ml-1">(待招)</span>
-          )}
         </button>
 
         <StatusDots overdue={overdue} dueSoon={dueSoon} blocked={blocked} />
@@ -428,8 +419,7 @@ function MobileDeptContent({
       <div className="flex items-center gap-1.5 ml-[28px] mt-0.5 text-xs text-muted-foreground flex-wrap">
         {headUser && (
           <span>
-            {headUser.name}
-            {headUser.title ? ` · ${headUser.title}` : ""}
+            {headUser.displayName}
           </span>
         )}
         <span>{memberCount}人</span>
@@ -494,9 +484,9 @@ function PersonRow({
           style={{ paddingLeft: paddingLeft + 20 }}
         >
           <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 shrink-0" />
-          <span className="text-sm truncate">{person.name}</span>
+          <span className="text-sm truncate">{person.displayName}</span>
           <span className="text-xs text-muted-foreground truncate">
-            {person.title || ""}
+            {person.role || ""}
           </span>
           <span className="text-xs text-muted-foreground shrink-0 ml-auto">
             {total}任务

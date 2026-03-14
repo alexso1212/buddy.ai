@@ -1,6 +1,6 @@
 import type { User, Department } from "@shared/schema";
 
-export type SafeUser = Omit<User, "invite_code">;
+export type SafeUser = Omit<User, "passwordHash">;
 
 export interface DeptTreeNode {
   dept: Department;

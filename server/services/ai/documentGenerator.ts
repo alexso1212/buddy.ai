@@ -65,7 +65,7 @@ export async function generateDocx(request: DocumentRequest): Promise<{ filePath
       if (tableRows.length > 0) {
         const colCount = Math.max(...tableRows.map(r => r.length));
         const colWidth = Math.floor(9360 / colCount);
-        const border = { style: BorderStyle.SINGLE as const, size: 1, color: 'CCCCCC' };
+        const border = { style: 'single' as const, size: 1, color: 'CCCCCC' };
         const borders = { top: border, bottom: border, left: border, right: border };
 
         const rows = tableRows.map((row, rowIndex) =>
@@ -177,7 +177,7 @@ export async function generateDocx(request: DocumentRequest): Promise<{ filePath
   if (inTable && tableRows.length > 0) {
     const colCount = Math.max(...tableRows.map(r => r.length));
     const colWidth = Math.floor(9360 / colCount);
-    const border = { style: BorderStyle.SINGLE as const, size: 1, color: 'CCCCCC' };
+    const border = { style: 'single' as const, size: 1, color: 'CCCCCC' };
     const borders = { top: border, bottom: border, left: border, right: border };
     const rows = tableRows.map((row, rowIndex) =>
       new TableRow({
